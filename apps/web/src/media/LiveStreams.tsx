@@ -93,13 +93,14 @@ export function LiveStreams({
   const [focused, setFocused] = useState<string | null>(null);
   useEffect(() => {
     if (
+      snapshot.connection === "connected" &&
       focused &&
       !snapshot.streams.some(
         (stream) => stream.id === focused && stream.watching,
       )
     )
       setFocused(null);
-  }, [snapshot.streams, focused]);
+  }, [snapshot.streams, snapshot.connection, focused]);
   const active = snapshot.connection === "connected";
   const camera = snapshot.streams.some(
     (stream) => stream.local && stream.kind === "camera",

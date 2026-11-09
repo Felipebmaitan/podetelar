@@ -33,12 +33,14 @@ export class MediaRoom {
     publishDefaults: { videoCodec: "vp8", simulcast: false },
   });
   private readonly watching = new Set<string>();
+  private readonly captures = new Set<LocalTrack>();
   private readonly listeners = new Set<(snapshot: MediaSnapshot) => void>();
   private readonly abort = new AbortController();
   private closed = false;
   private connection: MediaSnapshot["connection"] = "connecting";
   private pending: StreamKind | null = null;
   private error = "";
+  private reconciliationQueued = false;
 
   constructor(private readonly roomId: string) {
     const refresh = () => this.refresh();
@@ -54,23 +56,20 @@ export class MediaRoom {
     ])
       this.room.on(event, refresh);
     this.room.on(RoomEvent.LocalTrackUnpublished, (publication) => {
-      const kind = kindOf(publication.source);
-      if (kind)
-        this.watching.delete(
-          streamId(this.room.localParticipant.identity, kind),
-        );
+      if (publication.track?.mediaStreamTrack.readyState === "ended")
+        this.captures.delete(publication.track);
+      this.reconcileRemovals();
       this.refresh();
     });
-    this.room.on(RoomEvent.TrackUnpublished, (publication, participant) => {
-      const kind = kindOf(publication.source);
-      if (kind) this.watching.delete(streamId(participant.identity, kind));
+    this.room.on(RoomEvent.TrackUnpublished, () => {
+      this.reconcileRemovals();
       this.refresh();
     });
-    this.room.on(RoomEvent.ParticipantDisconnected, (participant) => {
-      this.watching.delete(streamId(participant.identity, "screen"));
-      this.watching.delete(streamId(participant.identity, "camera"));
+    this.room.on(RoomEvent.ParticipantDisconnected, () => {
+      this.reconcileRemovals();
       this.refresh();
     });
+    this.room.on(RoomEvent.Reconnected, () => this.reconcileRemovals());
     this.room.on(RoomEvent.ConnectionStateChanged, (state) => {
       this.connection =
         state === ConnectionState.Connected
@@ -142,12 +141,20 @@ export class MediaRoom {
           kind === "screen"
             ? [Track.Source.ScreenShare, Track.Source.ScreenShareAudio]
             : [Track.Source.Camera];
-        for (const current of sources) {
-          const track =
-            this.room.localParticipant.getTrackPublication(current)?.track;
-          if (track)
-            await this.room.localParticipant.unpublishTrack(track, true);
-        }
+        const tracks = sources.flatMap(
+          (current) =>
+            this.room.localParticipant.getTrackPublication(current)?.track ??
+            [],
+        );
+        this.watching.delete(
+          streamId(this.room.localParticipant.identity, kind),
+        );
+        this.stopCaptures(tracks);
+        await Promise.all(
+          tracks.map((track) =>
+            this.room.localParticipant.unpublishTrack(track, true),
+          ),
+        );
         return;
       }
       if (kind === "camera") {
@@ -170,6 +177,8 @@ export class MediaRoom {
           })),
         );
       }
+      // Own captures before handing them to asynchronous SDK publication.
+      for (const track of captured) this.captures.add(track);
       for (const track of captured) {
         if (this.closed) throw new Error("Capture cancelled");
         await this.room.localParticipant.publishTrack(track, {
@@ -184,12 +193,12 @@ export class MediaRoom {
         });
       }
     } catch {
-      for (const track of captured) {
-        await this.room.localParticipant
-          .unpublishTrack(track, true)
-          .catch(() => {});
-        track.stop();
-      }
+      this.stopCaptures(captured);
+      await Promise.allSettled(
+        captured.map((track) =>
+          this.room.localParticipant.unpublishTrack(track, true),
+        ),
+      );
       if (!this.closed)
         this.error =
           kind === "screen"
@@ -204,10 +213,40 @@ export class MediaRoom {
   async disconnect(): Promise<void> {
     this.closed = true;
     this.abort.abort();
+    this.stopCaptures([...this.captures]);
     this.listeners.clear();
     this.watching.clear();
     await this.room.disconnect(true);
     this.room.removeAllListeners();
+  }
+
+  private stopCaptures(tracks: LocalTrack[]): void {
+    for (const track of tracks) {
+      track.stop();
+      this.captures.delete(track);
+    }
+  }
+
+  private reconcileRemovals(): void {
+    if (this.closed || this.reconciliationQueued) return;
+    this.reconciliationQueued = true;
+    // The pinned SDK emits removal events before entering Reconnecting. Defer until
+    // that synchronous event batch ends, then reconcile only a stable connected room.
+    queueMicrotask(() => {
+      this.reconciliationQueued = false;
+      if (this.closed || this.room.state !== ConnectionState.Connected) return;
+      const present = new Set(
+        [
+          this.room.localParticipant,
+          ...this.room.remoteParticipants.values(),
+        ].flatMap((participant) =>
+          this.streams(participant).map((stream) => stream.id),
+        ),
+      );
+      for (const id of this.watching)
+        if (!present.has(id)) this.watching.delete(id);
+      this.refresh();
+    });
   }
 
   private refresh(): void {

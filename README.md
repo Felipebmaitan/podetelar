@@ -30,7 +30,7 @@ docker compose up --build -d
 
 Open **http://localhost:3000**. This runs the production app build and LiveKit with the same generated media credentials. The `room-data` volume preserves rooms/sessions across restarts. `docker compose down` retains that volume. Do not remove the volume unless you intend to erase that data.
 
-This Compose file is **local-only**: published ports bind to loopback, advertised media addresses are local, and HTTPS/TURN are not configured. Production VPS deployment is Phase 8. Do not expose this stack by simply changing its port bindings.
+This Compose file is **local-only**: published ports bind to loopback, media candidates include loopback and the private container interface, and HTTPS/TURN are not configured. Keeping the container candidate lets native Linux hosts reach the SFU without Docker Desktop's forwarding proxy. ICE Lite avoids external STUN discovery for this local stack. Production VPS deployment is Phase 8. Do not expose this stack by simply changing its port bindings.
 
 ## Checks
 

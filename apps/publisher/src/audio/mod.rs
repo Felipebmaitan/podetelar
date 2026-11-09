@@ -40,6 +40,13 @@ pub struct Metrics {
     pub channel_difference_peak: f64,
     pub tones: [f64; 3],
     pub windows: Vec<SpectralWindow>,
+    // Observed pipeline backlog only. These are not physical A/V offsets.
+    pub capture_age_ms: f64,
+    pub capture_age_max_ms: f64,
+    pub transport_wait_ms: f64,
+    pub playback_queue_ms: f64,
+    pub playback_queue_max_ms: f64,
+    pub playback_dropped_frames: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -245,6 +252,16 @@ pub fn run(
                 break;
             }
             let buffer = sample.buffer().context("Missing audio samples.")?;
+            if let Some(age) = pipeline
+                .pipeline
+                .current_running_time()
+                .zip(buffer.pts())
+                .and_then(|(now, pts)| now.checked_sub(pts))
+            {
+                counters.capture_age_ms = age.nseconds() as f64 / 1_000_000.0;
+                counters.capture_age_max_ms =
+                    counters.capture_age_max_ms.max(counters.capture_age_ms);
+            }
             let bytes = buffer
                 .map_readable()
                 .context("Could not read audio samples.")?;
@@ -286,12 +303,14 @@ pub fn run(
                     sample_rate: 48000,
                     num_channels: 2,
                 };
+                let transport_started = Instant::now();
                 tokio::runtime::Handle::current().block_on(async {
                     tokio::time::timeout(Duration::from_millis(250), source.capture_frame(&frame))
                         .await
                         .context("Audio transport stalled.")?
                         .map_err(|_| anyhow::anyhow!("Audio transport could not accept samples."))
                 })?;
+                counters.transport_wait_ms = transport_started.elapsed().as_secs_f64() * 1000.0;
             }
             if let Ok(mut state) = snapshot.lock() {
                 *state = counters.clone();

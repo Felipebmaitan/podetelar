@@ -25,6 +25,7 @@ import {
 } from "./access.js";
 import { Signaling } from "./signaling.js";
 import { loadPublisher, publisherRoutes } from "./distribution.js";
+import { networkTestRoutes } from "./network-test.js";
 
 const COOKIE = "fs_session";
 const MEDIA_TOKEN_TTL_SECONDS = 120;
@@ -269,6 +270,7 @@ export async function buildApp(
     );
 
   await previewRoutes(app, rooms, previews);
+  await networkTestRoutes(app, rooms);
   publisherRoutes(app, publisher, rooms);
   await accessRoutes(app, config, rooms, access);
   await signaling.register(app, config);

@@ -91,6 +91,15 @@ impl Encoding {
         mode: Mode,
         stop: &AtomicBool,
     ) -> Result<Self> {
+        Self::start_controlled(source, encoder, mode, stop, RateControl::new(mode.bitrate))
+    }
+    pub fn start_controlled(
+        source: &Source,
+        encoder: &Encoder,
+        mode: Mode,
+        stop: &AtomicBool,
+        rate: RateControl,
+    ) -> Result<Self> {
         ensure!(!stop.load(Ordering::Acquire), "Capture was cancelled.");
         ensure!(
             encoder.supports(mode),
@@ -127,7 +136,7 @@ impl Encoding {
             mode.height,
             mode.fps,
             encoder.factory,
-            mode.bitrate / 1000,
+            rate.effective(None) / 1000,
             mode.fps
         );
         let pipeline = gst::parse::launch(&processing)
@@ -227,7 +236,7 @@ impl Encoding {
             capture: source.clone(),
             preview_sink,
             previews: Arc::new(Mutex::new(None)),
-            rate: RateControl::new(mode.bitrate),
+            rate,
         };
         ensure!(!stop.load(Ordering::Acquire), "Capture was cancelled.");
         encoding
@@ -303,12 +312,12 @@ impl Encoding {
         let mut last_frame = Instant::now();
         let mut last_report = Instant::now();
         let mut counters = Metrics {
-            encoder_bitrate: self.mode.bitrate,
+            encoder_bitrate: self.encoder.property::<u32>("bitrate") as u64 * 1000,
             ..Default::default()
         };
         let mut keyframe_count = 0;
         let mut feedback = None;
-        let mut budget = EncoderBudget::new(self.mode.bitrate);
+        let mut budget = EncoderBudget::new(counters.encoder_bitrate);
         let mut first_feedback = false;
         let mut last_rate_update = Instant::now();
         let mut reported_bytes = 0;

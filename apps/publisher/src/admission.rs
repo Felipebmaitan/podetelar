@@ -13,6 +13,33 @@ pub struct Admission {
     room_id: String,
     pub room_name: String,
 }
+struct ProbeLease {
+    client: Client,
+    url: Url,
+    origin: String,
+    token: String,
+}
+impl Drop for ProbeLease {
+    fn drop(&mut self) {
+        let (client, url, origin, token) = (
+            self.client.clone(),
+            self.url.clone(),
+            self.origin.clone(),
+            self.token.clone(),
+        );
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                let _ = client
+                    .delete(url)
+                    .header("Origin", origin)
+                    .header("X-Network-Probe", token)
+                    .timeout(Duration::from_secs(2))
+                    .send()
+                    .await;
+            });
+        }
+    }
+}
 
 pub enum PreviewDelivery {
     Sent,
@@ -110,6 +137,112 @@ pub fn media_diagnostic(error: impl std::fmt::Display) -> String {
 }
 
 impl Admission {
+    pub async fn measure_connection(&self) -> crate::network::Capacity {
+        use crate::network::{Capacity, PROBE_BYTES, PROBE_CAP_BPS};
+        #[derive(Deserialize)]
+        struct Ticket {
+            probe: String,
+        }
+        #[derive(Deserialize)]
+        struct Upload {
+            bps: u64,
+            bytes: usize,
+            seconds: f64,
+        }
+        let mut measured = Capacity::default();
+        let mut unavailable = "Connection measurement unavailable. Try again in Advanced.";
+        let result: Result<()> = async {
+            let started = std::time::Instant::now();
+            let ticket: Ticket = loop {
+                let response = self.post("network-test").await?;
+                if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                    unavailable = "Wait 30 seconds before testing again.";
+                }
+                if response.status() == reqwest::StatusCode::CONFLICT
+                    && started.elapsed() < Duration::from_secs(25)
+                {
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+                break read_response(response).await?;
+            };
+            ensure!(
+                ticket.probe.len() == 48 && ticket.probe.bytes().all(|b| b.is_ascii_hexdigit()),
+                "Invalid connection test."
+            );
+            let path = format!("api/rooms/{}/network-test", self.room_id);
+            let _lease = ProbeLease {
+                client: self.client.clone(),
+                url: self.origin.join(&path)?,
+                origin: self.origin.origin().ascii_serialization(),
+                token: ticket.probe.clone(),
+            };
+            let mut response = self
+                .client
+                .get(self.origin.join(&(path.clone() + "/download"))?)
+                .header("X-Network-Probe", &ticket.probe)
+                .timeout(Duration::from_secs(7))
+                .send()
+                .await?;
+            ensure!(
+                response.status().is_success(),
+                "Connection test unavailable."
+            );
+            let began = std::time::Instant::now();
+            let mut bytes = 0usize;
+            while let Some(chunk) = response.chunk().await? {
+                bytes += chunk.len();
+                ensure!(bytes <= PROBE_BYTES, "Connection test exceeded limit.");
+            }
+            ensure!(bytes >= 65_536, "Connection measurement too small.");
+            measured.download_bps = Some(
+                ((bytes as f64 * 8.0 / began.elapsed().as_secs_f64().max(0.001)) as u64)
+                    .min(PROBE_CAP_BPS),
+            );
+            let stream = futures_util::stream::unfold(
+                (0usize, std::time::Instant::now()),
+                |(sent, start)| async move {
+                    if sent >= PROBE_BYTES || start.elapsed() >= Duration::from_secs(2) {
+                        return None;
+                    }
+                    let due = Duration::from_secs_f64(sent as f64 * 8.0 / PROBE_CAP_BPS as f64);
+                    if let Some(wait) = due.checked_sub(start.elapsed()) {
+                        tokio::time::sleep(wait).await;
+                    }
+                    let size = (PROBE_BYTES - sent).min(65_536);
+                    Some((
+                        Ok::<_, std::io::Error>(vec![0x5a; size]),
+                        (sent + size, start),
+                    ))
+                },
+            );
+            let response = self
+                .client
+                .post(self.origin.join(&(path + "/upload"))?)
+                .header("Origin", self.origin.origin().ascii_serialization())
+                .header("X-Network-Probe", ticket.probe)
+                .header("Content-Type", "application/octet-stream")
+                .body(reqwest::Body::wrap_stream(stream))
+                .timeout(Duration::from_secs(7))
+                .send()
+                .await?;
+            let uploaded: Upload = read_response(response).await?;
+            ensure!(
+                uploaded.bytes >= 65_536
+                    && uploaded.bytes <= PROBE_BYTES
+                    && uploaded.seconds > 0.0
+                    && uploaded.seconds <= 4.0,
+                "Invalid upload measurement."
+            );
+            measured.upload_bps = Some(uploaded.bps.min(PROBE_CAP_BPS));
+            Ok(())
+        }
+        .await;
+        if result.is_err() {
+            measured.error = unavailable.into();
+        }
+        measured
+    }
     pub async fn join(invitation: &str, display_name: &str) -> Result<Self> {
         let invitation = Invitation::parse(invitation)?;
         let client = Client::builder()

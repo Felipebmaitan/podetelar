@@ -123,6 +123,24 @@ fresh GPT-6.1-Sol high-reasoning review. AMD, fresh-machine, real-game/Discord a
 4K120 qualification remain external until actually exercised. No embedded browser,
 server transcoding, HDR, or new platform promise.
 
+## 12. Friends feedback, measured bandwidth and localization — PR
+
+Build on the native-room beta in a separate dependent branch/PR. Add a bounded,
+authenticated VPS down/up measurement capped at 100 Mbps on connect and an Advanced
+rerun action. Report it as capacity to this VPS, not an ISP maximum. Derive an
+automatic aggregate watching allowance and upload recommendation with headroom;
+adapt the shared publication to actual subscribers as they arrive/leave, while
+preserving geometry and explicit manual settings. Bound transfer duration, bytes,
+concurrency and server load, and cancel stale tests on leave/rejoin.
+
+Expose room members from the room-name control, a local source-confirmation
+preview without increasing uploaded preview capture cadence, simpler room actions,
+visible bitrate/FPS and persistent PT-BR/English selection at the top right.
+Investigate and measure the reported audio lag across sender, RTP/playout and
+device queues. Do not substitute an arbitrary delay or compilation for actual
+audio/video timing acceptance. Verify a synchronized audiovisual fixture and
+record any remaining device/network limitations before claiming the fix.
+
 ## Later portability
 
 After the Windows experience meets the above gates, add macOS and Linux in separate PRs. Preserve the room, invitation, subscription and preview contracts; replace platform capture/audio/encoder adapters. No cross-platform promise until each backend is tested on its actual OS.

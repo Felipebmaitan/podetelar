@@ -5,6 +5,7 @@ mod connection;
 mod delivery;
 mod diagnostics;
 mod encoding;
+mod locale;
 mod network;
 mod playback;
 mod preview;
@@ -87,6 +88,32 @@ fn run() -> Result<()> {
             )?
         ),
         Some("--audio-apps") => println!("{}", serde_json::to_string(&audio::applications()?)?),
+        Some("--measure-connection") => {
+            // Private invitation is stdin-only; output contains capacity, never authority.
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Request {
+                invitation_url: String,
+            }
+            let mut input = String::new();
+            std::io::stdin().take(4097).read_to_string(&mut input)?;
+            ensure!(
+                input.len() <= 4096,
+                "Connection fixture input is too large."
+            );
+            let request: Request =
+                serde_json::from_str(&input).context("Invalid connection fixture input.")?;
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?;
+            runtime.block_on(async {
+                let admission=admission::Admission::join(&request.invitation_url,"Connection test").await?;
+                let measured=admission.measure_connection().await;
+                admission.leave().await;
+                println!("{}",serde_json::json!({"downloadBps":measured.download_bps,"uploadBps":measured.upload_bps,"watchingAllowance":measured.watching_allowance(),"uploadVideoCap":measured.upload_video_cap(),"error":measured.error}));
+                Ok::<_,anyhow::Error>(())
+            })?;
+        }
         Some("--audio-tone") => {
             use gstreamer::prelude::*;
             let frequency: u32 = std::env::args()
@@ -247,6 +274,10 @@ fn run() -> Result<()> {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FixtureRequest {
+    #[serde(default)]
+    sample_rates: bool,
+    #[serde(default)]
+    upload_limit_bps: Option<u64>,
     #[serde(default)]
     route: connection::Route,
     invitation_url: String,
@@ -498,7 +529,8 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     };
     let result = async {
         let config=publisher::StreamConfig { source,encoder:encoder.clone(),quality:request.quality,audio:request.audio,exclusions:request.exclusions };
-        let mut active = publisher::Stream::start(&room, config.clone(), stop).await?;
+        ensure!(request.upload_limit_bps.is_none_or(|v|(64_000..=100_000_000).contains(&v)),"Invalid fixture upload ceiling.");
+        let mut active = publisher::Stream::start_with_upload_cap(&room, config.clone(), stop, request.upload_limit_bps).await?;
         let initial_sid=active.sid();
         println!("{}", serde_json::json!({"published":true}));
         active.start_previews(admission.clone());
@@ -527,7 +559,7 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             tokio::time::sleep(Duration::from_secs(after)).await;
             room.simulate_scenario(livekit::rtc_engine::SimulateScenario::FullReconnect).await.map_err(|_| anyhow::anyhow!("Could not request a local fixture reconnect."))?;
             tokio::time::sleep(Duration::from_secs(request.seconds - after)).await;
-        } else { active = serve_fixture(&room, &admission, active, request.seconds, cancellation.clone()).await?; }
+        } else { active = serve_fixture(&room, &admission, active, request.seconds, cancellation.clone(), request.sample_rates).await?; }
         let preview_uploads = active.preview_uploads.clone(); let audio_metrics = active.audio_metrics.clone(); let delivery = active.delivery.clone();
         let mode=active.mode;
         let encoder=active.encoder().clone();
@@ -552,10 +584,21 @@ async fn serve_fixture(
     mut active: publisher::Stream,
     seconds: u64,
     cancellation: Arc<publisher::CaptureCancellation>,
+    sample_rates: bool,
 ) -> Result<publisher::Stream> {
     let started = std::time::Instant::now();
+    let mut next_sample = 0;
     while started.elapsed().as_secs() < seconds {
         active.constrain_watchers(room);
+        let second = started.elapsed().as_secs();
+        if sample_rates && second >= next_sample {
+            let metrics = active.metrics.lock().map(|m| m.clone()).unwrap_or_default();
+            println!(
+                "{}",
+                serde_json::json!({"rateSample":true,"second":second,"encoderBps":metrics.encoder_bitrate,"fps":metrics.fps,"watcherCap":playback::requested_cap(room)})
+            );
+            next_sample = second + 1;
+        }
         let stop = cancellation.register();
         if active.cancelled() {
             break;

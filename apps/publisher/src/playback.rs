@@ -520,7 +520,7 @@ async fn audio(
     metrics: Arc<Mutex<crate::audio::Metrics>>,
     measure: bool,
 ) -> Result<()> {
-    let pipeline = gst::parse::launch("appsrc name=pcm is-live=true format=time do-timestamp=true block=false max-bytes=38400 ! audio/x-raw,format=S16LE,rate=48000,channels=2,layout=interleaved ! queue max-size-time=100000000 max-size-bytes=38400 max-size-buffers=10 leaky=downstream ! audioconvert ! audioresample ! volume name=level ! wasapi2sink low-latency=true sync=false")?
+    let pipeline = gst::parse::launch("appsrc name=pcm is-live=true format=time do-timestamp=true block=false max-bytes=38400 ! audio/x-raw,format=S16LE,rate=48000,channels=2,layout=interleaved ! queue name=backlog max-size-time=100000000 max-size-bytes=38400 max-size-buffers=10 leaky=downstream ! audioconvert ! audioresample ! volume name=level ! wasapi2sink low-latency=true sync=false")?
         .downcast::<gst::Pipeline>().map_err(|_| anyhow::anyhow!("Invalid native playback pipeline."))?;
     let pipeline = AudioPipeline(pipeline);
     let input = pipeline
@@ -533,6 +533,10 @@ async fn audio(
         .0
         .by_name("level")
         .context("Missing playback volume.")?;
+    let backlog = pipeline
+        .0
+        .by_name("backlog")
+        .context("Missing playback queue.")?;
     pipeline.0.set_state(gst::State::Playing)?;
     let mut stream = NativeAudioStream::with_options(
         track.rtc_track(),
@@ -553,6 +557,14 @@ async fn audio(
             anyhow::bail!("Audio output failed.");
         }
         if let Ok(mut metrics) = metrics.lock() {
+            let queue_ns: u64 = backlog.property("current-level-time");
+            metrics.playback_queue_ms =
+                input.current_level_bytes() as f64 / 192.0 + queue_ns as f64 / 1_000_000.0;
+            metrics.playback_queue_max_ms =
+                metrics.playback_queue_max_ms.max(metrics.playback_queue_ms);
+            if input.current_level_bytes() > 38400 {
+                metrics.playback_dropped_frames += 1;
+            }
             metrics.frames += frame.samples_per_channel as u64;
             for channels in frame.data.chunks_exact(2) {
                 metrics.peak = metrics

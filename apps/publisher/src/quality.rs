@@ -241,12 +241,14 @@ impl Mode {
 pub struct RateControl {
     requested: Arc<AtomicU64>,
     viewer_cap: Arc<AtomicU64>,
+    upload_cap: Arc<AtomicU64>,
 }
 impl RateControl {
     pub fn new(requested: u64) -> Self {
         Self {
             requested: Arc::new(AtomicU64::new(requested)),
             viewer_cap: Arc::new(AtomicU64::new(MAX_BITRATE)),
+            upload_cap: Arc::new(AtomicU64::new(MAX_BITRATE)),
         }
     }
     pub fn requested(&self) -> u64 {
@@ -270,7 +272,17 @@ impl RateControl {
         self.requested()
             .min(feedback.unwrap_or(MAX_BITRATE))
             .min(self.viewer_cap.load(Ordering::Acquire))
+            .min(self.upload_cap.load(Ordering::Acquire))
             .max(1_000)
+    }
+    pub fn set_upload_cap(&self, cap: Option<u64>) {
+        self.upload_cap.store(
+            cap.unwrap_or(MAX_BITRATE).clamp(64_000, MAX_BITRATE),
+            Ordering::Release,
+        );
+    }
+    pub fn upload_cap(&self) -> u64 {
+        self.upload_cap.load(Ordering::Acquire)
     }
 }
 
@@ -316,6 +328,20 @@ impl EncoderBudget {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn watcher_departure_never_bypasses_upload_or_transport_limits() {
+        let rate = RateControl::new(8_000_000);
+        rate.set_upload_cap(Some(3_000_000));
+        rate.set_viewer_cap(Some(1_000_000));
+        assert_eq!(rate.effective(None), 1_000_000);
+        rate.set_viewer_cap(None);
+        assert_eq!(rate.effective(None), 3_000_000);
+        assert_eq!(rate.effective(Some(2_000_000)), 2_000_000);
+        assert_eq!(rate.requested(), 8_000_000);
+        rate.set_upload_cap(None);
+        assert_eq!(rate.effective(None), 8_000_000);
+    }
 
     #[test]
     fn default_source_and_sensible_hd_targets_preserve_manual_and_watcher_caps() {

@@ -3,8 +3,6 @@ import type { FormEvent, ReactNode } from "react";
 import { invitationSchema, roomIdSchema } from "@freedomstream/contracts";
 import type { CreatedRoom, RoomSession } from "@freedomstream/contracts";
 import { ApiError, request } from "./api";
-import { useMediaRoom } from "./media/useMediaRoom";
-import { LiveStreams } from "./media/LiveStreams";
 import { RoomAccess } from "./RoomAccess";
 import { PublisherDownload } from "./PublisherDownload";
 
@@ -51,7 +49,6 @@ export function App() {
   );
   const [copyState, setCopyState] = useState("");
   const [leaving, setLeaving] = useState(false);
-  const media = useMediaRoom(session);
 
   useEffect(() => {
     if (!session) return;
@@ -70,7 +67,6 @@ export function App() {
           caught instanceof ApiError &&
           caught.status === 401
         ) {
-          await media.disconnect();
           setSession(null);
           setInvitationUrl(undefined);
           setError(
@@ -89,7 +85,7 @@ export function App() {
       clearInterval(timer);
       abort.abort();
     };
-  }, [session, media.disconnect, media.snapshot.connection]);
+  }, [session]);
 
   useEffect(() => {
     if (!entryRoomId) return;
@@ -119,7 +115,12 @@ export function App() {
 
   const entered = (result: RoomSession, url?: string) => {
     setSession(result);
-    setInvitationUrl(url);
+    setInvitationUrl(
+      url ??
+        (entryInvitation && entryRoomId === result.room.id
+          ? `${window.location.origin}/r/${result.room.id}#invite=${entryInvitation}`
+          : undefined),
+    );
     setError("");
     window.history.replaceState(null, "", `/r/${result.room.id}`);
   };
@@ -138,7 +139,6 @@ export function App() {
     if (!session) return;
     setLeaving(true);
     try {
-      await media.disconnect();
       await request<void>(`/api/rooms/${session.room.id}/leave`, {
         method: "POST",
       });
@@ -165,20 +165,6 @@ export function App() {
             {session?.room.name ?? "A space for friends"}
           </div>
         </div>
-        {session && (
-          <section className="participant-list" aria-label="People in the room">
-            <p className="eyebrow">IN THIS ROOM</p>
-            {media.snapshot.participants.map((participant) => (
-              <div key={participant.id} className="participant-row">
-                <span className="presence-dot" aria-hidden="true" />
-                <span>
-                  {participant.name}
-                  {participant.local ? " (you)" : ""}
-                </span>
-              </div>
-            ))}
-          </section>
-        )}
         <div className="sidebar-footer">
           <span className="avatar" aria-hidden="true">
             {session?.participant.displayName.slice(0, 1).toUpperCase() ?? "F"}
@@ -224,16 +210,14 @@ export function App() {
                 {leaving ? "Leaving…" : "Leave room"}
               </button>
             </div>
-            <LiveStreams
-              roomId={session.room.id}
-              snapshot={media.snapshot}
-              watch={media.watch}
-              toggle={media.toggle}
-              reconnect={media.reconnect}
-              setPlaybackBuffer={media.setPlaybackBuffer}
-              route={media.route}
-              setRoute={media.setRoute}
-            />
+            <section className="room-stage">
+              <h2>Share and watch in the desktop app</h2>
+              <p>
+                Download FreedomStream, then paste your room invitation into the
+                app. Native capture and playback keep your room experience
+                consistent.
+              </p>
+            </section>
             <section className="invite-panel">
               <div>
                 <h2>Bring your friends</h2>

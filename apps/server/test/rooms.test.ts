@@ -354,7 +354,7 @@ test("media tokens have verified signatures, fixed room/identity and short lifet
   const created = await f.create();
   const response = await f.app.inject({
     method: "POST",
-    url: `/api/rooms/${created.body.room.id}/media-token`,
+    url: `/api/rooms/${created.body.room.id}/native-media-token`,
     headers: { origin: ORIGIN, cookie: created.cookie },
     payload: { room: "someone-elses-room", identity: "forged" },
   });
@@ -426,4 +426,34 @@ test("HTTPS room sessions use Secure cookies", async (t) => {
   });
   assert.equal(response.statusCode, 201);
   assert.match(String(response.headers["set-cookie"]), /; Secure/);
+});
+
+test("browser tokens cannot publish or subscribe and browser fetch cannot obtain native grants", async (t) => {
+  const f = await fixture(t);
+  const created = await f.create();
+  const headers = { origin: ORIGIN, cookie: created.cookie };
+  const browser = await f.app.inject({
+    method: "POST",
+    url: `/api/rooms/${created.body.room.id}/media-token`,
+    headers,
+  });
+  assert.equal(browser.statusCode, 200);
+  const claims = await new TokenVerifier(
+    f.config.livekitApiKey,
+    MEDIA_SECRET,
+  ).verify(browser.json().token);
+  assert.equal(claims.video?.canPublish, false);
+  assert.equal(claims.video?.canSubscribe, false);
+  assert.equal(claims.video?.canUpdateOwnMetadata, false);
+  for (const metadata of [
+    { "sec-fetch-site": "same-origin" },
+    { "sec-fetch-mode": "cors" },
+  ]) {
+    const response = await f.app.inject({
+      method: "POST",
+      url: `/api/rooms/${created.body.room.id}/native-media-token`,
+      headers: { ...headers, ...metadata },
+    });
+    assert.equal(response.statusCode, 403);
+  }
 });

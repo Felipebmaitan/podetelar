@@ -7,7 +7,28 @@ transfer is required. The executable contains the publisher, its curated media
 runtime, app-local Visual C++ DLLs, notices and corresponding library sources.
 Windows 11 and a current NVIDIA/AMD driver are recommended. Process-loopback audio
 requires Windows build 20348 or newer; publishing requires a hardware encoder.
-Chrome is the qualified receiver here; check HEVC support on each viewer.
+Sharing and watching use the native app. No browser is embedded or launched.
+
+## Saved room and launch behavior
+
+After a successful join, the app remembers the room invitation and display name
+in `%LOCALAPPDATA%\FreedomStream\settings.json`, encrypted using Windows DPAPI for
+the current user. The same user can reopen any portable release and automatically
+join that room. Session cookies and media tokens are never persisted. Sharing and
+watching require explicit actions after launch. Invalid/revoked invitations return
+to the join form. Advanced → Forget saved room deletes the saved profile and leaves
+the room; ordinary Leave keeps it for the next launch. Remove this settings file
+as well as the runtime cache when removing all local app data.
+
+Both launcher and native app use the Windows GUI subsystem and launch without a
+terminal. Development helper subprocesses are hidden too. Windows Firewall can
+still request network permission when no applicable rule exists. Development
+executables and the local test SFU previously changed paths between tests; the
+test SFU now uses a stable versioned path. Reopening the same cached portable build
+should reuse an applicable rule, but updates extract to a new payload path and can
+prompt again, as can different network profiles or administrator policy. The app
+does not create firewall rules, request elevation or disable firewall protection.
+See [Microsoft's firewall rule behavior](https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/rules).
 
 ## Portable behavior
 

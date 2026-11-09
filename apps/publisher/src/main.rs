@@ -1,15 +1,18 @@
+#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 mod admission;
 mod audio;
 mod connection;
 mod delivery;
 mod diagnostics;
 mod encoding;
+mod network;
+mod playback;
 mod preview;
 mod publisher;
 mod quality;
+mod settings;
 mod sources;
 mod ui;
-mod viewer;
 #[cfg(windows)]
 mod win32;
 
@@ -31,6 +34,25 @@ fn main() {
         // Only application errors reach here; network/token-bearing SDK errors
         // are deliberately replaced with bounded messages at admission/publication.
         eprintln!("FreedomStream: {error}");
+        #[cfg(windows)]
+        if std::env::args_os().nth(1).is_none() {
+            // A normal GUI launch has no stderr console. Keep authority-bearing
+            // SDK details out of dialogs while making startup failures visible.
+            use windows::{
+                Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW},
+                core::w,
+            };
+            unsafe {
+                let _ = MessageBoxW(
+                    None,
+                    w!(
+                        "FreedomStream could not start. Check your graphics driver and app files, then try again."
+                    ),
+                    w!("FreedomStream"),
+                    MB_OK | MB_ICONERROR,
+                );
+            }
+        }
         std::process::exit(1);
     }
 }
@@ -53,7 +75,7 @@ fn run() -> Result<()> {
     match std::env::args().nth(1).as_deref() {
         Some("--probe") => println!(
             "{}",
-            serde_json::json!({"encoders": encoding::encoders(), "sourceCount": sources::enumerate().len(), "runtime": gstreamer::version_string().to_string()})
+            serde_json::json!({"encoders": encoding::encoders(), "decoders": playback::decoder_codecs(), "sourceCount": sources::enumerate().len(), "runtime": gstreamer::version_string().to_string()})
         ),
         Some("--sources") => println!(
             "{}",
@@ -103,15 +125,12 @@ fn run() -> Result<()> {
                 .enable_all()
                 .build()?;
             let metrics = runtime.block_on(async {
-                let mut viewer = match request.viewer_invitation {
-                    Some(invitation) => {
-                        let mut viewer = viewer::Viewer::open(&invitation, true).await?;
-                        viewer.qualification_tone().await?;
-                        Some(viewer)
-                    }
-                    None => None,
+                let _playback = if request.playback_tone {
+                    Some(playback::qualification_tone()?)
+                } else {
+                    None
                 };
-                let result = tokio::task::spawn_blocking(move || {
+                tokio::task::spawn_blocking(move || {
                     audio::run(
                         request.choice,
                         request.exclusions,
@@ -122,9 +141,7 @@ fn run() -> Result<()> {
                     )
                 })
                 .await
-                .context("Audio qualification worker stopped.")?;
-                viewer.take();
-                result
+                .context("Audio qualification worker stopped.")?
             })?;
             println!("{}", serde_json::to_string(&metrics)?);
         }
@@ -180,6 +197,17 @@ fn run() -> Result<()> {
                 );
             }
         }
+        Some("--watch-fixture") => {
+            let mut input = String::new();
+            std::io::stdin().take(8193).read_to_string(&mut input)?;
+            ensure!(input.len() <= 8192, "Fixture input is too large.");
+            let request: WatchRequest =
+                serde_json::from_str(&input).context("Invalid watcher input.")?;
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?;
+            runtime.block_on(watch_fixture(request))?;
+        }
         Some("--publish-fixture") => {
             let mut input = String::new();
             std::io::stdin().take(8193).read_to_string(&mut input)?;
@@ -192,13 +220,13 @@ fn run() -> Result<()> {
             runtime.block_on(publish_fixture(request))?;
         }
         Some(_) => bail!(
-            "Unknown option. Use --probe, --sources, --audio-apps, --qualify, --qualify-audio or --publish-fixture."
+            "Unknown option. Use --probe, --sources, --audio-apps, --qualify, --qualify-audio or --publish-fixture / --watch-fixture."
         ),
         None => {
             let options = eframe::NativeOptions {
                 viewport: eframe::egui::ViewportBuilder::default()
-                    .with_inner_size([760.0, 620.0])
-                    .with_min_inner_size([600.0, 560.0]),
+                    .with_inner_size([1280.0, 720.0])
+                    .with_min_inner_size([960.0, 540.0]),
                 renderer: eframe::Renderer::Glow,
                 ..Default::default()
             };
@@ -258,7 +286,138 @@ struct AudioRequest {
     exclusions: Vec<String>,
     seconds: u64,
     #[serde(default)]
-    viewer_invitation: Option<String>,
+    playback_tone: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct WatchRequest {
+    invitation_url: String,
+    seconds: u64,
+    #[serde(default)]
+    h264_only: bool,
+    #[serde(default)]
+    wait_for_preview: bool,
+    #[serde(default)]
+    preview_only: bool,
+    #[serde(default)]
+    consume_pictures: bool,
+    #[serde(default)]
+    download_limit_mbps: Option<u64>,
+    #[serde(default)]
+    reconnect_after_seconds: Option<u64>,
+}
+
+async fn watch_fixture(request: WatchRequest) -> Result<()> {
+    ensure!(
+        (10..=120).contains(&request.seconds),
+        "Watcher duration must be 10–120 seconds."
+    );
+    let admission =
+        admission::Admission::join(&request.invitation_url, "Native playback check").await?;
+    let access = admission.media_access().await?;
+    let (room, mut events) = Room::connect(
+        &access.server_url,
+        &access.token,
+        connection::options(connection::Route::Auto),
+    )
+    .await
+    .map_err(|error| {
+        anyhow::anyhow!(
+            "Native watcher connection failed: {}",
+            admission::media_diagnostic(error)
+        )
+    })?;
+    let mut playback = playback::Playback::new();
+    let recovery = playback.recovery_signal();
+    let events_recovery = recovery.clone();
+    let event_task = tokio::spawn(async move {
+        while let Some(event) = events.recv().await {
+            if matches!(event, RoomEvent::Reconnecting | RoomEvent::Reconnected) {
+                events_recovery.fetch_add(1, Ordering::AcqRel);
+            }
+        }
+    });
+    playback.compatibility_only(request.h264_only);
+    playback.measure_audio();
+    ensure!(
+        request
+            .download_limit_mbps
+            .is_none_or(|mbps| (1..=100).contains(&mbps)),
+        "Invalid download allowance."
+    );
+    playback.set_budget(request.download_limit_mbps.map(|mbps| mbps * 1_000_000));
+    let mut samples = Vec::new();
+    let started = std::time::Instant::now();
+    let mut next_sample = 0;
+    let mut watch_after = if request.wait_for_preview {
+        None
+    } else {
+        Some(2)
+    };
+    let mut preview_before_watching = false;
+    let mut reconnected = false;
+    let mut received = std::collections::HashMap::<String, RemoteTrack>::new();
+    let mut byte_totals = std::collections::HashMap::<String, u64>::new();
+    let mut previous_bytes = std::collections::HashMap::<String, u64>::new();
+    let mut known = std::collections::HashSet::new();
+    let mut previous_watching = false;
+    let result: Result<()> = async {
+        while started.elapsed().as_secs() < request.seconds {
+            let elapsed = started.elapsed().as_secs();
+            if !reconnected && request.reconnect_after_seconds.is_some_and(|after| elapsed >= after) {
+                reconnected = true;
+                room.simulate_scenario(livekit::rtc_engine::SimulateScenario::FullReconnect).await
+                    .map_err(|_| anyhow::anyhow!("Could not exercise watcher recovery."))?;
+            }
+            let tiles = playback.reconcile(&room, &admission).await?;
+            if watch_after.is_none() {
+                let preview_ready = tiles.iter().any(|tile| !tile.watching && tile.picture.lock().is_ok_and(|picture| picture.is_some()));
+                if preview_ready || elapsed >= 8 { watch_after = Some(elapsed); preview_before_watching = preview_ready; }
+            }
+            let phase = watch_after.filter(|after| elapsed >= *after).map(|after| elapsed - after);
+            let watching = !request.preview_only && phase.is_some_and(|phase| !(5..8).contains(&phase));
+            for tile in &tiles {
+                if watching != previous_watching || (watching && !known.contains(&tile.id)) { playback.watch(tile.id.clone(), watching)?; }
+                known.insert(tile.id.clone());
+            }
+            previous_watching = watching;
+            if elapsed >= next_sample {
+                for participant in room.remote_participants().values() {
+                    for publication in participant.track_publications().values() {
+                        if let Some(track) = publication.track() && received.len() < 64 { received.insert(publication.sid().to_string(), track); }
+                    }
+                }
+                for (sid, track) in &received {
+                    let stats = match track { RemoteTrack::Video(track) => track.get_stats().await, RemoteTrack::Audio(track) => track.get_stats().await };
+                    if let Ok(stats) = stats {
+                        let counters: Vec<_> = stats.into_iter().filter_map(|stat| if let livekit::webrtc::stats::RtcStats::InboundRtp(stat) = stat { Some(stat.inbound.bytes_received) } else { None }).collect();
+                        if !counters.is_empty() {
+                            let bytes = counters.into_iter().sum::<u64>();
+                            let delta = previous_bytes.insert(sid.clone(),bytes).map_or(bytes, |last| if bytes >= last { bytes-last } else { bytes });
+                            *byte_totals.entry(sid.clone()).or_default() += delta;
+                        }
+                    }
+                }
+                samples.push(serde_json::json!({"second": elapsed, "recoveries": recovery.load(Ordering::Acquire), "connected": room.connection_state() == ConnectionState::Connected, "phaseSecond": phase, "watching": watching,"receivedBytes":byte_totals.values().sum::<u64>(), "streams": tiles.iter().map(|tile| serde_json::json!({"codec":tile.codec,"frames":tile.frames.load(Ordering::Relaxed),"watching":tile.watching,"pictureSize":tile.picture.lock().ok().and_then(|p|p.as_ref().map(|image|image.size)),"audio":tile.audio.lock().map(|m|m.clone()).unwrap_or_default()})).collect::<Vec<_>>() }));
+                if request.consume_pictures { for tile in &tiles { if let Ok(mut picture) = tile.picture.lock() { picture.take(); } } }
+                next_sample = elapsed + 1;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        Ok(())
+    }.await;
+    drop(playback);
+    let _ = room.close().await;
+    event_task.abort();
+    let _ = event_task.await;
+    admission.leave().await;
+    result?;
+    println!(
+        "{}",
+        serde_json::json!({"samples":samples,"closed":true,"previewBeforeWatching":preview_before_watching})
+    );
+    Ok(())
 }
 
 async fn publish_fixture(request: FixtureRequest) -> Result<()> {
@@ -341,10 +500,10 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
         let config=publisher::StreamConfig { source,encoder:encoder.clone(),quality:request.quality,audio:request.audio,exclusions:request.exclusions };
         let mut active = publisher::Stream::start(&room, config.clone(), stop).await?;
         let initial_sid=active.sid();
+        println!("{}", serde_json::json!({"published":true}));
         active.start_previews(admission.clone());
-        let mut preview_uploads = active.preview_uploads.clone();
-        let mut audio_metrics = active.audio_metrics.clone();
-        let mut delivery=active.delivery.clone();
+
+
         if let (Some(after),Some(bitrate))=(request.bitrate_after_seconds,request.next_bitrate) {
             ensure!(after>=1 && after<request.seconds,"Invalid bitrate fixture timing.");
             tokio::time::sleep(Duration::from_secs(after)).await;
@@ -362,13 +521,14 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             active.stop(&room).await?;
             active=publisher::Stream::start(&room,next,cancellation.register()).await?;
             active.start_previews(admission.clone());
-            preview_uploads=active.preview_uploads.clone(); audio_metrics=active.audio_metrics.clone(); delivery=active.delivery.clone();
+
             tokio::time::sleep(Duration::from_secs(request.seconds-after)).await;
         } else if let Some(after) = request.reconnect_after_seconds {
             tokio::time::sleep(Duration::from_secs(after)).await;
             room.simulate_scenario(livekit::rtc_engine::SimulateScenario::FullReconnect).await.map_err(|_| anyhow::anyhow!("Could not request a local fixture reconnect."))?;
             tokio::time::sleep(Duration::from_secs(request.seconds - after)).await;
-        } else { tokio::time::sleep(Duration::from_secs(request.seconds)).await; }
+        } else { active = serve_fixture(&room, &admission, active, request.seconds, cancellation.clone()).await?; }
+        let preview_uploads = active.preview_uploads.clone(); let audio_metrics = active.audio_metrics.clone(); let delivery = active.delivery.clone();
         let mode=active.mode;
         let encoder=active.encoder().clone();
         let final_sid=active.sid();
@@ -384,4 +544,29 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     let _ = events.await;
     admission.leave().await;
     result
+}
+
+async fn serve_fixture(
+    room: &Room,
+    admission: &admission::Admission,
+    mut active: publisher::Stream,
+    seconds: u64,
+    cancellation: Arc<publisher::CaptureCancellation>,
+) -> Result<publisher::Stream> {
+    let started = std::time::Instant::now();
+    while started.elapsed().as_secs() < seconds {
+        active.constrain_watchers(room);
+        let stop = cancellation.register();
+        if active.cancelled() {
+            break;
+        }
+        if active.encoder().codec == Codec::H265 && playback::needs_h264(room) {
+            let config = active.fallback_config()?;
+            active = active
+                .fallback(room, admission.clone(), stop, config)
+                .await?;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    Ok(active)
 }

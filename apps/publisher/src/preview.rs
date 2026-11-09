@@ -9,7 +9,7 @@ use std::{
 };
 
 pub const INTERVAL: Duration = Duration::from_secs(60);
-pub const MAX_BYTES: usize = 65_536;
+pub const MAX_BYTES: usize = 262_144;
 #[derive(Clone)]
 pub struct Frame {
     pub sequence: u64,

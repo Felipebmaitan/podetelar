@@ -52,7 +52,13 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The smoke and browser checks create uniquely named rooms in the running database. The smoke check prints only pass/fail status. It does not output invitations, session cookies or media tokens. Automated API tests use isolated temporary databases and verify unauthorized access, room scoping, session expiry, persistence, CSRF, rate limiting and signed media grants. The browser media scenario uses synthetic capture with real LiveKit signaling, codecs and RTP: two publishers, an independent viewer, audio controls, measured stopped-video traffic, late joins, reconnect/reload and cleanup. It is not a GPU or real desktop-capture qualification. The Docker smoke check is not a streaming test.
+The smoke and browser checks create uniquely named rooms in the running database
+and report no invitation/session/media authority. API tests use isolated databases
+and exercise access, persistence, CSRF, revocation and grants. Browser checks cover
+the admission/download portal. `npm run native:room-smoke` exercises actual native
+HEVC/H.264 decode, fallback, subscriptions, preview/reconnect and audio against an
+isolated Windows SFU. These checks do not qualify real games, AMD, physical 4K120,
+A/V latency or large-group performance. Docker smoke is not a streaming test.
 
 ## Access model
 
@@ -60,9 +66,15 @@ The smoke and browser checks create uniquely named rooms in the running database
 - A room invitation contains 32 random bytes of authority after `#invite=`. The browser removes it from its address bar and keeps it in memory for the admission/copy flow; no token is stored in browser local storage.
 - SQLite holds hashes of invitations and session tokens, not their raw values. API responses are not cached and automatic request logging is disabled.
 - Admission creates an HttpOnly, SameSite=Strict cookie scoped to that room. HTTPS origins also use Secure cookies. Sessions last 24 hours; the pinned invitation remains valid across restarts and departures.
-- LiveKit tokens are room-scoped and expire after two minutes. A valid invitation holder can publish and subscribe. Invitation rotation, disablement and individual/all-session revocation enforce admission through the signaling gateway. Accounts and viewer-only roles are not implemented.
+- LiveKit tokens are room-scoped and expire after two minutes. The native route grants an admitted participant publishing/subscription authority; browser media grants deny both. Invitation rotation, disablement and individual/all-session revocation enforce admission through the signaling gateway. Accounts and viewer-only roles are not implemented.
 - Leaving deletes the current session, not the room or invitation. A member can rejoin with the invitation.
 
 The original code in this repository is MIT licensed. Dependencies and any future bundled native runtime retain their own licenses. See [configuration and interfaces](docs/development.md) for the current module contracts and deliberate limits.
 
 See [Windows distribution](docs/distribution.md), [production deployment and recovery](docs/deployment.md), and [Phase 8 qualification](docs/phase8-qualification.md) for release/install steps, private room downloads, HTTPS without a domain, backup/restore and remaining hardware/group checks.
+
+The native room work on `feat/native-rooms` moves sharing and watching into the
+Windows app. Browsers retain invitations, access management and downloads. See
+[the native acceptance workflow](docs/native-publisher.md), [quality controls](docs/quality.md)
+and [automatic source audio](docs/audio.md). This branch is not a qualified
+production release until its acceptance gates and independent review pass.

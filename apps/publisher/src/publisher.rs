@@ -70,6 +70,7 @@ pub struct Snapshot {
     pub delivery: delivery::Metrics,
     pub mode: Option<Mode>,
     pub applications: Vec<audio::Application>,
+    pub tiles: Vec<crate::playback::Tile>,
 }
 
 impl Default for Snapshot {
@@ -88,6 +89,7 @@ impl Default for Snapshot {
             delivery: delivery::Metrics::default(),
             mode: None,
             applications: Vec::new(),
+            tiles: Vec::new(),
         }
     }
 }
@@ -112,8 +114,12 @@ pub enum Command {
         exclusions: Vec<String>,
         quality: Settings,
     },
-    OpenViewer {
-        invitation: String,
+    DownloadBudget {
+        bps: Option<u64>,
+    },
+    Watch {
+        id: String,
+        enabled: bool,
     },
     Stop,
     Leave,
@@ -308,6 +314,15 @@ impl Stream {
     pub fn sid(&self) -> String {
         self.video.sid().to_string()
     }
+    pub fn cancelled(&self) -> bool {
+        self.stop.flag.load(Ordering::Acquire)
+    }
+
+    pub fn constrain_watchers(&self, room: &Room) {
+        self.rate
+            .set_viewer_cap(crate::playback::requested_cap(room));
+    }
+
     pub fn encoder(&self) -> &Encoder {
         &self.config.encoder
     }
@@ -456,6 +471,29 @@ impl Stream {
         Ok(active)
     }
 
+    pub fn fallback_config(&self) -> Result<StreamConfig> {
+        let mut config = self.config.clone();
+        config.encoder = crate::encoding::encoders()
+            .into_iter()
+            .find(|e| e.codec == Codec::H264)
+            .context("No H.264 compatibility encoder is available.")?;
+        config.mode()?;
+        Ok(config)
+    }
+
+    pub async fn fallback(
+        self,
+        room: &Room,
+        admission: Admission,
+        stop: Arc<AtomicBool>,
+        config: StreamConfig,
+    ) -> Result<Self> {
+        self.stop(room).await?;
+        let mut replacement = Self::start(room, config, stop).await?;
+        replacement.start_previews(admission);
+        Ok(replacement)
+    }
+
     pub fn start_previews(&mut self, admission: Admission) {
         if self.preview_task.is_none() {
             self.preview_task = Some(tokio::spawn(preview::upload(
@@ -586,6 +624,7 @@ impl Session {
         route: connection::Route,
         snapshot: Arc<Mutex<Snapshot>>,
         cancellation: Cancellation,
+        recovery: Arc<AtomicU64>,
     ) -> Result<Self> {
         let admission = Admission::join(invitation, name).await?;
         let access = admission.media_access().await?;
@@ -629,9 +668,11 @@ impl Session {
                         });
                     }
                     RoomEvent::Reconnecting => {
+                        recovery.fetch_add(1, Ordering::AcqRel);
                         update(&snapshot, |state| state.connection = "reconnecting")
                     }
                     RoomEvent::Reconnected => {
+                        recovery.fetch_add(1, Ordering::AcqRel);
                         let publications = media_room.local_participant().track_publications();
                         let published = publications
                             .values()
@@ -684,13 +725,42 @@ async fn worker(
     });
     let mut session: Option<Session> = None;
     let mut stream: Option<Stream> = None;
-    let mut viewer: Option<crate::viewer::Viewer> = None;
+    let mut playback = crate::playback::Playback::new();
+    let mut download_budget = None;
     let mut tick = tokio::time::interval(Duration::from_millis(500));
     loop {
         let queued = tokio::select! {
             command = commands.recv() => command.unwrap_or(QueuedCommand { command: Command::Shutdown, capture: None }),
             _ = tick.tick() => {
+                if let Some(joined) = &session {
+                    if joined.room.connection_state() == ConnectionState::Connected {
+                        match playback.reconcile(&joined.room, &joined.admission).await {
+                            Ok(tiles) => update(&snapshot, |state| state.tiles = tiles),
+                            Err(_) => update(&snapshot, |state| state.error = "Could not update native playback. Rejoin the room.".into()),
+                        }
+                    } else {
+                        if joined.room.connection_state() == ConnectionState::Reconnecting { playback.suspend(); }
+                        else { playback = crate::playback::Playback::new(); }
+                        update(&snapshot, |state| state.tiles.clear());
+                    }
+                    let replacement_stop = cancellation.register();
+                    if joined.room.connection_state() == ConnectionState::Connected
+                        && stream.as_ref().is_some_and(|s| s.config.encoder.codec == Codec::H265 && !s.cancelled())
+                        && crate::playback::needs_h264(&joined.room) {
+                        match stream.as_ref().unwrap().fallback_config() {
+                            Ok(config) => {
+                                let active = stream.take().unwrap();
+                                match active.fallback(&joined.room, joined.admission.clone(), replacement_stop, config).await {
+                                    Ok(active) => stream = Some(active),
+                                    Err(_) => update(&snapshot, |state| { state.sharing = false; state.mode = None; state.error = "Could not switch to H.264. Choose a supported mode and start again.".into(); }),
+                                }
+                            }
+                            Err(_) => update(&snapshot, |state| state.error = "A watcher needs H.264, but this mode is unavailable on its encoder.".into()),
+                        }
+                    }
+                }
                 if let Some(active) = &stream {
+                    active.constrain_watchers(&session.as_ref().unwrap().room);
                     if let Ok(metrics) = active.metrics.lock() { update(&snapshot, |state| state.metrics = metrics.clone()); }
                     if let Ok(metrics) = active.audio_metrics.lock() { update(&snapshot, |state| state.audio = metrics.clone()); }
                     if let Ok(metrics) = active.delivery.lock() { update(&snapshot, |state| { state.delivery = metrics.clone(); state.mode=Some(active.mode); }); }
@@ -712,7 +782,8 @@ async fn worker(
                     name,
                     route,
                 } => {
-                    viewer.take();
+                    playback = crate::playback::Playback::new();
+                    playback.set_budget(download_budget);
                     if let (Some(active), Some(joined)) = (stream.take(), session.as_ref()) {
                         let _ = active.stop(&joined.room).await;
                     }
@@ -729,6 +800,7 @@ async fn worker(
                         route,
                         snapshot.clone(),
                         cancellation.clone(),
+                        playback.recovery_signal(),
                     )
                     .await?;
                     update(&snapshot, |state| {
@@ -740,14 +812,14 @@ async fn worker(
                 Command::Start {
                     source_id,
                     encoder,
-                    audio,
+                    audio: _requested_audio,
                     exclusions,
                     quality,
                 }
                 | Command::Apply {
                     source_id,
                     encoder,
-                    audio,
+                    audio: _requested_audio,
                     exclusions,
                     quality,
                 } => {
@@ -757,10 +829,17 @@ async fn worker(
                         .find(|source| source.info.id == source_id)
                         .context("Refresh and choose a capture source.")?
                         .clone();
-                    let encoder = crate::encoding::encoders()
+                    let mut encoder = crate::encoding::encoders()
                         .into_iter()
                         .find(|candidate| candidate.factory == encoder)
                         .context("Choose an available hardware encoder.")?;
+                    if encoder.codec == Codec::H265 && crate::playback::needs_h264(&joined.room) {
+                        encoder = crate::encoding::encoders()
+                            .into_iter()
+                            .find(|e| e.codec == Codec::H264)
+                            .context("A watcher requires an available H.264 encoder.")?;
+                    }
+                    let audio = audio::for_source(&source)?;
                     let stop = queued.capture.context("Capture request was cancelled.")?;
                     anyhow::ensure!(
                         !stop.load(Ordering::Acquire),
@@ -814,11 +893,13 @@ async fn worker(
                     if let Some(joined) = session.take() {
                         joined.close().await;
                     }
-                    viewer.take();
+                    playback = crate::playback::Playback::new();
+                    playback.set_budget(download_budget);
                     update(&snapshot, |state| {
                         state.connection = "disconnected";
                         state.sharing = false;
                         state.room_name.clear();
+                        state.tiles.clear();
                     });
                 }
                 Command::Refresh => {
@@ -831,10 +912,17 @@ async fn worker(
                         }
                     });
                 }
-                Command::OpenViewer { invitation } => {
+                Command::DownloadBudget { bps } => {
+                    anyhow::ensure!(
+                        bps.is_none_or(|bps| (1_000_000..=100_000_000).contains(&bps)),
+                        "Choose a watching budget from 1 to 100 Mbps."
+                    );
+                    download_budget = bps;
+                    playback.set_budget(bps);
+                }
+                Command::Watch { id, enabled } => {
                     session.as_ref().context("Join a room first.")?;
-                    viewer.take();
-                    viewer = Some(crate::viewer::Viewer::open(&invitation, false).await?);
+                    playback.watch(id, enabled)?;
                 }
             }
             Ok(())
@@ -893,7 +981,7 @@ mod tests {
         next.quality.fps = 120;
         assert_eq!(next.live_mode(&current, mode).unwrap(), None);
         next.quality.fps = 60;
-        next.quality.bitrate = crate::quality::Bitrate::Manual(2_000_000);
+        next.quality.bitrate = crate::quality::Bitrate::Manual(0);
         assert!(next.live_mode(&current, mode).is_err());
         next.quality.bitrate = crate::quality::Bitrate::Auto;
         next.source.info.width = 1280;

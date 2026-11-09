@@ -1,9 +1,9 @@
 import { z } from "zod";
 
 export const THUMBNAIL_INTERVAL_MS = 60_000;
-export const PREVIEW_MAX_BYTES = 65_536;
-export const PREVIEW_MAX_WIDTH = 320;
-export const PREVIEW_MAX_HEIGHT = 180;
+export const PREVIEW_MAX_BYTES = 262_144;
+export const PREVIEW_MAX_WIDTH = 960;
+export const PREVIEW_MAX_HEIGHT = 540;
 export const PREVIEW_TTL_MS = 180_000;
 export const previewKindSchema = z.enum(["screen", "camera"]);
 export type PreviewKind = z.infer<typeof previewKindSchema>;

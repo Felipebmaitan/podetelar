@@ -208,6 +208,11 @@
       "sha256": "1c6255cf70fa6b9f6f4aa6c8a7606ac83cf5f028644387ee6b5c14ae8b4f9862"
     },
     {
+      "path": "lib/gstreamer-1.0/gstvolume.dll",
+      "component": "gstreamer",
+      "sha256": "78d064e2ee9ff03e08bf9eb78770f21b85e5e936e441e751a32fee515767c34f"
+    },
+    {
       "path": "lib/gstreamer-1.0/gstwasapi2.dll",
       "component": "gstreamer",
       "sha256": "4f98fd226860e45eedc5f8db86aac0827efa1afd72ab76dad6c208a7422d1cab"

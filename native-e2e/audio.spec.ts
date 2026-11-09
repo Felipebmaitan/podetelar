@@ -1,5 +1,3 @@
-import { readdirSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import { expect, test } from "@playwright/test";
 import { nativeRequest, toneFixtures } from "./fixtures.js";
@@ -10,17 +8,10 @@ type AudioMetrics = {
   windows: { second: number; tones: number[] }[];
 };
 
-test("desktop mix excludes Discord and owned playback across process restarts", async ({
-  baseURL,
-}, testInfo) => {
+test("desktop mix excludes Discord and owned playback across process restarts", async ({}, testInfo) => {
   const fixtures = toneFixtures(testInfo.outputPath("audio-applications"));
   let game = fixtures.game();
   let discord = fixtures.discord();
-  const profiles = () =>
-    readdirSync(tmpdir()).filter((name) =>
-      name.startsWith("FreedomStream-viewer-"),
-    );
-  const original = new Set(profiles());
   const timers: ReturnType<typeof setTimeout>[] = [];
   let capture: ReturnType<typeof nativeRequest> | undefined;
   try {
@@ -28,7 +19,7 @@ test("desktop mix excludes Discord and owned playback across process restarts", 
     capture = nativeRequest("--qualify-audio", {
       choice: { mode: "desktop" },
       seconds: 14,
-      viewer_invitation: `${baseURL}/r/${"a".repeat(22)}#invite=${"b".repeat(43)}`,
+      playback_tone: true,
     });
     timers.push(
       setTimeout(() => {
@@ -58,10 +49,6 @@ test("desktop mix excludes Discord and owned playback across process restarts", 
     }
     expect(metrics.windows.at(-1)!.tones[0]).toBeGreaterThan(0.005);
     expect(metrics.windows.at(-1)!.tones[1]).toBeLessThan(0.0002);
-    await expect
-      .poll(() => profiles().filter((name) => !original.has(name)))
-      .toHaveLength(0);
-
     capture = nativeRequest("--qualify-audio", {
       choice: { mode: "desktop" },
       exclusions: [fixtures.application],
@@ -72,7 +59,7 @@ test("desktop mix excludes Discord and owned playback across process restarts", 
     expect(excluded.tones[0]).toBeLessThan(0.0002);
     expect(excluded.tones[1]).toBeLessThan(0.0002);
     console.log(
-      "Windows application loopback: game captured, Discord/owned playback excluded, restarted game recovered, explicit exclusion and profile cleanup verified.",
+      "Windows application loopback: game captured, Discord/owned playback excluded, restarted game recovered, explicit exclusion verified.",
     );
   } finally {
     for (const timer of timers) clearTimeout(timer);

@@ -68,6 +68,48 @@ Qualify the shipped DLL/plugin set, matching source availability and licenses.
 Test offline startup, invocation from a fresh directory, actual capture/audio and
 room download behavior, then review and deploy the replacement artifact.
 
+## 11. Native room experience — PR
+
+Replace the external Chrome viewer with native video decoding/rendering and native
+audio playback in the Windows app. The website admits participants, manages access
+and distributes the app; publishing and watching belong in the app. Preserve room
+and explicit subscription contracts. Qualify the actual native SDK receive path
+before claiming that bundling a decoder provides playback.
+
+Use SDR only, source resolution bounded to 4K, and 60 FPS initially. Keep resolution
+and an FPS slider visible. Favor image quality in the presets; put bitrate and
+codec in Advanced. Automatically fall back from HEVC to H.264 for an incompatible
+watcher, switching the publication for all its watchers rather than double encoding.
+Preserve watch intent across that transition. Do not silently change resolution/FPS.
+
+Derive audio from the video source: application process-tree audio for a window,
+approved desktop application mix for a monitor. Always exclude Discord and our own
+playback; never acquire the microphone. Keep existing fail-closed process policies.
+Increase previews to 960×540 at improved JPEG quality with bounded upload/storage,
+preserving the initial capture and at-most-once-per-minute cadence.
+
+Use a 1280×720 initial native viewport, a left sharing menu with the FPS slider
+visible, and larger right-side 16:9 stream tiles with centered Watch buttons.
+Replace aggressive bitrate estimates with source-informed lower targets and a
+bounded aggregate receiver allowance. Receiver feedback may cap the one shared
+encoding; document its effects on other watchers and do not imply independent
+per-viewer quality or a speed test.
+
+Launch both portable wrapper and native app without a console. Keep test-server
+executable paths stable and helper processes hidden. Do not modify firewall rules
+to hide Windows prompts. Persist the last successful room/name with Windows
+per-user encryption, automatically rejoin on launch without starting capture or
+subscriptions, and provide an explicit Forget saved room action. Keep session and
+media tokens in memory only. Verify encrypted persistence and actual reopen/join.
+
+Accept with native HEVC and H.264 decode, audible synchronized stereo playback,
+explicit watch/stop traffic checks, fallback and reconnect recovery, preview access
+and cadence, source/audio switching and exclusion, portable/offline startup, and
+gaming while publishing and watching multiple friends. Run automated checks and a
+fresh GPT-6.1-Sol high-reasoning review. AMD, fresh-machine, real-game/Discord and
+4K120 qualification remain external until actually exercised. No embedded browser,
+server transcoding, HDR, or new platform promise.
+
 ## Later portability
 
 After the Windows experience meets the above gates, add macOS and Linux in separate PRs. Preserve the room, invitation, subscription and preview contracts; replace platform capture/audio/encoder adapters. No cross-platform promise until each backend is tested on its actual OS.

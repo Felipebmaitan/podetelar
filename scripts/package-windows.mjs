@@ -1,4 +1,6 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync as runFile } from "node:child_process";
+const execFileSync = (file, args, options = {}) =>
+  runFile(file, args, { ...options, windowsHide: true });
 import { createHash } from "node:crypto";
 import {
   copyFileSync,
@@ -60,6 +62,19 @@ if (existsSync(output))
 mkdirSync(output, { recursive: true });
 const notices = join(output, "notices");
 mkdirSync(notices);
+const decoderPatch = join(notices, "source-patches", "native-decoder");
+mkdirSync(decoderPatch, { recursive: true });
+for (const file of [
+  "apps/publisher/decoder/freedomstream_decoder.h",
+  "scripts/setup-native-decoder.mjs",
+  "deploy/native-decoder.json",
+]) {
+  copyFileSync(join(root, file), join(decoderPatch, basename(file)));
+}
+writeFileSync(
+  join(decoderPatch, "README.txt"),
+  "FreedomStream modifies webrtc-sys 0.3.53 (Apache-2.0) to use native Direct3D11 decoders through the dynamically linked GStreamer runtime. The adapter is MIT licensed. The included setup script and checksum pin reproduce the change from the original crate. No browser runtime is included.\n",
+);
 const { dumpbin } = await preparePortableRuntime(root, output, notices);
 const sha256 = (path) =>
   createHash("sha256").update(readFileSync(path)).digest("hex");

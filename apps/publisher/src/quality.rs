@@ -6,9 +6,9 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-pub const MIN_BITRATE: u64 = 3_000_000;
+pub const MIN_BITRATE: u64 = 1_000_000;
 pub const MAX_BITRATE: u64 = 100_000_000;
-pub const BITRATE_PRESETS: [u64; 11] = [3, 5, 8, 12, 16, 20, 25, 35, 50, 75, 100];
+pub const BITRATE_PRESETS: [u64; 16] = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 25, 35, 50, 75, 100];
 pub const FRAME_RATES: [u32; 6] = [15, 24, 30, 60, 90, 120];
 const AUTO_CEILING: u64 = 35_000_000;
 
@@ -31,10 +31,10 @@ impl Codec {
 #[serde(rename_all = "lowercase")]
 pub enum Resolution {
     P720,
-    #[default]
     P1080,
     P1440,
     P2160,
+    #[default]
     Source,
 }
 impl Resolution {
@@ -51,7 +51,7 @@ impl Resolution {
             Self::P1080 => "1080p",
             Self::P1440 => "1440p",
             Self::P2160 => "4K",
-            Self::Source => "Source (4K ceiling)",
+            Self::Source => "Source · up to 4K",
         }
     }
     fn bounds(self) -> (u32, u32) {
@@ -95,12 +95,14 @@ pub enum Profile {
     #[default]
     Motion,
     Detail,
+    Saver,
 }
 impl Profile {
     pub fn label(self) -> &'static str {
         match self {
             Self::Motion => "Games / motion",
-            Self::Detail => "Text / detail",
+            Self::Detail => "Text / desktop",
+            Self::Saver => "Data saver",
         }
     }
 }
@@ -127,7 +129,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            resolution: Resolution::P1080,
+            resolution: Resolution::Source,
             fps: 60,
             bitrate: Bitrate::Auto,
             profile: Profile::Motion,
@@ -160,21 +162,55 @@ impl Settings {
             Bitrate::Manual(value) => {
                 ensure!(
                     (MIN_BITRATE..=MAX_BITRATE).contains(&value),
-                    "Choose a bitrate from 3 to 100 Mbps."
+                    "Choose a bitrate from 1 to 100 Mbps."
                 );
                 value
             }
             Bitrate::Auto => {
-                let bits_per_pixel = match (codec, self.profile) {
-                    (Codec::H265, Profile::Motion) => 0.10,
-                    (Codec::H265, Profile::Detail) => 0.06,
-                    (Codec::H264, Profile::Motion) => 0.15,
-                    (Codec::H264, Profile::Detail) => 0.09,
+                // Lower-bandwidth starting targets, not a universal quality law.
+                // See docs/bitrate-guidance.md for sources and our policy choices.
+                let anchors = match codec {
+                    Codec::H265 => [
+                        (1280 * 720, 2.5, 4.0),
+                        (1920 * 1080, 4.0, 6.0),
+                        (2560 * 1440, 6.0, 10.0),
+                        (3840 * 2160, 12.0, 18.0),
+                    ],
+                    Codec::H264 => [
+                        (1280 * 720, 3.0, 5.0),
+                        (1920 * 1080, 5.0, 8.0),
+                        (2560 * 1440, 8.0, 14.0),
+                        (3840 * 2160, 16.0, 25.0),
+                    ],
                 };
-                ((width as f64 * height as f64 * self.fps as f64 * bits_per_pixel / 1_000_000.0)
-                    .ceil() as u64
-                    * 1_000_000)
-                    .clamp(MIN_BITRATE, AUTO_CEILING)
+                let pixels = width as f64 * height as f64;
+                let mut lower = (0, 0.0, 0.0);
+                let mut rates = (anchors[3].1, anchors[3].2);
+                for upper in anchors {
+                    if pixels <= upper.0 as f64 {
+                        let fraction = ((pixels - lower.0 as f64) / (upper.0 - lower.0) as f64)
+                            .clamp(0.0, 1.0);
+                        rates = (
+                            lower.1 + (upper.1 - lower.1) * fraction,
+                            lower.2 + (upper.2 - lower.2) * fraction,
+                        );
+                        break;
+                    }
+                    lower = upper;
+                }
+                let mbps = if self.fps <= 30 {
+                    rates.0 * self.fps as f64 / 30.0
+                } else if self.fps <= 60 {
+                    rates.0 + (rates.1 - rates.0) * (self.fps - 30) as f64 / 30.0
+                } else {
+                    rates.1 * self.fps as f64 / 60.0
+                };
+                let weight = match self.profile {
+                    Profile::Motion => 1.0,
+                    Profile::Detail => 0.9,
+                    Profile::Saver => 0.65,
+                };
+                ((mbps * weight * 2.0).ceil() as u64 * 500_000).clamp(MIN_BITRATE, AUTO_CEILING)
             }
         };
         Ok(bitrate)
@@ -202,25 +238,38 @@ impl Mode {
 
 /// Live bitrate edits and congestion feedback share one cap; dimensions/FPS never adapt silently.
 #[derive(Clone)]
-pub struct RateControl(Arc<AtomicU64>);
+pub struct RateControl {
+    requested: Arc<AtomicU64>,
+    viewer_cap: Arc<AtomicU64>,
+}
 impl RateControl {
     pub fn new(requested: u64) -> Self {
-        Self(Arc::new(AtomicU64::new(requested)))
+        Self {
+            requested: Arc::new(AtomicU64::new(requested)),
+            viewer_cap: Arc::new(AtomicU64::new(MAX_BITRATE)),
+        }
     }
     pub fn requested(&self) -> u64 {
-        self.0.load(Ordering::Acquire)
+        self.requested.load(Ordering::Acquire)
     }
     pub fn set(&self, bitrate: u64) -> Result<()> {
         ensure!(
             (MIN_BITRATE..=MAX_BITRATE).contains(&bitrate),
-            "Choose a bitrate from 3 to 100 Mbps."
+            "Choose a bitrate from 1 to 100 Mbps."
         );
-        self.0.store(bitrate, Ordering::Release);
+        self.requested.store(bitrate, Ordering::Release);
         Ok(())
+    }
+    pub fn set_viewer_cap(&self, cap: Option<u64>) {
+        self.viewer_cap.store(
+            cap.unwrap_or(MAX_BITRATE).clamp(64_000, MAX_BITRATE),
+            Ordering::Release,
+        );
     }
     pub fn effective(&self, feedback: Option<u64>) -> u64 {
         self.requested()
             .min(feedback.unwrap_or(MAX_BITRATE))
+            .min(self.viewer_cap.load(Ordering::Acquire))
             .max(1_000)
     }
 }
@@ -248,6 +297,9 @@ impl EncoderBudget {
             self.ramping = false;
         }
         let wanted = rate.effective(feedback);
+        if wanted > self.current {
+            self.ramping = true;
+        }
         self.current = if self.ramping && wanted > self.current {
             wanted.min(self.current.saturating_add((self.current / 4).max(500_000)))
         } else {
@@ -264,6 +316,27 @@ impl EncoderBudget {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_source_and_sensible_hd_targets_preserve_manual_and_watcher_caps() {
+        let settings = Settings::default();
+        assert_eq!(settings.resolution, Resolution::Source);
+        assert_eq!(settings.fps, 60);
+        assert_eq!(
+            settings.bitrate_for(1920, 1080, Codec::H265).unwrap(),
+            6_000_000
+        );
+        assert_eq!(
+            settings.bitrate_for(1920, 1080, Codec::H264).unwrap(),
+            8_000_000
+        );
+        let rate = RateControl::new(8_000_000);
+        rate.set_viewer_cap(Some(2_000_000));
+        assert_eq!(rate.effective(Some(10_000_000)), 2_000_000);
+        assert_eq!(rate.requested(), 8_000_000);
+        rate.set_viewer_cap(None);
+        assert_eq!(rate.effective(None), 8_000_000);
+    }
 
     #[test]
     fn live_increases_ramp_without_overshoot_and_reductions_apply_immediately() {
@@ -313,10 +386,13 @@ mod tests {
     }
     #[test]
     fn auto_tracks_resolution_fps_codec_profile_and_manual_preserves_geometry() {
-        let mut settings = Settings::default();
-        let display = source(3840, 2160);
+        let mut settings = Settings {
+            resolution: Resolution::P1080,
+            ..Settings::default()
+        };
+        let display = source(1920, 1080);
         let initial = settings.resolve(&display, Codec::H265).unwrap();
-        settings.fps = 120;
+        settings.fps = 90;
         let faster = settings.resolve(&display, Codec::H265).unwrap();
         assert!(faster.bitrate > initial.bitrate);
         assert!(settings.resolve(&display, Codec::H264).unwrap().bitrate > faster.bitrate);
@@ -329,7 +405,7 @@ mod tests {
             (faster.width, faster.height, faster.fps)
         );
         assert_eq!(manual.bitrate, MAX_BITRATE);
-        settings.bitrate = Bitrate::Manual(2_000_000);
+        settings.bitrate = Bitrate::Manual(0);
         assert!(settings.resolve(&display, Codec::H265).is_err());
         settings.fps = 121;
         assert!(settings.resolve(&display, Codec::H265).is_err());

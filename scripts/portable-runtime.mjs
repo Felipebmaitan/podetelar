@@ -1,4 +1,6 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync as runFile } from "node:child_process";
+const execFileSync = (file, args, options = {}) =>
+  runFile(file, args, { ...options, windowsHide: true });
 import { createHash } from "node:crypto";
 import {
   copyFileSync,

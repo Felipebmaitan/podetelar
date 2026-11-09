@@ -50,7 +50,10 @@ const friend = (await joined.json()) as RoomSession;
 assert.equal(friend.room.id, room.room.id);
 
 if (process.argv.includes("--restart-app")) {
-  execFileSync("docker", ["compose", "restart", "app"], { stdio: "pipe" });
+  execFileSync("docker", ["compose", "restart", "app"], {
+    stdio: "pipe",
+    windowsHide: true,
+  });
   let ready = false;
   for (let attempt = 0; attempt < 20 && !ready; attempt++) {
     ready = await fetch(`${origin}/api/health`)

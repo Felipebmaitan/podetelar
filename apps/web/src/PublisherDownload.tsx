@@ -25,9 +25,9 @@ export function PublisherDownload({ roomId }: { roomId: string }) {
   if (!release) return null;
   return (
     <section className="invite-panel">
-      <h2>Share from Windows</h2>
+      <h2>Share and watch from Windows</h2>
       <p>
-        Download and open the portable EXE for game audio and hardware encoding,
+        Download and open the portable EXE for native streaming and playback,
         then paste your room invitation. Everything is bundled: no installation,
         PowerShell, or dependency download. First launch prepares a private
         runtime cache on your PC.

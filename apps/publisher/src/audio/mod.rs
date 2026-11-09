@@ -1,4 +1,5 @@
 mod policy;
+pub use policy::Identity as ProcessIdentity;
 #[cfg(windows)]
 mod windows;
 
@@ -22,6 +23,7 @@ pub enum Choice {
     Off,
     Desktop,
     Application(String),
+    Window(ProcessIdentity),
 }
 
 #[derive(Clone, Serialize)]
@@ -305,11 +307,11 @@ pub fn run(
 }
 
 #[derive(Default)]
-struct Meter {
+pub(crate) struct Meter {
     samples: Vec<f64>,
 }
 impl Meter {
-    fn push(&mut self, stereo: &[i16], levels: &mut [f64; 3]) {
+    pub(crate) fn push(&mut self, stereo: &[i16], levels: &mut [f64; 3]) {
         for frame in stereo.chunks_exact(2) {
             self.samples.push(frame[0] as f64 / 32768.0);
             if self.samples.len() == 4800 {
@@ -332,5 +334,35 @@ impl Meter {
                 self.samples.clear();
             }
         }
+    }
+}
+
+/// Source selection owns audio policy; callers cannot accidentally capture another app.
+pub fn for_source(source: &crate::sources::Source) -> Result<Choice> {
+    match source.target {
+        crate::sources::Target::Monitor(_) | crate::sources::Target::MonitorWgc(_) => {
+            Ok(Choice::Desktop)
+        }
+        crate::sources::Target::Window { pid, .. } => {
+            #[cfg(windows)]
+            {
+                let inventory = windows::inventory()?;
+                let process = inventory
+                    .processes
+                    .get(&pid)
+                    .context("The selected window application ended.")?;
+                ensure!(
+                    process.identity.created != 0,
+                    "Cannot safely identify this window's audio process."
+                );
+                Ok(Choice::Window(process.identity))
+            }
+            #[cfg(not(windows))]
+            {
+                let _ = pid;
+                bail!("Application audio requires Windows.")
+            }
+        }
+        crate::sources::Target::Pattern => Ok(Choice::Off),
     }
 }

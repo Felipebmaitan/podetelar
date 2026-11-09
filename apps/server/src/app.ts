@@ -219,40 +219,54 @@ export async function buildApp(
     },
   );
 
-  app.post<{ Params: { roomId: string } }>(
-    "/api/rooms/:roomId/media-token",
-    async (request, reply) => {
-      const session = rooms.session(
-        request.params.roomId,
-        request.cookies[COOKIE],
-      );
-      if (!session)
-        return reply
-          .code(401)
-          .send({ error: "Open your room invitation to join." });
-      const access = new AccessToken(
-        config.livekitApiKey,
-        config.livekitApiSecret,
-        {
-          identity: session.participant.id,
-          name: session.participant.displayName,
-          ttl: MEDIA_TOKEN_TTL_SECONDS,
-        },
-      );
-      access.addGrant({
-        roomJoin: true,
-        room: mediaRoomName(session.room.id),
-        canPublish: true,
-        canSubscribe: true,
-        canPublishData: false,
-      });
-      return {
-        serverUrl: config.livekitUrl,
-        token: await access.toJwt(),
-        expiresInSeconds: MEDIA_TOKEN_TTL_SECONDS,
-      };
-    },
-  );
+  for (const native of [false, true])
+    app.post<{ Params: { roomId: string } }>(
+      native
+        ? "/api/rooms/:roomId/native-media-token"
+        : "/api/rooms/:roomId/media-token",
+      async (request, reply) => {
+        // Fetch Metadata headers are browser-controlled and cannot be removed by
+        // page JavaScript. This is a supported-client policy, not binary attestation.
+        if (
+          native &&
+          (request.headers["sec-fetch-mode"] ||
+            request.headers["sec-fetch-site"])
+        )
+          return reply.code(403).send({
+            error: "Use the FreedomStream desktop app to share and watch.",
+          });
+        const session = rooms.session(
+          request.params.roomId,
+          request.cookies[COOKIE],
+        );
+        if (!session)
+          return reply
+            .code(401)
+            .send({ error: "Open your room invitation to join." });
+        const access = new AccessToken(
+          config.livekitApiKey,
+          config.livekitApiSecret,
+          {
+            identity: session.participant.id,
+            name: session.participant.displayName,
+            ttl: MEDIA_TOKEN_TTL_SECONDS,
+          },
+        );
+        access.addGrant({
+          roomJoin: true,
+          room: mediaRoomName(session.room.id),
+          canPublish: native,
+          canSubscribe: native,
+          canUpdateOwnMetadata: native,
+          canPublishData: false,
+        });
+        return {
+          serverUrl: config.livekitUrl,
+          token: await access.toJwt(),
+          expiresInSeconds: MEDIA_TOKEN_TTL_SECONDS,
+        };
+      },
+    );
 
   await previewRoutes(app, rooms, previews);
   publisherRoutes(app, publisher, rooms);

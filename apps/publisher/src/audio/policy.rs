@@ -1,7 +1,7 @@
 use super::{Application, Choice};
 use std::collections::{HashMap, HashSet};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct Identity {
     pub pid: u32,
     pub created: u64,
@@ -47,6 +47,16 @@ impl Inventory {
         let mut current = process;
         for _ in 0..self.processes.len() {
             if current.identity == owner
+                || current
+                    .name
+                    .eq_ignore_ascii_case("freedomstream-publisher.exe")
+                || current.image.as_ref().is_some_and(|image| {
+                    self.processes
+                        .get(&owner.pid)
+                        .filter(|p| p.identity == owner)
+                        .and_then(|p| p.image.as_ref())
+                        == Some(image)
+                })
                 || discord(current)
                 || current
                     .image
@@ -103,6 +113,14 @@ impl Inventory {
                     Choice::Off => false,
                     Choice::Desktop => true,
                     Choice::Application(selected) => image == selected,
+                    Choice::Window(root) => {
+                        root.created != 0
+                            && self
+                                .processes
+                                .get(&root.pid)
+                                .is_some_and(|p| p.identity == *root)
+                            && self.belongs_to(process, *root)
+                    }
                 } {
                     return None;
                 }
@@ -168,6 +186,57 @@ mod tests {
     fn owner() -> Identity {
         Identity { pid: 1, created: 1 }
     }
+    #[test]
+    fn desktop_excludes_playback_from_other_native_instances_and_versions() {
+        let mut own = process(1, 0, "renamed-native.exe");
+        own.image = Some("c:/app/renamed-native.exe".into());
+        let mut same = process(5, 0, "renamed-native.exe");
+        same.image = own.image.clone();
+        let mut different_version = process(8, 0, "freedomstream-publisher.exe");
+        different_version.image = Some("c:/another-version/bin/freedomstream-publisher.exe".into());
+        let state = inventory(
+            vec![
+                own,
+                same,
+                different_version,
+                process(6, 0, "game.exe"),
+                process(9, 8, "playback-helper.exe"),
+            ],
+            &[1, 5, 6, 8, 9],
+        );
+        assert_eq!(
+            state.roots(&Choice::Desktop, &[], owner()),
+            vec![Identity { pid: 6, created: 6 }]
+        );
+    }
+
+    #[test]
+    fn selected_window_tree_excludes_other_instances_and_keeps_different_image_children() {
+        let state = inventory(
+            vec![
+                process(1, 0, "publisher.exe"),
+                process(6, 0, "game.exe"),
+                process(7, 6, "audio-worker.exe"),
+                process(8, 0, "game.exe"),
+            ],
+            &[7, 8],
+        );
+        let selected = Identity { pid: 6, created: 6 };
+        assert_eq!(
+            state.roots(&Choice::Window(selected), &[], owner()),
+            vec![Identity { pid: 7, created: 7 }]
+        );
+        assert!(
+            state
+                .roots(
+                    &Choice::Window(Identity { pid: 6, created: 5 }),
+                    &[],
+                    owner()
+                )
+                .is_empty()
+        );
+    }
+
     #[test]
     fn desktop_excludes_discord_viewer_and_their_descendants_without_double_capture() {
         let state = inventory(

@@ -90,12 +90,8 @@ fn valid_token(value: &str, length: usize) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
-pub fn invitation_url(input: &str) -> Result<Url> {
-    let invitation = Invitation::parse(input)?;
-    let mut url = invitation.origin;
-    url.set_path(&format!("/r/{}", invitation.room_id));
-    url.set_fragment(Some(&format!("invite={}", invitation.secret)));
-    Ok(url)
+pub fn valid_invitation(input: &str) -> bool {
+    Invitation::parse(input).is_ok()
 }
 
 pub fn media_diagnostic(error: impl std::fmt::Display) -> String {
@@ -145,7 +141,12 @@ impl Admission {
     }
 
     pub async fn media_access(&self) -> Result<MediaAccess> {
-        let access: MediaAccess = read_response(self.post("media-token").await?).await?;
+        let response = self.post("native-media-token").await?;
+        ensure!(
+            response.status().as_u16() != 404,
+            "This room server needs an update before native playback can be used."
+        );
+        let access: MediaAccess = read_response(response).await?;
         let media_url = Url::parse(&access.server_url)
             .context("Room server returned an invalid media address.")?;
         ensure!(
@@ -215,6 +216,52 @@ impl Admission {
             Err(_) => PreviewDelivery::Retry(Duration::from_secs(3)),
         }
     }
+    pub async fn get_preview(
+        &self,
+        owner: &str,
+        revision: &str,
+    ) -> Result<eframe::egui::ColorImage> {
+        ensure!(
+            owner.len() == 36
+                && owner.bytes().all(|c| c.is_ascii_hexdigit() || c == b'-')
+                && valid_token(revision, 22),
+            "Invalid preview address."
+        );
+        let url = self.origin.join(&format!(
+            "api/rooms/{}/previews/{owner}/screen/{revision}",
+            self.room_id
+        ))?;
+        let mut response = self
+            .client
+            .get(url)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .map_err(|_| anyhow::anyhow!("Preview is unavailable."))?;
+        ensure!(response.status().is_success(), "Preview is unavailable.");
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            ensure!(
+                bytes.len() + chunk.len() <= 262_144,
+                "Preview exceeds its size limit."
+            );
+            bytes.extend_from_slice(&chunk);
+        }
+        let dimensions =
+            image::ImageReader::with_format(std::io::Cursor::new(&bytes), image::ImageFormat::Jpeg)
+                .into_dimensions()?;
+        ensure!(
+            dimensions.0 <= 960 && dimensions.1 <= 540 && dimensions.0 > 0 && dimensions.1 > 0,
+            "Preview dimensions are invalid."
+        );
+        let image =
+            image::load_from_memory_with_format(&bytes, image::ImageFormat::Jpeg)?.into_rgba8();
+        Ok(eframe::egui::ColorImage::from_rgba_unmultiplied(
+            [dimensions.0 as usize, dimensions.1 as usize],
+            image.as_raw(),
+        ))
+    }
+
     pub async fn remove_preview(&self, sid: &str) {
         let url = self
             .origin

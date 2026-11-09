@@ -21,6 +21,7 @@ const events = {
   LocalTrackPublished: "localTrackPublished",
   LocalTrackUnpublished: "localTrackUnpublished",
   ParticipantNameChanged: "participantNameChanged",
+  ParticipantAttributesChanged: "participantAttributesChanged",
   TrackUnpublished: "trackUnpublished",
   ConnectionStateChanged: "connectionStateChanged",
   Reconnected: "reconnected",
@@ -57,17 +58,21 @@ class Capture {
   }
 }
 class Publication {
+  readonly trackSid: string;
   isDesired = false;
   readonly isMuted = false;
   constructor(
     readonly source: string,
     readonly track: Capture | undefined = undefined,
-  ) {}
+  ) {
+    this.trackSid = `TR_${source}`;
+  }
   setSubscribed(value: boolean) {
     this.isDesired = value;
   }
 }
 class Peer {
+  attributes: Record<string, string> = {};
   readonly trackPublications = new Map<string, Publication>();
   constructor(
     readonly identity: string,
@@ -554,4 +559,36 @@ test("a viewer without HEVC receive support does not subscribe to its video or p
     peer.getTrackPublication(Source.ScreenShareAudio)?.isDesired,
     false,
   );
+});
+
+test("preview announcements accept only bounded descriptors for the current publication without subscribing", async (t) => {
+  const f = await fixture(t);
+  const peer = addPeer(f.transport);
+  const descriptor = {
+    trackSid: "TR_screen",
+    revision: "r".repeat(22),
+    width: 320,
+    height: 180,
+    updatedAt: Date.now(),
+  };
+  const announce = (value: string) => {
+    peer.attributes["freedomstream.preview.screen"] = value;
+    f.transport.emit(events.ParticipantAttributesChanged);
+  };
+  announce(JSON.stringify(descriptor));
+  assert.deepEqual(f.snapshot().streams[0]?.preview, descriptor);
+  assert.equal(peer.getTrackPublication(Source.ScreenShare)?.isDesired, false);
+  assert.equal(
+    peer.getTrackPublication(Source.ScreenShareAudio)?.isDesired,
+    false,
+  );
+  for (const value of [
+    "invalid JSON",
+    "x".repeat(513),
+    JSON.stringify({ ...descriptor, width: 4096 }),
+    JSON.stringify({ ...descriptor, trackSid: "TR_old" }),
+  ]) {
+    announce(value);
+    assert.equal(f.snapshot().streams[0]?.preview, null);
+  }
 });

@@ -6,11 +6,18 @@ use url::Url;
 
 // Credentials stay in this client's in-memory cookie jar. Never derive Debug
 // or pass invitations, cookies or media tokens to a process command line.
+#[derive(Clone)]
 pub struct Admission {
     client: Client,
     origin: Url,
     room_id: String,
     pub room_name: String,
+}
+
+pub enum PreviewDelivery {
+    Sent,
+    Retry(Duration),
+    Denied,
 }
 
 #[derive(Deserialize)]
@@ -172,6 +179,55 @@ impl Admission {
 
     pub async fn leave(&self) {
         let _ = self.post("leave").await;
+    }
+
+    pub async fn send_preview(&self, sid: &str, bytes: Vec<u8>) -> PreviewDelivery {
+        let url = self
+            .origin
+            .join(&format!("api/rooms/{}/previews/screen", self.room_id))
+            .expect("validated room URL");
+        let response = self
+            .client
+            .post(url)
+            .header("Origin", self.origin.origin().ascii_serialization())
+            .header("Content-Type", "image/jpeg")
+            .header("X-Track-Sid", sid)
+            .timeout(Duration::from_secs(5))
+            .body(bytes)
+            .send()
+            .await;
+        match response {
+            Ok(response) if response.status().is_success() => PreviewDelivery::Sent,
+            Ok(response)
+                if response.status().as_u16() == 401 || response.status().as_u16() == 403 =>
+            {
+                PreviewDelivery::Denied
+            }
+            Ok(response) => PreviewDelivery::Retry(Duration::from_secs(
+                response
+                    .headers()
+                    .get("retry-after")
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .unwrap_or(3)
+                    .clamp(1, 60),
+            )),
+            Err(_) => PreviewDelivery::Retry(Duration::from_secs(3)),
+        }
+    }
+    pub async fn remove_preview(&self, sid: &str) {
+        let url = self
+            .origin
+            .join(&format!("api/rooms/{}/previews/screen", self.room_id))
+            .expect("validated room URL");
+        let _ = self
+            .client
+            .delete(url)
+            .header("Origin", self.origin.origin().ascii_serialization())
+            .header("X-Track-Sid", sid)
+            .timeout(Duration::from_secs(2))
+            .send()
+            .await;
     }
 }
 

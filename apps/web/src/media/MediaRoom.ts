@@ -10,8 +10,10 @@ import {
 } from "livekit-client";
 import type { LocalTrack, Participant } from "livekit-client";
 import type { MediaAccess } from "@freedomstream/contracts";
+import { previewAttribute, previewSchema } from "@freedomstream/contracts";
 import { request } from "../api";
 import type { LiveStream, MediaSnapshot, StreamKind } from "./model";
+import { BrowserPreviews } from "./BrowserPreviews";
 
 // SDK logs can contain signaling URLs. Surface bounded messages through our UI instead.
 setLogLevel(LogLevel.silent);
@@ -45,8 +47,10 @@ export class MediaRoom {
   private pending: StreamKind | null = null;
   private error = "";
   private reconciliationQueued = false;
+  private readonly previews: BrowserPreviews;
 
   constructor(private readonly roomId: string) {
+    this.previews = new BrowserPreviews(roomId);
     const refresh = () => this.refresh();
     for (const event of [
       RoomEvent.ParticipantConnected,
@@ -57,6 +61,7 @@ export class MediaRoom {
       RoomEvent.TrackUnmuted,
       RoomEvent.LocalTrackPublished,
       RoomEvent.ParticipantNameChanged,
+      RoomEvent.ParticipantAttributesChanged,
     ])
       this.room.on(event, refresh);
     this.room.on(RoomEvent.LocalTrackUnpublished, () => {
@@ -197,6 +202,15 @@ export class MediaRoom {
           videoCodec: "vp8",
           simulcast: false,
         });
+        if (track.kind === Track.Kind.Video)
+          this.previews.start(
+            track.mediaStreamTrack,
+            kind,
+            () =>
+              [...this.room.localParticipant.trackPublications.values()].find(
+                (publication) => publication.track === track,
+              )?.trackSid,
+          );
       }
     } catch {
       this.stopCaptures(captured);
@@ -228,6 +242,7 @@ export class MediaRoom {
 
   private stopCaptures(tracks: LocalTrack[]): void {
     for (const track of tracks) {
+      this.previews.stop(track.mediaStreamTrack);
       const ended = this.captureEndings.get(track);
       if (ended) {
         track.mediaStreamTrack.removeEventListener("ended", ended);
@@ -394,6 +409,19 @@ export class MediaRoom {
         if (!kind) return [];
         const id = streamId(participant.identity, kind);
         const watching = this.watching.has(id);
+        const rawPreview = participant.attributes?.[previewAttribute(kind)];
+        const parsedPreview = (() => {
+          if (!rawPreview || rawPreview.length > 512) return null;
+          try {
+            const parsed = previewSchema.safeParse(JSON.parse(rawPreview));
+            return parsed.success &&
+              parsed.data.trackSid === publication.trackSid
+              ? parsed.data
+              : null;
+          } catch {
+            return null;
+          }
+        })();
         const audio =
           kind === "screen"
             ? participant.getTrackPublication(Track.Source.ScreenShareAudio)
@@ -412,6 +440,7 @@ export class MediaRoom {
             local: participant.isLocal,
             muted: publication.isMuted,
             watching,
+            preview: parsedPreview,
             video: watching
               ? (publication.track?.mediaStreamTrack ?? null)
               : null,

@@ -47,4 +47,24 @@ test("remote deployments require HTTPS and encrypted media URLs", () => {
   });
   assert.equal(production.publicUrl, "https://stream.example");
   assert.equal(production.livekitUrl, "wss://media.example");
+  assert.equal(production.livekitInternalUrl, "https://media.example");
+});
+
+test("administrative media access uses a separately configured private HTTP(S) origin", () => {
+  assert.equal(
+    loadConfig({ ...valid, LIVEKIT_INTERNAL_URL: "http://livekit:7880" })
+      .livekitInternalUrl,
+    "http://livekit:7880",
+  );
+  for (const value of [
+    "ws://livekit",
+    "https://user:secret@livekit",
+    "http://livekit/path",
+    "http://livekit?token=secret",
+    "http://livekit#secret",
+  ])
+    assert.throws(
+      () => loadConfig({ ...valid, LIVEKIT_INTERNAL_URL: value }),
+      /INTERNAL/,
+    );
 });

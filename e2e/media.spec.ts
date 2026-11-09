@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { createTestRoom } from "../scripts/test-room.js";
 import type { Page } from "@playwright/test";
 
 async function receivedVideoBytes(
@@ -34,13 +35,11 @@ test("two publishers, selective A/V subscriptions, late join and cleanup use rea
     "Transport scenario runs once; room flows cover both viewport sizes.",
   );
   test.setTimeout(90_000);
-  const created = await request.post("/api/rooms", {
-    headers: {
-      Origin: baseURL!,
-      Authorization: `Bearer ${process.env.ADMIN_TOKEN!}`,
-    },
-    data: { name: `Media ${Date.now()}`, displayName: "Owner" },
-  });
+  const created = await createTestRoom(
+    request,
+    baseURL!,
+    `Media ${Date.now()}`,
+  );
   expect(created.status()).toBe(201);
   const { invitationUrl } = await created.json();
   const contexts = await Promise.all([

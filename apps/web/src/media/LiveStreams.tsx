@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { LiveStream, MediaSnapshot, StreamKind } from "./model";
+import { StreamPreview } from "./StreamPreview";
 
 function StreamPlayer({ stream }: { stream: LiveStream }) {
   const video = useRef<HTMLVideoElement>(null);
@@ -80,11 +81,13 @@ function StreamPlayer({ stream }: { stream: LiveStream }) {
 }
 
 export function LiveStreams({
+  roomId,
   snapshot,
   watch,
   toggle,
   reconnect,
 }: {
+  roomId: string;
   snapshot: MediaSnapshot;
   watch: (id: string, enabled: boolean) => void;
   toggle: (kind: StreamKind) => Promise<void> | undefined;
@@ -191,18 +194,7 @@ export function LiveStreams({
               {stream.watching ? (
                 <StreamPlayer stream={stream} />
               ) : (
-                <div className="stream-placeholder">
-                  <span aria-hidden="true">
-                    {stream.publisherName.slice(0, 1).toUpperCase()}
-                  </span>
-                  <p>
-                    {!stream.compatible
-                      ? "This browser cannot receive HEVC. Ask the publisher to choose H.264."
-                      : stream.local
-                        ? "Your stream is available to friends."
-                        : "Choose Watch to receive this stream."}
-                  </p>
-                </div>
+                <StreamPreview roomId={roomId} stream={stream} />
               )}
               <div className="stream-actions">
                 <button

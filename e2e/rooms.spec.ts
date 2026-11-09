@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { createTestRoom } from "../scripts/test-room.js";
 
 test("create, share, join, resume and leave a private room", async ({
   page,
@@ -93,13 +94,7 @@ test("a room URL without its invitation cannot reveal the room or grant media ac
   baseURL,
 }) => {
   const name = `Hidden room ${Date.now()}`;
-  const created = await request.post("/api/rooms", {
-    headers: {
-      Origin: baseURL!,
-      Authorization: `Bearer ${process.env.ADMIN_TOKEN!}`,
-    },
-    data: { name, displayName: "Owner" },
-  });
+  const created = await createTestRoom(request, baseURL!, name);
   expect(created.status()).toBe(201);
   const { room } = await created.json();
   await page.goto(`/r/${room.id}`);

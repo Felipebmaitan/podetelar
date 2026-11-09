@@ -11,13 +11,23 @@ import {
 } from "@freedomstream/contracts";
 import type { Config } from "./config.js";
 import { Rooms, secretsEqual, SESSION_TTL_MS } from "./rooms.js";
+import {
+  LivekitDirectory,
+  mediaRoomName,
+  type MediaDirectory,
+} from "./media.js";
+import { Previews, previewRoutes } from "./previews.js";
 
 const COOKIE = "fs_session";
 const MEDIA_TOKEN_TTL_SECONDS = 120;
 
 export async function buildApp(
   config: Config,
-  options: { now?: () => number; logger?: boolean } = {},
+  options: {
+    now?: () => number;
+    logger?: boolean;
+    mediaDirectory?: MediaDirectory;
+  } = {},
 ) {
   const app = Fastify({
     logger: options.logger ?? false,
@@ -25,7 +35,17 @@ export async function buildApp(
     bodyLimit: 4096,
   });
   const rooms = new Rooms(config.databasePath, options.now);
-  app.addHook("onClose", async () => rooms.close());
+  const previews = new Previews(
+    options.mediaDirectory ?? new LivekitDirectory(config),
+    options.now,
+  );
+  const previewSweep = setInterval(() => previews.sweep(), 30_000);
+  previewSweep.unref();
+  app.addHook("onClose", async () => {
+    clearInterval(previewSweep);
+    previews.clear();
+    rooms.close();
+  });
   await app.register(cookie);
   await app.register(rateLimit, { max: 120, timeWindow: "1 minute" });
   const cookieOptions = (id: string) => ({
@@ -45,7 +65,7 @@ export async function buildApp(
     reply.header("X-Frame-Options", "DENY");
     reply.header(
       "Content-Security-Policy",
-      `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' ${mediaOrigin} ${mediaHttpOrigin}; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`,
+      `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ${mediaOrigin} ${mediaHttpOrigin}; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`,
     );
     if (
       !["GET", "HEAD", "OPTIONS"].includes(request.method) &&
@@ -74,7 +94,7 @@ export async function buildApp(
     });
   });
 
-  app.get("/api/health", async () => ({ status: "ok", phase: 2 }));
+  app.get("/api/health", async () => ({ status: "ok", phase: 5 }));
 
   app.post(
     "/api/rooms",
@@ -127,6 +147,8 @@ export async function buildApp(
           .code(404)
           .send({ error: "This invitation could not be accepted." });
       // Rejoining from this browser replaces its previous session for this room.
+      const previous = rooms.session(id.data, request.cookies[COOKIE]);
+      if (previous) previews.removeOwner(id.data, previous.participant.id);
       rooms.leave(id.data, request.cookies[COOKIE]);
       reply.setCookie(COOKIE, issued.token, cookieOptions(id.data));
       return issued.snapshot;
@@ -153,6 +175,12 @@ export async function buildApp(
     async (request, reply) => {
       if (!roomIdSchema.safeParse(request.params.roomId).success)
         return reply.code(404).send({ error: "Not found." });
+      const member = rooms.session(
+        request.params.roomId,
+        request.cookies[COOKIE],
+      );
+      if (member)
+        previews.removeOwner(request.params.roomId, member.participant.id);
       rooms.leave(request.params.roomId, request.cookies[COOKIE]);
       reply.clearCookie(COOKIE, {
         path: `/api/rooms/${request.params.roomId}`,
@@ -183,7 +211,7 @@ export async function buildApp(
       );
       access.addGrant({
         roomJoin: true,
-        room: `freedomstream_${session.room.id}`,
+        room: mediaRoomName(session.room.id),
         canPublish: true,
         canSubscribe: true,
         canPublishData: false,
@@ -195,6 +223,8 @@ export async function buildApp(
       };
     },
   );
+
+  await previewRoutes(app, rooms, previews);
 
   if (existsSync(config.webRoot)) {
     await app.register(fastifyStatic, {

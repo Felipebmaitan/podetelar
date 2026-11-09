@@ -2,6 +2,7 @@ use crate::{
     admission::Admission,
     audio,
     encoding::{Codec, Encoder, Encoding, Metrics, Mode},
+    preview::{self, Latest},
     sources::{self, Source, SourceInfo},
 };
 use anyhow::{Context, Result, bail};
@@ -17,7 +18,7 @@ use std::{
     future::Future,
     sync::{
         Arc, Mutex, Weak,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -205,6 +206,9 @@ pub struct Stream {
     pub metrics: Arc<Mutex<Metrics>>,
     pub audio_metrics: Arc<Mutex<audio::Metrics>>,
     audio: Option<(JoinHandle<Result<audio::Metrics>>, LocalAudioTrack)>,
+    previews: Latest,
+    preview_task: Option<JoinHandle<()>>,
+    pub preview_uploads: Arc<AtomicU64>,
 }
 
 struct StopOnDrop {
@@ -249,6 +253,7 @@ impl Stream {
         .await
         .context("Capture worker stopped.")??;
         let codec = encoder_codec(&encoding);
+        let previews = encoding.previews();
         let rtc_source = NativeVideoSource::new_encoded(VideoResolution {
             width: mode.width,
             height: mode.height,
@@ -307,6 +312,9 @@ impl Stream {
             metrics,
             audio_metrics: Arc::new(Mutex::new(audio::Metrics::default())),
             audio: None,
+            previews,
+            preview_task: None,
+            preview_uploads: Arc::new(AtomicU64::new(0)),
         };
         if audio_choice != audio::Choice::Off {
             let source = NativeAudioSource::new(AudioSourceOptions::default(), 48000, 2, 50);
@@ -360,6 +368,18 @@ impl Stream {
             }
         }
         Ok(active)
+    }
+
+    pub fn start_previews(&mut self, admission: Admission) {
+        if self.preview_task.is_none() {
+            self.preview_task = Some(tokio::spawn(preview::upload(
+                admission,
+                self.previews.clone(),
+                self.video.clone(),
+                self.stop.flag.clone(),
+                self.preview_uploads.clone(),
+            )));
+        }
     }
 
     pub fn finished(&self) -> bool {
@@ -421,6 +441,9 @@ impl Stream {
             },
         )
         .await;
+        if let Some(task) = self.preview_task {
+            let _ = task.await;
+        }
         audio_result?;
         captured
     }
@@ -628,7 +651,7 @@ async fn worker(
                     joined
                         .expected_audio
                         .store(audio != audio::Choice::Off, Ordering::Release);
-                    let active = Stream::start(
+                    let mut active = Stream::start(
                         &joined.room,
                         source,
                         encoder,
@@ -637,6 +660,7 @@ async fn worker(
                         exclusions,
                     )
                     .await?;
+                    active.start_previews(joined.admission.clone());
                     if stop.load(Ordering::Acquire) {
                         let _ = active.stop(&joined.room).await;
                     } else {

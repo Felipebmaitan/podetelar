@@ -9,6 +9,7 @@ services:
       DATABASE_PATH: /app/data/freedomstream.db
       ADMIN_TOKEN: ${ADMIN_TOKEN:?Run npm run setup first}
       LIVEKIT_URL: ws://127.0.0.1:7880
+      LIVEKIT_INTERNAL_URL: http://livekit:7880
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?Run npm run setup first}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?Run npm run setup first}
     ports:

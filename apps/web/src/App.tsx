@@ -177,6 +177,7 @@ export function App() {
               </button>
             </div>
             <LiveStreams
+              roomId={session.room.id}
               snapshot={media.snapshot}
               watch={media.watch}
               toggle={media.toggle}

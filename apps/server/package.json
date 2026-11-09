@@ -9,7 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node --env-file-if-exists=../../.env dist/main.js",
     "typecheck": "tsc -p tsconfig.test.json --noEmit",
-    "test": "tsx --test test/rooms.test.ts test/config.test.ts"
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.5",

@@ -1,5 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { expect, test } from "@playwright/test";
+import { createTestRoom } from "../scripts/test-room.js";
 import { nativeRequest, toneFixtures } from "./fixtures.js";
 
 test("Stop after a full native reconnect removes both regenerated publications", async ({
@@ -12,15 +13,18 @@ test("Stop after a full native reconnect removes both regenerated publications",
   try {
     fixtures.game();
     await delay(1500);
-    const created = await request.post("/api/rooms", {
-      headers: {
-        Origin: baseURL!,
-        Authorization: `Bearer ${process.env.ADMIN_TOKEN!}`,
-      },
-      data: { name: `Native recovery ${Date.now()}`, displayName: "Owner" },
-    });
+    const created = await createTestRoom(
+      request,
+      baseURL!,
+      `Native recovery ${Date.now()}`,
+    );
     expect(created.status()).toBe(201);
     const { invitationUrl } = await created.json();
+    const previews: string[] = [];
+    page.on("response", (response) => {
+      if (/\/previews\/[^/]+\/screen\//.test(response.url()) && response.ok())
+        previews.push(response.url());
+    });
     await page.goto(invitationUrl);
     await page.getByLabel("Your name", { exact: true }).fill("Recovery viewer");
     await page
@@ -40,6 +44,9 @@ test("Stop after a full native reconnect removes both regenerated publications",
       exact: true,
     });
     await expect(card).toBeVisible({ timeout: 30_000 });
+    await expect(
+      card.getByRole("img", { name: "Recovering publisher screen preview" }),
+    ).toBeVisible();
     await card.getByRole("button", { name: "Watch", exact: true }).click();
     await expect(
       card.getByRole("button", { name: "Mute", exact: true }),
@@ -57,6 +64,12 @@ test("Stop after a full native reconnect removes both regenerated publications",
     await expect(
       card.getByRole("button", { name: "Watch", exact: true }),
     ).toBeVisible({ timeout: 18_000 });
+    await expect(
+      card.getByRole("img", { name: "Recovering publisher screen preview" }),
+    ).toBeVisible();
+    expect(previews).toHaveLength(2);
+    expect(previews[1]).not.toBe(previews[0]);
+    expect((await page.request.get(previews[0]!)).status()).toBe(404);
     await card.getByRole("button", { name: "Watch", exact: true }).click();
     await expect(
       card.getByRole("button", { name: "Mute", exact: true }),
@@ -73,9 +86,13 @@ test("Stop after a full native reconnect removes both regenerated publications",
     const stopped = (await publisher.reported) as {
       captureStopped: boolean;
       republished: number;
+      metrics: { preview_frames: number };
+      previewUploads: number;
     };
     expect(stopped.captureStopped).toBe(true);
     expect(stopped.republished).toBe(2);
+    expect(stopped.metrics.preview_frames).toBe(1);
+    expect(stopped.previewUploads).toBe(2);
     await expect(card).toHaveCount(0, { timeout: 2500 });
     // The media identity intentionally lingers for six seconds. Removal must
     // come from Stop, rather than a later room disconnect hiding stale SIDs.

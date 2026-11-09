@@ -1,5 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { expect, test } from "@playwright/test";
+import { createTestRoom } from "../scripts/test-room.js";
 import { nativeRequest, toneFixtures } from "./fixtures.js";
 
 test("selected application stereo audio reaches a browser and stops with Watch", async ({
@@ -13,13 +14,11 @@ test("selected application stereo audio reaches a browser and stops with Watch",
     fixtures.game();
     fixtures.discord();
     await delay(1500);
-    const created = await request.post("/api/rooms", {
-      headers: {
-        Origin: baseURL!,
-        Authorization: `Bearer ${process.env.ADMIN_TOKEN!}`,
-      },
-      data: { name: `Native audio ${Date.now()}`, displayName: "Owner" },
-    });
+    const created = await createTestRoom(
+      request,
+      baseURL!,
+      `Native audio ${Date.now()}`,
+    );
     expect(created.status()).toBe(201);
     const { invitationUrl } = await created.json();
     await page.addInitScript(() => {

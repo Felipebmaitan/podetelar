@@ -234,6 +234,21 @@ p {
 .stream-placeholder > p {
   font-size: 0.8rem;
 }
+.stream-placeholder.has-preview {
+  padding: 0;
+  gap: 0;
+}
+.stream-placeholder > img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  background: #0a0c10;
+}
+.stream-placeholder.has-preview > p {
+  padding: 12px 16px;
+}
 .stream-actions {
   padding: 12px 16px;
   justify-content: space-between;

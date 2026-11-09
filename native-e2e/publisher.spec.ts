@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
+import { createTestRoom } from "../scripts/test-room.js";
 
 for (const codec of ["h265", "h264"] as const) {
   test(`native hardware ${codec} reaches a browser through the SFU`, async ({
@@ -8,13 +9,11 @@ for (const codec of ["h265", "h264"] as const) {
     request,
     baseURL,
   }) => {
-    const created = await request.post("/api/rooms", {
-      headers: {
-        Origin: baseURL!,
-        Authorization: `Bearer ${process.env.ADMIN_TOKEN!}`,
-      },
-      data: { name: `Native ${codec} ${Date.now()}`, displayName: "Owner" },
-    });
+    const created = await createTestRoom(
+      request,
+      baseURL!,
+      `Native ${codec} ${Date.now()}`,
+    );
     expect(created.status()).toBe(201);
     const { invitationUrl } = await created.json();
     const executable = process.env.FREEDOMSTREAM_NATIVE_EXE;
@@ -79,6 +78,17 @@ for (const codec of ["h265", "h264"] as const) {
         exact: true,
       });
       await expect(card).toBeVisible({ timeout: 30_000 });
+      await expect(
+        card.getByRole("img", { name: `Native ${codec} screen preview` }),
+      ).toBeVisible({ timeout: 15_000 });
+      expect(
+        await card
+          .locator("img")
+          .evaluate((image: HTMLImageElement) => [
+            image.naturalWidth,
+            image.naturalHeight,
+          ]),
+      ).toEqual([320, 180]);
       await expect(page.locator("video")).toHaveCount(0);
       const stats = () =>
         page.evaluate(async () => {
@@ -137,6 +147,8 @@ for (const codec of ["h265", "h264"] as const) {
       expect(result.captureStopped).toBe(true);
       expect(result.metrics.accepted).toBeGreaterThan(100);
       expect(result.metrics.fps).toBeGreaterThan(50);
+      expect(result.metrics.preview_frames).toBe(1);
+      expect(result.previewUploads).toBe(1);
       await expect(card).toHaveCount(0);
       console.log(
         `${codec}: decoded via SFU, subscriptions stopped, native capture released; ${result.metrics.fps.toFixed(1)} encoded fps`,

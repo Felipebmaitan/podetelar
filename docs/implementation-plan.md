@@ -2,7 +2,7 @@
 
 Each phase is an acceptance gate. Phase 1 is the initial commit on `main`; every later phase gets its own branch and PR. Felipe authorized autonomous implementation and merging: each PR must pass its acceptance checks and a new GPT-6.1-Sol review at high reasoning before merge. Address review findings before proceeding. Code can be MIT licensed while third-party runtimes retain their own licenses; qualify distribution licenses before bundling native media dependencies. Report external hardware/deployment verification separately and do not waive it merely to finish the sequence.
 
-**Current checkpoint:** Phases 1 and 2 are merged. Phase 3 implements the native Windows publisher, with NVIDIA encoding and browser decoding through the Canada VPS verified. AMD hardware is unavailable; AMD, real-game/fullscreen/alt-tab and 4K120 qualification remain open external acceptance items. An implementation PR does not certify those results. See [Phase 2 verification](verification/phase-2.md) and [Phase 3 verification](verification/phase-3.md). Each remaining phase still requires checks and a fresh high-reasoning review before merge.
+**Current checkpoint:** Phases 1–3 are merged. Phase 4 adds Windows application audio and an isolated viewing window; its checks and review gate are in progress. See [Phase 3 verification](verification/phase-3.md) and [Phase 4 verification](verification/phase-4.md). AMD hardware is unavailable; AMD, real-game/fullscreen/alt-tab and 4K120 qualification remain open external acceptance items. An implementation PR does not certify those results. Each remaining phase still requires checks and a fresh high-reasoning review before merge.
 
 ## 1. Persistent private-room foundation — initial commit
 

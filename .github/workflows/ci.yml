@@ -55,6 +55,7 @@ jobs:
             ~/.cargo/git
             target
           key: native-windows-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: native-windows-
       - uses: actions/cache@v4
         with:
           path: .local/downloads

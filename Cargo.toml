@@ -1,6 +1,10 @@
 [workspace]
 members = ["apps/publisher"]
 resolver = "3"
+exclude = [".local/native-sdk/livekit"]
+
+[patch.crates-io]
+livekit = { path = ".local/native-sdk/livekit" }
 
 [workspace.package]
 version = "0.1.0"

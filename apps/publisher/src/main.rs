@@ -1,9 +1,13 @@
 mod admission;
+mod audio;
 mod diagnostics;
 mod encoding;
 mod publisher;
 mod sources;
 mod ui;
+mod viewer;
+#[cfg(windows)]
+mod win32;
 
 use anyhow::{Context, Result, bail, ensure};
 use encoding::{Codec, Encoding, Metrics, Mode};
@@ -13,7 +17,7 @@ use std::{
     io::Read,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -56,6 +60,70 @@ fn run() -> Result<()> {
                     .collect::<Vec<_>>()
             )?
         ),
+        Some("--audio-apps") => println!("{}", serde_json::to_string(&audio::applications()?)?),
+        Some("--audio-tone") => {
+            use gstreamer::prelude::*;
+            let frequency: u32 = std::env::args()
+                .nth(2)
+                .context("Choose a test tone.")?
+                .parse()?;
+            ensure!(
+                [440, 880, 1320].contains(&frequency),
+                "Use a supported test tone."
+            );
+            let description = if frequency == 440 {
+                "audiomixer name=mix ! audioconvert ! audio/x-raw,rate=48000,channels=2 ! wasapi2sink low-latency=true audiotestsrc is-live=true freq=440 volume=0.02 samplesperbuffer=480 ! audio/x-raw,format=F32LE,rate=48000,channels=1 ! audiopanorama panorama=-1 ! mix. audiotestsrc is-live=true freq=660 volume=0.02 samplesperbuffer=480 ! audio/x-raw,format=F32LE,rate=48000,channels=1 ! audiopanorama panorama=1 ! mix.".to_owned()
+            } else {
+                format!(
+                    "audiotestsrc is-live=true freq={frequency} volume=0.02 samplesperbuffer=480 ! audio/x-raw,rate=48000,channels=2 ! wasapi2sink low-latency=true"
+                )
+            };
+            let pipeline = gstreamer::parse::launch(&description)?
+                .downcast::<gstreamer::Pipeline>()
+                .map_err(|_| anyhow::anyhow!("Invalid audio fixture."))?;
+            pipeline.set_state(gstreamer::State::Playing)?;
+            std::thread::sleep(Duration::from_secs(45));
+            pipeline.set_state(gstreamer::State::Null)?;
+        }
+        Some("--qualify-audio") => {
+            let mut input = String::new();
+            std::io::stdin().take(8193).read_to_string(&mut input)?;
+            ensure!(input.len() <= 8192, "Audio fixture input is too large.");
+            let request: AudioRequest =
+                serde_json::from_str(&input).context("Invalid audio fixture input.")?;
+            ensure!(
+                (1..=20).contains(&request.seconds),
+                "Audio qualification duration must be between 1 and 20 seconds."
+            );
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?;
+            let metrics = runtime.block_on(async {
+                let mut viewer = match request.viewer_invitation {
+                    Some(invitation) => {
+                        let mut viewer = viewer::Viewer::open(&invitation, true).await?;
+                        viewer.qualification_tone().await?;
+                        Some(viewer)
+                    }
+                    None => None,
+                };
+                let result = tokio::task::spawn_blocking(move || {
+                    audio::run(
+                        request.choice,
+                        request.exclusions,
+                        Arc::new(AtomicBool::new(false)),
+                        Arc::new(Mutex::new(audio::Metrics::default())),
+                        None,
+                        Some(Duration::from_secs(request.seconds)),
+                    )
+                })
+                .await
+                .context("Audio qualification worker stopped.")?;
+                viewer.take();
+                result
+            })?;
+            println!("{}", serde_json::to_string(&metrics)?);
+        }
         Some("--qualify") => {
             let fixture = match std::env::args().nth(2).as_deref() {
                 None => sources::fixture(),
@@ -110,7 +178,9 @@ fn run() -> Result<()> {
                 .build()?;
             runtime.block_on(publish_fixture(request))?;
         }
-        Some(_) => bail!("Unknown option. Use --probe, --sources, --qualify or --publish-fixture."),
+        Some(_) => bail!(
+            "Unknown option. Use --probe, --sources, --audio-apps, --qualify, --qualify-audio or --publish-fixture."
+        ),
         None => {
             let options = eframe::NativeOptions {
                 viewport: eframe::egui::ViewportBuilder::default()
@@ -141,12 +211,38 @@ struct FixtureRequest {
     codec: Codec,
     seconds: u64,
     source_id: Option<String>,
+    #[serde(default)]
+    audio: audio::Choice,
+    #[serde(default)]
+    exclusions: Vec<String>,
+    #[serde(default)]
+    reconnect_after_seconds: Option<u64>,
+    #[serde(default)]
+    linger_seconds: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AudioRequest {
+    choice: audio::Choice,
+    #[serde(default)]
+    exclusions: Vec<String>,
+    seconds: u64,
+    #[serde(default)]
+    viewer_invitation: Option<String>,
 }
 
 async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     ensure!(
         (1..=45).contains(&request.seconds),
         "Fixture duration must be between 1 and 45 seconds."
+    );
+    ensure!(
+        request.linger_seconds <= 8
+            && request
+                .reconnect_after_seconds
+                .is_none_or(|delay| delay >= 1 && delay <= request.seconds.saturating_sub(5)),
+        "Invalid recovery fixture timing."
     );
     let admission =
         admission::Admission::join(&request.invitation_url, &request.display_name).await?;
@@ -168,10 +264,16 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     })?;
     let stop = Arc::new(AtomicBool::new(false));
     let cancel = stop.clone();
+    let republished = Arc::new(AtomicU64::new(0));
+    let publication_count = republished.clone();
     let events = tokio::spawn(async move {
         while let Some(event) = events.recv().await {
-            if matches!(event, RoomEvent::Disconnected { .. }) {
-                cancel.store(true, Ordering::Release);
+            match event {
+                RoomEvent::Disconnected { .. } => cancel.store(true, Ordering::Release),
+                RoomEvent::LocalTrackRepublished { .. } => {
+                    publication_count.fetch_add(1, Ordering::Relaxed);
+                }
+                _ => {}
             }
         }
     });
@@ -187,10 +289,17 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
         None => sources::fixture(),
     };
     let result = async {
-        let active = publisher::Stream::start(&room, source, encoder.clone(), stop).await?;
-        tokio::time::sleep(Duration::from_secs(request.seconds)).await;
+        let active = publisher::Stream::start(&room, source, encoder.clone(), stop, request.audio, request.exclusions).await?;
+        let audio_metrics = active.audio_metrics.clone();
+        if let Some(after) = request.reconnect_after_seconds {
+            tokio::time::sleep(Duration::from_secs(after)).await;
+            room.simulate_scenario(livekit::rtc_engine::SimulateScenario::FullReconnect).await.map_err(|_| anyhow::anyhow!("Could not request a local fixture reconnect."))?;
+            tokio::time::sleep(Duration::from_secs(request.seconds - after)).await;
+        } else { tokio::time::sleep(Duration::from_secs(request.seconds)).await; }
         let metrics = active.stop(&room).await?;
-        println!("{}", serde_json::json!({"encoder": encoder.factory, "codec": encoder.codec, "metrics": metrics, "captureStopped": true}));
+        let audio = audio_metrics.lock().map(|value| value.clone()).unwrap_or_default();
+        println!("{}", serde_json::json!({"encoder": encoder.factory, "codec": encoder.codec, "metrics": metrics, "audio": audio, "captureStopped": true, "republished": republished.load(Ordering::Relaxed)}));
+        tokio::time::sleep(Duration::from_secs(request.linger_seconds)).await;
         Ok::<_, anyhow::Error>(())
     }.await;
     let _ = room.close().await;

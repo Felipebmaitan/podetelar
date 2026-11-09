@@ -83,6 +83,14 @@ fn valid_token(value: &str, length: usize) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
+pub fn invitation_url(input: &str) -> Result<Url> {
+    let invitation = Invitation::parse(input)?;
+    let mut url = invitation.origin;
+    url.set_path(&format!("/r/{}", invitation.room_id));
+    url.set_fragment(Some(&format!("invite={}", invitation.secret)));
+    Ok(url)
+}
+
 pub fn media_diagnostic(error: impl std::fmt::Display) -> String {
     // CLI diagnostics are useful for native integration tests, but SDK errors
     // can carry signaling URLs or SDP. Remove authority before emitting text.

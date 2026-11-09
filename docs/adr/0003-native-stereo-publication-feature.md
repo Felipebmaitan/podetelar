@@ -1,0 +1,9 @@
+# Pin a minimal SDK patch to announce native stereo correctly
+
+The pinned LiveKit Rust SDK 0.10.1 publishes a two-channel NativeAudioSource without the `TF_STEREO` audio feature. The SFU consequently does not consistently announce `sprop-stereo=1`, and repeated real Windows-to-VPS-to-Chrome tests sometimes produce identical left/right output despite a two-channel track. Waiting for transport warmup does not repair a mono negotiation. Distinct 440/660 Hz channel tests expose this; codec/channel-count labels alone do not.
+
+Add the stereo feature when a native source has two channels in the SDK's existing publication path. Keep the rest of its capture, transport, recovery and encoded-video implementation intact. Do not add a signaling proxy, manipulate browser SDP or maintain a separate transport just for audio metadata.
+
+`scripts/setup-native-sdk.mjs` materializes the published crate in ignored `.local/native-sdk/livekit` and applies this narrow source transformation. `deploy/native-sdk.json` pins the crates.io archive checksum, original/modified file hashes and complete patched source-tree hash. Existing generated source is verified before reuse; mismatches stop setup for inspection. The Cargo path override is excluded from workspace membership. Original SDK code retains Apache-2.0 licensing, and upstream warnings remain visible without weakening the application lint gate.
+
+This adds a small, explicit dependency maintenance obligation. On SDK upgrades, check whether upstream now announces native stereo, remove the override/transformation when it does, and rerun native video/audio transport and recovery checks. Source is generated from a verified package instead of committing an entire SDK fork into this monorepo. Repeated real channel-separation tests validate the patch; hosted compile tests do not replace those results.

@@ -8,6 +8,7 @@
 - `apps/web/src/media/MediaRoom.ts`: owns LiveKit signaling, browser capture and explicit audio/video subscriptions. UI receives browser tracks and immutable snapshots, not SDK objects. The SDK is dynamically loaded only after room admission.
 - `apps/web/src/media/LiveStreams.tsx`: renders streams with per-stream volume, mute and grid/focus controls; playback elements detach when a subscription stops.
 - `apps/publisher`: Rust desktop publisher. `admission` owns invitation validation and in-memory API sessions; `sources` owns OS capture identities; `encoding` owns the GPU pipeline and encoded-frame feedback; `publisher` owns room/capture lifecycle; `ui` renders snapshots and sends bounded commands. See [native development](native-publisher.md).
+- `apps/publisher/src/audio`: owns Windows session discovery, process identity/exclusion policy, bounded PCM mixing and transport delivery. `viewer` owns the isolated Chrome process job and ephemeral profile; callers see Open/Drop lifecycle rather than browser control details. See [audio behavior](audio.md).
 
 SQLite is sufficient for the initial single-VPS, single-app deployment. Do not point several independent instances at separate databases and expect shared sessions. Sessions are not accounts: a fresh admission creates a fresh participant identity.
 

@@ -1,0 +1,85 @@
+name: freedomstream-production
+services:
+  app:
+    image: ${APP_IMAGE:?Set an immutable release image tag}
+    user: "1000:1000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      PUBLIC_URL: ${PUBLIC_URL:?Set HTTPS origin}
+      TRUSTED_PROXY: 172.30.77.1
+      DATABASE_PATH: /app/data/freedomstream.db
+      PUBLISHER_DIRECTORY: /app/publisher
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?Private server access key}
+      LIVEKIT_INTERNAL_URL: http://livekit:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?Private SFU key}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?Private SFU secret}
+      NODE_OPTIONS: --max-old-space-size=320
+    ports: [127.0.0.1:18080:3000]
+    volumes:
+      - ${STATE_DIR:?Absolute private state path}/data:/app/data
+      - ${STATE_DIR}/publisher:/app/publisher:ro
+    cpus: 0.5
+    mem_limit: 512m
+    pids_limit: 128
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: local
+      options: { max-size: 5m, max-file: "2" }
+  livekit:
+    image: livekit/livekit-server:v1.13.11
+    user: "1000:1000"
+    command: [--config, /etc/livekit.yaml]
+    # Signaling has no published port. Only the admitted app gateway can reach it.
+    ports: ["7881:7881/tcp", "7882:7882/udp"]
+    volumes:
+      - ${STATE_DIR}/livekit.yaml:/etc/livekit.yaml:ro
+      - ${STATE_DIR}/turn-secret:/run/secrets/turn_secret:ro
+    cpus: 1
+    mem_limit: 512m
+    pids_limit: 256
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment: { GOMEMLIMIT: 384MiB }
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    restart: unless-stopped
+    logging: { driver: none }
+  relay:
+    image: coturn/coturn:4.18.0-r0@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3
+    user: "1000:1000"
+    command: [-c, /etc/coturn/turnserver.conf]
+    network_mode: host
+    volumes:
+      - ${STATE_DIR}/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      # Mount the directory so atomic certificate replacement is visible.
+      - ${STATE_DIR}/tls:/run/tls:ro
+    cpus: 0.5
+    mem_limit: 128m
+    pids_limit: 64
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    restart: unless-stopped
+    logging: { driver: none }
+networks:
+  default:
+    ipam:
+      config: [{ subnet: 172.30.77.0/28, gateway: 172.30.77.1 }]

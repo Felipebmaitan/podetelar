@@ -18,9 +18,11 @@ test("relay configuration bounds the service and scopes authentication to expiri
     "denied-peer-ip=0.0.0.0-255.255.255.255",
     "no-tcp-relay",
     "no-cli",
-    "total-quota=32",
-    "user-quota=4",
+    "total-quota=64",
+    "user-quota=8",
     "relay-threads=1",
+    "max-bps=100000000",
+    "bps-capacity=0",
   ])
     assert.ok(output.coturn.split("\n").includes(expected));
   assert.ok(!output.coturn.includes("no-auth\n"));

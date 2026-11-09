@@ -31,6 +31,11 @@ jobs:
       - run: npm run setup
       - run: npm run build -w @freedomstream/contracts
       - run: docker compose config --quiet
+      - run: docker compose --env-file .env -f deploy/production/compose.yaml config --quiet
+        env:
+          APP_IMAGE: freedomstream/app:0000000000000000000000000000000000000000
+          STATE_DIR: /tmp/freedomstream-production-config-check
+          PUBLIC_URL: https://stream.example:8443
       - run: docker compose up --build -d --wait
       - run: npm run smoke -- --restart-app
       - run: npx playwright install --with-deps chromium
@@ -65,3 +70,16 @@ jobs:
       - run: npm run native:check
       - run: npm run native:test
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 build
+      - run: npm run native:package
+      - name: Qualify per-user installation
+        shell: powershell
+        run: |
+          $package = @(Get-ChildItem .local/distribution -Directory)[0].FullName
+          & scripts/qualify-installation.ps1 -PackageDirectory $package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: freedomstream-windows-x64
+          path: |
+            .local/distribution/*.zip
+            .local/distribution/publisher.json
+          retention-days: 14

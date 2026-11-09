@@ -1,0 +1,10 @@
+[Unit]
+Description=Renew FreedomStream HTTPS and TURN certificates
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/freedomstream/current/deploy/production/certificates.sh renew
+TimeoutStartSec=180
+UMask=0077

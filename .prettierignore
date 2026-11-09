@@ -6,3 +6,4 @@ docs/research
 data
 target
 Cargo.lock
+deploy/licenses

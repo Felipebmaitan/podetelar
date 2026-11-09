@@ -7,7 +7,7 @@ export default defineConfig({
   timeout: 150_000,
   reporter: "list",
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000",
     channel: "chrome",
     headless: true,
     trace: "off",

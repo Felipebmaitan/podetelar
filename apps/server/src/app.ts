@@ -24,6 +24,7 @@ import {
   ACCESS_SWEEP_MS,
 } from "./access.js";
 import { Signaling } from "./signaling.js";
+import { loadPublisher, publisherRoutes } from "./distribution.js";
 
 const COOKIE = "fs_session";
 const MEDIA_TOKEN_TTL_SECONDS = 120;
@@ -36,10 +37,12 @@ export async function buildApp(
     mediaDirectory?: MediaDirectory;
   } = {},
 ) {
+  const publisher = await loadPublisher(config.publisherDirectory);
   const app = Fastify({
     logger: options.logger ?? false,
     logController: new LogController({ disableRequestLogging: true }),
     bodyLimit: 4096,
+    trustProxy: config.trustedProxy ?? false,
   });
   const rooms = new Rooms(config.databasePath, options.now);
   const directory = options.mediaDirectory ?? new LivekitDirectory(config);
@@ -118,7 +121,7 @@ export async function buildApp(
     });
   });
 
-  app.get("/api/health", async () => ({ status: "ok", phase: 7 }));
+  app.get("/api/health", async () => ({ status: "ok", phase: 8 }));
   app.get("/api/diagnostics", async (request, reply) => {
     if (!administrator(request, config))
       return reply.code(401).send({ error: "Server access key required." });
@@ -252,6 +255,7 @@ export async function buildApp(
   );
 
   await previewRoutes(app, rooms, previews);
+  publisherRoutes(app, publisher, rooms);
   await accessRoutes(app, config, rooms, access);
   await signaling.register(app, config);
 

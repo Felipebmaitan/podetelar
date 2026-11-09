@@ -13,6 +13,7 @@ test("production config preserves the admission gateway and isolated certificate
     "203.0.113.9",
     "203.0.113.9",
     secrets,
+    "relay.example.com",
   );
   assert.match(config.environment, /PUBLIC_URL=https:\/\/203\.0\.113\.9:8443/);
   assert.match(config.nginx, /proxy_pass http:\/\/127\.0\.0\.1:18080/);
@@ -20,10 +21,21 @@ test("production config preserves the admission gateway and isolated certificate
   assert.match(config.nginx, /access_log off/);
   assert.match(config.coturn, /cert=\/run\/tls\/current\/fullchain.pem/);
   assert.match(config.livekit, /ttl: 300/);
+  assert.match(config.livekit, /host: relay.example.com/);
   assert.match(config.acme, /location \/ \{ return 404/);
   assert.ok(!config.nginx.includes(secrets.admin));
 });
 test("deployment identifiers cannot inject config or shell lines", () => {
+  assert.throws(
+    () =>
+      productionConfiguration(
+        "/opt/freedomstream",
+        "203.0.113.9",
+        "203.0.113.9",
+        secrets,
+      ),
+    /DNS certificate/,
+  );
   for (const root of [
     "/",
     "/opt/freedomstream\nX=bad",

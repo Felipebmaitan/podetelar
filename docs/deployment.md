@@ -22,11 +22,11 @@ data, browser profiles or build caches in the source archive. Generate private
 state using Node 24 (or its container) as UID 1000:
 
 ```sh
-node /opt/freedomstream/releases/COMMIT/scripts/prepare-production.mjs /opt/freedomstream PUBLIC_IPV4
+node /opt/freedomstream/releases/COMMIT/scripts/prepare-production.mjs /opt/freedomstream PUBLIC_IPV4 ROOM_HOST TURN_HOST
 ```
 
-This preserves existing random secrets. Omit the optional certificate hostname to
-use the IP address. It prepares `.env`, `secrets.json`, private SFU/relay config,
+This preserves existing random secrets. `ROOM_HOST` may be the public IP;
+`TURN_HOST` must be a DNS name resolving directly to the VPS. It prepares `.env`, `secrets.json`, private SFU/relay config,
 and nginx snippets, without printing secrets. Copy a committed Windows ZIP and
 its `publisher.json` into `shared/publisher`, then make the files read-only to the
 app user. Keep all state directories mode 700 and credential files mode 600.
@@ -47,6 +47,19 @@ pinned; the documented IP/webroot flow needs 5.4 or newer. See the
 [official Certbot IP-certificate announcement](https://letsencrypt.org/2026/03/11/shorter-certs-certbot).
 Certificate state/accounts are separate from existing site renewals.
 
+The native WebRTC library verifies TURN names with `X509_check_host`, which does
+not match an IP-only subjectAltName. Our actual native test completed TLS then
+closed without allocating with an IP-only name; a DNS SAN fixed it with verification
+enabled. See the [upstream name checker](https://webrtc.googlesource.com/src/+/main/rtc_base/openssl_utility.cc).
+Until a personal domain exists, the current TURN-only name is
+`144-217-161-239.sslip.io`. This uses the public
+[sslip.io DNS service](https://nip.io/), which resolves embedded public IPs without
+an account. It carries DNS queries, not room invitations or media. Its availability
+and CA limits are external dependencies; replace it with your own direct DNS name
+when available. The certificate includes both the room IP and TURN DNS name and
+keeps the six-day profile. No certificate checks are disabled, and existing
+business certificates/domains are not reused.
+
 1. Create `/var/www/freedomstream-acme/.well-known/acme-challenge`, owned 1000:1000,
    directories 755. Only ACME challenge files belong here.
 2. Install `shared/nginx-acme.conf` as `/etc/nginx/conf.d/freedomstream-acme.conf`;
@@ -55,7 +68,8 @@ Certificate state/accounts are separate from existing site renewals.
    vhost serves challenges, redirects or refuses requests**. UFW is port based,
    not URL based. Keep existing Cloudflare restrictions on business HTTPS 443.
 4. Run the release's `certificates.sh staging`, then `certificates.sh issue`.
-   Staging has independent config and is never installed. The trusted certificate
+   Staging has independent config and is never installed. The IP and TURN DNS name
+   both use this owned HTTP-01 vhost. The trusted certificate
    and key are checked for expiry, IP/hostname match and matching public keys,
    then copied into a private versioned directory and switched atomically.
 5. Install `shared/nginx-https.conf` as `/etc/nginx/conf.d/freedomstream-https.conf`;

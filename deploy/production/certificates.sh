@@ -6,7 +6,9 @@ root=${FREEDOMSTREAM_ROOT:-/opt/freedomstream}
 state=$root/shared
 action=${1:-check}
 host=$(sed -n 's|^PUBLIC_URL=https://\([^:]*\):8443$|\1|p' "$state/.env")
+turn_host=$(sed -n 's/^TURN_HOST=//p' "$state/.env")
 [[ "$host" =~ ^[a-zA-Z0-9.-]+$ ]] || exit 1
+[[ "$turn_host" =~ ^[a-zA-Z0-9.-]+$ ]] || exit 1
 certbot_image=certbot/certbot:v5.9.0
 certbot() {
   docker run --rm --user 1000:1000 --cpus=0.5 --memory=256m --pids-limit=64 --cap-drop=ALL \
@@ -16,8 +18,9 @@ certbot() {
 }
 case "$action" in
   issue|staging)
-    args=(certonly --non-interactive --agree-tos --register-unsafely-without-email --webroot -w /webroot --cert-name freedomstream --preferred-profile shortlived)
+    args=(certonly --non-interactive --agree-tos --register-unsafely-without-email --webroot -w /webroot --cert-name freedomstream --preferred-profile shortlived --expand)
     if [[ "$host" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then args+=(--ip-address "$host"); else args+=(-d "$host"); fi
+    if [[ "$turn_host" != "$host" ]]; then args+=(-d "$turn_host"); fi
     # Staging uses an independent lineage/config tree and is never installed.
     if [[ "$action" == staging ]]; then args+=(--staging --config-dir /etc/letsencrypt/staging); fi
     certbot "${args[@]}"
@@ -30,6 +33,7 @@ esac
 source_dir=$state/certbot/live/freedomstream
 openssl x509 -in "$source_dir/fullchain.pem" -noout -checkend 86400 >/dev/null
 if [[ "$host" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then openssl x509 -in "$source_dir/fullchain.pem" -noout -checkip "$host" >/dev/null; else openssl x509 -in "$source_dir/fullchain.pem" -noout -checkhost "$host" >/dev/null; fi
+openssl x509 -in "$source_dir/fullchain.pem" -noout -checkhost "$turn_host" >/dev/null
 cert_pub=$(openssl x509 -in "$source_dir/fullchain.pem" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | cut -d' ' -f1)
 key_pub=$(openssl pkey -in "$source_dir/privkey.pem" -pubout -outform DER | sha256sum | cut -d' ' -f1)
 [[ "$cert_pub" == "$key_pub" ]] || { echo 'Certificate/key mismatch.' >&2; exit 1; }

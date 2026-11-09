@@ -12,7 +12,8 @@ pub fn enable() {
 impl log::Log for ConnectionLog {
     fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
         metadata.level() <= log::Level::Debug
-            && metadata.target().starts_with("livekit::rtc_engine")
+            && (metadata.target().starts_with("livekit::rtc_engine")
+                || metadata.target() == "libwebrtc")
     }
     fn log(&self, record: &log::Record<'_>) {
         if self.enabled(record.metadata())
@@ -27,6 +28,9 @@ impl log::Log for ConnectionLog {
 // Allowlist structured connection facts. Never pass SDK messages/SDP/signaling
 // URLs through a logger, even when diagnostic mode is explicitly enabled.
 fn connection_message(message: &str) -> Option<String> {
+    if message.contains("TLS post connection check failed") {
+        return Some("TLS certificate verification failed".to_owned());
+    }
     if let Some(state) = message.strip_prefix("connection change, ")
         && state.chars().all(|c| c.is_ascii_alphabetic() || c == ' ')
     {
@@ -71,6 +75,10 @@ mod tests {
     use super::*;
     #[test]
     fn emits_candidate_addresses_without_ice_or_signaling_authority() {
+        assert_eq!(
+            connection_message("TLS post connection check failed PRIVATE").as_deref(),
+            Some("TLS certificate verification failed")
+        );
         let message = "local ice_candidate candidate:123 1 udp 999 192.0.2.1 12345 typ host generation 0 ufrag PRIVATE Publisher";
         assert_eq!(
             connection_message(message).as_deref(),

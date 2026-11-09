@@ -13,7 +13,7 @@ if ((Test-Path -LiteralPath (Join-Path $root '.start-menu-shortcut')) -and (Test
 }
 if ($KeepDownloads) {
     foreach ($entry in Get-ChildItem -LiteralPath $root -Force) {
-        if ($entry.Name -ne 'downloads') { Remove-Item -LiteralPath $entry.FullName -Recurse -Force }
+        if ($entry.Name -notin @('downloads', '.freedomstream-install')) { Remove-Item -LiteralPath $entry.FullName -Recurse -Force }
     }
 } else {
     # Assert-FreedomStreamRoot resolved/checked this exact absolute target above.

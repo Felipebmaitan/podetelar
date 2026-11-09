@@ -75,10 +75,21 @@ for (const codec of ["h265", "h264"] as const) {
       await page
         .getByRole("button", { name: "Join private room", exact: true })
         .click();
-      if (relay)
+      if (relay) {
+        await expect(page.getByTestId("media-connection")).toHaveAttribute(
+          "data-state",
+          "connected",
+          { timeout: 25_000 },
+        );
         await page
           .getByLabel("Connection route", { exact: true })
           .selectOption("relay");
+        await expect(page.getByTestId("media-connection")).toHaveAttribute(
+          "data-state",
+          "connected",
+          { timeout: 25_000 },
+        );
+      }
       const card = page.getByRole("article", {
         name: `Native ${codec} screen`,
         exact: true,

@@ -7,6 +7,7 @@ import type { StreamKind, PlaybackBuffer, ConnectionRoute } from "./model";
 export function useMediaRoom(session: RoomSession | null) {
   const controller = useRef<MediaRoom | null>(null);
   const stop = useRef<(() => Promise<void>) | null>(null);
+  const shutdown = useRef<Promise<void>>(Promise.resolve());
   const [snapshot, setSnapshot] = useState(emptyMediaSnapshot);
   const [attempt, setAttempt] = useState(0);
   const [route, setRoute] = useState<ConnectionRoute>("auto");
@@ -20,17 +21,23 @@ export function useMediaRoom(session: RoomSession | null) {
     let media: MediaRoom | null = null;
     let unsubscribe = () => {};
     let closing: Promise<void> | null = null;
+    const previous = shutdown.current;
     const close = () => {
       cancelled = true;
       unsubscribe();
       if (controller.current === media) controller.current = null;
-      closing ??= media?.disconnect() ?? Promise.resolve();
+      closing ??= previous.then(() => media?.disconnect()).then(() => {});
+      shutdown.current = closing.catch(() => {});
       return closing;
     };
     stop.current = close;
     // Keep capture/signaling code off the unauthenticated landing page.
     void import("./MediaRoom")
-      .then(({ MediaRoom }) => {
+      .then(async ({ MediaRoom }) => {
+        // A new route uses the same session identity. Finish the old SDK's
+        // Leave/disconnect before admitting its replacement, including while
+        // the previous connection is still being established.
+        await previous;
         if (cancelled) return;
         media = new MediaRoom(roomId, route);
         controller.current = media;

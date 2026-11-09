@@ -56,6 +56,7 @@ Close the publisher, then run `%LOCALAPPDATA%\FreedomStream\Uninstall.ps1`.
 It checks its ownership marker, resolved path, reparse points and running installed
 processes before removing that installation. It removes its own shortcut only if
 the shortcut still points there. `-KeepDownloads` keeps only the download cache.
+The cache option retains its ownership marker so a later install can reuse it.
 An interrupted install is kept for inspection; do not point the installer at an
 unrelated nonempty directory.
 

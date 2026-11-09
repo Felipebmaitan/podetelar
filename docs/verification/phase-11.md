@@ -76,6 +76,31 @@ it excludes external OS dialogs. The temporary capture hook is not shipped.
 
 ![Native room UI with a test-stream preview](../images/native-room.png)
 
+## Native UI refinement completion
+
+Application commit `e49728f` completed the requested image-only refinement loop.
+A fresh Gemini 4 Argon context viewed fifteen actual native-renderer screenshots
+and independently scored all seven fixed categories **9/10** in Round 6. The
+parent verified its pixel preflight and findings before accepting the result.
+Earlier reports, scores, rejected claims, implementation changes and screenshots
+are preserved in the [UI review progress record](../ui-reviews/README.md).
+
+Fresh GPT-6.1-Sol high reviews found and resolved pre-join Advanced access and
+short-window playback-control overflow, then approved those fixes and the final
+pinned audio footer. The latest code passed native formatting/Clippy, **7 portable
+and 28 native tests**, the full Node 24 project check and a normal clean build.
+Watched screenshots used actual local native subscriptions; selected lifecycle
+screens used documented UI fixtures. All temporary capture hooks were removed,
+and the local runtime executable was updated from the clean build.
+
+These results concern the current source and local native build. The portable
+EXE and full packaged media evidence recorded earlier in this document are from
+`0e073b0` and predate the UI refinements; they are not a newly qualified package
+of the final UI. Interactive first-join saving and the external acceptance gates
+below remain separate from visual ratings.
+
+![Final native multi-stream layout](../ui-reviews/images/pass-04/watching.png)
+
 ## Open acceptance gates
 
 AMD encode/decode; a fresh PC and disconnected startup; real games/Discord with

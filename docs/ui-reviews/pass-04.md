@@ -22,7 +22,8 @@ fixtures. Color bars are synthetic content. Capture hooks are excluded from the
 normal build. Native formatting/Clippy, all 35 portable/native tests, the Node 24
 `npm run check` and the normal clean build passed after these changes. The local
 runtime executable is refreshed from that clean build. A new fresh Gemini review
-must score this pass independently.
+independently scored this pass **9/10 in all seven categories** in
+[Round 6](round-06.md), completing the requested visual refinement target.
 
 A fresh GPT-6.1-Sol high reviewer approved `f491a11..e49728f` with no actionable
 material findings after inspecting the code and screenshots. See the separate

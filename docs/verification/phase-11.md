@@ -33,11 +33,38 @@ qualification script verifies both PE subsystem fields. Helpers set hidden-windo
 flags. The pinned local test SFU now stays at one versioned path, verifies its
 executable hash, and refuses to reuse occupied acceptance HTTP ports.
 
-Actual close/reopen/autojoin and the final packaged runtime checks are pending.
-A Windows Security prompt naming the local `livekit-server.exe` blocked the UI
-check. No firewall settings were changed or permission prompts automated. The
-test SFU is not included in the portable client. App/update firewall behavior is
-described in [distribution](../distribution.md#saved-room-and-launch-behavior).
+The committed source produced
+`freedomstream-windows-x64-0.1.0-0e073b0fddad.exe` (81,574,839 bytes,
+SHA-256 `4a07da68ddd4bc263060b976722cab71be3ef4b2b1a0ea6b363c10d0742dcb69`).
+`qualify-portable.ps1` passed isolated-path/concurrent extraction, installed and
+bundled CRT probes, payload/source integrity, modified-cache preservation,
+explicit extraction, damage rejection and both GUI PE checks. Logs:
+`native-rooms-package.log` and `native-rooms-portable-check.log`.
+
+The complete eight-test native SFU suite also passed using that portable EXE,
+with its launcher-isolated shipped media runtime, not the development DLL/plugin
+path. The separate renamed Game/Discord tone fixtures use the extracted publisher
+binary and the developer fixture environment. This checks actual packaged native
+HEVC/H.264 decode, fallback, stereo/owned-instance audio rejection, subscription
+traffic stopping, reconnect/preview restoration and receiver budget propagation.
+See `native-rooms-packaged-media.log` (8 passed in 3.1 minutes).
+
+The actual native GUI process was started, terminated and started again using a
+DPAPI-encrypted synthetic profile in an isolated LocalAppData directory. The
+SFU verified a new participant identity with the saved name on each launch, with
+zero published tracks. Ciphertext contained neither the invitation nor the name.
+`native-profile-autojoin.log` reports two successful joins. The initial profile
+was seeded through Windows DPAPI; first-time saving via a manual form interaction
+was not exercised. Store save/replace/forget uses the actual API tested above.
+
+A Windows Security dialog naming the local `livekit-server.exe` prevented the
+interactive thumbnail/Watch check. Felipe explicitly authorized Allow and future
+development permissions. The tool cannot target the dialog's PickerHost window,
+and the session lacks administrator rights for equivalent firewall configuration.
+No firewall settings were changed. The test SFU is not in the portable client.
+See [distribution](../distribution.md#saved-room-and-launch-behavior). Physical
+UI click/reopen observation remains separate from the actual server-observed
+native autojoin result.
 
 ## Open acceptance gates
 

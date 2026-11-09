@@ -12,7 +12,7 @@
 
 ## Checks performed
 
-- `npm run check`: formatting, workspace/tool type checks, 12 API/configuration tests, six media lifecycle regression tests and production build passed.
+- `npm run check`: formatting, workspace/tool type checks, 12 API/configuration tests, nine media lifecycle regression tests and production build passed.
 - `docker compose up --build -d --wait`: app and actual LiveKit server started successfully with production assets.
 - `npm run smoke -- --restart-app`: actual HTTP room admission, session persistence across container restart, logout and LiveKit server credentials passed.
 - `npm run test:e2e`: five tests passed; the duplicate mobile transport scenario is explicitly skipped, while room admission/authorization flows run at desktop and mobile viewport sizes.
@@ -21,7 +21,7 @@ The initial Linux CI run exposed Docker's different loopback forwarding behavior
 
 The media scenario connects two publishing browsers and an independent viewer through the real local SFU. It verifies video decoding, screen-audio reception, per-stream output volume/mute, focus/grid behavior, metadata on late join, publication removal, publisher capture tracks ending, and room reload/leave behavior. It measures inbound RTP bytes: video is absent before Watch, video flows after Watch, and both video/audio stop increasing after subscriptions are removed and in-flight packets drain. The real media server rejects requests without a token.
 
-The lifecycle regressions use the public controller interface with a controlled SDK transport. They verify immediate capture release while publication or failed-publication cleanup is pending, permission results arriving after leave, Watch preservation through the pinned SDK's teardown-before-Reconnecting event order, and pruning selections only when a publisher is genuinely absent. These tests cover event ordering and ownership; they do not simulate a WAN interruption or replace the real SFU browser scenario.
+The lifecycle regressions use the public controller interface with a controlled SDK transport. They verify immediate capture release while publication or failed-publication cleanup is pending, permission results arriving after leave, paired audio cleanup when screen video ends (including pending audio publication), preserving captures during temporary SDK unpublication, Watch preservation through the pinned SDK's teardown-before-Reconnecting event order, and pruning selections only when a publisher is genuinely absent. The browser scenario also dispatches a synthetic native screen-ended event through the real SDK and checks that video/audio captures both end. These tests cover event ordering and ownership; they do not simulate a WAN interruption or replace physical capture qualification.
 
 ## Verification limits
 

@@ -236,6 +236,29 @@ test("two publishers, selective A/V subscriptions, late join and cleanup use rea
         )
         .toBe(true);
     await expect(viewer.getByRole("article")).toHaveCount(0);
+    // Simulate the browser's native Stop sharing event through the real SDK.
+    await bob
+      .getByRole("button", { name: "Share screen", exact: true })
+      .click();
+    await expect(viewer.getByRole("article")).toHaveCount(1);
+    await bob.evaluate(() => {
+      const tracks = (
+        window as unknown as { testCaptureTracks: MediaStreamTrack[] }
+      ).testCaptureTracks;
+      const video = tracks.find((track) => track.kind === "video")!;
+      video.stop();
+      video.dispatchEvent(new Event("ended"));
+    });
+    await expect
+      .poll(() =>
+        bob.evaluate(() =>
+          (
+            window as unknown as { testCaptureTracks: MediaStreamTrack[] }
+          ).testCaptureTracks.every((track) => track.readyState === "ended"),
+        ),
+      )
+      .toBe(true);
+    await expect(viewer.getByRole("article")).toHaveCount(0);
     await expect(
       viewer.getByRole("heading", { name: "Who's sharing first?" }),
     ).toBeVisible();

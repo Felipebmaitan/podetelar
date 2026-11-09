@@ -32,11 +32,18 @@ const states = {
   Reconnecting: "reconnecting",
   SignalReconnecting: "signalReconnecting",
 };
+class BrowserTrack extends EventTarget {
+  readyState = "live";
+}
 class Capture {
-  readonly mediaStreamTrack = { readyState: "live" };
+  readonly mediaStreamTrack = new BrowserTrack();
   constructor(readonly kind = "video") {}
   stop() {
     this.mediaStreamTrack.readyState = "ended";
+  }
+  endNaturally() {
+    this.mediaStreamTrack.readyState = "ended";
+    this.mediaStreamTrack.dispatchEvent(new Event("ended"));
   }
 }
 class Publication {
@@ -213,6 +220,68 @@ test("capture permissions resolving after leave cannot publish or retain a devic
   await pending;
   assert.equal(capture.mediaStreamTrack.readyState, "ended");
   assert.equal(publish.mock.callCount(), 0);
+});
+
+test("browser ending screen video stops and unpublishes its paired audio", async (t) => {
+  const tracks = [new Capture(), new Capture("audio")];
+  screen = async () => tracks;
+  const f = await fixture(t);
+  await f.media.toggle("screen");
+  assert.equal(f.transport.localParticipant.trackPublications.size, 2);
+  tracks[0]!.endNaturally();
+  assert.ok(
+    tracks.every((track) => track.mediaStreamTrack.readyState === "ended"),
+  );
+  await setImmediate();
+  assert.equal(f.transport.localParticipant.trackPublications.size, 0);
+});
+
+test("browser ending screen video also stops audio with publication still pending", async (t) => {
+  const tracks = [new Capture(), new Capture("audio")];
+  screen = async () => tracks;
+  const f = await fixture(t);
+  const entered = deferred();
+  const publication = deferred();
+  const publish = f.transport.localParticipant.publishTrack;
+  f.transport.localParticipant.publishTrack = async (track, options) => {
+    if (track.kind === "audio") {
+      entered.resolve();
+      await publication.promise;
+    }
+    await publish(track, options);
+  };
+  const unpublish = f.transport.localParticipant.unpublishTrack;
+  f.transport.localParticipant.unpublishTrack = async (track) => {
+    if (track.kind === "audio") await publication.promise;
+    await unpublish(track);
+  };
+  const pending = f.media.toggle("screen");
+  await entered.promise;
+  tracks[0]!.endNaturally();
+  assert.equal(tracks[1]!.mediaStreamTrack.readyState, "ended");
+  publication.resolve();
+  await pending;
+  await setImmediate();
+  assert.equal(f.transport.localParticipant.trackPublications.size, 0);
+});
+
+test("temporary SDK unpublication keeps acquired screen audio alive for republishing", async (t) => {
+  const tracks = [new Capture(), new Capture("audio")];
+  screen = async () => tracks;
+  const f = await fixture(t);
+  await f.media.toggle("screen");
+  const video = f.transport.localParticipant.getTrackPublication(
+    Source.ScreenShare,
+  )!;
+  f.transport.localParticipant.trackPublications.delete(Source.ScreenShare);
+  f.transport.emit(events.LocalTrackUnpublished, video);
+  f.transport.state = states.Reconnecting;
+  await setImmediate();
+  assert.ok(
+    tracks.every((track) => track.mediaStreamTrack.readyState === "live"),
+  );
+  tracks[0]!.endNaturally();
+  assert.equal(tracks[1]!.mediaStreamTrack.readyState, "ended");
 });
 
 function addPeer(transport: Transport) {

@@ -34,6 +34,7 @@ export class MediaRoom {
   });
   private readonly watching = new Set<string>();
   private readonly captures = new Set<LocalTrack>();
+  private readonly endedListeners = new Map<LocalTrack, () => void>();
   private readonly listeners = new Set<(snapshot: MediaSnapshot) => void>();
   private readonly abort = new AbortController();
   private closed = false;
@@ -178,9 +179,10 @@ export class MediaRoom {
         );
       }
       // Own captures before handing them to asynchronous SDK publication.
-      for (const track of captured) this.captures.add(track);
+      this.ownCaptures(kind, captured);
       for (const track of captured) {
-        if (this.closed) throw new Error("Capture cancelled");
+        if (this.closed || track.mediaStreamTrack.readyState === "ended")
+          throw new Error("Capture cancelled");
         await this.room.localParticipant.publishTrack(track, {
           source:
             kind === "camera"
@@ -222,9 +224,37 @@ export class MediaRoom {
 
   private stopCaptures(tracks: LocalTrack[]): void {
     for (const track of tracks) {
+      const ended = this.endedListeners.get(track);
+      if (ended) {
+        track.mediaStreamTrack.removeEventListener("ended", ended);
+        this.endedListeners.delete(track);
+      }
       track.stop();
       this.captures.delete(track);
     }
+  }
+
+  private ownCaptures(kind: StreamKind, tracks: LocalTrack[]): void {
+    for (const track of tracks) this.captures.add(track);
+    if (kind !== "screen") return;
+    const video = tracks.find((track) => track.kind === Track.Kind.Video);
+    if (!video) return;
+    // Browser Stop sharing ends video independently of its system-audio track.
+    // Pair ownership before publication so even pending audio stops immediately.
+    const ended = () => {
+      this.stopCaptures(tracks);
+      void Promise.allSettled(
+        tracks.map((track) =>
+          this.room.localParticipant.unpublishTrack(track, true),
+        ),
+      ).then(() => {
+        this.reconcileRemovals();
+        this.refresh();
+      });
+    };
+    this.endedListeners.set(video, ended);
+    video.mediaStreamTrack.addEventListener("ended", ended, { once: true });
+    if (video.mediaStreamTrack.readyState === "ended") ended();
   }
 
   private reconcileRemovals(): void {

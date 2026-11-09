@@ -72,6 +72,8 @@ export class MediaRoom {
     });
     this.room.on(RoomEvent.Reconnected, () => this.reconcileRemovals());
     this.room.on(RoomEvent.ConnectionStateChanged, (state) => {
+      if (state === ConnectionState.Disconnected)
+        this.stopCaptures([...this.captures]);
       this.connection =
         state === ConnectionState.Connected
           ? "connected"
@@ -113,6 +115,7 @@ export class MediaRoom {
       this.refresh();
     } catch {
       if (this.closed) return;
+      this.stopCaptures([...this.captures]);
       this.connection = "failed";
       this.error =
         "Could not connect to live sharing. Check your connection and try reconnecting.";
@@ -181,7 +184,11 @@ export class MediaRoom {
       // Own captures before handing them to asynchronous SDK publication.
       this.ownCaptures(kind, captured);
       for (const track of captured) {
-        if (this.closed || track.mediaStreamTrack.readyState === "ended")
+        if (
+          this.closed ||
+          this.connection !== "connected" ||
+          track.mediaStreamTrack.readyState === "ended"
+        )
           throw new Error("Capture cancelled");
         await this.room.localParticipant.publishTrack(track, {
           source:

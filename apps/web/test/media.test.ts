@@ -27,6 +27,7 @@ const events = {
   TrackSubscriptionFailed: "trackSubscriptionFailed",
 };
 const states = {
+  Disconnected: "disconnected",
   Connected: "connected",
   Connecting: "connecting",
   Reconnecting: "reconnecting",
@@ -282,6 +283,50 @@ test("temporary SDK unpublication keeps acquired screen audio alive for republis
   );
   tracks[0]!.endNaturally();
   assert.equal(tracks[1]!.mediaStreamTrack.readyState, "ended");
+});
+
+test("failed republication and terminal disconnect release captures absent from SDK maps", async (t) => {
+  const tracks = [new Capture(), new Capture("audio")];
+  screen = async () => tracks;
+  const f = await fixture(t);
+  await f.media.toggle("screen");
+  for (const publication of f.transport.localParticipant.trackPublications.values())
+    f.transport.emit(events.LocalTrackUnpublished, publication);
+  f.transport.localParticipant.trackPublications.clear();
+  f.transport.state = states.Reconnecting;
+  f.transport.emit(events.ConnectionStateChanged, states.Reconnecting);
+  assert.ok(
+    tracks.every((track) => track.mediaStreamTrack.readyState === "live"),
+  );
+  f.transport.state = states.Disconnected;
+  f.transport.emit(events.ConnectionStateChanged, states.Disconnected);
+  assert.ok(
+    tracks.every((track) => track.mediaStreamTrack.readyState === "ended"),
+  );
+  assert.equal(f.snapshot().connection, "disconnected");
+});
+
+test("permissions resolving after terminal disconnection cannot start publication", async (t) => {
+  const granted = deferred();
+  const entered = deferred();
+  const tracks = [new Capture(), new Capture("audio")];
+  screen = async () => {
+    entered.resolve();
+    await granted.promise;
+    return tracks;
+  };
+  const f = await fixture(t);
+  const publish = mock.method(f.transport.localParticipant, "publishTrack");
+  const pending = f.media.toggle("screen");
+  await entered.promise;
+  f.transport.state = states.Disconnected;
+  f.transport.emit(events.ConnectionStateChanged, states.Disconnected);
+  granted.resolve();
+  await pending;
+  assert.ok(
+    tracks.every((track) => track.mediaStreamTrack.readyState === "ended"),
+  );
+  assert.equal(publish.mock.callCount(), 0);
 });
 
 function addPeer(transport: Transport) {

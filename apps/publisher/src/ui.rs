@@ -91,7 +91,7 @@ pub struct PublisherUi {
     remembered_volume: HashMap<String, u32>,
     advanced_open: bool,
     show_invitation: bool,
-    self_preview_revision: (usize, u64),
+    self_preview_revision: Option<(crate::preview::Latest, u64)>,
 }
 impl PublisherUi {
     pub fn new() -> Self {
@@ -130,7 +130,7 @@ impl PublisherUi {
             remembered_volume: HashMap::new(),
             advanced_open: false,
             show_invitation: false,
-            self_preview_revision: (0, 0),
+            self_preview_revision: None,
         };
         if let Some(profile) = profile {
             app.controller.send(Command::Join {
@@ -739,6 +739,9 @@ impl eframe::App for PublisherUi {
         self.textures.retain(|id, _| {
             (state.sharing && id == "__self_preview") || state.tiles.iter().any(|t| &t.id == id)
         });
+        if !state.sharing {
+            self.self_preview_revision = None;
+        }
         self.remembered_volume
             .retain(|id, _| state.tiles.iter().any(|t| &t.id == id));
         if !state
@@ -882,8 +885,10 @@ impl eframe::App for PublisherUi {
                     return;
                 }
                 let own_tile = if state.sharing && self.focused.is_none() {
-                    let identity = std::sync::Arc::as_ptr(&state.self_preview) as usize;
-                    if identity != self.self_preview_revision.0 {
+                    // Retain the Arc, not just an address: a later source can reuse
+                    // a freed allocation and restart its sequence at one.
+                    let same_source=self.self_preview_revision.as_ref().is_some_and(|(cache,_)|std::sync::Arc::ptr_eq(cache,&state.self_preview));
+                    if !same_source {
                         self.textures.remove("__self_preview");
                     }
                     let frame = state
@@ -893,7 +898,7 @@ impl eframe::App for PublisherUi {
                         .and_then(|frame| frame.clone());
                     let picture: crate::playback::Picture = std::sync::Arc::default();
                     if let Some(frame) = frame
-                        && self.self_preview_revision != (identity, frame.sequence)
+                        && (self.self_preview_revision.as_ref().is_none_or(|(cache,sequence)|!std::sync::Arc::ptr_eq(cache,&state.self_preview)||*sequence!=frame.sequence)||!self.textures.contains_key("__self_preview"))
                         && let Ok(image) = image::load_from_memory_with_format(
                             &frame.bytes,
                             image::ImageFormat::Jpeg,
@@ -905,7 +910,7 @@ impl eframe::App for PublisherUi {
                                     rgba.as_raw(),
                                 ));
                             }
-                            self.self_preview_revision = (identity, frame.sequence);
+                            self.self_preview_revision = Some((state.self_preview.clone(), frame.sequence));
                     }
                     Some(Tile {
                         id: "__self_preview".into(),
@@ -919,7 +924,7 @@ impl eframe::App for PublisherUi {
                         status: String::new(),
                     })
                 } else {
-                    self.self_preview_revision = (0, 0);
+                    self.self_preview_revision = None;
                     None
                 };
                 let tiles: Vec<_> = own_tile

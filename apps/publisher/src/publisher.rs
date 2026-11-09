@@ -1121,9 +1121,11 @@ async fn worker(
                         let _ = active.stop(&joined.room).await;
                     } else {
                         let mode = active.mode;
+                        let self_preview = active.previews.clone();
                         stream = Some(active);
                         update(&snapshot, |state| {
                             state.sharing = true;
+                            state.self_preview = self_preview;
                             state.mode = Some(mode);
                             state.metrics = Metrics::default();
                             state.delivery = delivery::Metrics::default();

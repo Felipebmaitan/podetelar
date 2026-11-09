@@ -65,6 +65,46 @@ The executable is currently unsigned. Verify its SHA-256 against the authenticat
 room's download details. This checks integrity against that trusted manifest,
 not an independent publisher signature. Code signing remains future work.
 
+## Windows security warnings and app icon
+
+The launcher and native publisher embed the same original MIT-licensed monitor/play
+icon, with 16–256 pixel Windows resources and FreedomStream product/version metadata.
+The native window also sets that icon explicitly for its title bar and taskbar.
+Regenerate the artwork with `python scripts/make-windows-icon.py` (Pillow required
+only for regeneration). Portable qualification checks both executables for an
+embedded icon and product metadata.
+
+An icon and version metadata do not establish publisher trust. The current release
+is unsigned. “Windows protected your PC” or “Unknown publisher” usually indicates
+SmartScreen reputation; a named threat in Defender Protection history is a separate
+antivirus detection. Record the exact message, detection name and affected release
+SHA-256 before diagnosing a friend's report. Do not require antivirus exclusions.
+
+For direct downloads, use a publicly trusted Authenticode signing identity, SHA-256
+and trusted timestamping, and keep a consistent publisher identity. This requires
+identity validation and access to a certificate or managed signing account; a
+self-signed certificate does not solve public distribution trust. Even valid OV/EV
+signatures do not guarantee immediate SmartScreen reputation. Microsoft recommends
+Artifact Signing for non-Store distribution; Microsoft Store distribution is another
+route if its packaging and eligibility requirements are met. See
+[Microsoft's reputation guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
+
+Signing integration must account for the portable format: the current reader expects
+its payload footer at EOF, whereas Authenticode adds a PE certificate table. Simply
+running SignTool on today's final bundle is not a supported release procedure.
+Before shipping signed releases, make payload discovery certificate-table aware,
+sign the internal publisher before hashing/archiving, sign the completed bundle,
+then verify signatures and run portable extraction/startup checks on the signed
+artifact. Generate the final download hash and size after signing. Qualify bundled
+executable libraries under Smart App Control as well. No signing credentials or
+verified signed-release result are included in this change.
+
+If Defender identifies a named threat and investigation establishes a false positive,
+submit the exact affected binary through
+[Microsoft's software developer submission portal](https://www.microsoft.com/en-us/wdsi/filesubmission).
+This is separate from building SmartScreen reputation. Firewall network-access
+prompts are also separate and follow the behavior described above.
+
 ## Build and qualify
 
 Use Windows, Node 24, Rust 1.95, a licensed Visual Studio C++ toolchain, and `npm ci`:

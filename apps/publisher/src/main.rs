@@ -252,6 +252,12 @@ fn run() -> Result<()> {
         None => {
             let options = eframe::NativeOptions {
                 viewport: eframe::egui::ViewportBuilder::default()
+                    .with_icon(eframe::egui::IconData {
+                        rgba: include_bytes!("../../../assets/windows/freedomstream-64.rgba")
+                            .to_vec(),
+                        width: 64,
+                        height: 64,
+                    })
                     .with_inner_size([1280.0, 720.0])
                     .with_min_inner_size([960.0, 540.0]),
                 renderer: eframe::Renderer::Glow,

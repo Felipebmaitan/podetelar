@@ -66,6 +66,16 @@ See [distribution](../distribution.md#saved-room-and-launch-behavior). Physical
 UI click/reopen observation remains separate from the actual server-observed
 native autojoin result.
 
+## Native UI screenshot
+
+A subsequent capture pass corrected vertical stream-card stacking inside the grid
+and removed a play glyph missing from the bundled font. The portable artifact
+recorded above predates these cosmetic corrections. This image is the actual
+native renderer's 1280×720 framebuffer with an authenticated synthetic preview;
+it excludes external OS dialogs. The temporary capture hook is not shipped.
+
+![Native room UI with a test-stream preview](../images/native-room.png)
+
 ## Open acceptance gates
 
 AMD encode/decode; a fresh PC and disconnected startup; real games/Discord with

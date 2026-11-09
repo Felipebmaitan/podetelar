@@ -267,119 +267,124 @@ impl PublisherUi {
         egui::Frame::group(ui.style())
             .inner_margin(10.0)
             .show(ui, |ui| {
-                ui.set_width((width - 20.0).max(180.0));
-                ui.add(egui::Label::new(egui::RichText::new(&tile.name).strong()).truncate());
-                ui.add_space(6.0);
-                if let Ok(mut picture) = tile.picture.lock()
-                    && let Some(image) = picture.take()
-                {
-                    if let Some(texture) = self.textures.get_mut(&tile.id) {
-                        texture.set(image, egui::TextureOptions::LINEAR);
+                ui.vertical(|ui| {
+                    ui.set_width((width - 20.0).max(180.0));
+                    ui.add(egui::Label::new(egui::RichText::new(&tile.name).strong()).truncate());
+                    ui.add_space(6.0);
+                    if let Ok(mut picture) = tile.picture.lock()
+                        && let Some(image) = picture.take()
+                    {
+                        if let Some(texture) = self.textures.get_mut(&tile.id) {
+                            texture.set(image, egui::TextureOptions::LINEAR);
+                        } else {
+                            self.textures.insert(
+                                tile.id.clone(),
+                                ui.ctx().load_texture(
+                                    &tile.id,
+                                    image,
+                                    egui::TextureOptions::LINEAR,
+                                ),
+                            );
+                        }
+                    }
+                    let (rect, _) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), ui.available_width() * 9.0 / 16.0),
+                        egui::Sense::hover(),
+                    );
+                    ui.painter()
+                        .rect_filled(rect, 6.0, egui::Color32::from_rgb(13, 16, 23));
+                    if let Some(texture) = self.textures.get(&tile.id) {
+                        let aspect = texture.aspect_ratio();
+                        let size = egui::vec2(
+                            rect.width().min(rect.height() * aspect),
+                            rect.height().min(rect.width() / aspect),
+                        );
+                        let image_rect = egui::Rect::from_center_size(rect.center(), size);
+                        ui.painter().image(
+                            texture.id(),
+                            image_rect,
+                            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                            egui::Color32::WHITE,
+                        );
                     } else {
-                        self.textures.insert(
-                            tile.id.clone(),
-                            ui.ctx()
-                                .load_texture(&tile.id, image, egui::TextureOptions::LINEAR),
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            if tile.watching {
+                                "Connecting…"
+                            } else {
+                                "Preview loading…"
+                            },
+                            egui::FontId::proportional(14.0),
+                            egui::Color32::GRAY,
                         );
                     }
-                }
-                let (rect, _) = ui.allocate_exact_size(
-                    egui::vec2(ui.available_width(), ui.available_width() * 9.0 / 16.0),
-                    egui::Sense::hover(),
-                );
-                ui.painter()
-                    .rect_filled(rect, 6.0, egui::Color32::from_rgb(13, 16, 23));
-                if let Some(texture) = self.textures.get(&tile.id) {
-                    let aspect = texture.aspect_ratio();
-                    let size = egui::vec2(
-                        rect.width().min(rect.height() * aspect),
-                        rect.height().min(rect.width() / aspect),
-                    );
-                    let image_rect = egui::Rect::from_center_size(rect.center(), size);
-                    ui.painter().image(
-                        texture.id(),
-                        image_rect,
-                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                        egui::Color32::WHITE,
-                    );
-                } else {
-                    ui.painter().text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        if tile.watching {
-                            "Connecting…"
-                        } else {
-                            "Preview loading…"
-                        },
-                        egui::FontId::proportional(14.0),
-                        egui::Color32::GRAY,
-                    );
-                }
-                if !tile.watching {
-                    let button =
-                        egui::Rect::from_center_size(rect.center(), egui::vec2(126.0, 44.0));
-                    if ui
-                        .put(
-                            button,
-                            egui::Button::new(
-                                egui::RichText::new("▶ Watch")
-                                    .size(18.0)
-                                    .strong()
-                                    .color(egui::Color32::BLACK),
-                            )
-                            .fill(ACCENT)
-                            .corner_radius(22.0),
-                        )
-                        .clicked()
-                    {
-                        self.controller.send(Command::Watch {
-                            id: tile.id.clone(),
-                            enabled: true,
-                        });
-                    }
-                } else {
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        if ui.button("Stop watching").clicked() {
-                            self.controller.send(Command::Watch {
-                                id: tile.id.clone(),
-                                enabled: false,
-                            });
-                            self.textures.remove(&tile.id);
-                        }
+                    if !tile.watching {
+                        let button =
+                            egui::Rect::from_center_size(rect.center(), egui::vec2(126.0, 44.0));
                         if ui
-                            .button(if self.focused.is_some() {
-                                "Back to grid"
-                            } else {
-                                "Focus"
-                            })
+                            .put(
+                                button,
+                                egui::Button::new(
+                                    egui::RichText::new("Watch")
+                                        .size(18.0)
+                                        .strong()
+                                        .color(egui::Color32::BLACK),
+                                )
+                                .fill(ACCENT)
+                                .corner_radius(22.0),
+                            )
                             .clicked()
                         {
-                            self.focused = if self.focused.is_some() {
-                                None
-                            } else {
-                                Some(tile.id.clone())
-                            };
+                            self.controller.send(Command::Watch {
+                                id: tile.id.clone(),
+                                enabled: true,
+                            });
                         }
-                    });
-                    let mut volume = tile.volume.load(Ordering::Relaxed);
-                    if ui
-                        .add(egui::Slider::new(&mut volume, 0..=100).text("Volume"))
-                        .changed()
-                    {
-                        tile.volume.store(volume, Ordering::Relaxed);
+                    } else {
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            if ui.button("Stop watching").clicked() {
+                                self.controller.send(Command::Watch {
+                                    id: tile.id.clone(),
+                                    enabled: false,
+                                });
+                                self.textures.remove(&tile.id);
+                            }
+                            if ui
+                                .button(if self.focused.is_some() {
+                                    "Back to grid"
+                                } else {
+                                    "Focus"
+                                })
+                                .clicked()
+                            {
+                                self.focused = if self.focused.is_some() {
+                                    None
+                                } else {
+                                    Some(tile.id.clone())
+                                };
+                            }
+                        });
+                        let mut volume = tile.volume.load(Ordering::Relaxed);
+                        if ui
+                            .add(egui::Slider::new(&mut volume, 0..=100).text("Volume"))
+                            .changed()
+                        {
+                            tile.volume.store(volume, Ordering::Relaxed);
+                        }
+                        ui.collapsing("Playback details", |ui| {
+                            ui.small(format!(
+                                "{} · {} decoded frames",
+                                tile.codec,
+                                tile.frames.load(Ordering::Relaxed)
+                            ));
+                        });
                     }
-                    ui.collapsing("Playback details", |ui| {
-                        ui.small(format!(
-                            "{} · {} decoded frames",
-                            tile.codec,
-                            tile.frames.load(Ordering::Relaxed)
-                        ));
-                    });
-                }
-                if !tile.status.is_empty() {
-                    ui.colored_label(egui::Color32::from_rgb(235, 189, 105), &tile.status);
-                }
+                    if !tile.status.is_empty() {
+                        ui.colored_label(egui::Color32::from_rgb(235, 189, 105), &tile.status);
+                    }
+                });
             });
     }
 }

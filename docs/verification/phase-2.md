@@ -13,7 +13,7 @@
 
 ## Checks performed
 
-- `npm run check`: formatting, workspace/tool type checks, 12 API/configuration tests, twelve media lifecycle regression tests and production build passed.
+- `npm run check`: formatting, workspace/tool type checks, 12 API/configuration tests, fifteen media lifecycle regression tests and production build passed.
 - `docker compose up --build -d --wait`: app and actual LiveKit server started successfully with production assets.
 - `npm run smoke -- --restart-app`: actual HTTP room admission, session persistence across container restart, logout and LiveKit server credentials passed.
 - `npm run test:e2e`: five tests passed; the duplicate mobile transport scenario is explicitly skipped, while room admission/authorization flows run at desktop and mobile viewport sizes.
@@ -23,6 +23,8 @@ The initial Linux CI run exposed Docker's different loopback forwarding behavior
 The media scenario connects two publishing browsers and an independent viewer through the real local SFU. It verifies video decoding, screen-audio reception, per-stream output volume/mute, focus/grid behavior, metadata on late join, publication removal, publisher capture tracks ending, and room reload/leave behavior. It measures inbound RTP bytes: video is absent before Watch, video flows after Watch, and both video/audio stop increasing after subscriptions are removed and in-flight packets drain. The real media server rejects requests without a token.
 
 The lifecycle regressions use the public controller interface with a controlled SDK transport. They verify supplied camera ownership/natural termination, immediate capture release while publication or failed-publication cleanup is pending, permission results arriving after leave/disconnection, paired audio cleanup when screen video ends (including pending audio publication), preserving captures during temporary SDK unpublication, releasing all captures after terminal recovery failure, Watch preservation through the pinned SDK's teardown-before-Reconnecting event order, and pruning selections only when a publisher is genuinely absent. The browser scenario dispatches synthetic native screen/camera-ended events through the real SDK. It holds any camera permission-query recovery pending, stops capture, releases that query, and checks that no additional acquisition occurs and all tracks remain ended. Supplied tracks avoid this SDK recovery path entirely. These tests cover event ordering and ownership; they do not simulate a WAN interruption or replace physical capture qualification.
+
+Room reconnection can succeed despite track-republication failure. Regression coverage checks that a successful room reconnect releases orphaned captures, partial screen republication ends its entire video/audio group, and successful camera republication preserves its capture. A new sharing attempt cannot retain the failed camera capture alongside the new one.
 
 ## Verification limits
 

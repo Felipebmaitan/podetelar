@@ -33,7 +33,7 @@ export class MediaRoom {
   });
   private readonly watching = new Set<string>();
   private readonly captures = new Set<LocalTrack>();
-  private readonly endedListeners = new Map<LocalTrack, () => void>();
+  private readonly captureEndings = new Map<LocalTrack, () => void>();
   private readonly listeners = new Set<(snapshot: MediaSnapshot) => void>();
   private readonly abort = new AbortController();
   private closed = false;
@@ -67,7 +67,10 @@ export class MediaRoom {
       this.reconcileRemovals();
       this.refresh();
     });
-    this.room.on(RoomEvent.Reconnected, () => this.reconcileRemovals());
+    this.room.on(RoomEvent.Reconnected, () => {
+      this.reconcileCaptures();
+      this.reconcileRemovals();
+    });
     this.room.on(RoomEvent.ConnectionStateChanged, (state) => {
       if (state === ConnectionState.Disconnected)
         this.stopCaptures([...this.captures]);
@@ -209,10 +212,10 @@ export class MediaRoom {
 
   private stopCaptures(tracks: LocalTrack[]): void {
     for (const track of tracks) {
-      const ended = this.endedListeners.get(track);
+      const ended = this.captureEndings.get(track);
       if (ended) {
         track.mediaStreamTrack.removeEventListener("ended", ended);
-        this.endedListeners.delete(track);
+        this.captureEndings.delete(track);
       }
       track.stop();
       this.captures.delete(track);
@@ -281,9 +284,26 @@ export class MediaRoom {
         this.refresh();
       });
     };
-    this.endedListeners.set(video, ended);
+    for (const track of tracks) this.captureEndings.set(track, ended);
     video.mediaStreamTrack.addEventListener("ended", ended, { once: true });
     if (video.mediaStreamTrack.readyState === "ended") ended();
+  }
+
+  private reconcileCaptures(): void {
+    if (this.closed || this.room.state !== ConnectionState.Connected) return;
+    const published = new Set(
+      [...this.room.localParticipant.trackPublications.values()].map(
+        (publication) => publication.track,
+      ),
+    );
+    // Room recovery can succeed even when track republication failed. A missing
+    // member ends its whole capture group so no invisible device/audio remains.
+    for (const track of this.captures) {
+      if (published.has(track)) continue;
+      this.captureEndings.get(track)?.();
+      this.error = "Sharing stopped during reconnect. Share again to retry.";
+    }
+    this.refresh();
   }
 
   private reconcileRemovals(): void {

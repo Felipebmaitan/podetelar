@@ -388,6 +388,81 @@ test("permissions resolving after terminal disconnection cannot start publicatio
   assert.equal(publish.mock.callCount(), 0);
 });
 
+test("successful room recovery releases failed camera republication before another share", async (t) => {
+  const first = new Capture();
+  camera = async () => first;
+  const f = await fixture(t);
+  await f.media.toggle("camera");
+  const publication = f.transport.localParticipant.getTrackPublication(
+    Source.Camera,
+  )!;
+  f.transport.localParticipant.trackPublications.clear();
+  f.transport.emit(events.LocalTrackUnpublished, publication);
+  f.transport.state = states.Reconnecting;
+  f.transport.emit(events.ConnectionStateChanged, states.Reconnecting);
+  assert.equal(first.mediaStreamTrack.readyState, "live");
+  f.transport.state = states.Connected;
+  f.transport.emit(events.ConnectionStateChanged, states.Connected);
+  f.transport.emit(events.Reconnected);
+  assert.equal(first.mediaStreamTrack.readyState, "ended");
+  const second = new Capture();
+  camera = async () => second;
+  await f.media.toggle("camera");
+  assert.equal(first.mediaStreamTrack.readyState, "ended");
+  assert.equal(second.mediaStreamTrack.readyState, "live");
+});
+
+test("partial screen republication ends the entire video/audio capture group", async (t) => {
+  const tracks = [new Capture(), new Capture("audio")];
+  screen = async () => tracks;
+  const f = await fixture(t);
+  await f.media.toggle("screen");
+  const audio = f.transport.localParticipant.getTrackPublication(
+    Source.ScreenShareAudio,
+  )!;
+  f.transport.localParticipant.trackPublications.delete(
+    Source.ScreenShareAudio,
+  );
+  f.transport.emit(events.LocalTrackUnpublished, audio);
+  f.transport.state = states.Reconnecting;
+  f.transport.emit(events.ConnectionStateChanged, states.Reconnecting);
+  f.transport.state = states.Connected;
+  f.transport.emit(events.ConnectionStateChanged, states.Connected);
+  f.transport.emit(events.Reconnected);
+  assert.ok(
+    tracks.every((track) => track.mediaStreamTrack.readyState === "ended"),
+  );
+  await setImmediate();
+  assert.equal(f.transport.localParticipant.trackPublications.size, 0);
+});
+
+test("successful camera republication preserves the application-supplied capture", async (t) => {
+  const capture = new Capture();
+  camera = async () => capture;
+  const f = await fixture(t);
+  await f.media.toggle("camera");
+  const publication = f.transport.localParticipant.getTrackPublication(
+    Source.Camera,
+  )!;
+  f.transport.localParticipant.trackPublications.clear();
+  f.transport.emit(events.LocalTrackUnpublished, publication);
+  f.transport.state = states.Reconnecting;
+  f.transport.emit(events.ConnectionStateChanged, states.Reconnecting);
+  await setImmediate();
+  f.transport.localParticipant.trackPublications.set(
+    Source.Camera,
+    publication,
+  );
+  f.transport.emit(events.LocalTrackPublished, publication);
+  f.transport.state = states.Connected;
+  f.transport.emit(events.ConnectionStateChanged, states.Connected);
+  f.transport.emit(events.Reconnected);
+  await setImmediate();
+  assert.equal(capture.mediaStreamTrack.readyState, "live");
+  await f.media.toggle("camera");
+  assert.equal(capture.mediaStreamTrack.readyState, "ended");
+});
+
 function addPeer(transport: Transport) {
   const peer = new Peer("friend");
   peer.trackPublications.set(

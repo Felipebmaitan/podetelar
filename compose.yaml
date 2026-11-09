@@ -1,0 +1,44 @@
+name: freedomstream
+services:
+  app:
+    build: .
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      PUBLIC_URL: http://localhost:3000
+      DATABASE_PATH: /app/data/freedomstream.db
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?Run npm run setup first}
+      LIVEKIT_URL: ws://localhost:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?Run npm run setup first}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?Run npm run setup first}
+    ports:
+      - 127.0.0.1:3000:3000
+    volumes:
+      - room-data:/app/data
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  livekit:
+    image: livekit/livekit-server:v1.13.11
+    command: ["--config", "/etc/livekit.yaml", "--node-ip", "127.0.0.1"]
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?Run npm run setup first}: ${LIVEKIT_API_SECRET:?Run npm run setup first}"
+    volumes:
+      - ./deploy/livekit.local.yaml:/etc/livekit.yaml:ro
+    ports:
+      - 127.0.0.1:7880:7880
+      - 127.0.0.1:7881:7881
+      - 127.0.0.1:7882:7882/udp
+    restart: unless-stopped
+volumes:
+  room-data:

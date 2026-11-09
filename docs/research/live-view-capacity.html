@@ -1,0 +1,30 @@
+<section id="freedomstream-live-capacity" data-viz-composition>
+  <p style="margin:0 0 12px;color:var(--muted-foreground)">Model: 100 Mbps per full-quality view · excludes audio, previews and overhead</p>
+  <div data-viz-container></div>
+  <script type="application/json" data-viz-chart>
+    {
+      "id": "freedomstream-live-capacity-chart",
+      "title": "Instantaneous load on the 1 Gbps connection",
+      "description": "Calculated loads, not benchmarks. Each subscription receives one 100 Mbps stream. Five people each watching all four other publishers create twenty subscriptions.",
+      "height": 280,
+      "spec": {
+        "type": "bar",
+        "x": "views",
+        "y": "outbound",
+        "xLabel": "Simultaneous full-quality stream views",
+        "yLabel": "VPS outbound (Mbps)",
+        "showValues": true,
+        "showLegend": false,
+        "startAtZero": true,
+        "referenceLines": [{"axis":"y","value":1000,"label":"1 Gbps port"}]
+      },
+      "columns": ["views", "outbound"],
+      "rows": [["1", 100], ["5", 500], ["10", 1000], ["20", 2000]]
+    }
+  </script>
+</section>
+<script type="module">
+  import { mountChart } from "https://persistent.oaistatic.com/plugins/visualize/charts/1.1.6/element.js";
+  const root = document.getElementById("freedomstream-live-capacity");
+  mountChart(root.querySelector("[data-viz-container]"), JSON.parse(root.querySelector("[data-viz-chart]").textContent));
+</script>

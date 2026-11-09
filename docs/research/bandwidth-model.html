@@ -1,0 +1,31 @@
+<section id="freedomstream-bandwidth" data-viz-composition>
+  <p style="margin:0 0 12px;color:var(--muted-foreground)">Model: 6 Mbps per stream · five viewers per stream · excludes audio and overhead</p>
+  <div data-viz-container></div>
+  <script type="application/json" data-viz-chart>
+    {
+      "id": "freedomstream-bandwidth-model",
+      "title": "VPS outbound bandwidth as more people stream",
+      "description": "Illustrative model: 6 Mbps video per stream, five viewers watching each stream. Excludes audio, retransmissions and protocol overhead. These are calculated loads, not measured performance.",
+      "summary": "Five concurrent streams at this viewing load use 150 Mbps outbound, or 67.5 GB per hour before overhead. Each broadcaster uploads one 6 Mbps copy.",
+      "height": 300,
+      "spec": {
+        "type": "bar",
+        "x": "streams",
+        "y": "outbound",
+        "xLabel": "Simultaneous streams",
+        "yLabel": "VPS outbound (Mbps)",
+        "showValues": true,
+        "showLegend": false,
+        "startAtZero": true
+      },
+      "columns": ["streams", "outbound"],
+      "rows": [["1", 30], ["2", 60], ["3", 90], ["4", 120], ["5", 150]]
+    }
+  </script>
+</section>
+<script type="module">
+  import { mountChart } from "https://persistent.oaistatic.com/plugins/visualize/charts/1.1.6/element.js";
+  const root = document.getElementById("freedomstream-bandwidth");
+  const config = JSON.parse(root.querySelector("[data-viz-chart]").textContent);
+  mountChart(root.querySelector("[data-viz-container]"), config);
+</script>

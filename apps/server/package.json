@@ -1,0 +1,22 @@
+{
+  "name": "@freedomstream/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "node --env-file-if-exists=../../.env --import tsx --watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node --env-file-if-exists=../../.env dist/main.js",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit",
+    "test": "tsx --test test/rooms.test.ts test/config.test.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "11.1.5",
+    "@fastify/rate-limit": "11.2.2",
+    "@fastify/static": "10.1.10",
+    "@freedomstream/contracts": "0.1.0",
+    "fastify": "5.12.8",
+    "livekit-server-sdk": "2.19.2"
+  }
+}

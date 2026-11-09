@@ -23,7 +23,10 @@ use std::{
     },
     time::Duration,
 };
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::{
+    sync::{mpsc, watch},
+    task::JoinHandle,
+};
 
 const TRACK_NAME: &str = "FreedomStream screen";
 const AUDIO_TRACK_NAME: &str = "FreedomStream application audio";
@@ -55,12 +58,100 @@ impl CaptureCancellation {
 
 type Cancellation = Arc<CaptureCancellation>;
 
+// Unlike queued commands, this signal can preempt a network join already being
+// awaited. A cancelled stage retains ownership until it can release its result.
+struct JoinCancellation(watch::Sender<u64>);
+impl JoinCancellation {
+    fn new() -> Self {
+        Self(watch::channel(0).0)
+    }
+    fn cancel(&self) {
+        self.0
+            .send_modify(|generation| *generation = generation.wrapping_add(1));
+    }
+    fn ticket(&self) -> JoinTicket {
+        let receiver = self.0.subscribe();
+        let generation = *receiver.borrow();
+        JoinTicket {
+            receiver,
+            generation,
+        }
+    }
+}
+
+struct JoinTicket {
+    receiver: watch::Receiver<u64>,
+    generation: u64,
+}
+impl JoinTicket {
+    async fn run<T, F, C, CF>(&self, future: F, cleanup: C) -> Result<Option<T>>
+    where
+        T: Send + 'static,
+        F: Future<Output = Result<T>> + Send + 'static,
+        C: FnOnce(T) -> CF + Send + 'static,
+        CF: Future<Output = ()> + Send + 'static,
+    {
+        let mut receiver = self.receiver.clone();
+        if *receiver.borrow() != self.generation {
+            return Ok(None);
+        }
+        let mut pending = tokio::spawn(future);
+        let cancelled = async {
+            while *receiver.borrow_and_update() == self.generation {
+                if receiver.changed().await.is_err() {
+                    break;
+                }
+            }
+        };
+        let result = tokio::select! {
+            result = &mut pending => Some(result.context("Room connection worker stopped.")?),
+            _ = cancelled => None,
+        };
+        match result {
+            Some(Ok(value)) if *self.receiver.borrow() == self.generation => Ok(Some(value)),
+            Some(Ok(value)) => {
+                tokio::spawn(cleanup(value));
+                Ok(None)
+            }
+            Some(Err(_)) if *self.receiver.borrow() != self.generation => Ok(None),
+            Some(Err(error)) => Err(error),
+            None => {
+                tokio::spawn(async move {
+                    if let Ok(Ok(value)) = pending.await {
+                        cleanup(value).await;
+                    }
+                });
+                Ok(None)
+            }
+        }
+    }
+}
+
+struct PendingAdmission(Option<Admission>);
+impl Drop for PendingAdmission {
+    fn drop(&mut self) {
+        if let Some(admission) = self.0.take() {
+            tokio::spawn(async move {
+                admission.leave().await;
+            });
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct SharingSelection {
+    pub source_id: String,
+    pub encoder: String,
+    pub quality: Settings,
+}
+
 #[derive(Clone)]
 pub struct Snapshot {
     pub connection: &'static str,
     pub room_name: String,
     pub error: String,
     pub busy: bool,
+    pub operation: &'static str,
     pub sharing: bool,
     pub capture_pending: bool,
     pub sources: Vec<SourceInfo>,
@@ -71,6 +162,8 @@ pub struct Snapshot {
     pub mode: Option<Mode>,
     pub applications: Vec<audio::Application>,
     pub tiles: Vec<crate::playback::Tile>,
+    pub participants: Vec<String>,
+    pub active_selection: Option<SharingSelection>,
 }
 
 impl Default for Snapshot {
@@ -80,6 +173,7 @@ impl Default for Snapshot {
             room_name: String::new(),
             error: String::new(),
             busy: false,
+            operation: "",
             sharing: false,
             capture_pending: false,
             sources: Vec::new(),
@@ -90,6 +184,8 @@ impl Default for Snapshot {
             mode: None,
             applications: Vec::new(),
             tiles: Vec::new(),
+            participants: Vec::new(),
+            active_selection: None,
         }
     }
 }
@@ -131,11 +227,13 @@ pub struct Controller {
     commands: mpsc::Sender<QueuedCommand>,
     snapshot: Arc<Mutex<Snapshot>>,
     cancellation: Cancellation,
+    join_cancellation: JoinCancellation,
 }
 
 struct QueuedCommand {
     command: Command,
     capture: Option<Arc<AtomicBool>>,
+    join: Option<JoinTicket>,
 }
 
 fn update(snapshot: &Mutex<Snapshot>, apply: impl FnOnce(&mut Snapshot)) {
@@ -169,6 +267,7 @@ impl Controller {
             commands,
             snapshot,
             cancellation,
+            join_cancellation: JoinCancellation::new(),
         }
     }
 
@@ -180,6 +279,25 @@ impl Controller {
     }
 
     pub fn send(&self, command: Command) {
+        if matches!(
+            command,
+            Command::Join { .. } | Command::Leave | Command::Shutdown
+        ) {
+            self.join_cancellation.cancel();
+        }
+        let join = matches!(command, Command::Join { .. }).then(|| self.join_cancellation.ticket());
+        let operation = match &command {
+            Command::Join { .. } => "Joining room…",
+            Command::Start { .. } => "Starting your stream…",
+            Command::Apply { .. } => "Applying stream settings…",
+            Command::Stop => "Stopping your stream…",
+            Command::Leave => "Leaving the room…",
+            Command::Shutdown => "Closing…",
+            Command::Refresh => "Refreshing available sources…",
+            Command::DownloadBudget { .. } => "Updating your watching allowance…",
+            Command::Watch { enabled: true, .. } => "Starting playback…",
+            Command::Watch { enabled: false, .. } => "Stopping playback…",
+        };
         let capture_pending = matches!(command, Command::Start { .. } | Command::Apply { .. });
         // Register before enqueueing: Stop must also cancel capture work that
         // has not yet reached the room worker.
@@ -189,7 +307,11 @@ impl Controller {
         }
         if self
             .commands
-            .try_send(QueuedCommand { command, capture })
+            .try_send(QueuedCommand {
+                command,
+                capture,
+                join,
+            })
             .is_err()
         {
             update(&self.snapshot, |state| {
@@ -198,6 +320,7 @@ impl Controller {
         } else {
             update(&self.snapshot, |state| {
                 state.busy = true;
+                state.operation = operation;
                 state.capture_pending |= capture_pending;
                 state.error.clear();
             });
@@ -211,10 +334,12 @@ impl Controller {
 
 impl Drop for Controller {
     fn drop(&mut self) {
+        self.join_cancellation.cancel();
         self.cancel_capture();
         let _ = self.commands.try_send(QueuedCommand {
             command: Command::Shutdown,
             capture: None,
+            join: None,
         });
     }
 }
@@ -625,17 +750,49 @@ impl Session {
         snapshot: Arc<Mutex<Snapshot>>,
         cancellation: Cancellation,
         recovery: Arc<AtomicU64>,
-    ) -> Result<Self> {
-        let admission = Admission::join(invitation, name).await?;
-        let access = admission.media_access().await?;
+        ticket: JoinTicket,
+    ) -> Result<Option<Self>> {
+        let invitation = invitation.to_owned();
+        let name = name.to_owned();
+        let Some(admission) = ticket
+            .run(
+                async move { Admission::join(&invitation, &name).await },
+                |admission| async move {
+                    admission.leave().await;
+                },
+            )
+            .await?
+        else {
+            return Ok(None);
+        };
+        let mut pending_admission = PendingAdmission(Some(admission.clone()));
+        let client = admission.clone();
+        let Some(access) = ticket
+            .run(async move { client.media_access().await }, |_| async {})
+            .await?
+        else {
+            return Ok(None);
+        };
         let options = connection::options(route);
-        let (room, mut events) = tokio::time::timeout(
-            Duration::from_secs(15),
-            Room::connect(&access.server_url, &access.token, options),
-        )
-        .await
-        .context("Media connection timed out.")?
-        .map_err(|_| anyhow::anyhow!("Could not connect to the media server."))?;
+        let Some((room, mut events)) = ticket
+            .run(
+                async move {
+                    tokio::time::timeout(
+                        Duration::from_secs(15),
+                        Room::connect(&access.server_url, &access.token, options),
+                    )
+                    .await
+                    .context("Media connection timed out.")?
+                    .map_err(|_| anyhow::anyhow!("Could not connect to the media server."))
+                },
+                |(room, _)| async move {
+                    let _ = room.close().await;
+                },
+            )
+            .await?
+        else {
+            return Ok(None);
+        };
         let room = Arc::new(room);
         let media_room = room.clone();
         let expected_audio = Arc::new(AtomicBool::new(false));
@@ -690,12 +847,12 @@ impl Session {
                 }
             }
         });
-        Ok(Self {
-            admission,
+        Ok(Some(Self {
+            admission: pending_admission.0.take().expect("Accepted room admission"),
             room,
             events,
             expected_audio,
-        })
+        }))
     }
 
     async fn close(self) {
@@ -730,9 +887,14 @@ async fn worker(
     let mut tick = tokio::time::interval(Duration::from_millis(500));
     loop {
         let queued = tokio::select! {
-            command = commands.recv() => command.unwrap_or(QueuedCommand { command: Command::Shutdown, capture: None }),
+            command = commands.recv() => command.unwrap_or(QueuedCommand { command: Command::Shutdown, capture: None, join: None }),
             _ = tick.tick() => {
                 if let Some(joined) = &session {
+                    let mut participants: Vec<_> = joined.room.remote_participants().values().map(|p| {
+                        let name = p.name(); if name.is_empty() { "Participant".to_owned() } else { name }
+                    }).collect();
+                    participants.sort_by_key(|name| name.to_lowercase());
+                    update(&snapshot, |state| state.participants = participants);
                     if joined.room.connection_state() == ConnectionState::Connected {
                         match playback.reconcile(&joined.room, &joined.admission).await {
                             Ok(tiles) => update(&snapshot, |state| state.tiles = tiles),
@@ -767,7 +929,7 @@ async fn worker(
                     if !active.finished() { continue; }
                     if let (Some(active), Some(joined)) = (stream.take(), session.as_ref()) {
                         let result = active.stop(&joined.room).await;
-                        update(&snapshot, |state| { state.sharing = false; if let Err(error) = result { state.error = error.to_string(); } });
+                        update(&snapshot, |state| { state.sharing = false; state.active_selection = None; if let Err(error) = result { state.error = error.to_string(); } });
                     }
                 }
                 continue;
@@ -793,6 +955,8 @@ async fn worker(
                     update(&snapshot, |state| {
                         state.connection = "connecting";
                         state.sharing = false;
+                        state.room_name.clear();
+                        state.participants.clear();
                     });
                     let joined = Session::join(
                         &invitation,
@@ -801,13 +965,18 @@ async fn worker(
                         snapshot.clone(),
                         cancellation.clone(),
                         playback.recovery_signal(),
+                        queued.join.context("Room join was cancelled.")?,
                     )
                     .await?;
-                    update(&snapshot, |state| {
-                        state.connection = "connected";
-                        state.room_name = joined.admission.room_name.clone();
-                    });
-                    session = Some(joined);
+                    if let Some(joined) = joined {
+                        update(&snapshot, |state| {
+                            state.connection = "connected";
+                            state.room_name = joined.admission.room_name.clone();
+                        });
+                        session = Some(joined);
+                    } else {
+                        update(&snapshot, |state| state.connection = "disconnected");
+                    }
                 }
                 Command::Start {
                     source_id,
@@ -823,6 +992,11 @@ async fn worker(
                     exclusions,
                     quality,
                 } => {
+                    let selection = SharingSelection {
+                        source_id: source_id.clone(),
+                        encoder: encoder.clone(),
+                        quality,
+                    };
                     let joined = session.as_ref().context("Join a room first.")?;
                     let source = sources::enumerate()
                         .iter()
@@ -855,7 +1029,10 @@ async fn worker(
                     if let Some(active) = stream.as_mut()
                         && active.apply_live(&config)?
                     {
-                        update(&snapshot, |state| state.mode = Some(active.mode));
+                        update(&snapshot, |state| {
+                            state.mode = Some(active.mode);
+                            state.active_selection = Some(selection);
+                        });
                         return Ok(());
                     }
                     config.mode()?;
@@ -877,6 +1054,7 @@ async fn worker(
                             state.mode = Some(mode);
                             state.metrics = Metrics::default();
                             state.delivery = delivery::Metrics::default();
+                            state.active_selection = Some(selection);
                         });
                     }
                 }
@@ -900,6 +1078,7 @@ async fn worker(
                         state.sharing = false;
                         state.room_name.clear();
                         state.tiles.clear();
+                        state.participants.clear();
                     });
                 }
                 Command::Refresh => {
@@ -930,8 +1109,12 @@ async fn worker(
         .await;
         update(&snapshot, |state| {
             state.busy = false;
+            state.operation = "";
             state.capture_pending = false;
             state.sharing = stream.is_some();
+            if stream.is_none() {
+                state.active_selection = None;
+            }
             if let Err(error) = result {
                 state.error = error.to_string();
                 if state.connection == "connecting" {
@@ -948,6 +1131,69 @@ async fn worker(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn cancelling_join_returns_promptly_and_releases_late_results() -> Result<()> {
+        let cancellation = JoinCancellation::new();
+        let ticket = cancellation.ticket();
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let (release, finish) = tokio::sync::oneshot::channel();
+        let (cleaned, cleanup) = tokio::sync::oneshot::channel();
+        let pending = tokio::spawn(async move {
+            ticket
+                .run(
+                    async move {
+                        let _ = started.send(());
+                        finish.await.context("Release join fixture")?;
+                        Ok(17_u64)
+                    },
+                    |value| async move {
+                        let _ = cleaned.send(value);
+                    },
+                )
+                .await
+        });
+        ready.await?;
+        cancellation.cancel();
+        let result = tokio::time::timeout(Duration::from_secs(1), pending).await?;
+        assert!(result??.is_none());
+        assert_eq!(
+            cancellation
+                .ticket()
+                .run(async { Ok(31_u64) }, |_| async {})
+                .await?,
+            Some(31)
+        );
+        let _ = release.send(());
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), cleanup).await??,
+            17
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_join_cancelled_before_processing_never_starts_network_work() -> Result<()> {
+        let cancellation = JoinCancellation::new();
+        let ticket = cancellation.ticket();
+        cancellation.cancel();
+        let ran = Arc::new(AtomicBool::new(false));
+        let observed = ran.clone();
+        assert!(
+            ticket
+                .run(
+                    async move {
+                        ran.store(true, Ordering::Release);
+                        Ok(())
+                    },
+                    |_| async {}
+                )
+                .await?
+                .is_none()
+        );
+        assert!(!observed.load(Ordering::Acquire));
+        Ok(())
+    }
 
     #[test]
     fn bitrate_edit_keeps_active_geometry_after_source_aspect_changes_and_rejects_invalid_edits() {

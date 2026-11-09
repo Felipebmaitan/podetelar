@@ -30,7 +30,7 @@ use the GUI subsystem. Helper processes run hidden.
 
 Paste an invitation and name once. After a successful join these are encrypted
 for your Windows user; reopening automatically joins the saved room. Sharing and
-watching remain explicit. Advanced → Forget saved room removes the saved profile
+watching remain explicit. Room options → Forget saved room removes the saved profile
 and leaves. See [saved access and firewall behavior](distribution.md#saved-room-and-launch-behavior).
 
 The initial 1280×720 viewport has sharing controls on the left and larger native

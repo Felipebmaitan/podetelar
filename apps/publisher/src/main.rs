@@ -234,7 +234,7 @@ fn run() -> Result<()> {
                 "FreedomStream",
                 options,
                 Box::new(|context| {
-                    context.egui_ctx.set_visuals(eframe::egui::Visuals::dark());
+                    ui::configure_theme(&context.egui_ctx);
                     Ok(Box::new(ui::PublisherUi::new()))
                 }),
             )

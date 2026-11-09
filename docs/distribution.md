@@ -16,7 +16,7 @@ in `%LOCALAPPDATA%\FreedomStream\settings.json`, encrypted using Windows DPAPI f
 the current user. The same user can reopen any portable release and automatically
 join that room. Session cookies and media tokens are never persisted. Sharing and
 watching require explicit actions after launch. Invalid/revoked invitations return
-to the join form. Advanced → Forget saved room deletes the saved profile and leaves
+to the join form. Room options → Forget saved room deletes the saved profile and leaves
 the room; ordinary Leave keeps it for the next launch. Remove this settings file
 as well as the runtime cache when removing all local app data.
 

@@ -5,6 +5,7 @@ param(
     [string[]]$NativeArguments
 )
 $ErrorActionPreference = 'Stop'
+$env:PSModulePath = "$PSHOME\Modules;$env:PSModulePath"
 $repository = Split-Path -Parent $PSScriptRoot
 $gstRoot = if ($env:FREEDOMSTREAM_GSTREAMER) { $env:FREEDOMSTREAM_GSTREAMER } else { Join-Path $repository '.local/gstreamer' }
 if (-not (Test-Path -LiteralPath (Join-Path $gstRoot 'bin/gst-inspect-1.0.exe'))) {

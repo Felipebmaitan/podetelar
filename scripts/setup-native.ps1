@@ -1,4 +1,8 @@
 $ErrorActionPreference = 'Stop'
+# npm can inherit PowerShell 7's module paths before launching Windows
+# PowerShell 5.1. Resolve built-in modules from the executing host first.
+$env:PSModulePath = "$PSHOME\Modules;$env:PSModulePath"
+$ProgressPreference = 'SilentlyContinue'
 $repository = Split-Path -Parent $PSScriptRoot
 $runtime = Get-Content -LiteralPath (Join-Path $repository 'deploy/native-runtime.json') -Raw | ConvertFrom-Json
 $gstRoot = Join-Path $repository '.local/gstreamer'
@@ -13,7 +17,7 @@ if (Test-Path -LiteralPath $inspect) {
 $downloads = Join-Path $repository '.local/downloads'
 New-Item -ItemType Directory -Force -Path $downloads | Out-Null
 $installer = Join-Path $downloads "gstreamer-$($runtime.version).exe"
-if (-not (Test-Path -LiteralPath $installer)) { Invoke-WebRequest -Uri $runtime.url -OutFile $installer }
+if (-not (Test-Path -LiteralPath $installer)) { Invoke-WebRequest -UseBasicParsing -TimeoutSec 600 -Uri $runtime.url -OutFile $installer }
 $checksum = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
 if ($checksum -ne $runtime.sha256) { throw 'Native runtime checksum did not match the pinned upstream checksum.' }
 $installation = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/CURRENTUSER', '/TYPE=devel', "/DIR=`"$gstRoot`"") -WindowStyle Hidden -PassThru

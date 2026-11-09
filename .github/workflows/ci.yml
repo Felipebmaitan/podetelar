@@ -55,6 +55,11 @@ jobs:
             ~/.cargo/git
             target
           key: native-windows-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+      - uses: actions/cache@v4
+        with:
+          path: .local/downloads
+          key: native-installer-${{ runner.os }}-${{ hashFiles('deploy/native-runtime.json') }}
+      - run: node --test scripts/native-tools.test.mjs
       - run: npm run native:setup
       - run: npm run native:check
       - run: npm run native:test

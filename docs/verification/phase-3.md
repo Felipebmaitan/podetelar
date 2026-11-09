@@ -29,3 +29,5 @@ An existing window was also captured through WGC with 120 frames per codec at ap
 - Audio isolation/feedback behavior (Phase 4), an evening with 4–5 simultaneous streams and final shared-VPS resource measurements (Phase 8).
 
 CI compiles, lints and tests the Windows application and builds a release executable. Hosted CI does not have the physical encoder/capture hardware needed to close these items. No AMD, 4K120 or game-performance certification is implied by merging implementation work.
+
+The first hosted native setup run exposed PowerShell 7 module-path inheritance through npm into Windows PowerShell 5.1, hiding `Get-FileHash`. The helpers now prioritize their executing host's built-in modules. A Windows regression test runs setup from Node with a deliberately inherited PowerShell 7 module path and a tampered cached installer, verifies checksum rejection, and uses a path containing spaces. Installer download progress is suppressed and the download cache remains subject to the pinned SHA-256 check.

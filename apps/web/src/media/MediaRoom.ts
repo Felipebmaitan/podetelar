@@ -1,0 +1,397 @@
+import {
+  ConnectionState,
+  LocalAudioTrack,
+  LocalVideoTrack,
+  LogLevel,
+  Room,
+  RoomEvent,
+  Track,
+  setLogLevel,
+} from "livekit-client";
+import type { LocalTrack, Participant } from "livekit-client";
+import type { MediaAccess } from "@freedomstream/contracts";
+import { request } from "../api";
+import type { LiveStream, MediaSnapshot, StreamKind } from "./model";
+
+// SDK logs can contain signaling URLs. Surface bounded messages through our UI instead.
+setLogLevel(LogLevel.silent);
+
+const kindOf = (source: Track.Source): StreamKind | null =>
+  source === Track.Source.ScreenShare
+    ? "screen"
+    : source === Track.Source.Camera
+      ? "camera"
+      : null;
+const streamId = (identity: string, kind: StreamKind) => `${identity}:${kind}`;
+
+/** Owns capture, signaling and subscription lifetimes. UI receives browser tracks, not SDK objects. */
+export class MediaRoom {
+  private readonly room = new Room({
+    adaptiveStream: false,
+    dynacast: false,
+    publishDefaults: { videoCodec: "vp8", simulcast: false },
+  });
+  private readonly watching = new Set<string>();
+  private readonly captures = new Set<LocalTrack>();
+  private readonly captureEndings = new Map<LocalTrack, () => void>();
+  private readonly listeners = new Set<(snapshot: MediaSnapshot) => void>();
+  private readonly abort = new AbortController();
+  private closed = false;
+  private connection: MediaSnapshot["connection"] = "connecting";
+  private pending: StreamKind | null = null;
+  private error = "";
+  private reconciliationQueued = false;
+
+  constructor(private readonly roomId: string) {
+    const refresh = () => this.refresh();
+    for (const event of [
+      RoomEvent.ParticipantConnected,
+      RoomEvent.TrackPublished,
+      RoomEvent.TrackSubscribed,
+      RoomEvent.TrackUnsubscribed,
+      RoomEvent.TrackMuted,
+      RoomEvent.TrackUnmuted,
+      RoomEvent.LocalTrackPublished,
+      RoomEvent.ParticipantNameChanged,
+    ])
+      this.room.on(event, refresh);
+    this.room.on(RoomEvent.LocalTrackUnpublished, () => {
+      this.reconcileRemovals();
+      this.refresh();
+    });
+    this.room.on(RoomEvent.TrackUnpublished, () => {
+      this.reconcileRemovals();
+      this.refresh();
+    });
+    this.room.on(RoomEvent.ParticipantDisconnected, () => {
+      this.reconcileRemovals();
+      this.refresh();
+    });
+    this.room.on(RoomEvent.Reconnected, () => {
+      this.reconcileCaptures();
+      this.reconcileRemovals();
+    });
+    this.room.on(RoomEvent.ConnectionStateChanged, (state) => {
+      if (state === ConnectionState.Disconnected)
+        this.stopCaptures([...this.captures]);
+      this.connection =
+        state === ConnectionState.Connected
+          ? "connected"
+          : state === ConnectionState.Reconnecting ||
+              state === ConnectionState.SignalReconnecting
+            ? "reconnecting"
+            : state === ConnectionState.Connecting
+              ? "connecting"
+              : "disconnected";
+      this.refresh();
+    });
+    this.room.on(RoomEvent.TrackSubscriptionFailed, () => {
+      this.error =
+        "That stream could not be received. Stop watching and try again.";
+      this.refresh();
+    });
+  }
+
+  subscribe(listener: (snapshot: MediaSnapshot) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  async connect(): Promise<void> {
+    try {
+      const access = await request<MediaAccess>(
+        `/api/rooms/${this.roomId}/media-token`,
+        { method: "POST", signal: this.abort.signal },
+      );
+      if (this.closed) return;
+      await this.room.connect(access.serverUrl, access.token, {
+        autoSubscribe: false,
+      });
+      if (this.closed) {
+        await this.room.disconnect();
+        return;
+      }
+      this.connection = "connected";
+      this.refresh();
+    } catch {
+      if (this.closed) return;
+      this.stopCaptures([...this.captures]);
+      this.connection = "failed";
+      this.error =
+        "Could not connect to live sharing. Check your connection and try reconnecting.";
+      this.refresh();
+    }
+  }
+
+  watch(id: string, enabled: boolean): void {
+    if (enabled) this.watching.add(id);
+    else this.watching.delete(id);
+    this.error = "";
+    this.refresh();
+  }
+
+  async toggle(kind: StreamKind): Promise<void> {
+    if (this.closed || this.pending || this.connection !== "connected") return;
+    this.pending = kind;
+    this.error = "";
+    this.refresh();
+    const captured: LocalTrack[] = [];
+    try {
+      const source =
+        kind === "screen" ? Track.Source.ScreenShare : Track.Source.Camera;
+      const existing = this.room.localParticipant.getTrackPublication(source);
+      if (existing?.track) {
+        const sources =
+          kind === "screen"
+            ? [Track.Source.ScreenShare, Track.Source.ScreenShareAudio]
+            : [Track.Source.Camera];
+        const tracks = sources.flatMap(
+          (current) =>
+            this.room.localParticipant.getTrackPublication(current)?.track ??
+            [],
+        );
+        this.watching.delete(
+          streamId(this.room.localParticipant.identity, kind),
+        );
+        this.stopCaptures(tracks);
+        await Promise.all(
+          tracks.map((track) =>
+            this.room.localParticipant.unpublishTrack(track, true),
+          ),
+        );
+        return;
+      }
+      captured.push(...(await this.capture(kind)));
+      // Own captures before handing them to asynchronous SDK publication.
+      this.ownCaptures(captured);
+      for (const track of captured) {
+        if (
+          this.closed ||
+          this.connection !== "connected" ||
+          track.mediaStreamTrack.readyState === "ended"
+        )
+          throw new Error("Capture cancelled");
+        await this.room.localParticipant.publishTrack(track, {
+          source:
+            kind === "camera"
+              ? Track.Source.Camera
+              : track.kind === Track.Kind.Audio
+                ? Track.Source.ScreenShareAudio
+                : Track.Source.ScreenShare,
+          videoCodec: "vp8",
+          simulcast: false,
+        });
+      }
+    } catch {
+      this.stopCaptures(captured);
+      await Promise.allSettled(
+        captured.map((track) =>
+          this.room.localParticipant.unpublishTrack(track, true),
+        ),
+      );
+      if (!this.closed)
+        this.error =
+          kind === "screen"
+            ? "Screen sharing did not start. Choose a source and allow capture to try again."
+            : "Camera sharing did not start. Check camera permissions and try again.";
+    } finally {
+      this.pending = null;
+      this.refresh();
+    }
+  }
+
+  async disconnect(): Promise<void> {
+    this.closed = true;
+    this.abort.abort();
+    this.stopCaptures([...this.captures]);
+    this.listeners.clear();
+    this.watching.clear();
+    await this.room.disconnect(true);
+    this.room.removeAllListeners();
+  }
+
+  private stopCaptures(tracks: LocalTrack[]): void {
+    for (const track of tracks) {
+      const ended = this.captureEndings.get(track);
+      if (ended) {
+        track.mediaStreamTrack.removeEventListener("ended", ended);
+        this.captureEndings.delete(track);
+      }
+      track.stop();
+      this.captures.delete(track);
+    }
+  }
+
+  private async capture(kind: StreamKind): Promise<LocalTrack[]> {
+    const screenOptions: DisplayMediaStreamOptions & {
+      selfBrowserSurface: "exclude";
+    } = {
+      video: { width: 1920, height: 1080, frameRate: 30 },
+      audio: {
+        autoGainControl: false,
+        echoCancellation: false,
+        noiseSuppression: false,
+      },
+      selfBrowserSurface: "exclude",
+    };
+    const stream =
+      kind === "camera"
+        ? await navigator.mediaDevices.getUserMedia({
+            video: { width: 1280, height: 720 },
+            audio: false,
+          })
+        : await navigator.mediaDevices.getDisplayMedia(screenOptions);
+    const tracks: LocalTrack[] = [];
+    try {
+      if (this.closed || this.connection !== "connected")
+        throw new Error("Capture cancelled");
+      if (!stream.getVideoTracks().length) throw new Error("No video capture");
+      for (const track of stream.getTracks()) {
+        if (track.kind === "video") {
+          if (kind === "screen") track.contentHint = "motion";
+          tracks.push(new LocalVideoTrack(track, undefined, true));
+        } else {
+          // SDK 2.23 redeclares a protected optional audio processor with an
+          // explicit undefined, conflicting with exactOptionalPropertyTypes.
+          tracks.push(
+            new LocalAudioTrack(track, undefined, true) as LocalTrack,
+          );
+        }
+      }
+      return tracks;
+    } catch (error) {
+      this.stopCaptures(tracks);
+      for (const track of stream.getTracks()) track.stop();
+      throw error;
+    }
+  }
+
+  private ownCaptures(tracks: LocalTrack[]): void {
+    for (const track of tracks) this.captures.add(track);
+    const video = tracks.find((track) => track.kind === Track.Kind.Video);
+    if (!video) return;
+    // All capture/reacquisition is application-owned. Native video termination
+    // releases paired audio even while publication is pending. SDK reconnect
+    // unpublication does not emit a native ended event and retains the captures.
+    const ended = () => {
+      this.stopCaptures(tracks);
+      void Promise.allSettled(
+        tracks.map((track) =>
+          this.room.localParticipant.unpublishTrack(track, true),
+        ),
+      ).then(() => {
+        this.reconcileRemovals();
+        this.refresh();
+      });
+    };
+    for (const track of tracks) this.captureEndings.set(track, ended);
+    video.mediaStreamTrack.addEventListener("ended", ended, { once: true });
+    if (video.mediaStreamTrack.readyState === "ended") ended();
+  }
+
+  private reconcileCaptures(): void {
+    if (this.closed || this.room.state !== ConnectionState.Connected) return;
+    const published = new Set(
+      [...this.room.localParticipant.trackPublications.values()].map(
+        (publication) => publication.track,
+      ),
+    );
+    // Room recovery can succeed even when track republication failed. A missing
+    // member ends its whole capture group so no invisible device/audio remains.
+    for (const track of this.captures) {
+      if (published.has(track)) continue;
+      this.captureEndings.get(track)?.();
+      this.error = "Sharing stopped during reconnect. Share again to retry.";
+    }
+    this.refresh();
+  }
+
+  private reconcileRemovals(): void {
+    if (this.closed || this.reconciliationQueued) return;
+    this.reconciliationQueued = true;
+    // The pinned SDK emits removal events before entering Reconnecting. Defer until
+    // that synchronous event batch ends, then reconcile only a stable connected room.
+    queueMicrotask(() => {
+      this.reconciliationQueued = false;
+      if (this.closed || this.room.state !== ConnectionState.Connected) return;
+      const present = new Set(
+        [
+          this.room.localParticipant,
+          ...this.room.remoteParticipants.values(),
+        ].flatMap((participant) =>
+          this.streams(participant).map((stream) => stream.id),
+        ),
+      );
+      for (const id of this.watching)
+        if (!present.has(id)) this.watching.delete(id);
+      this.refresh();
+    });
+  }
+
+  private refresh(): void {
+    if (this.closed) return;
+    const participants = [
+      this.room.localParticipant,
+      ...this.room.remoteParticipants.values(),
+    ];
+    for (const participant of this.room.remoteParticipants.values()) {
+      for (const publication of participant.trackPublications.values()) {
+        const kind = kindOf(publication.source);
+        const desired = kind
+          ? this.watching.has(streamId(participant.identity, kind))
+          : publication.source === Track.Source.ScreenShareAudio &&
+            this.watching.has(streamId(participant.identity, "screen"));
+        if (publication.isDesired !== desired)
+          publication.setSubscribed(desired);
+      }
+    }
+    const snapshot: MediaSnapshot = {
+      connection: this.connection,
+      pending: this.pending,
+      error: this.error,
+      participants: participants
+        .filter((participant) => participant.identity)
+        .map((participant) => ({
+          id: participant.identity,
+          name: participant.name || "Friend",
+          local: participant.isLocal,
+        })),
+      streams: participants.flatMap((participant) => this.streams(participant)),
+    };
+    for (const listener of this.listeners) listener(snapshot);
+  }
+
+  private streams(participant: Participant): LiveStream[] {
+    return [...participant.videoTrackPublications.values()].flatMap(
+      (publication) => {
+        const kind = kindOf(publication.source);
+        if (!kind) return [];
+        const id = streamId(participant.identity, kind);
+        const watching = this.watching.has(id);
+        const audio =
+          kind === "screen"
+            ? participant.getTrackPublication(Track.Source.ScreenShareAudio)
+                ?.track
+            : undefined;
+        return [
+          {
+            id,
+            publisherId: participant.identity,
+            publisherName: participant.name || "Friend",
+            kind,
+            local: participant.isLocal,
+            muted: publication.isMuted,
+            watching,
+            video: watching
+              ? (publication.track?.mediaStreamTrack ?? null)
+              : null,
+            audio:
+              watching && !participant.isLocal
+                ? (audio?.mediaStreamTrack ?? null)
+                : null,
+          },
+        ];
+      },
+    );
+  }
+}

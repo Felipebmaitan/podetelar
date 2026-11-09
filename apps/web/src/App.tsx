@@ -3,6 +3,8 @@ import type { FormEvent, ReactNode } from "react";
 import { invitationSchema, roomIdSchema } from "@freedomstream/contracts";
 import type { CreatedRoom, RoomSession } from "@freedomstream/contracts";
 import { ApiError, request } from "./api";
+import { useMediaRoom } from "./media/useMediaRoom";
+import { LiveStreams } from "./media/LiveStreams";
 
 const entryRoomId = /^\/r\/([A-Za-z0-9_-]{22})$/.exec(
   window.location.pathname,
@@ -43,6 +45,7 @@ export function App() {
   );
   const [copyState, setCopyState] = useState("");
   const [leaving, setLeaving] = useState(false);
+  const media = useMediaRoom(session);
 
   useEffect(() => {
     if (!entryRoomId) return;
@@ -91,6 +94,7 @@ export function App() {
     if (!session) return;
     setLeaving(true);
     try {
+      await media.disconnect();
       await request<void>(`/api/rooms/${session.room.id}/leave`, {
         method: "POST",
       });
@@ -117,6 +121,20 @@ export function App() {
             {session?.room.name ?? "A space for friends"}
           </div>
         </div>
+        {session && (
+          <section className="participant-list" aria-label="People in the room">
+            <p className="eyebrow">IN THIS ROOM</p>
+            {media.snapshot.participants.map((participant) => (
+              <div key={participant.id} className="participant-row">
+                <span className="presence-dot" aria-hidden="true" />
+                <span>
+                  {participant.name}
+                  {participant.local ? " (you)" : ""}
+                </span>
+              </div>
+            ))}
+          </section>
+        )}
         <div className="sidebar-footer">
           <span className="avatar" aria-hidden="true">
             {session?.participant.displayName.slice(0, 1).toUpperCase() ?? "F"}
@@ -158,16 +176,12 @@ export function App() {
                 {leaving ? "Leaving…" : "Leave room"}
               </button>
             </div>
-            <section className="room-stage">
-              <span className="stage-mark" aria-hidden="true">
-                #
-              </span>
-              <h2>Your room is ready.</h2>
-              <p>
-                Live sharing is coming next. Your private room and invitation
-                are ready for your friends.
-              </p>
-            </section>
+            <LiveStreams
+              snapshot={media.snapshot}
+              watch={media.watch}
+              toggle={media.toggle}
+              reconnect={media.reconnect}
+            />
             <section className="invite-panel">
               <div>
                 <h2>Bring your friends</h2>

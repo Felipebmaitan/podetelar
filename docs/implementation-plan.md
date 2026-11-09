@@ -1,8 +1,8 @@
 # Implementation phases
 
-Each phase is an acceptance gate. Phase 1 is the initial commit on `main`; every later phase gets its own branch and PR. Pause for Felipe's review after each phase. Do not merge phases or move to the next one without that review. Code can be MIT licensed while third-party runtimes retain their own licenses; qualify distribution licenses before bundling native media dependencies.
+Each phase is an acceptance gate. Phase 1 is the initial commit on `main`; every later phase gets its own branch and PR. Felipe authorized autonomous implementation and merging: each PR must pass its acceptance checks and a new GPT-6.1-Sol review at high reasoning before merge. Address review findings before proceeding. Code can be MIT licensed while third-party runtimes retain their own licenses; qualify distribution licenses before bundling native media dependencies. Report external hardware/deployment verification separately and do not waive it merely to finish the sequence.
 
-**Current checkpoint:** Phase 1 is implemented and locally verified. Formatting, type checks, the production build, 12 API/configuration tests, four desktop/mobile browser tests, the Docker build, and the real HTTP/container-restart/LiveKit-credentials smoke check passed. Phase 2 has not started. Actual streaming, GPU performance and VPS deployment have not been tested in this phase.
+**Current checkpoint:** Phase 1 passed GitHub CI. Phase 2 is implemented and locally verified, awaiting its PR review/merge gate. The media test uses real WebRTC/SFU traffic with synthetic browser sources; native capture, GPU performance and VPS deployment are not qualified by that result. See [Phase 2 verification](verification/phase-2.md).
 
 ## 1. Persistent private-room foundation — initial commit
 

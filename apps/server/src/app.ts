@@ -35,6 +35,8 @@ export async function buildApp(
     path: `/api/rooms/${id}`,
     maxAge: SESSION_TTL_MS / 1000,
   });
+  const mediaOrigin = new URL(config.livekitUrl).origin;
+  const mediaHttpOrigin = mediaOrigin.replace(/^ws/, "http");
 
   app.addHook("onRequest", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -43,7 +45,7 @@ export async function buildApp(
     reply.header("X-Frame-Options", "DENY");
     reply.header(
       "Content-Security-Policy",
-      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+      `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' ${mediaOrigin} ${mediaHttpOrigin}; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`,
     );
     if (
       !["GET", "HEAD", "OPTIONS"].includes(request.method) &&
@@ -72,7 +74,7 @@ export async function buildApp(
     });
   });
 
-  app.get("/api/health", async () => ({ status: "ok", phase: 1 }));
+  app.get("/api/health", async () => ({ status: "ok", phase: 2 }));
 
   app.post(
     "/api/rooms",

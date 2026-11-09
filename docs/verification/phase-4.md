@@ -9,6 +9,7 @@ Windows application audio is implemented with selected-application and desktop a
 - The game fixture's audio reaches Chrome through the temporary Canada VPS SFU. Browser RTP counters confirm that Stop watching stops incoming audio and video, rewatch resumes reception, and Stop releases native capture.
 - The existing HEVC and H.264 native video transport checks continue to pass. Native formatting/clippy and Rust tests pass locally; the final PR still requires exact-head CI and a new GPT-6.1-Sol high review.
 - A real full native reconnect republishes both tracks with new IDs. Stop removes both while the participant intentionally stays connected for six more seconds, proving removal is not masked by a room disconnect. A native test verifies that cancelling a lease disables actual retained RTC audio/video tracks without opening capture devices.
+- The review found that the SDK can empty its local publication map before sender removal fails. Cleanup now awaits both removal outcomes and closes the media identity on any error/timeout, even with an empty local map. A regression test reproduces that ordering and verifies both tracks are attempted; a successful cleanup test preserves the connected identity.
 
 The application captures/mixes at 48 kHz with two channels and publishes Opus at a 192 kbps target, without voice noise suppression, AGC or echo cancellation. A distinct-left/right synthetic fixture checks channel separation rather than inferring stereo from a codec label alone.
 

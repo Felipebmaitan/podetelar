@@ -14,6 +14,7 @@ use livekit::{
     },
 };
 use std::{
+    future::Future,
     sync::{
         Arc, Mutex, Weak,
         atomic::{AtomicBool, Ordering},
@@ -377,42 +378,67 @@ impl Stream {
             .map_err(|_| anyhow::anyhow!("Capture worker stopped unexpectedly."))
             .and_then(|result| result);
         let mut audio_result = Ok(());
+        let mut publication_ids = Vec::new();
         if let Some((task, track)) = self.audio {
             audio_result = match task.await {
                 Ok(result) => result.map(|_| ()),
                 Err(_) => Err(anyhow::anyhow!("Audio worker stopped unexpectedly.")),
             };
-            let _ = tokio::time::timeout(
-                Duration::from_secs(5),
-                room.local_participant().unpublish_track(&track.sid()),
-            )
-            .await;
+            publication_ids.push(track.sid());
         }
-        // Release native capture before awaiting publication cleanup.
-        let _ = tokio::time::timeout(
-            Duration::from_secs(5),
-            room.local_participant().unpublish_track(&self.video.sid()),
-        )
-        .await;
+        publication_ids.push(self.video.sid());
         let owned_ids: Vec<_> = self
             .stop
             .tracks
             .iter()
             .map(|track| track.rtc_track().id())
             .collect();
-        let orphaned = room
-            .local_participant()
-            .track_publications()
-            .values()
-            .filter_map(|publication| publication.track())
-            .any(|track| owned_ids.contains(&track.rtc_track().id()));
-        if orphaned || room.connection_state() != ConnectionState::Connected {
-            // A full reconnect can retain an SDK republish task. Closing the
-            // media identity prevents it from publishing a stopped source later.
-            let _ = room.close().await;
-        }
+        // Both native pumps are released before network cleanup. The SDK drops
+        // a publication from its local map before removing its RTC sender, so
+        // an empty map is not proof that failed/timed-out removal succeeded.
+        settle_publications(
+            publication_ids.into_iter().map(|sid| async move {
+                matches!(
+                    tokio::time::timeout(
+                        Duration::from_secs(5),
+                        room.local_participant().unpublish_track(&sid)
+                    )
+                    .await,
+                    Ok(Ok(_))
+                )
+            }),
+            || {
+                room.connection_state() != ConnectionState::Connected
+                    || room
+                        .local_participant()
+                        .track_publications()
+                        .values()
+                        .filter_map(|publication| publication.track())
+                        .any(|track| owned_ids.contains(&track.rtc_track().id()))
+            },
+            async {
+                let _ = room.close().await;
+            },
+        )
+        .await;
         audio_result?;
         captured
+    }
+}
+
+async fn settle_publications<R, C>(
+    removals: impl IntoIterator<Item = R>,
+    force_close: impl FnOnce() -> bool,
+    close: C,
+) where
+    R: Future<Output = bool>,
+    C: Future<Output = ()>,
+{
+    // Await every removal, even after one fails. There are at most two tracks,
+    // and their individual deadlines bound the complete concurrent cleanup.
+    let removed = futures_util::future::join_all(removals).await;
+    if removed.into_iter().any(|success| !success) || force_close() {
+        close.await;
     }
 }
 
@@ -734,5 +760,49 @@ mod tests {
         drop(lease);
         assert!(!audio.rtc_track().enabled());
         assert!(!video.rtc_track().enabled());
+    }
+
+    #[tokio::test]
+    async fn failed_sender_removal_closes_even_after_sdk_empties_its_publication_map() {
+        let publications = Arc::new(Mutex::new(std::collections::HashSet::from([
+            "audio", "video",
+        ])));
+        let attempts = Arc::new(Mutex::new(Vec::new()));
+        let closed = AtomicBool::new(false);
+        let removals = ["audio", "video"].into_iter().map(|id| {
+            let publications = publications.clone();
+            let attempts = attempts.clone();
+            async move {
+                attempts.lock().unwrap().push(id);
+                publications.lock().unwrap().remove(id);
+                // SDK removes its map entry, then audio sender removal fails.
+                id != "audio"
+            }
+        });
+        settle_publications(
+            removals,
+            || !publications.lock().unwrap().is_empty(),
+            async {
+                closed.store(true, Ordering::Release);
+            },
+        )
+        .await;
+        assert!(publications.lock().unwrap().is_empty());
+        assert_eq!(attempts.lock().unwrap().len(), 2);
+        assert!(closed.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn successful_sender_removal_keeps_a_connected_media_identity_open() {
+        let closed = AtomicBool::new(false);
+        settle_publications(
+            [std::future::ready(true), std::future::ready(true)],
+            || false,
+            async {
+                closed.store(true, Ordering::Release);
+            },
+        )
+        .await;
+        assert!(!closed.load(Ordering::Acquire));
     }
 }

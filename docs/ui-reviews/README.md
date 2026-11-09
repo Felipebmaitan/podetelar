@@ -54,6 +54,7 @@ the parent's own screenshot checks remain the basis for implementation pass 1.
 - [Round 5 independent review](round-05.md)
 - [Parent validation of Round 5](round-05-validation.md)
 - [Pass 4: pinned audio summary and feedback clarity](pass-04.md)
+- [Fresh GPT-6.1-Sol high technical reviews and approvals](technical-review.md)
 
 The `images/baseline` directory preserves the original multi-stream look.
 `images/round-01` contains early implementation captures, including issues caught

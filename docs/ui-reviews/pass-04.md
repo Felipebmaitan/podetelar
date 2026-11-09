@@ -23,3 +23,8 @@ normal build. Native formatting/Clippy, all 35 portable/native tests, the Node 2
 `npm run check` and the normal clean build passed after these changes. The local
 runtime executable is refreshed from that clean build. A new fresh Gemini review
 must score this pass independently.
+
+A fresh GPT-6.1-Sol high reviewer approved `f491a11..e49728f` with no actionable
+material findings after inspecting the code and screenshots. See the separate
+[technical review record](technical-review.md). This code-scope approval does not
+replace independent visual scoring or external phase acceptance.

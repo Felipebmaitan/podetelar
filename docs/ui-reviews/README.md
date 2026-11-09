@@ -20,6 +20,13 @@ The baseline included static source inspection and screenshots because that
 provider had no native desktop-control tool. It is supplemental and differs from
 the revised image-only judging scope. Scores are subjective reviewer judgments.
 
+**Verification correction:** Round 2 established that the provider's file tools
+did not deliver images to the model. Round 1's image inspection and all numeric
+visual ratings are therefore unverified; the archived numbers above are not a
+qualified baseline or evidence of progress toward 9/10. No Round 2 scores exist.
+See [the image-transport status](round-02-status.md). Confirmed source findings and
+the parent's own screenshot checks remain the basis for implementation pass 1.
+
 - [Fixed review rubric and scope](rubric.md)
 - [Gemini Round 1 report](round-01.md)
 - [Parent validation of findings before changes](round-01-validation.md)

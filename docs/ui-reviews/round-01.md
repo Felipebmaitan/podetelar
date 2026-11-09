@@ -1,3 +1,5 @@
+> **Parent verification correction:** The next review established that this provider's file tools returned PNGs as text, not multimodal images. Image inspection and numeric ratings in this original report were not independently established and must remain unverified. Source findings were checked separately before changes. See [round-02-status.md](round-02-status.md).
+
 # FreedomStream Native UI/UX Review — Round 1
 
 - **Reviewer:** Independent Gemini 4 Argon (`gemini-4-argon-high` via Antigravity harness)

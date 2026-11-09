@@ -4,6 +4,11 @@ Review native-renderer screenshots of the current FreedomStream Windows app. Kee
 these categories unchanged between rounds. Each round uses a new Gemini 4 Argon
 context; judge the current images independently rather than inheriting prior scores.
 
+Confirm that screenshots were received as actual multimodal images before scoring.
+Binary PNG bytes returned as text are not visual inspection. If file tools lack
+image support, use image attachments; if those are also unavailable, withhold
+ratings. Include concrete visible details to establish that images were accessible.
+
 Felipe changed the review scope after Round 1: reviews are **UI-only**, judging
 how good the app looks and the UX implied by the images. No direct desktop tool
 is required. Clearly distinguish image-derived usability judgments from verified

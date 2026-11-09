@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { productionConfiguration } from "./prepare-production.mjs";
+import { PREVIEW_MAX_BYTES } from "@freedomstream/contracts";
 const secrets = Object.fromEntries(
   ["admin", "apiKey", "apiSecret", "turn"].map((key, i) => [
     key,
@@ -19,6 +20,10 @@ test("production config preserves the admission gateway and isolated certificate
   assert.match(config.nginx, /proxy_pass http:\/\/127\.0\.0\.1:18080/);
   assert.match(config.nginx, /X-Forwarded-For \$realip_remote_addr/);
   assert.match(config.nginx, /access_log off/);
+  // Legal native previews must pass nginx before the API validates their bytes.
+  const previewLimit = config.nginx.match(/client_max_body_size (\d+)k;/);
+  assert.ok(previewLimit);
+  assert.equal(Number(previewLimit[1]) * 1024, PREVIEW_MAX_BYTES);
   assert.match(config.coturn, /cert=\/run\/tls\/current\/fullchain.pem/);
   assert.match(config.livekit, /ttl: 300/);
   assert.match(config.livekit, /host: relay.example.com/);

@@ -15,6 +15,12 @@ into another application's output, such as monitored microphone audio, is still
 that application's output. System sounds without an attributable process and
 inaccessible/protected processes are omitted; this is not an unfiltered system mix.
 
+NVIDIA Broadcast and its process descendants are also excluded: its processed
+desktop output can otherwise reintroduce Discord and watched-stream audio as a
+second mixed copy. Original application audio is captured directly. This protects
+the observed proxy; arbitrary third-party applications that replay or monitor
+other audio remain subject to the output-routing limitation above.
+
 There is no audio-source selector in the UI. The lower-level executable-path and
 exclusion modes remain available to diagnostic fixtures. Application loopback
 requires Windows build 20348 or newer (normally Windows 11 on desktop). Discovery

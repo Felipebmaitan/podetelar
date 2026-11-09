@@ -16,6 +16,7 @@ for (const codec of ["h265", "h264"] as const) {
     );
     expect(created.status()).toBe(201);
     const { invitationUrl } = await created.json();
+    const relay = process.env.FREEDOMSTREAM_NATIVE_ROUTE === "relay";
     const executable = process.env.FREEDOMSTREAM_NATIVE_EXE;
     if (!executable)
       throw new Error("Set FREEDOMSTREAM_NATIVE_EXE to the built publisher.");
@@ -65,7 +66,8 @@ for (const codec of ["h265", "h264"] as const) {
         invitationUrl,
         displayName: `Native ${codec}`,
         codec,
-        seconds: 18,
+        seconds: relay ? 30 : 18,
+        route: relay ? "relay" : "auto",
       }),
     );
     try {
@@ -73,6 +75,10 @@ for (const codec of ["h265", "h264"] as const) {
       await page
         .getByRole("button", { name: "Join private room", exact: true })
         .click();
+      if (relay)
+        await page
+          .getByLabel("Connection route", { exact: true })
+          .selectOption("relay");
       const card = page.getByRole("article", {
         name: `Native ${codec} screen`,
         exact: true,
@@ -149,10 +155,12 @@ for (const codec of ["h265", "h264"] as const) {
       expect(result.metrics.fps).toBeGreaterThan(50);
       expect(result.metrics.preview_frames).toBe(1);
       expect(result.previewUploads).toBe(1);
+      if (relay) expect(result.delivery.route).toBe("TURN/TLS");
       await expect(card).toHaveCount(0);
       console.log(
         `${codec}: decoded via SFU, subscriptions stopped, native capture released; ${result.metrics.fps.toFixed(1)} encoded fps`,
       );
+      console.log(`Delivery: ${JSON.stringify(result.delivery)}`);
     } finally {
       if (child.exitCode === null) child.kill();
     }

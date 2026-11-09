@@ -31,6 +31,11 @@ jobs:
       - run: npm run setup
       - run: npm run build -w @freedomstream/contracts
       - run: docker compose config --quiet
+      - run: docker compose --env-file .env -f deploy/production/compose.yaml config --quiet
+        env:
+          APP_IMAGE: freedomstream/app:0000000000000000000000000000000000000000
+          STATE_DIR: /tmp/freedomstream-production-config-check
+          PUBLIC_URL: https://stream.example:8443
       - run: docker compose up --build -d --wait
       - run: npm run smoke -- --restart-app
       - run: npx playwright install --with-deps chromium

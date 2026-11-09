@@ -362,19 +362,6 @@ impl PublisherUi {
             if let Some(encoder) = encoder { quality_controls(ui, &mut self.quality, source, encoder); }
             else { ui.colored_label(WARNING, "No supported hardware encoder was found. You can still watch compatible streams."); }
         });
-        ui.add_space(4.0);
-        egui::Frame::new()
-            .fill(CANVAS)
-            .inner_margin(10)
-            .corner_radius(6)
-            .show(ui, |ui| {
-                ui.label(
-                    egui::RichText::new("Audio follows your source")
-                        .strong()
-                        .size(13.0),
-                );
-                ui.small("Discord and FreedomStream excluded. Microphone off.");
-            });
     }
 
     fn sharing_actions(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
@@ -389,6 +376,20 @@ impl PublisherUi {
                     .is_ok_and(|mode| e.supports(mode))
             });
         ui.add_space(6.0);
+        let note_width = (ui.available_width() - 16.0).max(200.0);
+        egui::Frame::new()
+            .fill(CANVAS)
+            .inner_margin(8)
+            .corner_radius(6)
+            .show(ui, |ui| {
+                ui.set_width(note_width);
+                ui.label(
+                    egui::RichText::new("Source audio · microphone off")
+                        .strong()
+                        .size(13.0),
+                );
+                ui.small("Discord and FreedomStream excluded.");
+            });
         if state.sharing || state.capture_pending {
             if let Some(mode) = state.mode {
                 ui.colored_label(
@@ -480,7 +481,7 @@ impl PublisherUi {
             if before != self.download_budget { self.controller.send(Command::DownloadBudget { bps: self.download_budget }); }
             ui.small("Shared across everything you watch, with headroom. This is an allowance, not a speed test.");
             ui.small("A slower watcher's limit can reduce the one shared stream for everyone watching it.");
-            if ui.button("Retry watching connection").clicked() { self.controller.send(Command::DownloadBudget { bps: self.download_budget }); }
+            if ui.add_enabled(matches!(state.connection,"connected"|"reconnecting"),egui::Button::new("Retry watching connection")).clicked() { self.controller.send(Command::DownloadBudget { bps: self.download_budget }); }
             let label = ui.label("Connection route");
             egui::ComboBox::from_id_salt("connection-route").width(ui.available_width()).selected_text(if self.route == Route::Auto { "Automatic" } else { "Relay only" })
                 .show_ui(ui, |ui| { ui.selectable_value(&mut self.route,Route::Auto,"Automatic"); ui.selectable_value(&mut self.route,Route::Relay,"Relay only"); }).response.labelled_by(label.id);
@@ -689,9 +690,9 @@ impl eframe::App for PublisherUi {
                 if matches!(state.connection, "connected" | "reconnecting") {
                     let rect = ui.available_rect_before_wrap();
                     let footer_height = if state.sharing || state.capture_pending {
-                        132.0
+                        196.0
                     } else {
-                        64.0
+                        128.0
                     };
                     let split = (rect.bottom() - footer_height).max(rect.top() + 120.0);
                     let body_rect =
@@ -732,22 +733,19 @@ impl eframe::App for PublisherUi {
                         "Friends' streams"
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if self.focused.is_some() {
-                            if ui.button("Back to grid").clicked() {
-                                self.focused = None;
-                            }
-                        } else {
-                            ui.small(format!(
-                                "{} {} · {} watching",
-                                state.tiles.len(),
-                                if state.tiles.len() == 1 {
-                                    "stream"
-                                } else {
-                                    "streams"
-                                },
-                                state.tiles.iter().filter(|t| t.watching).count()
-                            ));
+                        if self.focused.is_some() && ui.button("Back to grid").clicked() {
+                            self.focused = None;
                         }
+                        ui.small(format!(
+                            "{} {} · {} watching",
+                            state.tiles.len(),
+                            if state.tiles.len() == 1 {
+                                "stream"
+                            } else {
+                                "streams"
+                            },
+                            state.tiles.iter().filter(|t| t.watching).count()
+                        ));
                     });
                 });
                 ui.add_space(6.0);
@@ -949,7 +947,7 @@ fn quality_controls(
         })
         .response
         .labelled_by(label.id);
-    let label = ui.label("Frame rate");
+    let label = ui.label("Frame rate · 15–120 FPS");
     let mut index = quality::FRAME_RATES
         .iter()
         .position(|fps| *fps == settings.fps)
@@ -975,11 +973,11 @@ fn quality_controls(
                 }),
         )
         .labelled_by(label.id)
+        .on_hover_text("Higher frame rates use more upload bandwidth.")
         .changed()
     {
         settings.fps = quality::FRAME_RATES[index];
     }
-    ui.small("15–120 FPS · higher frame rates use more upload");
     let label = ui.label("Quality preset");
     egui::ComboBox::from_id_salt("quality-preset")
         .width(ui.available_width())

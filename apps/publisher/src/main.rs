@@ -530,7 +530,11 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     let result = async {
         let config=publisher::StreamConfig { source,encoder:encoder.clone(),quality:request.quality,audio:request.audio,exclusions:request.exclusions };
         ensure!(request.upload_limit_bps.is_none_or(|v|(64_000..=100_000_000).contains(&v)),"Invalid fixture upload ceiling.");
-        let mut active = publisher::Stream::start_with_upload_cap(&room, config.clone(), stop, request.upload_limit_bps).await?;
+        let mut active = if request.upload_limit_bps.is_some() {
+            publisher::Stream::start_with_upload_cap(&room, config.clone(), stop, request.upload_limit_bps).await?
+        } else {
+            publisher::Stream::start(&room, config.clone(), stop).await?
+        };
         let initial_sid=active.sid();
         println!("{}", serde_json::json!({"published":true}));
         active.start_previews(admission.clone());
@@ -551,7 +555,7 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             next.mode()?;
             ensure!(!active.apply_live(&next)?,"Source/codec/mode fixture unexpectedly avoided a restart.");
             active.stop(&room).await?;
-            active=publisher::Stream::start(&room,next,cancellation.register()).await?;
+            active=publisher::Stream::start_with_upload_cap(&room,next,cancellation.register(),request.upload_limit_bps).await?;
             active.start_previews(admission.clone());
 
             tokio::time::sleep(Duration::from_secs(request.seconds-after)).await;

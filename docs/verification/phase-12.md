@@ -60,6 +60,11 @@ preview/API limits remain separate.
   [one-second encoder trace](phase-12-watcher-rates.csv). This used local SFU/media,
   manual viewer allowances and synthetic content; it does not qualify WAN loss,
   physical A/V synchronization or the automatic probe under media load.
+- A second GPU run applied a fixture upload ceiling of 3,000,000 bps before
+  capture started. All encoder samples stayed at or below that ceiling; the
+  slow watcher still reduced it to 1,994,000 bps, and its departure never bypassed
+  the upload ceiling. This verifies the startup/minimum-cap seam with a supplied
+  limit, not a measured slow-WAN upload.
 - Native-renderer screenshots inspected in PT-BR and English, 1280×720 and
   960×540. Synthetic publishers supply the images. Self-sharing mode and its
   60 FPS/5.8 Mbps statistics are controlled UI fixtures; they do not qualify
@@ -103,6 +108,12 @@ Rust per-track gain control. A future SDK seam needs explicit playout-only contr
 on the room runtime, per-track volume and actual device-delay integration.
 
 ## Remaining acceptance
+
+A fresh GPT-6.1-Sol high-reasoning read-only reviewer approved code scope for
+`a916b6d..68e6ebf`, with no actionable regression. That approval explicitly excludes
+merge/release and physical synchronization. A subsequent CLI-fixture-only correction
+preserves its supplied upload ceiling across a source/mode restart; it does not
+change the GUI path.
 
 Before releasing or merging this phase: qualify real upload/download through the
 production proxy under media load, multiple simultaneous joins, changing link

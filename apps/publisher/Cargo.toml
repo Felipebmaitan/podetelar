@@ -1,0 +1,25 @@
+[package]
+name = "freedomstream-publisher"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+anyhow = "1.0"
+eframe = { version = "=0.37.0", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+gstreamer = { version = "=0.25.4", features = ["v1_28"] }
+gstreamer-app = { version = "=0.25.2", features = ["v1_28"] }
+gstreamer-video = { version = "=0.25.4", features = ["v1_28"] }
+livekit = { version = "=0.10.1", features = ["rustls-tls-native-roots"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "rustls-tls-native-roots"] }
+regex = "1.13"
+log = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "sync", "time", "io-std", "io-util", "signal"] }
+url = "2.5"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_System_Threading"] }

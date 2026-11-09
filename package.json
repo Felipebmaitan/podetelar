@@ -23,7 +23,14 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "smoke": "node --env-file=.env --import tsx scripts/smoke.ts",
-    "test:e2e": "node --env-file=.env node_modules/@playwright/test/cli.js test"
+    "test:e2e": "node --env-file=.env node_modules/@playwright/test/cli.js test",
+    "native:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-native.ps1",
+    "native:check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 check",
+    "native:test": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 test",
+    "native:probe": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 probe",
+    "native:qualify": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 qualify",
+    "native:run": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 run",
+    "native:e2e": "node --env-file=.env node_modules/@playwright/test/cli.js test -c playwright.native.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.65.0",

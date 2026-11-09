@@ -5,6 +5,7 @@ node_modules
 **/node_modules
 **/dist
 .local
+target
 data
 docs
 test-results

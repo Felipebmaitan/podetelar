@@ -26,6 +26,10 @@ const streamId = (identity: string, kind: StreamKind) => `${identity}:${kind}`;
 
 /** Owns capture, signaling and subscription lifetimes. UI receives browser tracks, not SDK objects. */
 export class MediaRoom {
+  private readonly receivesHevc =
+    globalThis.RTCRtpReceiver?.getCapabilities("video")?.codecs.some(
+      (codec) => codec.mimeType.toLowerCase() === "video/h265",
+    ) ?? false;
   private readonly room = new Room({
     adaptiveStream: false,
     dynacast: false,
@@ -124,6 +128,18 @@ export class MediaRoom {
   }
 
   watch(id: string, enabled: boolean): void {
+    const stream = [
+      this.room.localParticipant,
+      ...this.room.remoteParticipants.values(),
+    ]
+      .flatMap((participant) => this.streams(participant))
+      .find((stream) => stream.id === id);
+    if (enabled && stream && !stream.compatible) {
+      this.error =
+        "This browser cannot receive HEVC. Ask the publisher to choose H.264.";
+      this.refresh();
+      return;
+    }
     if (enabled) this.watching.add(id);
     else this.watching.delete(id);
     this.error = "";
@@ -337,9 +353,15 @@ export class MediaRoom {
     for (const participant of this.room.remoteParticipants.values()) {
       for (const publication of participant.trackPublications.values()) {
         const kind = kindOf(publication.source);
+        if (kind && !this.compatible(publication.mimeType))
+          this.watching.delete(streamId(participant.identity, kind));
         const desired = kind
           ? this.watching.has(streamId(participant.identity, kind))
           : publication.source === Track.Source.ScreenShareAudio &&
+            this.compatible(
+              participant.getTrackPublication(Track.Source.ScreenShare)
+                ?.mimeType,
+            ) &&
             this.watching.has(streamId(participant.identity, "screen"));
         if (publication.isDesired !== desired)
           publication.setSubscribed(desired);
@@ -361,6 +383,10 @@ export class MediaRoom {
     for (const listener of this.listeners) listener(snapshot);
   }
 
+  private compatible(mimeType: string | undefined): boolean {
+    return mimeType?.toLowerCase() !== "video/h265" || this.receivesHevc;
+  }
+
   private streams(participant: Participant): LiveStream[] {
     return [...participant.videoTrackPublications.values()].flatMap(
       (publication) => {
@@ -379,6 +405,10 @@ export class MediaRoom {
             publisherId: participant.identity,
             publisherName: participant.name || "Friend",
             kind,
+            codec:
+              publication.mimeType?.replace(/^video\//i, "").toUpperCase() ??
+              "",
+            compatible: this.compatible(publication.mimeType),
             local: participant.isLocal,
             muted: publication.isMuted,
             watching,

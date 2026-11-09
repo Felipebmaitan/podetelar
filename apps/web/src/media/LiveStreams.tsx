@@ -183,6 +183,9 @@ export function LiveStreams({
                 <span>
                   {stream.kind === "screen" ? "Screen" : "Camera"}
                   {stream.muted ? " · Paused" : " · Live"}
+                  {stream.codec
+                    ? ` · ${stream.codec === "H265" ? "HEVC" : stream.codec}`
+                    : ""}
                 </span>
               </div>
               {stream.watching ? (
@@ -193,15 +196,18 @@ export function LiveStreams({
                     {stream.publisherName.slice(0, 1).toUpperCase()}
                   </span>
                   <p>
-                    {stream.local
-                      ? "Your stream is available to friends."
-                      : "Choose Watch to receive this stream."}
+                    {!stream.compatible
+                      ? "This browser cannot receive HEVC. Ask the publisher to choose H.264."
+                      : stream.local
+                        ? "Your stream is available to friends."
+                        : "Choose Watch to receive this stream."}
                   </p>
                 </div>
               )}
               <div className="stream-actions">
                 <button
                   className="button secondary"
+                  disabled={!stream.compatible && !stream.watching}
                   onClick={() => {
                     watch(stream.id, !stream.watching);
                     if (stream.watching && focused === stream.id)

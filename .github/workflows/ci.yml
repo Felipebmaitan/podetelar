@@ -37,3 +37,25 @@ jobs:
       - run: npm run test:e2e
       - if: always()
         run: docker compose down
+  native-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: native-windows-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+      - run: npm run native:setup
+      - run: npm run native:check
+      - run: npm run native:test
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 build

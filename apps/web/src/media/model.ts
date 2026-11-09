@@ -4,6 +4,8 @@ export type LiveStream = {
   publisherId: string;
   publisherName: string;
   kind: StreamKind;
+  codec: string;
+  compatible: boolean;
   local: boolean;
   muted: boolean;
   watching: boolean;

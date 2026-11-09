@@ -1,6 +1,7 @@
 import type { Preview, PreviewKind } from "@freedomstream/contracts";
 export type StreamKind = PreviewKind;
 export type PlaybackBuffer = "smooth" | "low-delay";
+export type ConnectionRoute = "auto" | "relay";
 export type LiveStream = {
   id: string;
   publisherId: string;
@@ -19,6 +20,7 @@ export type LiveStream = {
     height: number;
     fps: number;
     bitrate: number;
+    network: { route: string; rttMs: number | null };
   } | null;
 };
 export type LiveParticipant = { id: string; name: string; local: boolean };

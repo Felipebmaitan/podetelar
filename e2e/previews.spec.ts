@@ -10,7 +10,8 @@ test("browser preview capture has a minute cadence and unwatched tiles carry onl
     testInfo.project.name !== "desktop",
     "Preview transport runs once; room flows cover viewport sizes.",
   );
-  test.setTimeout(100_000);
+  // Include the bounded room-creation quota wait before the minute-cadence check.
+  test.setTimeout(170_000);
   const created = await createTestRoom(
     request,
     baseURL!,

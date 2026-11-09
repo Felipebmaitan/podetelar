@@ -18,7 +18,7 @@
     "build": "npm run build -w @freedomstream/contracts && npm run build -w @freedomstream/server && npm run build -w @freedomstream/web",
     "start": "npm run start -w @freedomstream/server",
     "typecheck": "npm run build -w @freedomstream/contracts && npm run typecheck --workspaces --if-present && tsc -p tsconfig.tools.json --noEmit",
-    "test": "npm run build -w @freedomstream/contracts && npm run test --workspaces --if-present",
+    "test": "npm run build -w @freedomstream/contracts && npm run test --workspaces --if-present && node --test scripts/relay-config.test.mjs",
     "check": "npm run format:check && npm run typecheck && npm test && npm run build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

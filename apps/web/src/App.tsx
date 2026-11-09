@@ -5,6 +5,11 @@ import type { CreatedRoom, RoomSession } from "@freedomstream/contracts";
 import { ApiError, request } from "./api";
 import { useMediaRoom } from "./media/useMediaRoom";
 import { LiveStreams } from "./media/LiveStreams";
+import { RoomAccess } from "./RoomAccess";
+
+const managedRoomId = /^\/manage\/([A-Za-z0-9_-]{22})$/.exec(
+  window.location.pathname,
+)?.[1];
 
 const entryRoomId = /^\/r\/([A-Za-z0-9_-]{22})$/.exec(
   window.location.pathname,
@@ -46,6 +51,44 @@ export function App() {
   const [copyState, setCopyState] = useState("");
   const [leaving, setLeaving] = useState(false);
   const media = useMediaRoom(session);
+
+  useEffect(() => {
+    if (!session) return;
+    const abort = new AbortController();
+    let pending = false;
+    const check = async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        await request<RoomSession>(`/api/rooms/${session.room.id}/session`, {
+          signal: AbortSignal.any([abort.signal, AbortSignal.timeout(5000)]),
+        });
+      } catch (caught) {
+        if (
+          !abort.signal.aborted &&
+          caught instanceof ApiError &&
+          caught.status === 401
+        ) {
+          await media.disconnect();
+          setSession(null);
+          setInvitationUrl(undefined);
+          setError(
+            "Your room access ended. Open a current invitation to join again.",
+          );
+        }
+      } finally {
+        pending = false;
+      }
+    };
+    // Connection changes check immediately; the quiet-room poll leaves room in
+    // the shared IP request budget for five friends and their preview traffic.
+    void check();
+    const timer = setInterval(() => void check(), 20_000);
+    return () => {
+      clearInterval(timer);
+      abort.abort();
+    };
+  }, [session, media.disconnect, media.snapshot.connection]);
 
   useEffect(() => {
     if (!entryRoomId) return;
@@ -157,7 +200,11 @@ export function App() {
             {error}
           </div>
         )}
-        {loading ? (
+        {managedRoomId ? (
+          <div className="welcome-content">
+            <RoomAccess roomId={managedRoomId} />
+          </div>
+        ) : loading ? (
           <div className="centered" role="status">
             Opening your room…
           </div>
@@ -183,10 +230,13 @@ export function App() {
               toggle={media.toggle}
               reconnect={media.reconnect}
               setPlaybackBuffer={media.setPlaybackBuffer}
+              route={media.route}
+              setRoute={media.setRoute}
             />
             <section className="invite-panel">
               <div>
                 <h2>Bring your friends</h2>
+                <a href={`/manage/${session.room.id}`}>Manage room access</a>
                 <p>
                   {invitationUrl
                     ? "Anyone with this invitation can join. Keep it in your private group chat."

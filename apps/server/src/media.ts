@@ -12,6 +12,7 @@ export type MediaParticipant = {
   tracks: { sid: string; kind: PreviewKind; muted: boolean }[];
 };
 export interface MediaDirectory {
+  remove(roomId: string, identity: string): Promise<void>;
   participant(
     roomId: string,
     identity: string,
@@ -39,6 +40,14 @@ export class LivekitDirectory implements MediaDirectory {
       config.livekitApiSecret,
       { requestTimeout: 3, failover: false },
     );
+  }
+  async remove(roomId: string, identity: string): Promise<void> {
+    try {
+      await this.client.removeParticipant(mediaRoomName(roomId), identity);
+    } catch (error) {
+      if (error instanceof TwirpError && error.code === "not_found") return;
+      throw new MediaUnavailable();
+    }
   }
   async participant(
     roomId: string,

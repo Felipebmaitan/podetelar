@@ -24,6 +24,10 @@ const jpeg = readFileSync(new URL("fixtures/preview.jpg", import.meta.url));
 const ORIGIN = "http://localhost:5173";
 const ADMIN = "test-admin-key-not-a-production-secret";
 class Directory implements MediaDirectory {
+  beforeRemove: () => Promise<void> = async () => {};
+  async remove() {
+    await this.beforeRemove();
+  }
   participants = new Map<string, MediaParticipant>();
   attributes = new Map<string, string>();
   failure = false;
@@ -111,6 +115,76 @@ async function fixture(t: TestContext) {
     },
   };
 }
+
+test("revoked publisher previews are denied while another media removal is still in flight", async (t) => {
+  const f = await fixture(t);
+  const uploaded = await f.upload();
+  assert.equal(uploaded.statusCode, 200);
+  const url = f.imageUrl(uploaded.json());
+  const join = async (displayName: string) => {
+    const response = await f.app.inject({
+      method: "POST",
+      url: `/api/rooms/${f.owner.room}/join`,
+      headers: { origin: ORIGIN },
+      payload: { invitation: f.owner.invitation, displayName },
+    });
+    assert.equal(response.statusCode, 200);
+    return {
+      id: response.json().participant.id,
+      cookie: String(response.headers["set-cookie"]).split(";")[0]!,
+    };
+  };
+  const blocker = await join("Blocking removal"),
+    viewer = await join("Viewer");
+  let release!: () => void;
+  let started!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const entered = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  f.media.beforeRemove = async () => {
+    started();
+    await blocked;
+  };
+  const headers = { origin: ORIGIN, authorization: `Bearer ${ADMIN}` };
+  const first = f.app
+    .inject({
+      method: "DELETE",
+      url: `/api/rooms/${f.owner.room}/access/sessions/${blocker.id}`,
+      headers,
+    })
+    .then((response) => response);
+  await entered;
+  const second = f.app
+    .inject({
+      method: "DELETE",
+      url: `/api/rooms/${f.owner.room}/access/sessions/${f.owner.owner}`,
+      headers,
+    })
+    .then((response) => response);
+  try {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(
+      (
+        await f.app.inject({
+          url: `/api/rooms/${f.owner.room}/session`,
+          headers: { cookie: f.owner.cookie },
+        })
+      ).statusCode,
+      401,
+    );
+    assert.equal(
+      (await f.app.inject({ url, headers: { cookie: viewer.cookie } }))
+        .statusCode,
+      404,
+    );
+  } finally {
+    release();
+    await Promise.all([first, second]);
+  }
+});
 
 test("JPEG validation bounds dimensions and rejects multi-image, truncated, progressive and malformed headers", () => {
   assert.deepEqual(jpegDimensions(jpeg), { width: 320, height: 180 });

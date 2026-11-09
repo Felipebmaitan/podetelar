@@ -11,14 +11,17 @@ import {
 import type { LocalTrack, Participant } from "livekit-client";
 import type { MediaAccess } from "@freedomstream/contracts";
 import { previewAttribute, previewSchema } from "@freedomstream/contracts";
-import { request } from "../api";
+import { ApiError, request } from "../api";
 import type {
   LiveStream,
   MediaSnapshot,
   StreamKind,
   PlaybackBuffer,
+  ConnectionRoute,
 } from "./model";
 import { BrowserPreviews } from "./BrowserPreviews";
+import { reconnectPolicy } from "./recovery";
+import { networkSummary } from "./network";
 
 // SDK logs can contain signaling URLs. Surface bounded messages through our UI instead.
 setLogLevel(LogLevel.silent);
@@ -41,6 +44,7 @@ export class MediaRoom {
     adaptiveStream: false,
     dynacast: false,
     publishDefaults: { videoCodec: "vp8", simulcast: false },
+    reconnectPolicy,
   });
   private readonly watching = new Set<string>();
   private readonly captures = new Set<LocalTrack>();
@@ -67,7 +71,10 @@ export class MediaRoom {
     }
   >();
 
-  constructor(private readonly roomId: string) {
+  constructor(
+    private readonly roomId: string,
+    private readonly route: ConnectionRoute = "auto",
+  ) {
     this.previews = new BrowserPreviews(roomId);
     const refresh = () => this.refresh();
     for (const event of [
@@ -137,6 +144,12 @@ export class MediaRoom {
       if (this.closed) return;
       await this.room.connect(access.serverUrl, access.token, {
         autoSubscribe: false,
+        maxRetries: 0,
+        websocketTimeout: 10_000,
+        peerConnectionTimeout: 15_000,
+        rtcConfig: {
+          iceTransportPolicy: this.route === "relay" ? "relay" : "all",
+        },
       });
       if (this.closed) {
         await this.room.disconnect();
@@ -146,12 +159,14 @@ export class MediaRoom {
       if (typeof window !== "undefined" && this.statsTimer === null)
         this.statsTimer = setInterval(() => void this.sampleDelivery(), 1000);
       this.refresh();
-    } catch {
+    } catch (caught) {
       if (this.closed) return;
       this.stopCaptures([...this.captures]);
       this.connection = "failed";
       this.error =
-        "Could not connect to live sharing. Check your connection and try reconnecting.";
+        caught instanceof ApiError && caught.status === 401
+          ? "Your room access ended. Open a current invitation to join again."
+          : "Could not connect to live sharing. Check your connection and try reconnecting.";
       this.refresh();
     }
   }
@@ -500,6 +515,7 @@ export class MediaRoom {
                           height: Number(stat.frameHeight ?? 0),
                           fps: (frames - before!.frames) / seconds,
                           bitrate: ((bytes - before!.bytes) * 8) / seconds,
+                          network: networkSummary(stats),
                         }
                       : null,
                   });

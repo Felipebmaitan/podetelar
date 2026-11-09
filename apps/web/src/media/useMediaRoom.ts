@@ -2,13 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { RoomSession } from "@freedomstream/contracts";
 import type { MediaRoom } from "./MediaRoom";
 import { emptyMediaSnapshot } from "./model";
-import type { StreamKind, PlaybackBuffer } from "./model";
+import type { StreamKind, PlaybackBuffer, ConnectionRoute } from "./model";
 
 export function useMediaRoom(session: RoomSession | null) {
   const controller = useRef<MediaRoom | null>(null);
   const stop = useRef<(() => Promise<void>) | null>(null);
   const [snapshot, setSnapshot] = useState(emptyMediaSnapshot);
   const [attempt, setAttempt] = useState(0);
+  const [route, setRoute] = useState<ConnectionRoute>("auto");
   const playbackBuffer = useRef<PlaybackBuffer>("smooth");
   const roomId = session?.room.id;
   const identity = session?.participant.id;
@@ -31,7 +32,7 @@ export function useMediaRoom(session: RoomSession | null) {
     void import("./MediaRoom")
       .then(({ MediaRoom }) => {
         if (cancelled) return;
-        media = new MediaRoom(roomId);
+        media = new MediaRoom(roomId, route);
         controller.current = media;
         unsubscribe = media.subscribe(setSnapshot);
         media.setPlaybackBuffer(playbackBuffer.current);
@@ -49,9 +50,11 @@ export function useMediaRoom(session: RoomSession | null) {
       if (stop.current === close) stop.current = null;
       void close().catch(() => {});
     };
-  }, [roomId, identity, attempt]);
+  }, [roomId, identity, attempt, route]);
   return {
     snapshot,
+    route,
+    setRoute,
     setPlaybackBuffer: useCallback((value: PlaybackBuffer) => {
       playbackBuffer.current = value;
       controller.current?.setPlaybackBuffer(value);

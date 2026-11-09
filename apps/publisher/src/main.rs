@@ -1,5 +1,6 @@
 mod admission;
 mod audio;
+mod connection;
 mod delivery;
 mod diagnostics;
 mod encoding;
@@ -218,6 +219,8 @@ fn run() -> Result<()> {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FixtureRequest {
+    #[serde(default)]
+    route: connection::Route,
     invitation_url: String,
     display_name: String,
     codec: Codec,
@@ -287,9 +290,7 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     let admission =
         admission::Admission::join(&request.invitation_url, &request.display_name).await?;
     let access = admission.media_access().await?;
-    let mut options = RoomOptions::default();
-    options.auto_subscribe = false;
-    options.join_retries = 0;
+    let options = connection::options(request.route);
     let (room, mut events) = tokio::time::timeout(
         Duration::from_secs(15),
         Room::connect(&access.server_url, &access.token, options),

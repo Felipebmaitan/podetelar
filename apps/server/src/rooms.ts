@@ -24,6 +24,7 @@ type RoomRow = {
   name: string;
   created_at: number;
   invitation_hash: Uint8Array;
+  invitation_enabled: number;
 };
 type SessionRow = {
   participant_id: string;
@@ -47,7 +48,7 @@ export class Rooms {
     const version = this.db.prepare("PRAGMA user_version").get() as {
       user_version: number;
     };
-    if (version.user_version > 1) {
+    if (version.user_version > 2) {
       this.db.close();
       throw new Error(
         "The database was created by a newer FreedomStream version.",
@@ -63,9 +64,19 @@ export class Rooms {
         participant_id TEXT NOT NULL, display_name TEXT NOT NULL, expires_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
-      PRAGMA user_version = 1;
     `);
-    this.prune();
+    if (version.user_version < 2)
+      this.db.exec(`
+      ALTER TABLE rooms ADD COLUMN invitation_enabled INTEGER NOT NULL DEFAULT 1;
+      CREATE TABLE removals (
+        room_id TEXT NOT NULL, participant_id TEXT NOT NULL,
+        retry_until INTEGER NOT NULL, acknowledged INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY(room_id, participant_id)
+      );
+      CREATE INDEX sessions_identity ON sessions(room_id, participant_id);
+      PRAGMA user_version = 2;
+    `);
+    this.expire();
   }
 
   create(input: CreateRoomInput): IssuedSession & { invitation: string } {
@@ -74,6 +85,7 @@ export class Rooms {
       id: randomBytes(16).toString("base64url"),
       name: input.name,
       invitation_hash: digest(invitation),
+      invitation_enabled: 1,
       created_at: this.now(),
     };
     this.db.exec("BEGIN IMMEDIATE");
@@ -100,10 +112,19 @@ export class Rooms {
     const room = this.find(id);
     if (
       !room ||
+      !room.invitation_enabled ||
       !timingSafeEqual(digest(invitation), Buffer.from(room.invitation_hash))
     )
       return null;
-    this.prune();
+    this.expire();
+    if (
+      (
+        this.db
+          .prepare("SELECT COUNT(*) AS count FROM sessions WHERE room_id = ?")
+          .get(id) as { count: number }
+      ).count >= 32
+    )
+      return null;
     return this.issue(room, displayName);
   }
 
@@ -119,10 +140,121 @@ export class Rooms {
   }
 
   leave(id: string, token: string | undefined): void {
-    if (token)
+    const member = this.session(id, token);
+    if (member) this.revoke(id, member.participant.id);
+  }
+
+  active(id: string, identity: string): boolean {
+    return Boolean(
       this.db
-        .prepare("DELETE FROM sessions WHERE token_hash = ? AND room_id = ?")
-        .run(digest(token), id);
+        .prepare(
+          "SELECT 1 FROM sessions WHERE room_id = ? AND participant_id = ? AND expires_at > ?",
+        )
+        .get(id, identity, this.now()),
+    );
+  }
+  access(id: string) {
+    const room = this.find(id);
+    if (!room) return null;
+    const sessions = this.db
+      .prepare(
+        "SELECT participant_id, display_name, expires_at FROM sessions WHERE room_id = ? AND expires_at > ? ORDER BY expires_at DESC LIMIT 100",
+      )
+      .all(id, this.now()) as SessionRow[];
+    return {
+      invitationEnabled: Boolean(room.invitation_enabled),
+      sessions: sessions.map((row) => ({
+        id: row.participant_id,
+        displayName: row.display_name,
+        expiresAt: new Date(row.expires_at).toISOString(),
+      })),
+    };
+  }
+  change(
+    id: string,
+    change: { invitation: "rotate" | "disable"; revokeSessions: boolean },
+  ): { invitation?: string } | null {
+    if (!this.find(id)) return null;
+    const invitation =
+      change.invitation === "rotate" ? randomSecret() : undefined;
+    this.transaction(() => {
+      this.db
+        .prepare(
+          "UPDATE rooms SET invitation_hash = ?, invitation_enabled = ? WHERE id = ?",
+        )
+        .run(digest(invitation ?? randomSecret()), invitation ? 1 : 0, id);
+      if (change.revokeSessions) this.revokeRows("room_id = ?", [id]);
+    });
+    return invitation ? { invitation } : {};
+  }
+  revoke(id: string, identity: string): void {
+    this.transaction(() =>
+      this.revokeRows("room_id = ? AND participant_id = ?", [id, identity]),
+    );
+  }
+  expire(): void {
+    this.transaction(() => this.revokeRows("expires_at <= ?", [this.now()]));
+  }
+  removals(): { room: string; identity: string; retryUntil: number }[] {
+    return (
+      this.db
+        .prepare(
+          "SELECT room_id, participant_id, retry_until FROM removals ORDER BY retry_until LIMIT 128",
+        )
+        .all() as {
+        room_id: string;
+        participant_id: string;
+        retry_until: number;
+      }[]
+    ).map((row) => ({
+      room: row.room_id,
+      identity: row.participant_id,
+      retryUntil: row.retry_until,
+    }));
+  }
+  pending(id: string): number {
+    return (
+      this.db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM removals WHERE room_id = ? AND acknowledged = 0",
+        )
+        .get(id) as { count: number }
+    ).count;
+  }
+  acknowledge(room: string, identity: string): void {
+    this.db
+      .prepare(
+        "UPDATE removals SET acknowledged = 1 WHERE room_id = ? AND participant_id = ?",
+      )
+      .run(room, identity);
+  }
+  removed(room: string, identity: string): void {
+    this.db
+      .prepare("DELETE FROM removals WHERE room_id = ? AND participant_id = ?")
+      .run(room, identity);
+  }
+  time(): number {
+    return this.now();
+  }
+  private transaction<T>(run: () => T): T {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const value = run();
+      this.db.exec("COMMIT");
+      return value;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  private revokeRows(where: string, values: (string | number)[]): void {
+    // A short durable tombstone retries removal across an in-flight SFU handshake.
+    this.db
+      .prepare(
+        `INSERT INTO removals(room_id, participant_id, retry_until) SELECT room_id, participant_id, ? FROM sessions WHERE ${where} ON CONFLICT(room_id, participant_id) DO UPDATE SET retry_until = excluded.retry_until`,
+      )
+      .run(this.now() + 30_000, ...values);
+    this.db.prepare(`DELETE FROM sessions WHERE ${where}`).run(...values);
   }
 
   close(): void {
@@ -132,15 +264,9 @@ export class Rooms {
   private find(id: string): RoomRow | undefined {
     return this.db
       .prepare(
-        "SELECT id, name, invitation_hash, created_at FROM rooms WHERE id = ?",
+        "SELECT id, name, invitation_hash, invitation_enabled, created_at FROM rooms WHERE id = ?",
       )
       .get(id) as RoomRow | undefined;
-  }
-
-  private prune(): void {
-    this.db
-      .prepare("DELETE FROM sessions WHERE expires_at <= ?")
-      .run(this.now());
   }
 
   private issue(room: RoomRow, displayName: string): IssuedSession {

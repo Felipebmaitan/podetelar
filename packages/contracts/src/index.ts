@@ -39,6 +39,23 @@ export const createRoomSchema = z
 export const joinRoomSchema = z
   .object({ invitation: invitationSchema, displayName: nameSchema })
   .strict();
+export const accessChangeSchema = z
+  .object({
+    invitation: z.enum(["rotate", "disable"]),
+    revokeSessions: z.boolean(),
+  })
+  .strict();
+export const participantIdSchema = z.string().uuid();
+export type AccessChange = z.infer<typeof accessChangeSchema>;
+export type RoomAccess = {
+  invitationEnabled: boolean;
+  sessions: (Participant & { expiresAt: string })[];
+  pendingDisconnects: number;
+};
+export type ChangedAccess = {
+  invitationUrl?: string;
+  pendingDisconnects: number;
+};
 
 export type CreateRoomInput = z.infer<typeof createRoomSchema>;
 export type JoinRoomInput = z.infer<typeof joinRoomSchema>;

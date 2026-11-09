@@ -10,13 +10,15 @@ import {
   roomIdSchema,
 } from "@freedomstream/contracts";
 import type { Config } from "./config.js";
-import { Rooms, secretsEqual, SESSION_TTL_MS } from "./rooms.js";
+import { Rooms, SESSION_TTL_MS } from "./rooms.js";
 import {
   LivekitDirectory,
   mediaRoomName,
   type MediaDirectory,
 } from "./media.js";
 import { Previews, previewRoutes } from "./previews.js";
+import { Access, accessRoutes, administrator } from "./access.js";
+import { Signaling } from "./signaling.js";
 
 const COOKIE = "fs_session";
 const MEDIA_TOKEN_TTL_SECONDS = 120;
@@ -35,19 +37,36 @@ export async function buildApp(
     bodyLimit: 4096,
   });
   const rooms = new Rooms(config.databasePath, options.now);
-  const previews = new Previews(
-    options.mediaDirectory ?? new LivekitDirectory(config),
-    options.now,
+  const directory = options.mediaDirectory ?? new LivekitDirectory(config);
+  const previews = new Previews(directory, options.now);
+  const signaling = new Signaling(rooms);
+  const access = new Access(rooms, directory, previews, () =>
+    signaling.closeRevoked(),
   );
-  const previewSweep = setInterval(() => previews.sweep(), 30_000);
+  const previewSweep = setInterval(() => {
+    previews.sweep();
+    void access.settle();
+  }, 2000);
   previewSweep.unref();
+  app.addHook("preClose", async () => {
+    clearInterval(previewSweep);
+    signaling.close();
+  });
   app.addHook("onClose", async () => {
     clearInterval(previewSweep);
+    signaling.close();
+    await access.settle();
     previews.clear();
     rooms.close();
   });
   await app.register(cookie);
-  await app.register(rateLimit, { max: 120, timeWindow: "1 minute" });
+  await app.register(rateLimit, {
+    max: 120,
+    timeWindow: "1 minute",
+    // Documents/chunks must remain loadable when an API client is throttled.
+    allowList: (request) =>
+      !request.url.startsWith("/api/") && !request.url.startsWith("/media/"),
+  });
   const cookieOptions = (id: string) => ({
     httpOnly: true,
     secure: config.publicUrl.startsWith("https:"),
@@ -94,17 +113,18 @@ export async function buildApp(
     });
   });
 
-  app.get("/api/health", async () => ({ status: "ok", phase: 5 }));
+  app.get("/api/health", async () => ({ status: "ok", phase: 7 }));
+  app.get("/api/diagnostics", async (request, reply) => {
+    if (!administrator(request, config))
+      return reply.code(401).send({ error: "Server access key required." });
+    return { signaling: signaling.diagnostics() };
+  });
 
   app.post(
     "/api/rooms",
     { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
     async (request, reply) => {
-      const authorization = request.headers.authorization;
-      if (
-        !authorization?.startsWith("Bearer ") ||
-        !secretsEqual(authorization.slice(7), config.adminToken)
-      )
+      if (!administrator(request, config))
         return reply
           .code(401)
           .send({ error: "Room creation requires the server access key." });
@@ -150,6 +170,7 @@ export async function buildApp(
       const previous = rooms.session(id.data, request.cookies[COOKIE]);
       if (previous) previews.removeOwner(id.data, previous.participant.id);
       rooms.leave(id.data, request.cookies[COOKIE]);
+      await access.settle();
       reply.setCookie(COOKIE, issued.token, cookieOptions(id.data));
       return issued.snapshot;
     },
@@ -182,6 +203,7 @@ export async function buildApp(
       if (member)
         previews.removeOwner(request.params.roomId, member.participant.id);
       rooms.leave(request.params.roomId, request.cookies[COOKIE]);
+      await access.settle();
       reply.clearCookie(COOKIE, {
         path: `/api/rooms/${request.params.roomId}`,
       });
@@ -225,6 +247,8 @@ export async function buildApp(
   );
 
   await previewRoutes(app, rooms, previews);
+  await accessRoutes(app, config, rooms, access);
+  await signaling.register(app, config);
 
   if (existsSync(config.webRoot)) {
     await app.register(fastifyStatic, {
@@ -235,7 +259,7 @@ export async function buildApp(
   app.setNotFoundHandler((request, reply) => {
     if (
       request.method === "GET" &&
-      /^\/r\/[A-Za-z0-9_-]{22}(?:\?.*)?$/.test(request.url) &&
+      /^\/(?:r|manage)\/[A-Za-z0-9_-]{22}(?:\?.*)?$/.test(request.url) &&
       existsSync(config.webRoot)
     )
       return reply.sendFile("index.html");

@@ -1,0 +1,40 @@
+# Linux qualification overlay: docker compose -f compose.yaml -f deploy/relay/compose.yaml ...
+# Run scripts/setup-relay.mjs first. The root web/signaling listeners stay on loopback.
+services:
+  livekit:
+    user: "${FREEDOMSTREAM_UID:?Set the private config/certificate owner UID}:${FREEDOMSTREAM_GID:?Set its GID}"
+    cpus: 1
+    mem_limit: 512m
+    pids_limit: 256
+    read_only: true
+    cap_drop: [ALL]
+    environment:
+      GOMEMLIMIT: 384MiB
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    volumes:
+      - ./.local/relay/livekit.yaml:/etc/livekit.yaml:ro
+      - ./.local/relay/turn-secret:/run/secrets/turn_secret:ro
+    logging:
+      driver: none
+  relay:
+    image: coturn/coturn:4.18.0-r0@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3
+    # The image's turnserver has a file capability; keep its required bounding bit.
+    user: "${FREEDOMSTREAM_UID:?Set the private config/certificate owner UID}:${FREEDOMSTREAM_GID:?Set its GID}"
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    network_mode: host
+    cpus: 0.5
+    mem_limit: 128m
+    pids_limit: 64
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    volumes:
+      - ./.local/relay/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ${TURN_CERT_FILE:?Set an absolute TLS fullchain path}:/run/tls/fullchain.pem:ro
+      - ${TURN_KEY_FILE:?Set an absolute TLS private-key path}:/run/tls/privkey.pem:ro
+    restart: unless-stopped
+    logging:
+      driver: none

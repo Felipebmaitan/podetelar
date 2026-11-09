@@ -16,6 +16,10 @@ _Avoid_: Room name, room code, password
 A person who has joined a room for a session, whether sharing, watching, or neither.
 _Avoid_: Account, host
 
+**Session**:
+One browser or native publisher's time-limited authority to join a room. A person can have several sessions; ending one does not ban them from a still-valid invitation.
+_Avoid_: Account, device identity
+
 **Publisher**:
 A participant contributing a live screen or camera stream.
 _Avoid_: Room owner, host

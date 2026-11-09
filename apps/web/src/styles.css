@@ -625,3 +625,18 @@ input::placeholder {
     transition: background 0.15s;
   }
 }
+.access-session {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.access-session small {
+  display: block;
+}
+.access-panel .copy-row {
+  flex-wrap: wrap;
+  margin: 1rem 0;
+}

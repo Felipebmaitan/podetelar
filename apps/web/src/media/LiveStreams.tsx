@@ -4,6 +4,7 @@ import type {
   MediaSnapshot,
   StreamKind,
   PlaybackBuffer,
+  ConnectionRoute,
 } from "./model";
 import { StreamPreview } from "./StreamPreview";
 
@@ -89,6 +90,11 @@ function StreamPlayer({ stream }: { stream: LiveStream }) {
           {stream.delivery.width}×{stream.delivery.height} ·{" "}
           {stream.delivery.fps.toFixed(1)} fps ·{" "}
           {(stream.delivery.bitrate / 1_000_000).toFixed(1)} Mbps received
+          {" · "}
+          {stream.delivery.network.route}
+          {stream.delivery.network.rttMs === null
+            ? ""
+            : ` · ${Math.round(stream.delivery.network.rttMs)} ms RTT`}
         </p>
       )}
     </div>
@@ -102,6 +108,8 @@ export function LiveStreams({
   toggle,
   reconnect,
   setPlaybackBuffer,
+  route,
+  setRoute,
 }: {
   roomId: string;
   snapshot: MediaSnapshot;
@@ -109,6 +117,8 @@ export function LiveStreams({
   toggle: (kind: StreamKind) => Promise<void> | undefined;
   reconnect: () => void;
   setPlaybackBuffer: (value: PlaybackBuffer) => void;
+  route: ConnectionRoute;
+  setRoute: (value: ConnectionRoute) => void;
 }) {
   const [focused, setFocused] = useState<string | null>(null);
   useEffect(() => {
@@ -189,11 +199,28 @@ export function LiveStreams({
           <option value="low-delay">Low delay</option>
         </select>
       </label>
+      <p className="help">
+        Changing connection route stops sharing and watching, then reconnects.
+      </p>
       {snapshot.error && (
         <p className="form-error" role="alert">
           {snapshot.error}
         </p>
       )}
+      <label
+        className="playback-preference"
+        title="Changing route reconnects and stops your captures and subscriptions. Relay requires the server's TURN service; Automatic also permits direct SFU UDP/TCP."
+      >
+        Connection route
+        <select
+          aria-label="Connection route"
+          value={route}
+          onChange={(event) => setRoute(event.target.value as ConnectionRoute)}
+        >
+          <option value="auto">Automatic</option>
+          <option value="relay">Relay only (restrictive networks)</option>
+        </select>
+      </label>
       {(snapshot.connection === "failed" ||
         snapshot.connection === "disconnected") && (
         <button className="button secondary" onClick={reconnect}>

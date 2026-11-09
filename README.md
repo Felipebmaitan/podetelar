@@ -2,7 +2,7 @@
 
 Private screen and camera sharing for friends. Native Windows capture, server-forwarded media, a Discord-like room interface and selective watching are the intended product. Licensed under [MIT](LICENSE).
 
-**Current phase: 6 — Quality and resource controls.** The Windows publisher offers source-bounded video through 4K and 120 fps, Auto or manual 3–100 Mbps bitrate, hardware HEVC or explicit H.264, and isolated application audio. Bitrate edits apply live; other settings use an explicit brief restart. Rooms show private minute previews for unwatched streams and measured received quality for watched streams. See [quality behavior](docs/quality.md), the [native publisher guide](docs/native-publisher.md), [audio behavior](docs/audio.md), [preview design](docs/previews.md) and [verification](docs/verification/phase-6.md). Synthetic NVIDIA 4K120 transport is distinct from physical 4K/game capture; AMD and field qualification remain open.
+**Current phase: 7 — Access management and connection recovery.** Operators can rotate/disable invitations and end individual/all sessions. Signaling rechecks admission, including refreshed tokens. Windows sharing retains hardware HEVC/H.264, isolated audio, source-bounded 4K/120 fps and independent Auto/manual 3–100 Mbps controls. Rooms retain private minute previews and selective watching. Clients offer Automatic or Relay only, bounded recovery and aggregate diagnostics. See [access management](docs/access.md), [TLS relay/recovery](docs/network.md), [quality](docs/quality.md), the [native guide](docs/native-publisher.md) and [verification](docs/verification/phase-7.md). AMD, physical 4K/game capture, production deployment and field qualification remain open.
 
 See the [phase plan](docs/implementation-plan.md), [domain glossary](CONTEXT.md) and [research](docs/research/design-notes.md). Phase 1 is the initial commit; subsequent phases are separate PRs, each requiring acceptance checks and a GPT-6.1-Sol review at high reasoning before merge.
 
@@ -19,7 +19,7 @@ npm run dev
 
 Open **http://localhost:5173**. The server owner can find `ADMIN_TOKEN` in the generated `.env` and use it in the create-room form. Keep that file private. Friends only need the room invitation; they do not need the server access key.
 
-Configuration generation is idempotent and does not print or replace existing secrets. The API defaults to loopback; Vite forwards `/api` to it. Local room data is stored in `data/freedomstream.db`. Use `localhost` consistently rather than mixing it with `127.0.0.1`: invitations, cookies and request origins are checked against the configured origin.
+Configuration generation is idempotent and does not print or replace existing secrets. The API defaults to loopback; Vite forwards `/api` and `/media` WebSocket upgrades to it. Local room data is stored in `data/freedomstream.db`. Use `localhost` consistently rather than mixing it with `127.0.0.1`: invitations, cookies and request origins are checked against the configured origin.
 
 ## Entire local stack in Docker
 

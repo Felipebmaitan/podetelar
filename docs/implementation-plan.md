@@ -2,7 +2,7 @@
 
 Each phase is an acceptance gate. Phase 1 is the initial commit on `main`; every later phase gets its own branch and PR. Felipe authorized autonomous implementation and merging: each PR must pass its acceptance checks and a new GPT-6.1-Sol review at high reasoning before merge. Address review findings before proceeding. Code can be MIT licensed while third-party runtimes retain their own licenses; qualify distribution licenses before bundling native media dependencies. Report external hardware/deployment verification separately and do not waive it merely to finish the sequence.
 
-**Current checkpoint:** Phases 1–7 are merged after checks and review approval. Phase 8 adds Windows distribution and bounded production deployment; its verification and review gate are in progress. See [Phase 3 verification](verification/phase-3.md), [Phase 4 verification](verification/phase-4.md), [Phase 5 verification](verification/phase-5.md) and [Phase 6 verification](verification/phase-6.md). AMD hardware is unavailable; AMD, real-game/fullscreen/alt-tab and physical 4K120 capture qualification remain open external acceptance items. An implementation PR does not certify those results. Each remaining phase still requires checks and a fresh high-reasoning review before merge.
+**Current checkpoint:** Phases 1–8 are merged after checks and review approval. The deployed Windows test exposed missing system clipboard support and setup friction. The next two PRs repair clipboard integration, then replace the script ZIP with a fully bundled portable EXE. Hardware, fresh-PC, real-game/group-call and higher-rate qualification remain separate external gates; see [Phase 8 qualification](phase8-qualification.md).
 
 ## 1. Persistent private-room foundation — initial commit
 
@@ -51,6 +51,22 @@ Accept denial at page, token, preview and media access paths; verify rotation/se
 Package the native publisher with documented dependency notices, versioning and installation/uninstallation. Add the production Docker configuration, HTTPS/domain/TURN configuration, persistent data/backup/restore instructions, health checks and diagnostics. Configure the Canada VPS only with supplied access and concrete deployment settings. Budget live outbound traffic against the 1 Gbps port, despite unlimited monthly transfer; leave CPU/RAM for other workloads.
 
 Accept fresh-machine installation, reproducible builds, a restore test, a private production room, and a full evening with four/five publishers using the expected subscriptions. Record latency, actual encoder/decoder performance, loss/retransmissions, CPU/RAM, and network load. Deployment and hardware qualification must be reported separately from automated test success.
+
+## 9. Native clipboard integration — corrective PR
+
+Enable the UI framework's operating-system clipboard backend. Verify paste from
+another Windows application and copying an invitation back out, then update the
+local test build. This corrects the minimal feature configuration discovered in
+the first real user trial; an internal-only fallback clipboard is insufficient.
+
+## 10. Fully bundled portable Windows application — PR
+
+Replace the PowerShell installer ZIP with one portable EXE containing its media
+runtime and notices. First launch may extract a private runtime cache, but must
+not install shared runtimes, change system settings, or download dependencies.
+Qualify the shipped DLL/plugin set, matching source availability and licenses.
+Test offline startup, invocation from a fresh directory, actual capture/audio and
+room download behavior, then review and deploy the replacement artifact.
 
 ## Later portability
 

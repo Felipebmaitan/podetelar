@@ -107,6 +107,13 @@ per-user encryption, automatically rejoin on launch without starting capture or
 subscriptions, and provide an explicit Forget saved room action. Keep session and
 media tokens in memory only. Verify encrypted persistence and actual reopen/join.
 
+Refine the native app with repeated hands-on Gemini 4 Argon UI/UX reviews.
+Use a fresh review context after each implementation pass and the fixed rubric
+in [UI review criteria](ui-reviews/rubric.md). Address actionable findings and
+continue until an independent pass scores every category at least 9/10. Record
+blocked/untested interactions honestly; visual ratings never waive media,
+hardware, security or field gates.
+
 Accept with native HEVC and H.264 decode, audible synchronized stereo playback,
 explicit watch/stop traffic checks, fallback and reconnect recovery, preview access
 and cadence, source/audio switching and exclusion, portable/offline startup, and

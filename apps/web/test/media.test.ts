@@ -35,10 +35,19 @@ const states = {
 };
 class BrowserTrack extends EventTarget {
   readyState = "live";
+  constructor(readonly kind = "video") {
+    super();
+  }
+  stop() {
+    this.readyState = "ended";
+  }
 }
 class Capture {
-  readonly mediaStreamTrack = new BrowserTrack();
-  constructor(readonly kind = "video") {}
+  constructor(
+    readonly kind = "video",
+    readonly mediaStreamTrack = new BrowserTrack(kind),
+    readonly isUserProvided = true,
+  ) {}
   stop() {
     this.mediaStreamTrack.readyState = "ended";
   }
@@ -118,14 +127,29 @@ let screen: () => Promise<Capture[]> = async () => [
 mock.module("livekit-client", {
   namedExports: {
     Room: Transport,
+    LocalVideoTrack: class extends Capture {
+      constructor(
+        track: BrowserTrack,
+        _constraints: unknown,
+        supplied: boolean,
+      ) {
+        super("video", track, supplied);
+      }
+    },
+    LocalAudioTrack: class extends Capture {
+      constructor(
+        track: BrowserTrack,
+        _constraints: unknown,
+        supplied: boolean,
+      ) {
+        super("audio", track, supplied);
+      }
+    },
     RoomEvent: events,
     ConnectionState: states,
     Track: { Source, Kind: { Audio: "audio", Video: "video" } },
-    VideoPresets: { h720: { resolution: { width: 1280, height: 720 } } },
     LogLevel: { silent: 0 },
     setLogLevel() {},
-    createLocalVideoTrack: () => camera(),
-    createLocalScreenTracks: () => screen(),
   },
 });
 const { MediaRoom } = await import("../src/media/MediaRoom.ts");
@@ -137,6 +161,24 @@ const deferred = () => {
   return { promise, resolve };
 };
 async function fixture(t: TestContext) {
+  const stream = (captures: Capture[]) => ({
+    getTracks: () => captures.map((capture) => capture.mediaStreamTrack),
+    getVideoTracks: () =>
+      captures
+        .filter((capture) => capture.kind === "video")
+        .map((capture) => capture.mediaStreamTrack),
+  });
+  const navigatorMock = mock.getter(
+    globalThis,
+    "navigator",
+    () =>
+      ({
+        mediaDevices: {
+          getUserMedia: async () => stream([await camera()]),
+          getDisplayMedia: async () => stream(await screen()),
+        },
+      }) as unknown as Navigator,
+  );
   const fetchMock = mock.method(
     globalThis,
     "fetch",
@@ -159,9 +201,26 @@ async function fixture(t: TestContext) {
   t.after(async () => {
     await media.disconnect();
     fetchMock.mock.restore();
+    navigatorMock.mock.restore();
   });
   return { media, transport, snapshot: () => snapshot! };
 }
+
+test("camera capture is application-supplied and natural termination releases it", async (t) => {
+  const capture = new Capture();
+  camera = async () => capture;
+  const f = await fixture(t);
+  await f.media.toggle("camera");
+  assert.equal(
+    f.transport.localParticipant.getTrackPublication(Source.Camera)?.track
+      ?.isUserProvided,
+    true,
+  );
+  capture.endNaturally();
+  await setImmediate();
+  assert.equal(f.transport.localParticipant.trackPublications.size, 0);
+  assert.equal(capture.mediaStreamTrack.readyState, "ended");
+});
 
 test("leaving stops acquired capture while SDK publication is still pending", async (t) => {
   const capture = new Capture();

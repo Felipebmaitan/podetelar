@@ -1,12 +1,11 @@
 import {
   ConnectionState,
-  createLocalScreenTracks,
-  createLocalVideoTrack,
+  LocalAudioTrack,
+  LocalVideoTrack,
   LogLevel,
   Room,
   RoomEvent,
   Track,
-  VideoPresets,
   setLogLevel,
 } from "livekit-client";
 import type { LocalTrack, Participant } from "livekit-client";
@@ -56,9 +55,7 @@ export class MediaRoom {
       RoomEvent.ParticipantNameChanged,
     ])
       this.room.on(event, refresh);
-    this.room.on(RoomEvent.LocalTrackUnpublished, (publication) => {
-      if (publication.track?.mediaStreamTrack.readyState === "ended")
-        this.captures.delete(publication.track);
+    this.room.on(RoomEvent.LocalTrackUnpublished, () => {
       this.reconcileRemovals();
       this.refresh();
     });
@@ -161,28 +158,9 @@ export class MediaRoom {
         );
         return;
       }
-      if (kind === "camera") {
-        captured.push(
-          await createLocalVideoTrack({
-            resolution: VideoPresets.h720.resolution,
-          }),
-        );
-      } else {
-        captured.push(
-          ...(await createLocalScreenTracks({
-            audio: {
-              autoGainControl: false,
-              echoCancellation: false,
-              noiseSuppression: false,
-            },
-            resolution: { width: 1920, height: 1080, frameRate: 30 },
-            selfBrowserSurface: "exclude",
-            contentHint: "motion",
-          })),
-        );
-      }
+      captured.push(...(await this.capture(kind)));
       // Own captures before handing them to asynchronous SDK publication.
-      this.ownCaptures(kind, captured);
+      this.ownCaptures(captured);
       for (const track of captured) {
         if (
           this.closed ||
@@ -241,13 +219,57 @@ export class MediaRoom {
     }
   }
 
-  private ownCaptures(kind: StreamKind, tracks: LocalTrack[]): void {
+  private async capture(kind: StreamKind): Promise<LocalTrack[]> {
+    const screenOptions: DisplayMediaStreamOptions & {
+      selfBrowserSurface: "exclude";
+    } = {
+      video: { width: 1920, height: 1080, frameRate: 30 },
+      audio: {
+        autoGainControl: false,
+        echoCancellation: false,
+        noiseSuppression: false,
+      },
+      selfBrowserSurface: "exclude",
+    };
+    const stream =
+      kind === "camera"
+        ? await navigator.mediaDevices.getUserMedia({
+            video: { width: 1280, height: 720 },
+            audio: false,
+          })
+        : await navigator.mediaDevices.getDisplayMedia(screenOptions);
+    const tracks: LocalTrack[] = [];
+    try {
+      if (this.closed || this.connection !== "connected")
+        throw new Error("Capture cancelled");
+      if (!stream.getVideoTracks().length) throw new Error("No video capture");
+      for (const track of stream.getTracks()) {
+        if (track.kind === "video") {
+          if (kind === "screen") track.contentHint = "motion";
+          tracks.push(new LocalVideoTrack(track, undefined, true));
+        } else {
+          // SDK 2.23 redeclares a protected optional audio processor with an
+          // explicit undefined, conflicting with exactOptionalPropertyTypes.
+          tracks.push(
+            new LocalAudioTrack(track, undefined, true) as LocalTrack,
+          );
+        }
+      }
+      return tracks;
+    } catch (error) {
+      this.stopCaptures(tracks);
+      for (const track of stream.getTracks()) track.stop();
+      throw error;
+    }
+  }
+
+  private ownCaptures(tracks: LocalTrack[]): void {
     for (const track of tracks) this.captures.add(track);
-    if (kind !== "screen") return;
     const video = tracks.find((track) => track.kind === Track.Kind.Video);
     if (!video) return;
-    // Browser Stop sharing ends video independently of its system-audio track.
-    // Pair ownership before publication so even pending audio stops immediately.
+    // All capture/reacquisition is application-owned. Native video termination
+    // releases paired audio even while publication is pending. SDK reconnect
+    // unpublication does not emit a native ended event and retains the captures.
     const ended = () => {
       this.stopCaptures(tracks);
       void Promise.allSettled(

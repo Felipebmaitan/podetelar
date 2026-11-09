@@ -54,11 +54,35 @@ test("two publishers, selective A/V subscriptions, late join and cleanup use rea
     );
     const [alice, bob, viewer] = pages as [Page, Page, Page];
     await alice.addInitScript(() => {
+      const probe = {
+        acquisitions: 0,
+        permissionQueries: 0,
+        tracks: [] as MediaStreamTrack[],
+        resumePermissions: () => {},
+      };
+      (window as unknown as { testCameraProbe: typeof probe }).testCameraProbe =
+        probe;
+      let grant!: (status: PermissionStatus) => void;
+      const permissions = new Promise<PermissionStatus>((resolve) => {
+        grant = resolve;
+      });
+      probe.resumePermissions = () =>
+        grant({ state: "granted", onchange: null } as PermissionStatus);
+      const query = navigator.permissions.query.bind(navigator.permissions);
+      navigator.permissions.query = (descriptor) => {
+        if (descriptor.name === "camera") {
+          probe.permissionQueries += 1;
+          return permissions;
+        }
+        return query(descriptor);
+      };
       const capture = navigator.mediaDevices.getUserMedia.bind(
         navigator.mediaDevices,
       );
       navigator.mediaDevices.getUserMedia = async (constraints) => {
         const stream = await capture(constraints);
+        probe.acquisitions += 1;
+        probe.tracks.push(...stream.getTracks());
         (
           window as unknown as { testCaptureTracks: MediaStreamTrack[] }
         ).testCaptureTracks = stream.getTracks();
@@ -262,6 +286,51 @@ test("two publishers, selective A/V subscriptions, late join and cleanup use rea
     await expect(
       viewer.getByRole("heading", { name: "Who's sharing first?" }),
     ).toBeVisible();
+    // A camera-ended callback must never queue hidden reacquisition after Stop.
+    // The permission query is held pending if the SDK tries its managed recovery.
+    await alice
+      .getByRole("button", { name: "Share camera", exact: true })
+      .click();
+    await expect(viewer.getByRole("article")).toHaveCount(1);
+    await alice.evaluate(() => {
+      const video = (
+        window as unknown as { testCaptureTracks: MediaStreamTrack[] }
+      ).testCaptureTracks[0]!;
+      video.stop();
+      video.dispatchEvent(new Event("ended"));
+    });
+    const stopCamera = alice.getByRole("button", {
+      name: "Stop camera",
+      exact: true,
+    });
+    if (await stopCamera.isVisible()) await stopCamera.click();
+    await expect(viewer.getByRole("article")).toHaveCount(0);
+    await alice.evaluate(() =>
+      (
+        window as unknown as {
+          testCameraProbe: { resumePermissions: () => void };
+        }
+      ).testCameraProbe.resumePermissions(),
+    );
+    await alice.waitForTimeout(600);
+    expect(
+      await alice.evaluate(() => {
+        const probe = (
+          window as unknown as {
+            testCameraProbe: {
+              acquisitions: number;
+              permissionQueries: number;
+              tracks: MediaStreamTrack[];
+            };
+          }
+        ).testCameraProbe;
+        return {
+          acquisitions: probe.acquisitions,
+          permissionQueries: probe.permissionQueries,
+          allEnded: probe.tracks.every((track) => track.readyState === "ended"),
+        };
+      }),
+    ).toEqual({ acquisitions: 2, permissionQueries: 0, allEnded: true });
     await alice
       .getByRole("button", { name: "Leave room", exact: true })
       .click();

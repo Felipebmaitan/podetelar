@@ -2,7 +2,7 @@
 
 Private screen and camera sharing for friends. Native Windows capture, server-forwarded media, a Discord-like room interface and selective watching are the intended product. Licensed under [MIT](LICENSE).
 
-**Current phase: 2 — live rooms and selective watching.** Create a private room, invite friends, share a browser screen or camera, and explicitly choose which streams to watch. Unwatched streams do not send their full video/audio to you. Native hardware capture, Discord audio isolation, minute previews and quality controls follow in their own phases.
+**Current phase: 3 — native Windows hardware publication.** Create a private room, invite friends, and explicitly choose which streams to watch. The Windows publisher captures a monitor or window and sends hardware HEVC or explicit H.264 to the same browser rooms. Unwatched streams do not send their full video/audio to you. Audio isolation, minute previews and quality controls follow in their own phases. See the [native publisher guide](docs/native-publisher.md) and [qualification results](docs/verification/phase-3.md); AMD and game testing remain open.
 
 See the [phase plan](docs/implementation-plan.md), [domain glossary](CONTEXT.md) and [research](docs/research/design-notes.md). Phase 1 is the initial commit; subsequent phases are separate PRs, each requiring acceptance checks and a GPT-6.1-Sol review at high reasoning before merge.
 

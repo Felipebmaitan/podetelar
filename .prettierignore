@@ -4,3 +4,5 @@ package-lock.json
 docs/research
 .local
 data
+target
+Cargo.lock

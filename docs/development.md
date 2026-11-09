@@ -7,6 +7,7 @@
 - `apps/server/src/app.ts`: HTTP authorization, origin checks, cookies, request limits and LiveKit grants. It does not expose the media server API secret.
 - `apps/web/src/media/MediaRoom.ts`: owns LiveKit signaling, browser capture and explicit audio/video subscriptions. UI receives browser tracks and immutable snapshots, not SDK objects. The SDK is dynamically loaded only after room admission.
 - `apps/web/src/media/LiveStreams.tsx`: renders streams with per-stream volume, mute and grid/focus controls; playback elements detach when a subscription stops.
+- `apps/publisher`: Rust desktop publisher. `admission` owns invitation validation and in-memory API sessions; `sources` owns OS capture identities; `encoding` owns the GPU pipeline and encoded-frame feedback; `publisher` owns room/capture lifecycle; `ui` renders snapshots and sends bounded commands. See [native development](native-publisher.md).
 
 SQLite is sufficient for the initial single-VPS, single-app deployment. Do not point several independent instances at separate databases and expect shared sessions. Sessions are not accounts: a fresh admission creates a fresh participant identity.
 
@@ -14,9 +15,9 @@ SQLite is sufficient for the initial single-VPS, single-app deployment. Do not p
 
 `npm run setup` creates a private `.env`. Required secrets: `ADMIN_TOKEN` (at least 32 characters), `LIVEKIT_API_KEY` (at least 8), and `LIVEKIT_API_SECRET` (at least 32). `PUBLIC_URL` is the exact browser origin, with no path/query/fragment or credentials. Remote origins must use HTTPS; HTTPS also requires a `wss://` media URL. Loopback HTTP is accepted for local development. Port must be an integer in 1–65535. Credentials are never included in error messages.
 
-The API does not trust forwarded IP headers by default. All mutating requests require an `Origin` matching `PUBLIC_URL`, including scripted/admin requests. Future native client authentication will need its own explicit contract; do not weaken browser origin validation to work around that later.
+The API does not trust forwarded IP headers by default. All mutating requests require an `Origin` matching `PUBLIC_URL`, including scripted/admin requests. The native publisher uses these same admission endpoints with an exact origin and a private memory-only cookie jar. It does not relax browser validation or receive the admin/server media keys.
 
-The local Compose configuration intentionally overrides the browser origin/media URL to `http://localhost:3000` and `ws://localhost:7880`. Native npm development uses the `.env` origin `http://localhost:5173`. A production static build can be served with `npm run build`, setting `PUBLIC_URL=http://localhost:3000` in `.env`, then `npm start`.
+The local Compose configuration intentionally overrides the browser origin/media URL to `http://localhost:3000` and `ws://127.0.0.1:7880`. Native npm development uses the `.env` origin `http://localhost:5173`. A production static build can be served with `npm run build`, setting `PUBLIC_URL=http://localhost:3000` in `.env`, then `npm start`.
 
 ## HTTP interface
 

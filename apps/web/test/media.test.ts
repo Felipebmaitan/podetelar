@@ -538,3 +538,20 @@ test("recovery prunes a publisher that really is absent from the rejoined room",
   const later = addPeer(f.transport);
   assert.equal(later.getTrackPublication(Source.ScreenShare)?.isDesired, false);
 });
+
+test("a viewer without HEVC receive support does not subscribe to its video or paired audio", async (t) => {
+  const f = await fixture(t);
+  const peer = addPeer(f.transport);
+  Object.assign(peer.getTrackPublication(Source.ScreenShare)!, {
+    mimeType: "video/H265",
+  });
+  f.transport.emit(events.TrackPublished);
+  f.media.watch("friend:screen", true);
+  assert.equal(f.snapshot().streams[0]?.compatible, false);
+  assert.equal(f.snapshot().streams[0]?.watching, false);
+  assert.equal(peer.getTrackPublication(Source.ScreenShare)?.isDesired, false);
+  assert.equal(
+    peer.getTrackPublication(Source.ScreenShareAudio)?.isDesired,
+    false,
+  );
+});

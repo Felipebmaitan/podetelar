@@ -1,0 +1,5 @@
+# Encode on the publisher, forward encoded frames through LiveKit
+
+Use GStreamer D3D11 capture/conversion with NVENC or AMF, feeding complete encoded access units into LiveKit's pre-encoded Rust publishing interface. This keeps capture and encoding in mature native libraries, avoids an extra decode/encode or server transcode, and lets the Windows publisher coexist with the custom browser room interface. The application remains MIT; GStreamer and other runtime dependencies retain their own licenses and require distribution notices/source compliance. Embedded libobs was considered but its GPL integration does not fit the chosen application licensing/distribution direction; browser capture remains a transport baseline rather than the native engine.
+
+Qualify the exact pipeline on available hardware before claiming support. No AMD test machine is currently available. HEVC receive capability varies by browser: on the development machine Chrome advertises H.265 WebRTC receive support while Edge does not. Keep an explicit hardware H.264 mode and report unavailable hardware qualification separately.

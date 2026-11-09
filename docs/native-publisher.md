@@ -1,0 +1,45 @@
+# Native Windows publisher
+
+The Rust publisher sends already encoded video into the existing LiveKit room. GStreamer captures and converts D3D11 textures and uses NVIDIA NVENC or AMD AMF. LiveKit handles transport and forwards compressed media; the VPS does not decode/re-encode it. There is no CPU encoder fallback. Browser camera publication remains available.
+
+## Development
+
+Use Windows 10 1903 or newer (Windows 11 recommended), current NVIDIA/AMD drivers, Rust 1.95.0 and Visual Studio C++ build tools. The toolchain file pins Rust. From the repository root:
+
+```powershell
+npm run native:setup
+npm run native:check
+npm run native:test
+npm run native:probe
+npm run native:run
+```
+
+Setup downloads the pinned official GStreamer 1.28.8 development installer, verifies SHA-256, and installs it for the current user into ignored `.local/gstreamer`. No administrator install is required. Set `FREEDOMSTREAM_GSTREAMER` to an equivalent development installation to use an existing runtime. The helper sets its DLL and pkg-config paths. Runtime redistribution and an installer are Phase 8; copying the executable alone is insufficient.
+
+Create a room in the browser, copy its invitation, paste it into the publisher, and join with a display name. Select a monitor/window and an available hardware encoder. Start/Stop controls capture; Leave and closing the publisher also cancel capture. Open the browser room separately for watching friends. Monitor capture uses DXGI; window capture uses Windows Graphics Capture. The latter retains the latest GPU frame for static scenes and validates that the original window/process still exists. A windowed/borderless game can be selected as a window; no game injection is implemented.
+
+This phase uses source-bounded, aspect-preserving video up to 1920×1080 at 60 fps with a 12 Mbps ceiling. LiveKit congestion feedback may lower the encoder target. Metrics show encoded output FPS and the encoder target, not unique scene updates, received quality or GPU utilization. Audio is off until Phase 4. There are no microphone, preview or source-switching controls yet; stop before changing sources.
+
+HEVC requires a receiver that advertises WebRTC H.265. The browser disables Watch for an unsupported codec and never subscribes its associated audio. Choose H.264 explicitly in the publisher for those viewers. No server transcode is substituted silently. Available factories depend on the actual GPU/driver/runtime; discovering AMF code is not AMD qualification.
+
+## Verification tools
+
+```powershell
+npm run native:qualify
+npm run native:qualify -- monitor
+npm run native:qualify -- monitor-wgc
+```
+
+The first command encodes a GPU-generated pattern; the other commands capture the local monitor through each backend. They discard all buffers locally, upload nothing and write no video/images. Each detected encoder must produce 120 frames and release its pipeline. `npm run native:run -- --sources` explicitly lists window titles/source IDs; do not paste that output into public logs. Pass a chosen source ID to `native:qualify` to check a window.
+
+For the automated native-to-browser test, run the app and a reachable SFU, install Chrome, and set `FREEDOMSTREAM_NATIVE_EXE` to the built executable. Add GStreamer's `bin` directory to PATH, then `npm run native:e2e`. It supplies invitation authority through bounded standard input, never command-line arguments. It checks hardware HEVC and H.264 decode, late Watch, stopped RTP traffic, rewatch and native cleanup. A synthetic test is not a game benchmark.
+
+The loopback-only Docker development SFU passes browser tests, but the current Rust WebRTC build timed out establishing ICE through Windows Docker Desktop's loopback forwarding. Native qualification therefore used a separate SFU on the VPS with public media candidates and authenticated TLS signaling. Do not expose the local Compose stack to work around this; production networking belongs to Phases 7/8.
+
+## Boundaries and dependencies
+
+The GUI never handles per-frame callbacks. A bounded worker channel owns admission and publication, and a blocking pump owns the GStreamer pipeline. Stop/Leave/terminal disconnection cancel pending and active acquisitions immediately; a dropped pending publication also releases its capture lease. The pipeline goes to NULL on success, cancellation and errors. Only compressed access units are copied into LiveKit's pre-encoded API. Queues are bounded, raw frames can drop under pressure, and encoded reference frames are not deliberately discarded.
+
+Room invitations and cookies stay in process memory. Remote cleartext origins, URL credentials, query parameters, redirects and malformed invitation authorities are rejected. Normal logs exclude SDK diagnostics. Optional `FREEDOMSTREAM_DIAGNOSTICS=1` emits a strict allowlist of connection-state/candidate information without signaling tokens or SDP authority. Keep diagnostic output private because candidate IP addresses remain network information.
+
+Original application code is MIT licensed. GStreamer and its plugins retain their upstream licenses (including LGPL components), as do LiveKit/WebRTC and other dependencies. The installer is fetched separately for development; a redistributable package must include applicable notices, license texts and LGPL compliance materials before release. The application does not link libobs or a GPL software encoder. Adding Linux/macOS requires platform capture/encoder adapters and runtime qualification, not changes to private-room authorization or browser subscriptions.

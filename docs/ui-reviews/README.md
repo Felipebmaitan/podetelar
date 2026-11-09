@@ -6,15 +6,21 @@ review, he changed the scope to **UI-only**: visual design and UX inferred from
 native-renderer images. No subsequent image score certifies working interactions,
 accessibility compliance, media performance or hardware/network qualification.
 
-| Category                          | Round 3: first verified image review | Pass 2 fresh review |
-| --------------------------------- | ------------------------------------ | ------------------- |
-| Visual design                     | 8.0                                  | Pending             |
-| Layout and responsiveness         | 6.5                                  | Pending             |
-| Room onboarding                   | 8.0                                  | Pending             |
-| Sharing workflow                  | 8.5                                  | Pending             |
-| Watching workflow                 | 7.5                                  | Pending             |
-| Feedback and recovery             | 8.0                                  | Pending             |
-| Accessibility and discoverability | 7.5                                  | Pending             |
+| Category                          | Round 3: first verified image review | Round 4: pass 2 fresh review |
+| --------------------------------- | ------------------------------------ | ---------------------------- |
+| Visual design                     | 8.0                                  | 9.0                          |
+| Layout and responsiveness         | 6.5                                  | 9.0                          |
+| Room onboarding                   | 8.0                                  | 9.2                          |
+| Sharing workflow                  | 8.5                                  | 9.3                          |
+| Watching workflow                 | 7.5                                  | 9.3                          |
+| Feedback and recovery             | 8.0                                  | 9.1                          |
+| Accessibility and discoverability | 7.5                                  | 9.0                          |
+
+**UI review target achieved:** a fresh independent Gemini 4 Argon context gave
+all seven categories at least 9/10 for application commit `d2573ad`. Its visual
+preflight matched the actual images. The parent verified the report and recorded
+inaccurate measurements and optional polish notes separately. This concludes the
+requested image-only refinement loop; it does not close release acceptance gates.
 
 The baseline included static source inspection and screenshots because that
 provider had no native desktop-control tool. It is supplemental and differs from
@@ -34,8 +40,11 @@ the parent's own screenshot checks remain the basis for implementation pass 1.
 - [Round 3: verified multimodal image review](round-03.md)
 - [Parent verification and rejected Round 3 claims](round-03-validation.md)
 - [Implementation pass 2: changes by category](pass-02.md)
+- [Round 4: independent final image review](round-04.md)
+- [Parent verification of the final review and remaining polish](round-04-validation.md)
 
 The `images/baseline` directory preserves the original multi-stream look.
 `images/round-01` contains early implementation captures, including issues caught
 by the parent before the next independent review. `images/pass-01` is the revised
-gallery for that next review. Capture hooks are not included in production code.
+gallery for Round 3; `images/pass-02` is the final Round 4 gallery. Capture hooks
+are not included in production code.

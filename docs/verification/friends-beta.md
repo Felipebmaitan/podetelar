@@ -1,5 +1,9 @@
 # Friends beta delivery — 9 November 2026
 
+This records the earlier delivery. See the subsequent
+[friends feedback beta](friends-feedback-beta.md) for the current executable and
+VPS build.
+
 This delivery packages the final reviewed native UI and updates the existing VPS
 room to its compatible native-app server. It is a friends beta, not AMD,
 fresh-machine or real-game/group qualification. The existing room invitation is

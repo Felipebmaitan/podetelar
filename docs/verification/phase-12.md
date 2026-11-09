@@ -1,8 +1,10 @@
 # Friends feedback: bandwidth, room UI and language
 
 Follow-up branch: `feat/native-room-feedback`, based on the native-room beta
-(`a916b6d`, PR #10). This work is not deployed and does not replace the friends-beta
-executable. The existing production invitation and credentials remain private.
+(`a916b6d`, PR #10). Build `39aaffe` is now deployed as an explicitly requested
+[updated friends beta](friends-feedback-beta.md), with its rebuilt executable.
+The existing production invitation and credentials remain private. This does not
+complete the remaining merge, physical A/V or field acceptance gates.
 
 ## Changes
 

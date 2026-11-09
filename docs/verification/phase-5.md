@@ -18,7 +18,7 @@ Phase 5 implements publisher-generated private still previews. This record disti
 - A full native reconnect reattached the cached JPEG to its new SID: two uploads but only one generated image over 26 seconds. The prior revision returned 404, and Stop removed the regenerated A/V publications.
 - The full desktop/mobile browser suite passed six scenarios with two intentional duplicate transport skips. Its minute scenario captured exactly twice at least 60 seconds apart using one camera acquisition, recovered from a failed first upload using the cached image, served a late viewer immediately, and denied the image/stopped capture after Stop.
 
-The final PR still requires exact-head CI and a fresh GPT-6.1-Sol high review. AMD remains unavailable; these checks do not certify AMD, real-game/fullscreen capture, 4K120, a production deployment or an evening with five friends.
+PR #4 merged after all four CI jobs passed and a fresh GPT-6.1-Sol high review approved head `b292093e72b20279ac11c157bc26fbdc6143ca3c`. AMD remains unavailable; these checks do not certify AMD, real-game/fullscreen capture, 4K120, a production deployment or an evening with five friends.
 
 ## Test privacy
 

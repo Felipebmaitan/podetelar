@@ -1,4 +1,5 @@
 import type { APIRequestContext } from "@playwright/test";
+import { setTimeout as delay } from "node:timers/promises";
 
 /** Never let Playwright's network-error call log echo the administrator header. */
 export async function createTestRoom(
@@ -6,17 +7,32 @@ export async function createTestRoom(
   origin: string,
   name: string,
 ) {
-  return request
-    .post("/api/rooms", {
-      headers: {
-        Origin: origin,
-        Authorization: `Bearer ${process.env.ADMIN_TOKEN!}`,
-      },
-      data: { name, displayName: "Owner" },
-    })
-    .catch(() => {
-      throw new Error(
-        "Could not create the private test room. Check test-container readiness.",
-      );
-    });
+  const create = () =>
+    request
+      .post("/api/rooms", {
+        headers: {
+          Origin: origin,
+          Authorization: `Bearer ${process.env.ADMIN_TOKEN!}`,
+        },
+        data: { name, displayName: "Owner" },
+      })
+      .catch(() => {
+        throw new Error(
+          "Could not create the private test room. Check test-container readiness.",
+        );
+      });
+  let response = await create();
+  const retry = Number(response.headers()["retry-after"]);
+  // Several suites can share this local API. Respect its production rate limit
+  // instead of weakening it for tests; one bounded retry is enough for a window.
+  if (
+    response.status() === 429 &&
+    Number.isInteger(retry) &&
+    retry >= 1 &&
+    retry <= 60
+  ) {
+    await delay(retry * 1000 + 250);
+    response = await create();
+  }
+  return response;
 }

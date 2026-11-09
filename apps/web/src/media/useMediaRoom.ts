@@ -2,13 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { RoomSession } from "@freedomstream/contracts";
 import type { MediaRoom } from "./MediaRoom";
 import { emptyMediaSnapshot } from "./model";
-import type { StreamKind } from "./model";
+import type { StreamKind, PlaybackBuffer } from "./model";
 
 export function useMediaRoom(session: RoomSession | null) {
   const controller = useRef<MediaRoom | null>(null);
   const stop = useRef<(() => Promise<void>) | null>(null);
   const [snapshot, setSnapshot] = useState(emptyMediaSnapshot);
   const [attempt, setAttempt] = useState(0);
+  const playbackBuffer = useRef<PlaybackBuffer>("smooth");
   const roomId = session?.room.id;
   const identity = session?.participant.id;
   useEffect(() => {
@@ -33,6 +34,7 @@ export function useMediaRoom(session: RoomSession | null) {
         media = new MediaRoom(roomId);
         controller.current = media;
         unsubscribe = media.subscribe(setSnapshot);
+        media.setPlaybackBuffer(playbackBuffer.current);
         void media.connect();
       })
       .catch(() => {
@@ -50,6 +52,10 @@ export function useMediaRoom(session: RoomSession | null) {
   }, [roomId, identity, attempt]);
   return {
     snapshot,
+    setPlaybackBuffer: useCallback((value: PlaybackBuffer) => {
+      playbackBuffer.current = value;
+      controller.current?.setPlaybackBuffer(value);
+    }, []),
     watch: useCallback(
       (id: string, enabled: boolean) => controller.current?.watch(id, enabled),
       [],

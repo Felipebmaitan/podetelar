@@ -256,6 +256,25 @@ p {
 .stream-playback {
   position: relative;
 }
+.received-quality {
+  padding: 8px 16px;
+  margin: 0;
+  font-size: 0.72rem;
+  color: #a8afbe;
+}
+.playback-preference {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: #a8afbe;
+  font-size: 0.8rem;
+}
+.playback-preference select {
+  width: auto;
+  max-width: 100%;
+  padding: 6px 10px;
+}
 .stream-playback video {
   display: block;
   width: 100%;

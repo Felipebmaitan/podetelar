@@ -1,4 +1,6 @@
 use crate::preview::{self, Frame, Gate, Latest};
+pub use crate::quality::{Codec, Mode};
+use crate::quality::{EncoderBudget, RateControl};
 use crate::sources::{self, Source, Target};
 use anyhow::{Context, Result, bail, ensure};
 use gstreamer::{self as gst, prelude::*};
@@ -7,7 +9,7 @@ use livekit::webrtc::{
     video_frame::{EncodedFrameType, EncodedVideoCodec, EncodedVideoFrame},
     video_source::{VideoResolution, native::NativeVideoSource},
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::{
     sync::{
         Arc, Mutex,
@@ -15,28 +17,6 @@ use std::{
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum Codec {
-    H265,
-    H264,
-}
-
-impl Codec {
-    pub fn mime(self) -> &'static str {
-        match self {
-            Self::H265 => "H.265 / HEVC",
-            Self::H264 => "H.264 compatibility",
-        }
-    }
-    pub fn encoded(self) -> EncodedVideoCodec {
-        match self {
-            Self::H265 => EncodedVideoCodec::H265,
-            Self::H264 => EncodedVideoCodec::H264,
-        }
-    }
-}
 
 #[derive(Clone, Serialize)]
 pub struct Encoder {
@@ -62,34 +42,6 @@ pub fn encoders() -> Vec<Encoder> {
     .collect()
 }
 
-#[derive(Clone, Copy)]
-pub struct Mode {
-    pub width: u32,
-    pub height: u32,
-    pub fps: u32,
-    pub bitrate: u64,
-}
-
-impl Mode {
-    pub fn baseline(source: &Source) -> Result<Self> {
-        let scale = (1920.0 / source.info.width as f64)
-            .min(1080.0 / source.info.height as f64)
-            .min(1.0);
-        let width = (source.info.width as f64 * scale) as u32 / 2 * 2;
-        let height = (source.info.height as f64 * scale) as u32 / 2 * 2;
-        ensure!(
-            width >= 144 && height >= 128,
-            "Choose a larger source window."
-        );
-        Ok(Self {
-            width,
-            height,
-            fps: 60,
-            bitrate: 12_000_000,
-        })
-    }
-}
-
 #[derive(Default, Clone, Serialize)]
 pub struct Metrics {
     pub frames: u64,
@@ -98,6 +50,8 @@ pub struct Metrics {
     pub fps: f64,
     pub encoder_bitrate: u64,
     pub preview_frames: u64,
+    pub requested_bitrate: u64,
+    pub encoded_bps: u64,
 }
 
 // Owns the native pipeline. Every return/error path transitions it to NULL.
@@ -112,6 +66,7 @@ pub struct Encoding {
     capture: Source,
     preview_sink: AppSink,
     previews: Latest,
+    rate: RateControl,
 }
 
 impl Drop for Encoding {
@@ -121,6 +76,9 @@ impl Drop for Encoding {
 }
 
 impl Encoding {
+    pub fn rate(&self) -> RateControl {
+        self.rate.clone()
+    }
     pub fn previews(&self) -> Latest {
         self.previews.clone()
     }
@@ -134,6 +92,10 @@ impl Encoding {
         stop: &AtomicBool,
     ) -> Result<Self> {
         ensure!(!stop.load(Ordering::Acquire), "Capture was cancelled.");
+        ensure!(
+            encoder.supports(mode),
+            "This source mode is unavailable on the selected hardware encoder."
+        );
         ensure!(
             sources::validate(source),
             "That capture source is no longer available. Refresh the list."
@@ -159,7 +121,8 @@ impl Encoding {
             ""
         };
         let processing = format!(
-            "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! {cadence}d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width={},height={},framerate={}/1 ! tee name=raw raw. ! queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! {} name=hardware bitrate={} gop-size={} ! {media_type},profile={profile} ! {parser} config-interval=-1 ! {media_type},stream-format=byte-stream,alignment=au ! appsink name=encoded max-buffers=2 sync=false raw. ! queue name=preview_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=NV12,width=320,height=180 ! d3d11download ! video/x-raw,format=NV12 ! videoconvert ! video/x-raw,format=I420 ! jpegenc quality=60 ! appsink name=preview max-buffers=1 drop=true sync=false async=false wait-on-eos=false",
+            "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! {cadence}videorate drop-only=true max-rate={} ! d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width={},height={},framerate={}/1 ! clocksync ! tee name=raw raw. ! queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! {} name=hardware bitrate={} gop-size={} ! {media_type},profile={profile} ! {parser} config-interval=-1 ! {media_type},stream-format=byte-stream,alignment=au ! appsink name=encoded max-buffers=2 sync=false raw. ! queue name=preview_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=NV12,width=320,height=180 ! d3d11download ! video/x-raw,format=NV12 ! videoconvert ! video/x-raw,format=I420 ! jpegenc quality=60 ! appsink name=preview max-buffers=1 drop=true sync=false async=false wait-on-eos=false",
+            mode.fps,
             mode.width,
             mode.height,
             mode.fps,
@@ -195,13 +158,25 @@ impl Encoding {
                 .context("Windows Graphics Capture is unavailable.")?,
         };
         pipeline.add(&input)?;
-        input
-            .link(
-                &pipeline
-                    .by_name("entry")
-                    .context("Missing capture queue.")?,
+        let entry = pipeline
+            .by_name("entry")
+            .context("Missing capture queue.")?;
+        if matches!(source.target, Target::Pattern) {
+            // A high-resolution fixture must originate at that size, rather than
+            // accidentally qualifying an upscaled default test texture.
+            input.link_filtered(
+                &entry,
+                &gst::Caps::builder("video/x-raw")
+                    .features(["memory:D3D11Memory"])
+                    .field("width", source.info.width as i32)
+                    .field("height", source.info.height as i32)
+                    .field("framerate", gst::Fraction::new(mode.fps as i32, 1))
+                    .build(),
             )
-            .context("Capture source could not connect to GPU conversion.")?;
+        } else {
+            input.link(&entry)
+        }
+        .context("Capture source could not connect to GPU conversion.")?;
         let hardware = pipeline
             .by_name("hardware")
             .context("Missing hardware encoder.")?;
@@ -252,6 +227,7 @@ impl Encoding {
             capture: source.clone(),
             preview_sink,
             previews: Arc::new(Mutex::new(None)),
+            rate: RateControl::new(mode.bitrate),
         };
         ensure!(!stop.load(Ordering::Acquire), "Capture was cancelled.");
         encoding
@@ -265,6 +241,7 @@ impl Encoding {
                 .sink
                 .try_pull_sample(gst::ClockTime::from_mseconds(50))
             {
+                encoding.validate_dimensions()?;
                 encoding.first = Some(sample);
                 return Ok(encoding);
             }
@@ -284,6 +261,25 @@ impl Encoding {
                 }
             }
         }
+        Ok(())
+    }
+
+    fn validate_dimensions(&self) -> Result<()> {
+        let caps = self
+            .pipeline
+            .by_name("entry")
+            .and_then(|entry| entry.static_pad("sink"))
+            .and_then(|pad| pad.current_caps())
+            .context("Capture dimensions are unavailable.")?;
+        let caps = caps
+            .structure(0)
+            .context("Capture dimensions are unavailable.")?;
+        let width = caps.get::<i32>("width").unwrap_or(0);
+        let height = caps.get::<i32>("height").unwrap_or(0);
+        ensure!(
+            width >= self.mode.width as i32 && height >= self.mode.height as i32,
+            "Source is smaller than the selected stream resolution. Choose a smaller resolution and share again."
+        );
         Ok(())
     }
 
@@ -311,6 +307,11 @@ impl Encoding {
             ..Default::default()
         };
         let mut keyframe_count = 0;
+        let mut feedback = None;
+        let mut budget = EncoderBudget::new(self.mode.bitrate);
+        let mut first_feedback = false;
+        let mut last_rate_update = Instant::now();
+        let mut reported_bytes = 0;
         let mut waiting_for_key = true;
         let mut last_key_request = Instant::now() - Duration::from_secs(1);
         while !stop.load(Ordering::Acquire) {
@@ -336,11 +337,37 @@ impl Encoding {
                     last_key_request = Instant::now();
                 }
                 if let Some(target) = source.take_rate_control_request() {
-                    let bitrate = target.target_bitrate_bps.min(self.mode.bitrate).max(1_000);
-                    self.encoder
-                        .set_property("bitrate", (bitrate / 1000) as u32);
-                    counters.encoder_bitrate = bitrate;
+                    first_feedback = feedback.is_none();
+                    feedback = Some(target.target_bitrate_bps);
                 }
+            }
+            let requested = self.rate.requested();
+            let user_changed =
+                counters.requested_bitrate != 0 && requested != counters.requested_bitrate;
+            if first_feedback
+                || requested != counters.requested_bitrate
+                || last_rate_update.elapsed() >= Duration::from_secs(1)
+            {
+                // AMF can internally reconfigure on property changes. Coalesce
+                // periodic BWE updates; user edits and first feedback apply now.
+                let effective = budget.update(&self.rate, feedback) / 1000 * 1000;
+                if effective != counters.encoder_bitrate {
+                    self.encoder
+                        .set_property("bitrate", (effective / 1000) as u32);
+                    counters.encoder_bitrate = effective;
+                }
+                last_rate_update = Instant::now();
+                first_feedback = false;
+            }
+            counters.requested_bitrate = requested;
+            if user_changed {
+                // A hardware reconfiguration can change codec headers. Resume
+                // on a fresh self-contained frame instead of feeding old queued
+                // reference frames across the live edit to the decoder.
+                keyframe_count += 1;
+                self.keyframe(keyframe_count);
+                waiting_for_key = true;
+                last_key_request = Instant::now();
             }
             let sample = self
                 .first
@@ -375,7 +402,10 @@ impl Encoding {
                         .min(i64::MAX as u64) as i64,
                 );
                 let accepted = source.capture_encoded_frame(&EncodedVideoFrame {
-                    codec: self.codec.encoded(),
+                    codec: match self.codec {
+                        Codec::H265 => EncodedVideoCodec::H265,
+                        Codec::H264 => EncodedVideoCodec::H264,
+                    },
                     payload: &payload,
                     timestamp_us,
                     frame_type: if key {
@@ -400,6 +430,11 @@ impl Encoding {
                     sources::validate(&self.capture),
                     "The capture source closed or disconnected."
                 );
+                self.validate_dimensions()?;
+                counters.encoded_bps = ((counters.bytes - reported_bytes) as f64 * 8.0
+                    / last_report.elapsed().as_secs_f64())
+                    as u64;
+                reported_bytes = counters.bytes;
                 if let Ok(mut snapshot) = metrics.lock() {
                     *snapshot = counters.clone();
                 }
@@ -422,5 +457,23 @@ impl Encoding {
             "Native capture is still stopping."
         );
         Ok(counters)
+    }
+}
+
+impl Encoder {
+    pub fn supports(&self, mode: Mode) -> bool {
+        let Some(factory) = gst::ElementFactory::find(&self.factory) else {
+            return false;
+        };
+        let caps = gst::Caps::builder("video/x-raw")
+            .features(["memory:D3D11Memory"])
+            .field("format", "NV12")
+            .field("width", mode.width as i32)
+            .field("height", mode.height as i32)
+            .field("framerate", gst::Fraction::new(mode.fps as i32, 1))
+            .build();
+        factory.static_pad_templates().iter().any(|template| {
+            template.direction() == gst::PadDirection::Sink && template.caps().can_intersect(&caps)
+        })
     }
 }

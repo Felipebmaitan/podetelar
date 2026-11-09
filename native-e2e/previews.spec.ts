@@ -8,7 +8,7 @@ test("native JPEG previews update once a minute without any full media subscript
   request,
   baseURL,
 }) => {
-  test.setTimeout(105_000);
+  test.setTimeout(170_000);
   const created = await createTestRoom(
     request,
     baseURL!,

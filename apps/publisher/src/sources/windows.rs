@@ -1,10 +1,10 @@
 use super::{Source, SourceInfo, Target};
 use windows::Win32::{
     Foundation::{HWND, LPARAM, RECT},
+    Graphics::Dwm::{DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute},
     Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO},
     UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsWindow,
-        IsWindowVisible,
+        EnumWindows, GetWindowTextW, GetWindowThreadProcessId, IsWindow, IsWindowVisible,
     },
 };
 use windows::core::BOOL;
@@ -53,7 +53,18 @@ unsafe extern "system" fn window(handle: HWND, context: LPARAM) -> BOOL {
         return true.into();
     }
     let mut rect = RECT::default();
-    if unsafe { GetWindowRect(handle, &mut rect) }.is_err() {
+    // WGC captures the painted DWM frame, not GetWindowRect's invisible resize
+    // margins. Inflated dimensions would make Source accidentally upscale.
+    if unsafe {
+        DwmGetWindowAttribute(
+            handle,
+            DWMWA_EXTENDED_FRAME_BOUNDS,
+            &mut rect as *mut _ as *mut _,
+            std::mem::size_of::<RECT>() as u32,
+        )
+    }
+    .is_err()
+    {
         return true.into();
     }
     let width = (rect.right - rect.left).max(0) as u32;

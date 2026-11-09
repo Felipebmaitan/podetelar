@@ -12,6 +12,7 @@
 - `apps/publisher`: Rust desktop publisher. `admission` owns invitation validation and in-memory API sessions; `sources` owns OS capture identities; `encoding` owns the GPU pipeline and encoded-frame feedback; `publisher` owns room/capture lifecycle; `ui` renders snapshots and sends bounded commands. See [native development](native-publisher.md).
 - `apps/publisher/src/audio`: owns Windows session discovery, process identity/exclusion policy, bounded PCM mixing and transport delivery. `viewer` owns the isolated Chrome process job and ephemeral profile; callers see Open/Drop lifecycle rather than browser control details. See [audio behavior](audio.md).
 - `apps/publisher/src/preview.rs`: owns the minute GPU-branch gate, single-frame cache and independent bounded HTTP uploader. Capture runs without waiting for preview network requests.
+- `apps/publisher/src/quality.rs`: portable source-bounded mode resolution, Auto/manual policy and live requested/congestion bitrate caps. `delivery.rs` collects bounded aggregate sender facts; the UI never receives raw RTC stats or per-frame callbacks. `StreamConfig` validates restart versus live edits before modifying the active capture.
 
 SQLite is sufficient for the initial single-VPS, single-app deployment. Do not point several independent instances at separate databases and expect shared sessions. Sessions are not accounts: a fresh admission creates a fresh participant identity.
 
@@ -46,4 +47,4 @@ Browser camera/screen publication and playback are supported, with no microphone
 
 One active app tab per browser room session is supported: tabs sharing a cookie receive the same media identity, so a second tab can replace the first connection. Separate browsers/devices join as separate participants. SDK diagnostic log-level preferences may appear in browser storage; invitations, session cookies and media tokens must not be stored there. SDK logging is suppressed to avoid exposing signaling credentials.
 
-Future native integration must keep encoder feedback, source switching and actual received quality separate from user-selected resolution/FPS/bitrate. Do not generate previews by decoding high-bitrate streams on the VPS. The publisher should generate the initial preview, then update at most once per minute.
+Native quality control keeps requested resolution/FPS/bitrate separate from encoder feedback and measured sender/receiver quality. Source/codec/geometry changes use explicit publication restarts; bitrate-only changes keep the active geometry even if a source's aspect ratio changed. The publisher generates its initial preview, then updates at most once per minute, with no VPS video decoder.

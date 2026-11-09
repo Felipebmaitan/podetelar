@@ -182,6 +182,7 @@ export function App() {
               watch={media.watch}
               toggle={media.toggle}
               reconnect={media.reconnect}
+              setPlaybackBuffer={media.setPlaybackBuffer}
             />
             <section className="invite-panel">
               <div>

@@ -1,8 +1,9 @@
 use crate::{
     admission::Admission,
-    audio,
+    audio, delivery,
     encoding::{Codec, Encoder, Encoding, Metrics, Mode},
     preview::{self, Latest},
+    quality::{MAX_BITRATE, RateControl, Settings},
     sources::{self, Source, SourceInfo},
 };
 use anyhow::{Context, Result, bail};
@@ -27,10 +28,10 @@ use tokio::{sync::mpsc, task::JoinHandle};
 const TRACK_NAME: &str = "FreedomStream screen";
 const AUDIO_TRACK_NAME: &str = "FreedomStream application audio";
 #[derive(Default)]
-struct CaptureCancellation(Mutex<Vec<Weak<AtomicBool>>>);
+pub(crate) struct CaptureCancellation(Mutex<Vec<Weak<AtomicBool>>>);
 
 impl CaptureCancellation {
-    fn register(&self) -> Arc<AtomicBool> {
+    pub(crate) fn register(&self) -> Arc<AtomicBool> {
         let stop = Arc::new(AtomicBool::new(false));
         let mut captures = self
             .0
@@ -41,7 +42,7 @@ impl CaptureCancellation {
         stop
     }
 
-    fn cancel(&self) {
+    pub(crate) fn cancel(&self) {
         let captures = self
             .0
             .lock()
@@ -66,6 +67,8 @@ pub struct Snapshot {
     pub encoders: Vec<Encoder>,
     pub metrics: Metrics,
     pub audio: audio::Metrics,
+    pub delivery: delivery::Metrics,
+    pub mode: Option<Mode>,
     pub applications: Vec<audio::Application>,
 }
 
@@ -82,6 +85,8 @@ impl Default for Snapshot {
             encoders: Vec::new(),
             metrics: Metrics::default(),
             audio: audio::Metrics::default(),
+            delivery: delivery::Metrics::default(),
+            mode: None,
             applications: Vec::new(),
         }
     }
@@ -97,6 +102,14 @@ pub enum Command {
         encoder: String,
         audio: audio::Choice,
         exclusions: Vec<String>,
+        quality: Settings,
+    },
+    Apply {
+        source_id: String,
+        encoder: String,
+        audio: audio::Choice,
+        exclusions: Vec<String>,
+        quality: Settings,
     },
     OpenViewer {
         invitation: String,
@@ -160,7 +173,7 @@ impl Controller {
     }
 
     pub fn send(&self, command: Command) {
-        let capture_pending = matches!(command, Command::Start { .. });
+        let capture_pending = matches!(command, Command::Start { .. } | Command::Apply { .. });
         // Register before enqueueing: Stop must also cancel capture work that
         // has not yet reached the room worker.
         let capture = capture_pending.then(|| self.cancellation.register());
@@ -199,6 +212,56 @@ impl Drop for Controller {
     }
 }
 
+#[derive(Clone)]
+pub struct StreamConfig {
+    pub source: Source,
+    pub encoder: Encoder,
+    pub quality: Settings,
+    pub audio: audio::Choice,
+    pub exclusions: Vec<String>,
+}
+impl StreamConfig {
+    fn live_mode(&self, current: &Self, mode: Mode) -> Result<Option<Mode>> {
+        if current.source.info.id != self.source.info.id
+            || current.encoder.factory != self.encoder.factory
+            || current.encoder.codec != self.encoder.codec
+            || current.audio != self.audio
+            || current.exclusions != self.exclusions
+            || current.quality.resolution != self.quality.resolution
+            || current.quality.fps != self.quality.fps
+        {
+            return Ok(None);
+        }
+        // Geometry remains the capture-start choice even if a window grew or
+        // changed aspect ratio between starting capture and this bitrate edit.
+        anyhow::ensure!(
+            sources::validate(&self.source)
+                && self.source.info.width >= mode.width
+                && self.source.info.height >= mode.height,
+            "Source is smaller than the active resolution. Stop and choose a smaller mode."
+        );
+        Ok(Some(Mode {
+            bitrate: self
+                .quality
+                .bitrate_for(mode.width, mode.height, self.encoder.codec)?,
+            ..mode
+        }))
+    }
+    pub fn mode(&self) -> Result<Mode> {
+        let mode = self
+            .quality
+            .resolve(&self.source.info, self.encoder.codec)?;
+        anyhow::ensure!(
+            self.encoder.supports(mode),
+            "This resolution/frame rate is unavailable on the selected hardware encoder."
+        );
+        anyhow::ensure!(
+            sources::validate(&self.source),
+            "Refresh and select an available capture source."
+        );
+        Ok(mode)
+    }
+}
 pub struct Stream {
     stop: StopOnDrop,
     task: JoinHandle<Result<Metrics>>,
@@ -209,6 +272,11 @@ pub struct Stream {
     previews: Latest,
     preview_task: Option<JoinHandle<()>>,
     pub preview_uploads: Arc<AtomicU64>,
+    pub delivery: Arc<Mutex<delivery::Metrics>>,
+    delivery_task: JoinHandle<()>,
+    config: StreamConfig,
+    rate: RateControl,
+    pub mode: Mode,
 }
 
 struct StopOnDrop {
@@ -236,16 +304,17 @@ impl Drop for StopOnDrop {
 }
 
 impl Stream {
-    pub async fn start(
-        room: &Room,
-        source: Source,
-        encoder: Encoder,
-        stop: Arc<AtomicBool>,
-        audio_choice: audio::Choice,
-        exclusions: Vec<String>,
-    ) -> Result<Self> {
+    pub fn sid(&self) -> String {
+        self.video.sid().to_string()
+    }
+    pub fn encoder(&self) -> &Encoder {
+        &self.config.encoder
+    }
+    pub async fn start(room: &Room, config: StreamConfig, stop: Arc<AtomicBool>) -> Result<Self> {
         let mut lease = StopOnDrop::new(stop.clone());
-        let mode = Mode::baseline(&source)?;
+        let mode = config.mode()?;
+        let source = config.source.clone();
+        let encoder = config.encoder.clone();
         let cancelled = stop.clone();
         let encoding = tokio::task::spawn_blocking(move || {
             Encoding::start(&source, &encoder, mode, &cancelled)
@@ -253,6 +322,7 @@ impl Stream {
         .await
         .context("Capture worker stopped.")??;
         let codec = encoder_codec(&encoding);
+        let rate = encoding.rate();
         let previews = encoding.previews();
         let rtc_source = NativeVideoSource::new_encoded(VideoResolution {
             width: mode.width,
@@ -282,7 +352,9 @@ impl Stream {
             simulcast: false,
             source: TrackSource::Screenshare,
             video_encoding: Some(VideoEncoding {
-                max_bitrate: mode.bitrate,
+                // Keep the RTC transport ceiling stable across live bitrate edits.
+                // The GPU encoder always obeys the user's smaller cap and BWE.
+                max_bitrate: MAX_BITRATE,
                 max_framerate: mode.fps as f64,
             }),
             ..Default::default()
@@ -305,6 +377,14 @@ impl Stream {
                 bail!("Media publication failed. Join the room again to retry.");
             }
         };
+        let delivery = Arc::new(Mutex::new(delivery::Metrics::default()));
+        let delivery_task = tokio::spawn(delivery::monitor(
+            video.clone(),
+            stop.clone(),
+            delivery.clone(),
+        ));
+        let audio_choice = config.audio.clone();
+        let exclusions = config.exclusions.clone();
         let mut active = Self {
             stop: lease,
             task,
@@ -315,6 +395,11 @@ impl Stream {
             previews,
             preview_task: None,
             preview_uploads: Arc::new(AtomicU64::new(0)),
+            delivery,
+            delivery_task,
+            config,
+            rate,
+            mode,
         };
         if audio_choice != audio::Choice::Off {
             let source = NativeAudioSource::new(AudioSourceOptions::default(), 48000, 2, 50);
@@ -382,6 +467,18 @@ impl Stream {
         }
     }
 
+    /// Returns false when capture/publication must restart. Validation precedes
+    /// any mutation, so an invalid edit cannot interrupt a working stream.
+    pub fn apply_live(&mut self, config: &StreamConfig) -> Result<bool> {
+        let Some(mode) = config.live_mode(&self.config, self.mode)? else {
+            return Ok(false);
+        };
+        self.rate.set(mode.bitrate)?;
+        self.mode = mode;
+        self.config = config.clone();
+        Ok(true)
+    }
+
     pub fn finished(&self) -> bool {
         self.task.is_finished()
             || self
@@ -392,6 +489,8 @@ impl Stream {
 
     pub async fn stop(self, room: &Room) -> Result<Metrics> {
         self.stop.cancel();
+        self.delivery_task.abort();
+        let _ = self.delivery_task.await;
         let captured = self
             .task
             .await
@@ -594,6 +693,7 @@ async fn worker(
                 if let Some(active) = &stream {
                     if let Ok(metrics) = active.metrics.lock() { update(&snapshot, |state| state.metrics = metrics.clone()); }
                     if let Ok(metrics) = active.audio_metrics.lock() { update(&snapshot, |state| state.audio = metrics.clone()); }
+                    if let Ok(metrics) = active.delivery.lock() { update(&snapshot, |state| { state.delivery = metrics.clone(); state.mode=Some(active.mode); }); }
                     if !active.finished() { continue; }
                     if let (Some(active), Some(joined)) = (stream.take(), session.as_ref()) {
                         let result = active.stop(&joined.room).await;
@@ -633,12 +733,17 @@ async fn worker(
                     encoder,
                     audio,
                     exclusions,
+                    quality,
+                }
+                | Command::Apply {
+                    source_id,
+                    encoder,
+                    audio,
+                    exclusions,
+                    quality,
                 } => {
-                    if stream.is_some() {
-                        bail!("Stop the current stream first.");
-                    }
                     let joined = session.as_ref().context("Join a room first.")?;
-                    let source = sources
+                    let source = sources::enumerate()
                         .iter()
                         .find(|source| source.info.id == source_id)
                         .context("Refresh and choose a capture source.")?
@@ -648,24 +753,43 @@ async fn worker(
                         .find(|candidate| candidate.factory == encoder)
                         .context("Choose an available hardware encoder.")?;
                     let stop = queued.capture.context("Capture request was cancelled.")?;
+                    anyhow::ensure!(
+                        !stop.load(Ordering::Acquire),
+                        "Capture request was cancelled."
+                    );
+                    let config = StreamConfig {
+                        source,
+                        encoder,
+                        quality,
+                        audio: audio.clone(),
+                        exclusions,
+                    };
+                    if let Some(active) = stream.as_mut()
+                        && active.apply_live(&config)?
+                    {
+                        update(&snapshot, |state| state.mode = Some(active.mode));
+                        return Ok(());
+                    }
+                    config.mode()?;
+                    if let Some(active) = stream.take() {
+                        active.stop(&joined.room).await?;
+                    }
                     joined
                         .expected_audio
                         .store(audio != audio::Choice::Off, Ordering::Release);
-                    let mut active = Stream::start(
-                        &joined.room,
-                        source,
-                        encoder,
-                        stop.clone(),
-                        audio,
-                        exclusions,
-                    )
-                    .await?;
+                    let mut active = Stream::start(&joined.room, config, stop.clone()).await?;
                     active.start_previews(joined.admission.clone());
                     if stop.load(Ordering::Acquire) {
                         let _ = active.stop(&joined.room).await;
                     } else {
+                        let mode = active.mode;
                         stream = Some(active);
-                        update(&snapshot, |state| state.sharing = true);
+                        update(&snapshot, |state| {
+                            state.sharing = true;
+                            state.mode = Some(mode);
+                            state.metrics = Metrics::default();
+                            state.delivery = delivery::Metrics::default();
+                        });
                     }
                 }
                 Command::Stop => {
@@ -727,6 +851,45 @@ async fn worker(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bitrate_edit_keeps_active_geometry_after_source_aspect_changes_and_rejects_invalid_edits() {
+        let current = StreamConfig {
+            source: sources::fixture(),
+            encoder: Encoder {
+                factory: "fixture".into(),
+                label: "Synthetic".into(),
+                codec: Codec::H265,
+            },
+            quality: Settings::default(),
+            audio: audio::Choice::Off,
+            exclusions: Vec::new(),
+        };
+        let mode = Mode {
+            width: 1920,
+            height: 1080,
+            fps: 60,
+            bitrate: 12_000_000,
+        };
+        let mut next = current.clone();
+        next.source.info.width = 2560;
+        next.quality.bitrate = crate::quality::Bitrate::Manual(25_000_000);
+        assert_eq!(
+            next.live_mode(&current, mode).unwrap(),
+            Some(Mode {
+                bitrate: 25_000_000,
+                ..mode
+            })
+        );
+        next.quality.fps = 120;
+        assert_eq!(next.live_mode(&current, mode).unwrap(), None);
+        next.quality.fps = 60;
+        next.quality.bitrate = crate::quality::Bitrate::Manual(2_000_000);
+        assert!(next.live_mode(&current, mode).is_err());
+        next.quality.bitrate = crate::quality::Bitrate::Auto;
+        next.source.info.width = 1280;
+        assert!(next.live_mode(&current, mode).is_err());
+    }
 
     #[test]
     fn stop_reaches_active_and_queued_captures_without_cancelling_future_requests() {

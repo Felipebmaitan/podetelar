@@ -2,9 +2,9 @@
 
 Private screen and camera sharing for friends. Native Windows capture, server-forwarded media, a Discord-like room interface and selective watching are the intended product. Licensed under [MIT](LICENSE).
 
-**Current phase: 1 — private-room foundation.** Create a persistent room, share its invitation, join under a display name and resume your room session. Actual live publication/playback starts in Phase 2. Native hardware capture, audio isolation and quality controls follow in their own phases.
+**Current phase: 2 — live rooms and selective watching.** Create a private room, invite friends, share a browser screen or camera, and explicitly choose which streams to watch. Unwatched streams do not send their full video/audio to you. Native hardware capture, Discord audio isolation, minute previews and quality controls follow in their own phases.
 
-See the [phase plan](docs/implementation-plan.md), [domain glossary](CONTEXT.md) and [research](docs/research/design-notes.md). Phase 1 is the initial commit; subsequent phases are separate PRs with a review pause between them.
+See the [phase plan](docs/implementation-plan.md), [domain glossary](CONTEXT.md) and [research](docs/research/design-notes.md). Phase 1 is the initial commit; subsequent phases are separate PRs, each requiring acceptance checks and a GPT-6.1-Sol review at high reasoning before merge.
 
 ## Local development
 
@@ -52,7 +52,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The smoke and browser checks create uniquely named rooms in the running database. The smoke check prints only pass/fail status. It does not output invitations, session cookies or media tokens. Automated API tests use isolated temporary databases and verify unauthorized access, room scoping, session expiry, persistence, CSRF, rate limiting and signed media grants. The Docker smoke check is not a streaming or GPU test.
+The smoke and browser checks create uniquely named rooms in the running database. The smoke check prints only pass/fail status. It does not output invitations, session cookies or media tokens. Automated API tests use isolated temporary databases and verify unauthorized access, room scoping, session expiry, persistence, CSRF, rate limiting and signed media grants. The browser media scenario uses synthetic capture with real LiveKit signaling, codecs and RTP: two publishers, an independent viewer, audio controls, measured stopped-video traffic, late joins, reconnect/reload and cleanup. It is not a GPU or real desktop-capture qualification. The Docker smoke check is not a streaming test.
 
 ## Access model
 

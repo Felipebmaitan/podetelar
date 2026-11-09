@@ -30,7 +30,13 @@ test("create, share, join, resume and leave a private room", async ({
   try {
     const friend = await guest.newPage();
     const requestedUrls: string[] = [];
+    const mediaTokens: string[] = [];
     friend.on("request", (request) => requestedUrls.push(request.url()));
+    friend.on("response", async (response) => {
+      if (!response.url().endsWith("/media-token") || !response.ok()) return;
+      const body = await response.json().catch(() => null);
+      if (typeof body?.token === "string") mediaTokens.push(body.token);
+    });
     await friend.goto(invitation);
     await expect(
       friend.getByRole("heading", { name: "Take your place." }),
@@ -46,8 +52,24 @@ test("create, share, join, resume and leave a private room", async ({
       friend.getByRole("heading", { name, exact: true }),
     ).toBeVisible();
     await expect(friend.getByText("Friend", { exact: true })).toBeVisible();
-    expect(await friend.evaluate(() => localStorage.length)).toBe(0);
+    await expect(friend.getByTestId("media-connection")).toHaveAttribute(
+      "data-state",
+      "connected",
+      { timeout: 20_000 },
+    );
+    await expect.poll(() => mediaTokens.length).toBeGreaterThan(0);
     const secret = new URL(invitation).hash.slice("#invite=".length);
+    const stored = await friend.evaluate(() =>
+      JSON.stringify({
+        local: { ...localStorage },
+        session: { ...sessionStorage },
+      }),
+    );
+    const sessionCookies = await guest.cookies();
+    expect(stored.includes(secret)).toBe(false);
+    for (const cookie of sessionCookies)
+      expect(stored.includes(cookie.value)).toBe(false);
+    for (const token of mediaTokens) expect(stored.includes(token)).toBe(false);
     expect(requestedUrls.every((url) => !url.includes(secret))).toBe(true);
     await friend
       .getByRole("button", { name: "Leave room", exact: true })

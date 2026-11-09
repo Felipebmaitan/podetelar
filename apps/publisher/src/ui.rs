@@ -54,6 +54,8 @@ pub fn configure_theme(ctx: &egui::Context) {
     style.spacing.item_spacing = egui::vec2(8.0, 8.0);
     style.spacing.button_padding = egui::vec2(10.0, 6.0);
     style.spacing.interact_size.y = 32.0;
+    style.spacing.scroll = egui::style::ScrollStyle::solid();
+    style.spacing.scroll.bar_width = 8.0;
     style
         .text_styles
         .insert(egui::TextStyle::Heading, egui::FontId::proportional(21.0));
@@ -87,6 +89,7 @@ pub struct PublisherUi {
     copied_until: Option<Instant>,
     remembered_volume: HashMap<String, u32>,
     advanced_open: bool,
+    show_invitation: bool,
 }
 impl PublisherUi {
     pub fn new() -> Self {
@@ -123,6 +126,7 @@ impl PublisherUi {
             copied_until: None,
             remembered_volume: HashMap::new(),
             advanced_open: false,
+            show_invitation: false,
         };
         if let Some(profile) = profile {
             app.controller.send(Command::Join {
@@ -135,6 +139,7 @@ impl PublisherUi {
     }
 
     fn join(&mut self) {
+        self.show_invitation = false;
         self.forgetting = false;
         self.controller.send(Command::Join {
             invitation: self.invitation.trim().to_owned(),
@@ -152,6 +157,7 @@ impl PublisherUi {
                 self.forgetting = true;
                 self.controller.send(Command::Leave);
                 self.invitation.clear();
+                self.show_invitation = false;
                 self.name.clear();
                 self.attempted_profile = None;
                 self.settings_error.clear();
@@ -222,6 +228,9 @@ impl PublisherUi {
                 _ => ("Not in a room", MUTED),
             };
             badge(ui, label, color);
+            if state.sharing {
+                badge(ui, "Sharing", ACCENT);
+            }
             if connected {
                 ui.add(
                     egui::Label::new(
@@ -251,12 +260,20 @@ impl PublisherUi {
                 .color(MUTED),
         );
         ui.add_space(8.0);
-        let invitation_label = ui.label("Room invitation");
+        let invitation_label = ui.horizontal(|ui| {
+            let label = ui.label("Room invitation");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.add_enabled(!state.busy, egui::Button::new(if self.show_invitation { "Hide" } else { "Show" })).on_hover_text("Reveal this private invitation only when it is safe to show your screen").clicked() {
+                    self.show_invitation = !self.show_invitation;
+                }
+            });
+            label
+        }).inner;
         let invitation = ui
             .add(
                 egui::TextEdit::singleline(&mut self.invitation)
                     .id_salt("room-invitation")
-                    .password(true)
+                    .password(!self.show_invitation)
                     .interactive(!state.busy)
                     .char_limit(2048)
                     .desired_width(f32::INFINITY)
@@ -282,7 +299,16 @@ impl PublisherUi {
                 || name.has_focus()
                 || name.lost_focus());
         if ui
-            .add_enabled(valid, primary("Join room", ui.available_width()))
+            .add_enabled(
+                valid,
+                if valid {
+                    primary("Join room", ui.available_width())
+                } else {
+                    egui::Button::new(egui::RichText::new("Join room").color(MUTED))
+                        .fill(CARD)
+                        .min_size(egui::vec2(ui.available_width(), 38.0))
+                },
+            )
             .clicked()
             || (valid && enter)
         {
@@ -318,7 +344,13 @@ impl PublisherUi {
         let encoder = state.encoders.iter().find(|e| e.factory == self.encoder);
         let source = state.sources.iter().find(|s| s.id == self.source_id);
         ui.add_enabled_ui(!state.busy, |ui| {
-            let label = ui.label("Screen or window");
+            let label = ui.horizontal(|ui| {
+                let label=ui.label("Screen or window");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| {
+                    if ui.button("Refresh").on_hover_text("Look for newly opened screens and windows").clicked(){self.controller.send(Command::Refresh);}
+                });
+                label
+            }).inner;
             egui::ComboBox::from_id_salt("capture-source").width(ui.available_width()).truncate()
                 .selected_text(source.map(|s| s.label.as_str()).unwrap_or("Choose a source"))
                 .show_ui(ui, |ui| { for source in &state.sources { ui.selectable_value(&mut self.source_id, source.id.clone(), &source.label); } })
@@ -522,24 +554,31 @@ impl PublisherUi {
                 if !tile.watching {
                     let target=egui::Rect::from_center_size(rect.center(),egui::vec2(124.0,44.0));
                     if ui.put(target,primary("Watch",124.0)).on_hover_text("Start receiving this stream's live video and audio").clicked() { self.controller.send(Command::Watch { id:tile.id.clone(),enabled:true }); }
+                    ui.advance_cursor_after_rect(rect);
                 } else {
-                    let controls=egui::Rect::from_min_max(egui::pos2(rect.left()+4.0,rect.bottom()-44.0),egui::pos2(rect.right()-4.0,rect.bottom()-4.0));
-                    ui.painter().rect_filled(controls,5.0,egui::Color32::from_black_alpha(235));
+                    let (controls,_) = ui.allocate_exact_size(egui::vec2(inner,40.0),egui::Sense::hover());
                     let mut row=ui.new_child(egui::UiBuilder::new().id_salt("playback-controls").max_rect(controls.shrink(4.0)).layout(egui::Layout::left_to_right(egui::Align::Center)));
+                    row.set_height(32.0);
+                    row.spacing_mut().button_padding.x=6.0;
                     row.spacing_mut().item_spacing.x=5.0;
                     if row.button("Stop").on_hover_text("Stop receiving this stream's video and audio").clicked() {
                         self.controller.send(Command::Watch { id:tile.id.clone(),enabled:false }); self.textures.remove(&tile.id);
                     }
-                    if row.button(if self.focused.is_some() { "Grid" } else { "Focus" }).on_hover_text("Enlarge this stream; Escape returns to the grid").clicked() { self.focused=if self.focused.is_some() { None } else { Some(tile.id.clone()) }; }
+                    if self.focused.is_none() && row.button("Focus").on_hover_text("Enlarge this stream; Escape returns to the grid").clicked() { self.focused=Some(tile.id.clone()); }
                     let mut volume=tile.volume.load(Ordering::Relaxed);
                     if row.button(if volume==0 { "Unmute" } else { "Mute" }).clicked() {
                         if volume==0 { volume=self.remembered_volume.get(&tile.id).copied().unwrap_or(100); }
                         else { self.remembered_volume.insert(tile.id.clone(),volume); volume=0; }
                         tile.volume.store(volume,Ordering::Relaxed);
                     }
-                    let label=row.label("Vol");
+                    let label=row.add_sized([24.0,32.0],egui::Label::new("Vol"));
                     row.spacing_mut().slider_width=(row.available_width()-78.0).clamp(35.0,120.0);
                     if row.add(egui::Slider::new(&mut volume,0..=100).suffix("%")).labelled_by(label.id).on_hover_text("This stream's volume").changed() { tile.volume.store(volume,Ordering::Relaxed); }
+                }
+                if !tile.watching {
+                    ui.allocate_ui_with_layout(egui::vec2(inner,40.0),egui::Layout::left_to_right(egui::Align::Center),|ui| {
+                        ui.label(egui::RichText::new("Still preview · updates up to once a minute").size(12.0).color(MUTED));
+                    });
                 }
                 if !tile.status.is_empty() {
                     let notice=egui::Rect::from_min_max(rect.left_top()+egui::vec2(6.0,6.0),egui::pos2(rect.right()-6.0,rect.top()+58.0));
@@ -609,27 +648,33 @@ impl eframe::App for PublisherUi {
             || state.busy
             || state.connection == "reconnecting"
         {
-            egui::Panel::top("action-feedback").show(root, |ui| {
-                if !state.error.is_empty() {
-                    ui.colored_label(ERROR, &state.error);
-                }
-                if !self.settings_error.is_empty() {
-                    ui.colored_label(ERROR, &self.settings_error);
-                }
-                if state.busy {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label(state.operation);
-                    });
-                } else if state.connection == "reconnecting" {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label(
+            egui::Panel::top("action-feedback")
+                .frame(
+                    egui::Frame::new()
+                        .fill(PANEL)
+                        .inner_margin(egui::Margin::symmetric(16, 8)),
+                )
+                .show(root, |ui| {
+                    if !state.error.is_empty() {
+                        ui.colored_label(ERROR, &state.error);
+                    }
+                    if !self.settings_error.is_empty() {
+                        ui.colored_label(ERROR, &self.settings_error);
+                    }
+                    if state.busy {
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.label(state.operation);
+                        });
+                    } else if state.connection == "reconnecting" {
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.label(
                             "Reconnecting to your room. Your watching choices will be restored.",
                         );
-                    });
-                }
-            });
+                        });
+                    }
+                });
         }
         egui::Panel::left("sharing-menu")
             .default_size(310.0)
@@ -689,8 +734,13 @@ impl eframe::App for PublisherUi {
                             }
                         } else {
                             ui.small(format!(
-                                "{} streams · {} watching",
+                                "{} {} · {} watching",
                                 state.tiles.len(),
+                                if state.tiles.len() == 1 {
+                                    "stream"
+                                } else {
+                                    "streams"
+                                },
                                 state.tiles.iter().filter(|t| t.watching).count()
                             ));
                         }
@@ -738,14 +788,28 @@ impl eframe::App for PublisherUi {
                 };
                 let gap = 14.0;
                 let rows = tiles.len().div_ceil(columns).min(2);
-                let max_width =
-                    (ui.available_width() - gap * (columns - 1) as f32) / columns as f32;
+                let scroll_space = if columns == 1 && tiles.len() > 1 {
+                    ui.spacing().scroll.bar_width
+                        + ui.spacing().scroll.bar_inner_margin
+                        + ui.spacing().scroll.bar_outer_margin
+                } else {
+                    0.0
+                };
+                if scroll_space > 0.0 {
+                    ui.label(
+                        egui::RichText::new("Scroll to see all streams")
+                            .size(12.0)
+                            .color(MUTED),
+                    );
+                }
+                let max_width = (ui.available_width() - scroll_space - gap * (columns - 1) as f32)
+                    / columns as f32;
                 let row_height = (ui.available_height() - gap * (rows - 1) as f32) / rows as f32;
                 let width = if columns == 1 && tiles.len() > 1 {
                     max_width
                 } else {
                     max_width
-                        .min((row_height - 66.0).max(120.0) * 16.0 / 9.0 + 22.0)
+                        .min((row_height - 114.0).max(90.0) * 16.0 / 9.0 + 22.0)
                         .max(202.0)
                 };
                 let inset =
@@ -778,15 +842,19 @@ impl eframe::App for PublisherUi {
                     });
             });
         if self.advanced_open {
-            let mut open = self.advanced_open;
             let mut done = false;
-            egui::Window::new("Advanced settings")
-                .open(&mut open)
-                .collapsible(false)
-                .resizable(false)
-                .default_width(440.0)
-                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            let modal = egui::Modal::new(egui::Id::unique("advanced-settings"))
+                .backdrop_color(egui::Color32::from_black_alpha(140))
                 .show(&ctx, |ui| {
+                    ui.set_width(440.0);
+                    ui.horizontal(|ui| {
+                        ui.heading("Advanced settings");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.button("Close").clicked() {
+                                done = true;
+                            }
+                        });
+                    });
                     ui.label("Publishing settings apply with Start sharing or Apply changes.");
                     egui::ScrollArea::vertical()
                         .id_salt("advanced-scroll")
@@ -794,11 +862,8 @@ impl eframe::App for PublisherUi {
                         .show(ui, |ui| self.advanced(ui, &state));
                     ui.separator();
                     ui.horizontal(|ui| {
-                        if ui.button("Done").clicked() {
+                        if ui.add(primary("Done", 96.0)).clicked() {
                             done = true;
-                        }
-                        if ui.button("Refresh sources").clicked() {
-                            self.controller.send(Command::Refresh);
                         }
                         let dirty = state
                             .active_selection
@@ -816,7 +881,7 @@ impl eframe::App for PublisherUi {
                         }
                     });
                 });
-            self.advanced_open = open && !done;
+            self.advanced_open = !done && !modal.should_close();
         }
     }
 }
@@ -908,6 +973,7 @@ fn quality_controls(
     {
         settings.fps = quality::FRAME_RATES[index];
     }
+    ui.small("15–120 FPS · higher frame rates use more upload");
     let label = ui.label("Quality preset");
     egui::ComboBox::from_id_salt("quality-preset")
         .width(ui.available_width())

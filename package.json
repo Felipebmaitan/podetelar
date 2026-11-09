@@ -28,6 +28,7 @@
     "native:check": "node scripts/native.mjs check",
     "native:test": "node scripts/native.mjs test",
     "native:probe": "node scripts/native.mjs probe",
+    "native:av-fixture": "node scripts/make-av-sync-fixture.mjs",
     "native:package": "node scripts/package-windows.mjs",
     "native:qualify": "node scripts/native.mjs qualify",
     "native:run": "node scripts/native.mjs run",

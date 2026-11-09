@@ -107,6 +107,12 @@ for this product: it enables recording as well as playout and lacks the required
 Rust per-track gain control. A future SDK seam needs explicit playout-only control
 on the room runtime, per-track volume and actual device-delay integration.
 
+The delay's startup-versus-drift pattern remains unknown. A deterministic
+[flash/click fixture](av-sync-fixture.md) is now generated without extra
+dependencies. Actual GStreamer demux/decode verified its eight source events and
+matching timestamps. It provides a repeatable source for the physical checks;
+it does not measure or correct FreedomStream's output offset.
+
 ## Remaining acceptance
 
 A fresh GPT-6.1-Sol high-reasoning read-only reviewer approved code scope for

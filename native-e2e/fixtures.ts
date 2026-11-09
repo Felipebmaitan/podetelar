@@ -68,6 +68,10 @@ export function nativeRequest(option: string, request: unknown) {
       ["Application audio capture failed", "audio-capture"],
       ["Room access was denied", "admission"],
       ["Too many room requests", "rate-limit"],
+      ["capture source or GPU encoder stopped", "gpu-pipeline"],
+      ["Capture stopped producing frames", "video-stall"],
+      ["Source is smaller", "source-dimensions"],
+      ["Capture worker stopped", "capture-worker"],
     ]) {
       if (message.includes(hint!)) stage = label!;
     }

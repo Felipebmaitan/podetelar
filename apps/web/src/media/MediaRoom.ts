@@ -12,7 +12,12 @@ import type { LocalTrack, Participant } from "livekit-client";
 import type { MediaAccess } from "@freedomstream/contracts";
 import { previewAttribute, previewSchema } from "@freedomstream/contracts";
 import { request } from "../api";
-import type { LiveStream, MediaSnapshot, StreamKind } from "./model";
+import type {
+  LiveStream,
+  MediaSnapshot,
+  StreamKind,
+  PlaybackBuffer,
+} from "./model";
 import { BrowserPreviews } from "./BrowserPreviews";
 
 // SDK logs can contain signaling URLs. Surface bounded messages through our UI instead.
@@ -48,6 +53,19 @@ export class MediaRoom {
   private error = "";
   private reconciliationQueued = false;
   private readonly previews: BrowserPreviews;
+  private statsTimer: ReturnType<typeof setInterval> | null = null;
+  private sampling = false;
+  private playbackBuffer: PlaybackBuffer = "smooth";
+  private readonly delivery = new Map<
+    string,
+    {
+      sid: string;
+      at: number;
+      bytes: number;
+      frames: number;
+      info: LiveStream["delivery"];
+    }
+  >();
 
   constructor(private readonly roomId: string) {
     this.previews = new BrowserPreviews(roomId);
@@ -64,6 +82,9 @@ export class MediaRoom {
       RoomEvent.ParticipantAttributesChanged,
     ])
       this.room.on(event, refresh);
+    this.room.on(RoomEvent.TrackSubscribed, (track) => {
+      track?.setPlayoutDelay?.(this.playbackBuffer === "smooth" ? 0.3 : 0);
+    });
     this.room.on(RoomEvent.LocalTrackUnpublished, () => {
       this.reconcileRemovals();
       this.refresh();
@@ -83,6 +104,7 @@ export class MediaRoom {
     this.room.on(RoomEvent.ConnectionStateChanged, (state) => {
       if (state === ConnectionState.Disconnected)
         this.stopCaptures([...this.captures]);
+      if (state !== ConnectionState.Connected) this.delivery.clear();
       this.connection =
         state === ConnectionState.Connected
           ? "connected"
@@ -121,6 +143,8 @@ export class MediaRoom {
         return;
       }
       this.connection = "connected";
+      if (typeof window !== "undefined" && this.statsTimer === null)
+        this.statsTimer = setInterval(() => void this.sampleDelivery(), 1000);
       this.refresh();
     } catch {
       if (this.closed) return;
@@ -133,6 +157,7 @@ export class MediaRoom {
   }
 
   watch(id: string, enabled: boolean): void {
+    if (!enabled) this.delivery.delete(id);
     const stream = [
       this.room.localParticipant,
       ...this.room.remoteParticipants.values(),
@@ -148,6 +173,14 @@ export class MediaRoom {
     if (enabled) this.watching.add(id);
     else this.watching.delete(id);
     this.error = "";
+    this.refresh();
+  }
+
+  setPlaybackBuffer(value: PlaybackBuffer): void {
+    this.playbackBuffer = value;
+    for (const participant of this.room.remoteParticipants.values())
+      for (const publication of participant.trackPublications.values())
+        publication.track?.setPlayoutDelay?.(value === "smooth" ? 0.3 : 0);
     this.refresh();
   }
 
@@ -233,6 +266,8 @@ export class MediaRoom {
   async disconnect(): Promise<void> {
     this.closed = true;
     this.abort.abort();
+    if (this.statsTimer !== null) clearInterval(this.statsTimer);
+    this.delivery.clear();
     this.stopCaptures([...this.captures]);
     this.listeners.clear();
     this.watching.clear();
@@ -354,7 +389,10 @@ export class MediaRoom {
         ),
       );
       for (const id of this.watching)
-        if (!present.has(id)) this.watching.delete(id);
+        if (!present.has(id)) {
+          this.watching.delete(id);
+          this.delivery.delete(id);
+        }
       this.refresh();
     });
   }
@@ -368,8 +406,11 @@ export class MediaRoom {
     for (const participant of this.room.remoteParticipants.values()) {
       for (const publication of participant.trackPublications.values()) {
         const kind = kindOf(publication.source);
-        if (kind && !this.compatible(publication.mimeType))
-          this.watching.delete(streamId(participant.identity, kind));
+        if (kind && !this.compatible(publication.mimeType)) {
+          const id = streamId(participant.identity, kind);
+          this.watching.delete(id);
+          this.delivery.delete(id);
+        }
         const desired = kind
           ? this.watching.has(streamId(participant.identity, kind))
           : publication.source === Track.Source.ScreenShareAudio &&
@@ -378,14 +419,17 @@ export class MediaRoom {
                 ?.mimeType,
             ) &&
             this.watching.has(streamId(participant.identity, "screen"));
-        if (publication.isDesired !== desired)
+        if (publication.isDesired !== desired) {
+          if (!desired) publication.track?.setPlayoutDelay?.(0);
           publication.setSubscribed(desired);
+        }
       }
     }
     const snapshot: MediaSnapshot = {
       connection: this.connection,
       pending: this.pending,
       error: this.error,
+      playbackBuffer: this.playbackBuffer,
       participants: participants
         .filter((participant) => participant.identity)
         .map((participant) => ({
@@ -400,6 +444,78 @@ export class MediaRoom {
 
   private compatible(mimeType: string | undefined): boolean {
     return mimeType?.toLowerCase() !== "video/h265" || this.receivesHevc;
+  }
+
+  private async sampleDelivery(): Promise<void> {
+    if (this.closed || this.connection !== "connected" || this.sampling) return;
+    this.sampling = true;
+    try {
+      await Promise.all(
+        [...this.room.remoteParticipants.values()].flatMap((participant) =>
+          [...participant.videoTrackPublications.values()].map(
+            async (publication) => {
+              const kind = kindOf(publication.source);
+              if (!kind) return;
+              const id = streamId(participant.identity, kind);
+              const track = publication.track;
+              if (!track || !this.watching.has(id)) {
+                this.delivery.delete(id);
+                return;
+              }
+              try {
+                const stats = await track.getRTCStatsReport();
+                if (
+                  this.closed ||
+                  !this.watching.has(id) ||
+                  this.room.remoteParticipants
+                    .get(participant.identity)
+                    ?.getTrackPublication(publication.source)?.trackSid !==
+                    publication.trackSid
+                )
+                  return;
+                let found = false;
+                stats?.forEach((stat) => {
+                  if (stat.type !== "inbound-rtp" || stat.kind !== "video")
+                    return;
+                  found = true;
+                  const at = performance.now();
+                  const bytes = Number(stat.bytesReceived ?? 0);
+                  const frames = Number(stat.framesDecoded ?? 0);
+                  const before = this.delivery.get(id);
+                  const valid =
+                    before?.sid === publication.trackSid &&
+                    bytes >= before.bytes &&
+                    frames >= before.frames;
+                  const seconds = valid
+                    ? Math.max((at - before.at) / 1000, 0.001)
+                    : 0;
+                  this.delivery.set(id, {
+                    sid: publication.trackSid,
+                    at,
+                    bytes,
+                    frames,
+                    info: seconds
+                      ? {
+                          width: Number(stat.frameWidth ?? 0),
+                          height: Number(stat.frameHeight ?? 0),
+                          fps: (frames - before!.frames) / seconds,
+                          bitrate: ((bytes - before!.bytes) * 8) / seconds,
+                        }
+                      : null,
+                  });
+                });
+                if (!found) this.delivery.delete(id);
+              } catch {
+                this.delivery.delete(id);
+              }
+            },
+          ),
+        ),
+      );
+      this.refresh();
+    } finally {
+      this.sampling = false;
+    }
   }
 
   private streams(participant: Participant): LiveStream[] {
@@ -441,6 +557,10 @@ export class MediaRoom {
             muted: publication.isMuted,
             watching,
             preview: parsedPreview,
+            delivery:
+              watching && this.delivery.get(id)?.sid === publication.trackSid
+                ? (this.delivery.get(id)?.info ?? null)
+                : null,
             video: watching
               ? (publication.track?.mediaStreamTrack ?? null)
               : null,

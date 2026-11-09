@@ -44,6 +44,10 @@ class BrowserTrack extends EventTarget {
   }
 }
 class Capture {
+  playoutDelay = 0;
+  setPlayoutDelay(seconds: number) {
+    this.playoutDelay = seconds;
+  }
   constructor(
     readonly kind = "video",
     readonly mediaStreamTrack = new BrowserTrack(kind),
@@ -591,4 +595,94 @@ test("preview announcements accept only bounded descriptors for the current publ
     announce(value);
     assert.equal(f.snapshot().streams[0]?.preview, null);
   }
+});
+
+test("received quality uses counter deltas and stops sampling an unwatched publication", async (t) => {
+  Object.defineProperty(globalThis, "window", {
+    value: {},
+    configurable: true,
+  });
+  t.after(() => {
+    Reflect.deleteProperty(globalThis, "window");
+  });
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  let now = 1000;
+  t.mock.method(performance, "now", () => now);
+  const f = await fixture(t);
+  const peer = addPeer(f.transport);
+  let reads = 0;
+  let bytes = 0;
+  let frames = 0;
+  const track = Object.assign(new Capture(), {
+    getRTCStatsReport: async () => {
+      reads++;
+      return new Map([
+        [
+          "video",
+          {
+            type: "inbound-rtp",
+            kind: "video",
+            bytesReceived: bytes,
+            framesDecoded: frames,
+            frameWidth: 1920,
+            frameHeight: 1080,
+          },
+        ],
+      ]);
+    },
+  });
+  peer.trackPublications.set(
+    Source.ScreenShare,
+    new Publication(Source.ScreenShare, track),
+  );
+  f.media.watch("friend:screen", true);
+  t.mock.timers.tick(1000);
+  await setImmediate();
+  now += 1000;
+  bytes = 125_000;
+  frames = 60;
+  t.mock.timers.tick(1000);
+  await setImmediate();
+  assert.deepEqual(f.snapshot().streams[0]?.delivery, {
+    width: 1920,
+    height: 1080,
+    fps: 60,
+    bitrate: 1_000_000,
+  });
+  assert.equal(reads, 2);
+  f.media.watch("friend:screen", false);
+  assert.equal(f.snapshot().streams[0]?.delivery, null);
+  t.mock.timers.tick(2000);
+  await setImmediate();
+  assert.equal(reads, 2);
+});
+
+test("playback buffering applies to subscribed A/V, follows preference and never enables subscriptions", async (t) => {
+  const f = await fixture(t);
+  const peer = addPeer(f.transport);
+  const video = new Capture();
+  const audio = new Capture("audio");
+  peer.trackPublications.set(
+    Source.ScreenShare,
+    new Publication(Source.ScreenShare, video),
+  );
+  peer.trackPublications.set(
+    Source.ScreenShareAudio,
+    new Publication(Source.ScreenShareAudio, audio),
+  );
+  f.media.watch("friend:screen", true);
+  f.transport.emit(events.TrackSubscribed, video);
+  f.transport.emit(events.TrackSubscribed, audio);
+  assert.equal(video.playoutDelay, 0.3);
+  assert.equal(audio.playoutDelay, 0.3);
+  f.media.setPlaybackBuffer("low-delay");
+  assert.equal(video.playoutDelay, 0);
+  assert.equal(audio.playoutDelay, 0);
+  f.media.watch("friend:screen", false);
+  f.media.setPlaybackBuffer("smooth");
+  assert.equal(peer.getTrackPublication(Source.ScreenShare)?.isDesired, false);
+  assert.equal(
+    peer.getTrackPublication(Source.ScreenShareAudio)?.isDesired,
+    false,
+  );
 });

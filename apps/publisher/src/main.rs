@@ -1,9 +1,11 @@
 mod admission;
 mod audio;
+mod delivery;
 mod diagnostics;
 mod encoding;
 mod preview;
 mod publisher;
+mod quality;
 mod sources;
 mod ui;
 mod viewer;
@@ -154,17 +156,26 @@ fn run() -> Result<()> {
             );
             for encoder in encoders {
                 let stop = Arc::new(AtomicBool::new(false));
-                let encoding =
-                    Encoding::start(&fixture, &encoder, Mode::baseline(&fixture)?, &stop)?;
+                let mut mode = Mode::baseline(&fixture.info)?;
+                if let Some(fps) = std::env::args().nth(3) {
+                    mode.fps = fps
+                        .parse()
+                        .context("Choose a supported qualification frame rate.")?;
+                    ensure!(
+                        quality::FRAME_RATES.contains(&mode.fps),
+                        "Choose a supported frame rate up to 120 fps."
+                    );
+                }
+                let encoding = Encoding::start(&fixture, &encoder, mode, &stop)?;
                 let metrics = encoding.run(
                     None,
                     stop,
                     Arc::new(Mutex::new(Metrics::default())),
-                    Some(120),
+                    Some(mode.fps as u64 * 3),
                 )?;
                 println!(
                     "{}",
-                    serde_json::json!({"encoder": encoder.factory, "codec": encoder.codec, "metrics": metrics})
+                    serde_json::json!({"encoder": encoder.factory, "codec": encoder.codec, "mode":mode,"metrics": metrics})
                 );
             }
         }
@@ -220,6 +231,20 @@ struct FixtureRequest {
     reconnect_after_seconds: Option<u64>,
     #[serde(default)]
     linger_seconds: u64,
+    #[serde(default)]
+    quality: quality::Settings,
+    #[serde(default)]
+    fixture_4k: bool,
+    #[serde(default)]
+    bitrate_after_seconds: Option<u64>,
+    #[serde(default)]
+    next_bitrate: Option<u64>,
+    #[serde(default)]
+    reconfigure_after_seconds: Option<u64>,
+    #[serde(default)]
+    next_quality: Option<quality::Settings>,
+    #[serde(default)]
+    next_codec: Option<Codec>,
 }
 
 #[derive(Deserialize)]
@@ -245,6 +270,20 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
                 .is_none_or(|delay| delay >= 1 && delay <= request.seconds.saturating_sub(5)),
         "Invalid recovery fixture timing."
     );
+    ensure!(
+        [
+            request.bitrate_after_seconds.is_some(),
+            request.reconfigure_after_seconds.is_some(),
+            request.reconnect_after_seconds.is_some()
+        ]
+        .into_iter()
+        .filter(|enabled| *enabled)
+        .count()
+            <= 1
+            && request.bitrate_after_seconds.is_some() == request.next_bitrate.is_some()
+            && request.reconfigure_after_seconds.is_some() == request.next_quality.is_some(),
+        "Choose one complete fixture transition."
+    );
     let admission =
         admission::Admission::join(&request.invitation_url, &request.display_name).await?;
     let access = admission.media_access().await?;
@@ -263,14 +302,15 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             admission::media_diagnostic(error)
         )
     })?;
-    let stop = Arc::new(AtomicBool::new(false));
-    let cancel = stop.clone();
+    let cancellation = Arc::new(publisher::CaptureCancellation::default());
+    let stop = cancellation.register();
+    let cancel = cancellation.clone();
     let republished = Arc::new(AtomicU64::new(0));
     let publication_count = republished.clone();
     let events = tokio::spawn(async move {
         while let Some(event) = events.recv().await {
             match event {
-                RoomEvent::Disconnected { .. } => cancel.store(true, Ordering::Release),
+                RoomEvent::Disconnected { .. } => cancel.cancel(),
                 RoomEvent::LocalTrackRepublished { .. } => {
                     publication_count.fetch_add(1, Ordering::Relaxed);
                 }
@@ -287,21 +327,54 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             .into_iter()
             .find(|source| source.info.id == id)
             .context("Fixture capture source is unavailable.")?,
-        None => sources::fixture(),
+        None => {
+            let mut source = sources::fixture();
+            if request.fixture_4k {
+                source.info.width = 3840;
+                source.info.height = 2160;
+            }
+            source
+        }
     };
     let result = async {
-        let mut active = publisher::Stream::start(&room, source, encoder.clone(), stop, request.audio, request.exclusions).await?;
+        let config=publisher::StreamConfig { source,encoder:encoder.clone(),quality:request.quality,audio:request.audio,exclusions:request.exclusions };
+        let mut active = publisher::Stream::start(&room, config.clone(), stop).await?;
+        let initial_sid=active.sid();
         active.start_previews(admission.clone());
-        let preview_uploads = active.preview_uploads.clone();
-        let audio_metrics = active.audio_metrics.clone();
-        if let Some(after) = request.reconnect_after_seconds {
+        let mut preview_uploads = active.preview_uploads.clone();
+        let mut audio_metrics = active.audio_metrics.clone();
+        let mut delivery=active.delivery.clone();
+        if let (Some(after),Some(bitrate))=(request.bitrate_after_seconds,request.next_bitrate) {
+            ensure!(after>=1 && after<request.seconds,"Invalid bitrate fixture timing.");
+            tokio::time::sleep(Duration::from_secs(after)).await;
+            let mut next=config.clone(); next.quality.bitrate=quality::Bitrate::Manual(bitrate);
+            ensure!(active.apply_live(&next)?,"Bitrate fixture unexpectedly required a restart.");
+            tokio::time::sleep(Duration::from_secs(request.seconds-after)).await;
+        } else if let (Some(after),Some(quality))=(request.reconfigure_after_seconds,request.next_quality) {
+            ensure!(after>=1 && after<request.seconds,"Invalid reconfiguration fixture timing.");
+            tokio::time::sleep(Duration::from_secs(after)).await;
+            let mut next=config.clone(); next.quality=quality;
+            if let Some(codec)=request.next_codec { next.encoder=encoding::encoders().into_iter().find(|encoder|encoder.codec==codec).context("No requested compatibility encoder.")?; }
+            next.source.info.id="fixture:switched".into();
+            next.mode()?;
+            ensure!(!active.apply_live(&next)?,"Source/codec/mode fixture unexpectedly avoided a restart.");
+            active.stop(&room).await?;
+            active=publisher::Stream::start(&room,next,cancellation.register()).await?;
+            active.start_previews(admission.clone());
+            preview_uploads=active.preview_uploads.clone(); audio_metrics=active.audio_metrics.clone(); delivery=active.delivery.clone();
+            tokio::time::sleep(Duration::from_secs(request.seconds-after)).await;
+        } else if let Some(after) = request.reconnect_after_seconds {
             tokio::time::sleep(Duration::from_secs(after)).await;
             room.simulate_scenario(livekit::rtc_engine::SimulateScenario::FullReconnect).await.map_err(|_| anyhow::anyhow!("Could not request a local fixture reconnect."))?;
             tokio::time::sleep(Duration::from_secs(request.seconds - after)).await;
         } else { tokio::time::sleep(Duration::from_secs(request.seconds)).await; }
+        let mode=active.mode;
+        let encoder=active.encoder().clone();
+        let final_sid=active.sid();
+        let delivered=delivery.lock().map(|value|value.clone()).unwrap_or_default();
         let metrics = active.stop(&room).await?;
         let audio = audio_metrics.lock().map(|value| value.clone()).unwrap_or_default();
-        println!("{}", serde_json::json!({"encoder": encoder.factory, "codec": encoder.codec, "metrics": metrics, "audio": audio, "captureStopped": true, "republished": republished.load(Ordering::Relaxed), "previewUploads": preview_uploads.load(Ordering::Relaxed)}));
+        println!("{}", serde_json::json!({"encoder": encoder.factory, "codec": encoder.codec, "initialSid":initial_sid,"finalSid":final_sid,"mode":mode,"delivery":delivered,"metrics": metrics, "audio": audio, "captureStopped": true, "republished": republished.load(Ordering::Relaxed), "previewUploads": preview_uploads.load(Ordering::Relaxed)}));
         tokio::time::sleep(Duration::from_secs(request.linger_seconds)).await;
         Ok::<_, anyhow::Error>(())
     }.await;

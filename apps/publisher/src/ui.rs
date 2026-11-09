@@ -1,5 +1,6 @@
 use crate::audio;
 use crate::publisher::{Command, Controller};
+use crate::quality::{self, Bitrate, Profile, Settings};
 use eframe::egui;
 use std::time::Duration;
 
@@ -11,6 +12,7 @@ pub struct PublisherUi {
     encoder: String,
     audio: audio::Choice,
     exclusions: Vec<String>,
+    quality: Settings,
 }
 
 impl PublisherUi {
@@ -23,6 +25,7 @@ impl PublisherUi {
             encoder: String::new(),
             audio: audio::Choice::Off,
             exclusions: Vec::new(),
+            quality: Settings::default(),
         }
     }
 }
@@ -32,22 +35,14 @@ impl eframe::App for PublisherUi {
         let ctx = root.ctx().clone();
         ctx.request_repaint_after(Duration::from_millis(500));
         let state = self.controller.snapshot();
-        if !state
-            .sources
-            .iter()
-            .any(|source| source.id == self.source_id)
-        {
+        if self.source_id.is_empty() {
             self.source_id = state
                 .sources
                 .first()
                 .map(|source| source.id.clone())
                 .unwrap_or_default();
         }
-        if !state
-            .encoders
-            .iter()
-            .any(|encoder| encoder.factory == self.encoder)
-        {
+        if self.encoder.is_empty() {
             self.encoder = state
                 .encoders
                 .first()
@@ -117,7 +112,7 @@ impl eframe::App for PublisherUi {
                 }
                 ui.separator();
                 ui.add_space(10.0);
-                ui.add_enabled_ui(!state.sharing && !state.busy, |ui| {
+                ui.add_enabled_ui(!state.busy, |ui| {
                     ui.label("Capture source");
                     egui::ComboBox::from_id_salt("capture-source")
                         .width(600.0)
@@ -127,7 +122,7 @@ impl eframe::App for PublisherUi {
                                 .iter()
                                 .find(|source| source.id == self.source_id)
                                 .map(|source| source.label.as_str())
-                                .unwrap_or("No source available"),
+                                .unwrap_or("Select an available source"),
                         )
                         .show_ui(ui, |ui| {
                             for source in &state.sources {
@@ -164,7 +159,8 @@ impl eframe::App for PublisherUi {
                         .iter()
                         .find(|encoder| encoder.factory == self.encoder)
                     {
-                        ui.label(encoder.codec.mime());
+                        ui.label(encoder.codec.label());
+                        quality_controls(ui,&mut self.quality,state.sources.iter().find(|source|source.id==self.source_id),encoder);
                     }
                     if ui.button("Refresh sources and encoders").clicked() {
                         self.controller.send(Command::Refresh);
@@ -216,7 +212,6 @@ impl eframe::App for PublisherUi {
                     });
                 });
                 ui.add_space(12.0);
-                ui.label("Video · up to 1080p60 · 12 Mbps target");
                 ui.label("Choose hardware H.264 if a friend's browser cannot receive HEVC.");
                 ui.add_space(12.0);
                 if state.sharing || state.capture_pending {
@@ -224,6 +219,10 @@ impl eframe::App for PublisherUi {
                     if ui.button("Stop sharing").clicked() {
                         self.controller.send(Command::Stop);
                     }
+                    if ui.add_enabled(state.sharing && !state.busy,egui::Button::new("Apply settings")).clicked() {
+                        self.controller.send(Command::Apply { source_id:self.source_id.clone(),encoder:self.encoder.clone(),quality:self.quality,audio:self.audio.clone(),exclusions:self.exclusions.clone() });
+                    }
+                    ui.small("Bitrate applies live. Other changes briefly restart sharing; friends choose Watch again.");
                 } else if ui
                     .add_enabled(
                         !state.busy
@@ -239,18 +238,23 @@ impl eframe::App for PublisherUi {
                         encoder: self.encoder.clone(),
                         audio: self.audio.clone(),
                         exclusions: self.exclusions.clone(),
+                        quality:self.quality,
                     });
                 }
                 if state.busy {
                     ui.spinner();
                 }
                 if state.sharing {
+                    if let Some(mode)=state.mode { ui.label(format!("Requested · {}×{} · {} fps · {:.0} Mbps",mode.width,mode.height,mode.fps,mode.bitrate as f64/1_000_000.0)); }
                     ui.label(format!(
-                        "{:.1} encoded fps · {:.1} Mbps encoder target · {} frames submitted",
+                        "Encoder · {:.1} fps · {:.1} Mbps output · {:.1} Mbps effective target · {} frames submitted",
                         state.metrics.fps,
+                        state.metrics.encoded_bps as f64/1_000_000.0,
                         state.metrics.encoder_bitrate as f64 / 1_000_000.0,
                         state.metrics.accepted
                     ));
+                    if state.delivery.available { ui.label(format!("Sent to server · {:.1} Mbps · {:.2} Mbps retransmissions",state.delivery.bitrate_bps as f64/1_000_000.0,state.delivery.retransmit_bps as f64/1_000_000.0)); }
+                    ui.small("Congestion can lower the effective bitrate. Resolution and FPS stay as selected; receiver quality depends on its connection and decoder.");
                     if self.audio != audio::Choice::Off {
                         ui.label(format!(
                             "Audio · {} applications · peak {:.0}%",
@@ -264,5 +268,102 @@ impl eframe::App for PublisherUi {
                 }
             });
         });
+    }
+}
+
+fn quality_controls(
+    ui: &mut egui::Ui,
+    settings: &mut Settings,
+    source: Option<&crate::sources::SourceInfo>,
+    encoder: &crate::encoding::Encoder,
+) {
+    ui.add_space(10.0);
+    ui.label("Video quality");
+    egui::ComboBox::from_id_salt("resolution")
+        .selected_text(settings.resolution.label())
+        .show_ui(ui, |ui| {
+            for resolution in quality::Resolution::ALL {
+                let candidate = Settings {
+                    resolution,
+                    ..*settings
+                };
+                let mode = source.and_then(|source| candidate.resolve(source, encoder.codec).ok());
+                let label = mode
+                    .map(|mode| format!("{} · {}×{}", resolution.label(), mode.width, mode.height))
+                    .unwrap_or_else(|| {
+                        format!("{} · unavailable for this source", resolution.label())
+                    });
+                ui.add_enabled_ui(mode.is_some_and(|mode| encoder.supports(mode)), |ui| {
+                    ui.selectable_value(&mut settings.resolution, resolution, label);
+                });
+            }
+        });
+    egui::ComboBox::from_id_salt("frame-rate")
+        .selected_text(format!("{} fps", settings.fps))
+        .show_ui(ui, |ui| {
+            for fps in quality::FRAME_RATES {
+                let available = source
+                    .and_then(|source| {
+                        Settings { fps, ..*settings }
+                            .resolve(source, encoder.codec)
+                            .ok()
+                    })
+                    .is_some_and(|mode| encoder.supports(mode));
+                ui.add_enabled_ui(available, |ui| {
+                    ui.selectable_value(&mut settings.fps, fps, format!("{fps} fps"));
+                });
+            }
+        });
+    egui::ComboBox::from_id_salt("content-profile")
+        .selected_text(settings.profile.label())
+        .show_ui(ui, |ui| {
+            for profile in [Profile::Motion, Profile::Detail] {
+                ui.selectable_value(&mut settings.profile, profile, profile.label());
+            }
+        });
+    let recommended = source
+        .and_then(|source| {
+            Settings {
+                bitrate: Bitrate::Auto,
+                ..*settings
+            }
+            .resolve(source, encoder.codec)
+            .ok()
+        })
+        .map(|mode| format!("Auto · {} Mbps", mode.bitrate / 1_000_000))
+        .unwrap_or_else(|| "Auto".into());
+    let label = match settings.bitrate {
+        Bitrate::Auto => recommended.clone(),
+        Bitrate::Manual(bps) => format!("Manual · {} Mbps", bps / 1_000_000),
+    };
+    egui::ComboBox::from_id_salt("bitrate")
+        .selected_text(label)
+        .show_ui(ui, |ui| {
+            ui.selectable_value(&mut settings.bitrate, Bitrate::Auto, recommended);
+            for mbps in quality::BITRATE_PRESETS {
+                ui.selectable_value(
+                    &mut settings.bitrate,
+                    Bitrate::Manual(mbps * 1_000_000),
+                    format!("{mbps} Mbps"),
+                );
+            }
+        });
+    if let Bitrate::Manual(bps) = settings.bitrate {
+        let mut mbps = bps / 1_000_000;
+        ui.horizontal(|ui| {
+            ui.label("Manual Mbps");
+            if ui
+                .add(egui::DragValue::new(&mut mbps).range(3..=100))
+                .changed()
+            {
+                settings.bitrate = Bitrate::Manual(mbps * 1_000_000);
+            }
+        });
+    }
+    ui.small("Auto follows resolution, FPS, codec and content, capped at 35 Mbps for group use. Manual supports 3–100 Mbps.");
+    if let Some(source) = source
+        && let Err(error) = settings.resolve(source, encoder.codec)
+    {
+        ui.colored_label(egui::Color32::LIGHT_RED, error.to_string());
     }
 }

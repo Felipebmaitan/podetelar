@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import type { LiveStream, MediaSnapshot, StreamKind } from "./model";
+import type {
+  LiveStream,
+  MediaSnapshot,
+  StreamKind,
+  PlaybackBuffer,
+} from "./model";
 import { StreamPreview } from "./StreamPreview";
 
 function StreamPlayer({ stream }: { stream: LiveStream }) {
@@ -76,6 +81,16 @@ function StreamPlayer({ stream }: { stream: LiveStream }) {
           </label>
         </div>
       )}
+      {!stream.local && stream.delivery && (
+        <p
+          className="received-quality"
+          aria-label={`${stream.publisherName} ${stream.kind} received quality`}
+        >
+          {stream.delivery.width}×{stream.delivery.height} ·{" "}
+          {stream.delivery.fps.toFixed(1)} fps ·{" "}
+          {(stream.delivery.bitrate / 1_000_000).toFixed(1)} Mbps received
+        </p>
+      )}
     </div>
   );
 }
@@ -86,12 +101,14 @@ export function LiveStreams({
   watch,
   toggle,
   reconnect,
+  setPlaybackBuffer,
 }: {
   roomId: string;
   snapshot: MediaSnapshot;
   watch: (id: string, enabled: boolean) => void;
   toggle: (kind: StreamKind) => Promise<void> | undefined;
   reconnect: () => void;
+  setPlaybackBuffer: (value: PlaybackBuffer) => void;
 }) {
   const [focused, setFocused] = useState<string | null>(null);
   useEffect(() => {
@@ -156,6 +173,22 @@ export function LiveStreams({
           </button>
         </div>
       </div>
+      <label
+        className="playback-preference"
+        title="Smooth gives retransmissions more time on distant/lossy connections. Low delay favors immediacy. Browsers choose the actual buffering delay."
+      >
+        Playback buffer
+        <select
+          aria-label="Playback buffer"
+          value={snapshot.playbackBuffer}
+          onChange={(event) =>
+            setPlaybackBuffer(event.target.value as PlaybackBuffer)
+          }
+        >
+          <option value="smooth">Smooth (300 ms target)</option>
+          <option value="low-delay">Low delay</option>
+        </select>
+      </label>
       {snapshot.error && (
         <p className="form-error" role="alert">
           {snapshot.error}

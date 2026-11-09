@@ -1,0 +1,347 @@
+use crate::sources::SourceInfo;
+use anyhow::{Result, ensure};
+use serde::{Deserialize, Serialize};
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
+
+pub const MIN_BITRATE: u64 = 3_000_000;
+pub const MAX_BITRATE: u64 = 100_000_000;
+pub const BITRATE_PRESETS: [u64; 11] = [3, 5, 8, 12, 16, 20, 25, 35, 50, 75, 100];
+pub const FRAME_RATES: [u32; 6] = [15, 24, 30, 60, 90, 120];
+const AUTO_CEILING: u64 = 35_000_000;
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Codec {
+    H265,
+    H264,
+}
+impl Codec {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::H265 => "H.265 / HEVC",
+            Self::H264 => "H.264 compatibility",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Resolution {
+    P720,
+    #[default]
+    P1080,
+    P1440,
+    P2160,
+    Source,
+}
+impl Resolution {
+    pub const ALL: [Self; 5] = [
+        Self::P720,
+        Self::P1080,
+        Self::P1440,
+        Self::P2160,
+        Self::Source,
+    ];
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::P720 => "720p",
+            Self::P1080 => "1080p",
+            Self::P1440 => "1440p",
+            Self::P2160 => "4K",
+            Self::Source => "Source (4K ceiling)",
+        }
+    }
+    fn bounds(self) -> (u32, u32) {
+        match self {
+            Self::P720 => (1280, 720),
+            Self::P1080 => (1920, 1080),
+            Self::P1440 => (2560, 1440),
+            Self::P2160 | Self::Source => (3840, 2160),
+        }
+    }
+    pub fn dimensions(self, source: &SourceInfo) -> Result<(u32, u32)> {
+        let (long, short) = self.bounds();
+        let (bound_w, bound_h) = if source.height > source.width {
+            (short, long)
+        } else {
+            (long, short)
+        };
+        ensure!(
+            source.width > 0 && source.height > 0,
+            "Refresh and select an available source."
+        );
+        ensure!(
+            self == Self::Source || (source.width >= bound_w && source.height >= bound_h),
+            "The selected resolution exceeds this source. Choose a smaller resolution or Source."
+        );
+        let scale = (bound_w as f64 / source.width as f64)
+            .min(bound_h as f64 / source.height as f64)
+            .min(1.0);
+        let width = (source.width as f64 * scale) as u32 / 2 * 2;
+        let height = (source.height as f64 * scale) as u32 / 2 * 2;
+        ensure!(
+            width >= 144 && height >= 128,
+            "Choose a larger source window."
+        );
+        Ok((width, height))
+    }
+}
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Profile {
+    #[default]
+    Motion,
+    Detail,
+}
+impl Profile {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Motion => "Games / motion",
+            Self::Detail => "Text / detail",
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(
+    tag = "mode",
+    content = "bps",
+    rename_all = "lowercase",
+    deny_unknown_fields
+)]
+pub enum Bitrate {
+    #[default]
+    Auto,
+    Manual(u64),
+}
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Settings {
+    pub resolution: Resolution,
+    pub fps: u32,
+    pub bitrate: Bitrate,
+    pub profile: Profile,
+}
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            resolution: Resolution::P1080,
+            fps: 60,
+            bitrate: Bitrate::Auto,
+            profile: Profile::Motion,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+pub struct Mode {
+    pub width: u32,
+    pub height: u32,
+    pub fps: u32,
+    pub bitrate: u64,
+}
+impl Settings {
+    pub fn resolve(self, source: &SourceInfo, codec: Codec) -> Result<Mode> {
+        let (width, height) = self.resolution.dimensions(source)?;
+        Ok(Mode {
+            width,
+            height,
+            fps: self.fps,
+            bitrate: self.bitrate_for(width, height, codec)?,
+        })
+    }
+    pub fn bitrate_for(self, width: u32, height: u32, codec: Codec) -> Result<u64> {
+        ensure!(
+            FRAME_RATES.contains(&self.fps),
+            "Choose a supported frame rate up to 120 fps."
+        );
+        let bitrate = match self.bitrate {
+            Bitrate::Manual(value) => {
+                ensure!(
+                    (MIN_BITRATE..=MAX_BITRATE).contains(&value),
+                    "Choose a bitrate from 3 to 100 Mbps."
+                );
+                value
+            }
+            Bitrate::Auto => {
+                let bits_per_pixel = match (codec, self.profile) {
+                    (Codec::H265, Profile::Motion) => 0.10,
+                    (Codec::H265, Profile::Detail) => 0.06,
+                    (Codec::H264, Profile::Motion) => 0.15,
+                    (Codec::H264, Profile::Detail) => 0.09,
+                };
+                ((width as f64 * height as f64 * self.fps as f64 * bits_per_pixel / 1_000_000.0)
+                    .ceil() as u64
+                    * 1_000_000)
+                    .clamp(MIN_BITRATE, AUTO_CEILING)
+            }
+        };
+        Ok(bitrate)
+    }
+}
+impl Mode {
+    pub fn baseline(source: &SourceInfo) -> Result<Self> {
+        let scale = (1920.0 / source.width as f64)
+            .min(1080.0 / source.height as f64)
+            .min(1.0);
+        let width = (source.width as f64 * scale) as u32 / 2 * 2;
+        let height = (source.height as f64 * scale) as u32 / 2 * 2;
+        ensure!(
+            width >= 144 && height >= 128,
+            "Choose a larger source window."
+        );
+        Ok(Self {
+            width,
+            height,
+            fps: 60,
+            bitrate: 12_000_000,
+        })
+    }
+}
+
+/// Live bitrate edits and congestion feedback share one cap; dimensions/FPS never adapt silently.
+#[derive(Clone)]
+pub struct RateControl(Arc<AtomicU64>);
+impl RateControl {
+    pub fn new(requested: u64) -> Self {
+        Self(Arc::new(AtomicU64::new(requested)))
+    }
+    pub fn requested(&self) -> u64 {
+        self.0.load(Ordering::Acquire)
+    }
+    pub fn set(&self, bitrate: u64) -> Result<()> {
+        ensure!(
+            (MIN_BITRATE..=MAX_BITRATE).contains(&bitrate),
+            "Choose a bitrate from 3 to 100 Mbps."
+        );
+        self.0.store(bitrate, Ordering::Release);
+        Ok(())
+    }
+    pub fn effective(&self, feedback: Option<u64>) -> u64 {
+        self.requested()
+            .min(feedback.unwrap_or(MAX_BITRATE))
+            .max(1_000)
+    }
+}
+
+/// A running single-layer stream cannot abruptly multiply its traffic and
+/// expect every subscriber's bandwidth estimator to have followed already.
+pub struct EncoderBudget {
+    current: u64,
+    last_requested: u64,
+    ramping: bool,
+}
+impl EncoderBudget {
+    pub fn new(requested: u64) -> Self {
+        Self {
+            current: requested,
+            last_requested: requested,
+            ramping: false,
+        }
+    }
+    pub fn update(&mut self, rate: &RateControl, feedback: Option<u64>) -> u64 {
+        let requested = rate.requested();
+        if requested > self.last_requested {
+            self.ramping = true;
+        } else if requested < self.last_requested {
+            self.ramping = false;
+        }
+        let wanted = rate.effective(feedback);
+        self.current = if self.ramping && wanted > self.current {
+            wanted.min(self.current.saturating_add((self.current / 4).max(500_000)))
+        } else {
+            wanted
+        };
+        if self.current >= requested {
+            self.ramping = false;
+        }
+        self.last_requested = requested;
+        self.current
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn live_increases_ramp_without_overshoot_and_reductions_apply_immediately() {
+        let rate = RateControl::new(3_000_000);
+        let mut budget = EncoderBudget::new(rate.requested());
+        rate.set(25_000_000).unwrap();
+        assert_eq!(budget.update(&rate, None), 3_750_000);
+        let mut previous = 3_750_000;
+        for _ in 0..12 {
+            let next = budget.update(&rate, None);
+            assert!(next >= previous && next <= 25_000_000);
+            previous = next;
+        }
+        assert_eq!(previous, 25_000_000);
+        rate.set(3_000_000).unwrap();
+        assert_eq!(budget.update(&rate, None), 3_000_000);
+        assert_eq!(budget.update(&rate, Some(1_000_000)), 1_000_000);
+        assert_eq!(rate.requested(), 3_000_000);
+    }
+    fn source(width: u32, height: u32) -> SourceInfo {
+        SourceInfo {
+            id: "fixture".into(),
+            label: "Synthetic".into(),
+            width,
+            height,
+        }
+    }
+    #[test]
+    fn dimensions_preserve_aspect_source_bounds_orientation_and_4k_ceiling() {
+        assert_eq!(
+            Resolution::P1080.dimensions(&source(3440, 1440)).unwrap(),
+            (1920, 802)
+        );
+        assert_eq!(
+            Resolution::Source.dimensions(&source(7680, 4320)).unwrap(),
+            (3840, 2160)
+        );
+        assert_eq!(
+            Resolution::Source.dimensions(&source(2160, 3840)).unwrap(),
+            (2160, 3840)
+        );
+        assert!(Resolution::P2160.dimensions(&source(1920, 1080)).is_err());
+        assert_eq!(
+            Resolution::Source.dimensions(&source(1365, 767)).unwrap(),
+            (1364, 766)
+        );
+    }
+    #[test]
+    fn auto_tracks_resolution_fps_codec_profile_and_manual_preserves_geometry() {
+        let mut settings = Settings::default();
+        let display = source(3840, 2160);
+        let initial = settings.resolve(&display, Codec::H265).unwrap();
+        settings.fps = 120;
+        let faster = settings.resolve(&display, Codec::H265).unwrap();
+        assert!(faster.bitrate > initial.bitrate);
+        assert!(settings.resolve(&display, Codec::H264).unwrap().bitrate > faster.bitrate);
+        settings.profile = Profile::Detail;
+        assert!(settings.resolve(&display, Codec::H265).unwrap().bitrate < faster.bitrate);
+        settings.bitrate = Bitrate::Manual(100_000_000);
+        let manual = settings.resolve(&display, Codec::H265).unwrap();
+        assert_eq!(
+            (manual.width, manual.height, manual.fps),
+            (faster.width, faster.height, faster.fps)
+        );
+        assert_eq!(manual.bitrate, MAX_BITRATE);
+        settings.bitrate = Bitrate::Manual(2_000_000);
+        assert!(settings.resolve(&display, Codec::H265).is_err());
+        settings.fps = 121;
+        assert!(settings.resolve(&display, Codec::H265).is_err());
+    }
+    #[test]
+    fn congestion_caps_both_auto_and_manual_and_live_edits_do_not_rewrite_request() {
+        let rate = RateControl::new(12_000_000);
+        assert_eq!(rate.effective(Some(2_000_000)), 2_000_000);
+        assert_eq!(rate.requested(), 12_000_000);
+        rate.set(100_000_000).unwrap();
+        assert_eq!(rate.effective(Some(150_000_000)), MAX_BITRATE);
+        assert_eq!(rate.effective(Some(0)), 1_000);
+        assert!(rate.set(MAX_BITRATE + 1).is_err());
+    }
+}

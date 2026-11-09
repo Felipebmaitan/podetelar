@@ -24,7 +24,7 @@
     "format:check": "prettier --check .",
     "smoke": "node --env-file=.env --import tsx scripts/smoke.ts",
     "test:e2e": "node --env-file=.env node_modules/@playwright/test/cli.js test",
-    "native:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-native.ps1",
+    "native:setup": "node scripts/setup-native-sdk.mjs && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-native.ps1",
     "native:check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 check",
     "native:test": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 test",
     "native:probe": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 probe",

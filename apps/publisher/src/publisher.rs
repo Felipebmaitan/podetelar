@@ -1,6 +1,6 @@
 use crate::{
     admission::Admission,
-    audio, delivery,
+    audio, connection, delivery,
     encoding::{Codec, Encoder, Encoding, Metrics, Mode},
     preview::{self, Latest},
     quality::{MAX_BITRATE, RateControl, Settings},
@@ -96,6 +96,7 @@ pub enum Command {
     Join {
         invitation: String,
         name: String,
+        route: connection::Route,
     },
     Start {
         source_id: String,
@@ -582,14 +583,13 @@ impl Session {
     async fn join(
         invitation: &str,
         name: &str,
+        route: connection::Route,
         snapshot: Arc<Mutex<Snapshot>>,
         cancellation: Cancellation,
     ) -> Result<Self> {
         let admission = Admission::join(invitation, name).await?;
         let access = admission.media_access().await?;
-        let mut options = RoomOptions::default();
-        options.auto_subscribe = false;
-        options.join_retries = 0;
+        let options = connection::options(route);
         let (room, mut events) = tokio::time::timeout(
             Duration::from_secs(15),
             Room::connect(&access.server_url, &access.token, options),
@@ -707,7 +707,11 @@ async fn worker(
         let shutdown = matches!(command, Command::Shutdown);
         let result: Result<()> = async {
             match command {
-                Command::Join { invitation, name } => {
+                Command::Join {
+                    invitation,
+                    name,
+                    route,
+                } => {
                     viewer.take();
                     if let (Some(active), Some(joined)) = (stream.take(), session.as_ref()) {
                         let _ = active.stop(&joined.room).await;
@@ -719,9 +723,14 @@ async fn worker(
                         state.connection = "connecting";
                         state.sharing = false;
                     });
-                    let joined =
-                        Session::join(&invitation, &name, snapshot.clone(), cancellation.clone())
-                            .await?;
+                    let joined = Session::join(
+                        &invitation,
+                        &name,
+                        route,
+                        snapshot.clone(),
+                        cancellation.clone(),
+                    )
+                    .await?;
                     update(&snapshot, |state| {
                         state.connection = "connected";
                         state.room_name = joined.admission.room_name.clone();

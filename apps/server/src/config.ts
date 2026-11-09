@@ -41,20 +41,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       "PUBLIC_URL must be an HTTPS origin, or an HTTP loopback origin for local development.",
     );
   }
-  const livekitUrl = new URL(env.LIVEKIT_URL ?? "ws://localhost:7880");
-  if (
-    !["ws:", "wss:"].includes(livekitUrl.protocol) ||
-    livekitUrl.username ||
-    livekitUrl.password
-  ) {
-    throw new Error("LIVEKIT_URL must be a WebSocket URL without credentials.");
-  }
-  if (publicUrl.protocol === "https:" && livekitUrl.protocol !== "wss:") {
-    throw new Error("An HTTPS deployment requires a wss:// LIVEKIT_URL.");
-  }
+  // All public signaling passes session admission, including refreshed JWTs.
+  const livekitUrl = new URL("/media", publicUrl);
+  livekitUrl.protocol = publicUrl.protocol === "https:" ? "wss:" : "ws:";
+  // The native WebSocket transport does not retry IPv4 after localhost's ::1
+  // address, while the development/Docker listeners bind IPv4 loopback.
+  if (publicUrl.protocol === "http:" && publicUrl.hostname === "localhost")
+    livekitUrl.hostname = "127.0.0.1";
+  if (env.LIVEKIT_URL && env.LIVEKIT_URL !== livekitUrl.toString())
+    throw new Error(
+      "LIVEKIT_URL is now derived from PUBLIC_URL + /media. Remove the old direct SFU URL; configure LIVEKIT_INTERNAL_URL for the private SFU.",
+    );
   const port = Number(env.PORT ?? 3000);
   const internalUrl = new URL(
-    env.LIVEKIT_INTERNAL_URL ?? livekitUrl.toString().replace(/^ws/, "http"),
+    env.LIVEKIT_INTERNAL_URL ?? "http://127.0.0.1:7880",
   );
   if (
     !["http:", "https:"].includes(internalUrl.protocol) ||

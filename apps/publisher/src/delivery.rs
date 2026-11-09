@@ -16,6 +16,7 @@ pub struct Metrics {
     pub sent_fps: f64,
     pub rtt_ms: Option<f64>,
     pub loss_fraction: Option<f64>,
+    pub route: Option<&'static str>,
 }
 
 /// Samples aggregate outbound video facts once a second. Raw RTC stats never leave this module.
@@ -25,6 +26,35 @@ pub async fn monitor(video: LocalVideoTrack, stop: Arc<AtomicBool>, metrics: Arc
         let result = tokio::time::timeout(Duration::from_millis(500), video.get_stats()).await;
         let mut sample = Metrics::default();
         if let Ok(Ok(stats)) = result {
+            use livekit::webrtc::stats::{IceCandidateType, IceServerTransportProtocol};
+            let pair_id = stats.iter().find_map(|stat| match stat {
+                RtcStats::Transport(stat) => Some(&stat.transport.selected_candidate_pair_id),
+                _ => None,
+            });
+            let local_id = stats.iter().find_map(|stat| match stat {
+                RtcStats::CandidatePair(stat) if Some(&stat.rtc.id) == pair_id => {
+                    Some(&stat.candidate_pair.local_candidate_id)
+                }
+                _ => None,
+            });
+            sample.route = stats.iter().find_map(|stat| match stat {
+                RtcStats::LocalCandidate(stat) if Some(&stat.rtc.id) == local_id => Some(
+                    match (
+                        stat.local_candidate.candidate_type,
+                        stat.local_candidate.relay_protocol,
+                    ) {
+                        (_, Some(IceServerTransportProtocol::Tls)) => "TURN/TLS",
+                        (Some(IceCandidateType::Relay), Some(IceServerTransportProtocol::Tcp)) => {
+                            "TURN/TCP"
+                        }
+                        (Some(IceCandidateType::Relay), _) => "TURN",
+                        _ if stat.local_candidate.protocol == "udp" => "UDP",
+                        _ if stat.local_candidate.protocol == "tcp" => "TCP",
+                        _ => "unknown",
+                    },
+                ),
+                _ => None,
+            });
             let (mut bytes, mut retransmits, mut frames) = (0_u64, 0_u64, 0_u64);
             for stat in stats {
                 match stat {

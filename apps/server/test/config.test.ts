@@ -24,10 +24,6 @@ test("remote deployments require HTTPS and encrypted media URLs", () => {
     /HTTPS/,
   );
   assert.throws(
-    () => loadConfig({ ...valid, PUBLIC_URL: "https://stream.example" }),
-    /wss/,
-  );
-  assert.throws(
     () => loadConfig({ ...valid, PUBLIC_URL: "https://stream.example/path" }),
     /origin/,
   );
@@ -38,19 +34,20 @@ test("remote deployments require HTTPS and encrypted media URLs", () => {
   );
   assert.throws(
     () => loadConfig({ ...valid, LIVEKIT_URL: "https://stream.example" }),
-    /WebSocket/,
+    /derived/,
   );
   const production = loadConfig({
     ...valid,
     PUBLIC_URL: "https://stream.example",
-    LIVEKIT_URL: "wss://media.example",
+    LIVEKIT_INTERNAL_URL: "http://livekit:7880",
   });
   assert.equal(production.publicUrl, "https://stream.example");
-  assert.equal(production.livekitUrl, "wss://media.example");
-  assert.equal(production.livekitInternalUrl, "https://media.example");
+  assert.equal(production.livekitUrl, "wss://stream.example/media");
+  assert.equal(production.livekitInternalUrl, "http://livekit:7880");
 });
 
 test("administrative media access uses a separately configured private HTTP(S) origin", () => {
+  assert.equal(loadConfig(valid).livekitUrl, "ws://127.0.0.1:5173/media");
   assert.equal(
     loadConfig({ ...valid, LIVEKIT_INTERNAL_URL: "http://livekit:7880" })
       .livekitInternalUrl,

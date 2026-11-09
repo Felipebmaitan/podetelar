@@ -51,7 +51,14 @@ test("selected application stereo audio reaches a browser and stops with Watch",
       name: "Native audio screen",
       exact: true,
     });
-    await expect(card).toBeVisible({ timeout: 30_000 });
+    await Promise.race([
+      expect(card).toBeVisible({ timeout: 30_000 }),
+      publisher.result.then(() => {
+        throw new Error(
+          "Native audio fixture ended before its stream became visible.",
+        );
+      }),
+    ]);
     const bytes = () =>
       page.evaluate(async () => {
         const result = { audio: 0, video: 0 };

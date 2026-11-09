@@ -648,6 +648,7 @@ test("received quality uses counter deltas and stops sampling an unwatched publi
     height: 1080,
     fps: 60,
     bitrate: 1_000_000,
+    network: { route: "unknown", rttMs: null },
   });
   assert.equal(reads, 2);
   f.media.watch("friend:screen", false);

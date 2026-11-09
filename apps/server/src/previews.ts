@@ -271,6 +271,8 @@ export async function previewRoutes(
       )
         return reply.code(404).send({ error: "Preview unavailable." });
       try {
+        if (!rooms.active(roomId, owner))
+          return reply.code(404).send({ error: "Preview unavailable." });
         const entry = await previews.get(roomId, owner, kind.data, revision);
         if (!entry)
           return reply.code(404).send({ error: "Preview unavailable." });
@@ -279,6 +281,8 @@ export async function previewRoutes(
           return reply
             .code(401)
             .send({ error: "Open your room invitation to join." });
+        if (!rooms.active(roomId, owner))
+          return reply.code(404).send({ error: "Preview unavailable." });
         return reply.type("image/jpeg").send(entry.bytes);
       } catch (error) {
         const failure = errorResponse(error);

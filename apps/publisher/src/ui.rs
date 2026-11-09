@@ -1,4 +1,5 @@
 use crate::audio;
+use crate::connection::Route;
 use crate::publisher::{Command, Controller};
 use crate::quality::{self, Bitrate, Profile, Settings};
 use eframe::egui;
@@ -13,6 +14,7 @@ pub struct PublisherUi {
     audio: audio::Choice,
     exclusions: Vec<String>,
     quality: Settings,
+    route: Route,
 }
 
 impl PublisherUi {
@@ -26,6 +28,7 @@ impl PublisherUi {
             audio: audio::Choice::Off,
             exclusions: Vec::new(),
             quality: Settings::default(),
+            route: Route::Auto,
         }
     }
 }
@@ -70,6 +73,12 @@ impl eframe::App for PublisherUi {
                             .desired_width(260.0)
                             .char_limit(60),
                     );
+                    ui.add_enabled_ui(!state.busy, |ui| {
+                        egui::ComboBox::from_label("Connection route").selected_text(if self.route == Route::Auto {"Automatic"} else {"Relay only"}).show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.route, Route::Auto, "Automatic");
+                            ui.selectable_value(&mut self.route, Route::Relay, "Relay only (restrictive networks)");
+                        });
+                    });
                     if ui
                         .add_enabled(
                             !state.busy
@@ -83,6 +92,7 @@ impl eframe::App for PublisherUi {
                         self.controller.send(Command::Join {
                             invitation: self.invitation.clone(),
                             name: self.name.trim().to_owned(),
+                            route:self.route,
                         });
                     }
                 } else {
@@ -253,7 +263,10 @@ impl eframe::App for PublisherUi {
                         state.metrics.encoder_bitrate as f64 / 1_000_000.0,
                         state.metrics.accepted
                     ));
-                    if state.delivery.available { ui.label(format!("Sent to server · {:.1} Mbps · {:.2} Mbps retransmissions",state.delivery.bitrate_bps as f64/1_000_000.0,state.delivery.retransmit_bps as f64/1_000_000.0)); }
+                    if state.delivery.available {
+                        let rtt = state.delivery.rtt_ms.map_or_else(|| "RTT unavailable".to_owned(), |ms| format!("{ms:.0} ms RTT"));
+                        ui.label(format!("Sent to server · {:.1} Mbps · {:.2} Mbps retransmissions · {} · {}",state.delivery.bitrate_bps as f64/1_000_000.0,state.delivery.retransmit_bps as f64/1_000_000.0,state.delivery.route.unwrap_or("unknown"),rtt));
+                    }
                     ui.small("Congestion can lower the effective bitrate. Resolution and FPS stay as selected; receiver quality depends on its connection and decoder.");
                     if self.audio != audio::Choice::Off {
                         ui.label(format!(

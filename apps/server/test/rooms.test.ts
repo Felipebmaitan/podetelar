@@ -8,7 +8,7 @@ import type { TestContext } from "node:test";
 import { TokenVerifier } from "livekit-server-sdk";
 import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
-import { SESSION_TTL_MS } from "../src/rooms.js";
+import { Rooms, SESSION_TTL_MS } from "../src/rooms.js";
 
 const ORIGIN = "http://localhost:5173";
 const ADMIN = "test-admin-key-only-not-a-production-secret";
@@ -28,7 +28,14 @@ async function fixture(t: TestContext) {
   // No static assets in API tests; the Docker smoke check exercises the built app.
   config.webRoot = join(directory, "no-web-build");
   let now = Date.now();
-  let app = await buildApp(config, { now: () => now });
+  const mediaDirectory = {
+    async remove() {},
+    async participant() {
+      return null;
+    },
+    async attribute() {},
+  };
+  let app = await buildApp(config, { now: () => now, mediaDirectory });
   await app.ready();
   t.after(async () => {
     await app.close();
@@ -51,7 +58,7 @@ async function fixture(t: TestContext) {
     },
     restart: async () => {
       await app.close();
-      app = await buildApp(config, { now: () => now });
+      app = await buildApp(config, { now: () => now, mediaDirectory });
       await app.ready();
     },
     create: async (name = "Friends") => {
@@ -72,6 +79,15 @@ async function fixture(t: TestContext) {
     },
   };
 }
+
+test("document/static requests do not spend the API quota, while API throttling stays enforced", async (t) => {
+  const f = await fixture(t);
+  for (let i = 0; i < 150; i++)
+    assert.equal((await f.app.inject("/assets/client.js")).statusCode, 404);
+  for (let i = 0; i < 120; i++)
+    assert.equal((await f.app.inject("/api/health")).statusCode, 200);
+  assert.equal((await f.app.inject("/api/health")).statusCode, 429);
+});
 
 test("room creation requires the server key and validates input", async (t) => {
   const f = await fixture(t);
@@ -204,6 +220,75 @@ test("room and session authority persist across restart without storing raw secr
     },
   });
   assert.equal(joined.statusCode, 200);
+});
+
+test("version-one databases migrate without replacing existing room/session authority", async (t) => {
+  const f = await fixture(t);
+  const created = await f.create();
+  await f.app.close();
+  const legacy = new DatabaseSync(f.config.databasePath);
+  legacy.exec(
+    "DROP TABLE removals; DROP INDEX sessions_identity; ALTER TABLE rooms DROP COLUMN invitation_enabled; PRAGMA user_version = 1;",
+  );
+  legacy.close();
+  await f.restart();
+  const resumed = await f.app.inject({
+    method: "GET",
+    url: `/api/rooms/${created.body.room.id}/session`,
+    headers: { cookie: created.cookie },
+  });
+  assert.equal(resumed.statusCode, 200);
+  assert.deepEqual(resumed.json().participant, created.body.participant);
+  const changed = await f.app.inject({
+    method: "POST",
+    url: `/api/rooms/${created.body.room.id}/access`,
+    headers: { origin: ORIGIN, authorization: `Bearer ${ADMIN}` },
+    payload: { invitation: "disable", revokeSessions: true },
+  });
+  assert.equal(changed.statusCode, 200);
+  assert.equal(
+    (
+      await f.app.inject({
+        method: "GET",
+        url: `/api/rooms/${created.body.room.id}/session`,
+        headers: { cookie: created.cookie },
+      })
+    ).statusCode,
+    401,
+  );
+});
+
+test("migration failure rolls back partial DDL and restarts without losing existing authority", async (t) => {
+  const f = await fixture(t);
+  const created = await f.create();
+  await f.app.close();
+  let database = new DatabaseSync(f.config.databasePath);
+  database.exec(
+    "DROP TABLE removals; DROP INDEX sessions_identity; ALTER TABLE rooms DROP COLUMN invitation_enabled; CREATE TABLE removals(blocking INTEGER); PRAGMA user_version = 1;",
+  );
+  database.close();
+  assert.throws(() => new Rooms(f.config.databasePath), /already exists/);
+  database = new DatabaseSync(f.config.databasePath);
+  assert.equal(
+    (database.prepare("PRAGMA user_version").get() as { user_version: number })
+      .user_version,
+    1,
+  );
+  assert.equal(
+    (
+      database.prepare("PRAGMA table_info(rooms)").all() as { name: string }[]
+    ).some((column) => column.name === "invitation_enabled"),
+    false,
+  );
+  database.exec("DROP TABLE removals");
+  database.close();
+  await f.restart();
+  const resumed = await f.app.inject({
+    url: `/api/rooms/${created.body.room.id}/session`,
+    headers: { cookie: created.cookie },
+  });
+  assert.equal(resumed.statusCode, 200);
+  assert.deepEqual(resumed.json().participant, created.body.participant);
 });
 
 test("expiry blocks API/media access while the persistent invitation can admit again", async (t) => {

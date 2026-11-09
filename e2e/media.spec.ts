@@ -334,12 +334,7 @@ test("two publishers, selective A/V subscriptions, late join and cleanup use rea
       .getByRole("button", { name: "Leave room", exact: true })
       .click();
     await expect(viewer.getByText("2 in room", { exact: true })).toBeVisible();
-    const mediaOrigin = (
-      process.env.LIVEKIT_URL ?? "ws://localhost:7880"
-    ).replace(/^ws/, "http");
-    expect((await request.get(`${mediaOrigin}/rtc/validate`)).status()).toBe(
-      401,
-    );
+    expect((await request.get("/media/rtc/validate")).status()).toBe(401);
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }

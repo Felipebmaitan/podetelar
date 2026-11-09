@@ -5,6 +5,7 @@
 - `packages/contracts`: validated admission inputs and shared response types; preview cadence is 60,000 ms.
 - `apps/server/src/rooms.ts`: room admission/session persistence behind a small interface. Storage owns hashing, expiry, identity creation and serialization.
 - `apps/server/src/app.ts`: HTTP authorization, origin checks, cookies, request limits and LiveKit grants. It does not expose the media server API secret.
+- `apps/server/src/access.ts`: durable revocation retries and operator access routes. `signaling.ts` owns bounded handshake admission and opaque WebSocket lifetimes, with no media parsing or transcoding.
 - `apps/server/src/previews.ts`: owns bounded ephemeral image storage, capture cadence, ownership and live-publication proof. `media.ts` owns administrative SFU RPCs and safe failures; `jpeg.ts` reads bounded baseline JPEG structure without decoding pixels.
 - `apps/web/src/media/MediaRoom.ts`: owns LiveKit signaling, browser capture and explicit audio/video subscriptions. UI receives browser tracks and immutable snapshots, not SDK objects. The SDK is dynamically loaded only after room admission.
 - `apps/web/src/media/LiveStreams.tsx`: renders streams with per-stream volume, mute and grid/focus controls; playback elements detach when a subscription stops.
@@ -13,6 +14,7 @@
 - `apps/publisher/src/audio`: owns Windows session discovery, process identity/exclusion policy, bounded PCM mixing and transport delivery. `viewer` owns the isolated Chrome process job and ephemeral profile; callers see Open/Drop lifecycle rather than browser control details. See [audio behavior](audio.md).
 - `apps/publisher/src/preview.rs`: owns the minute GPU-branch gate, single-frame cache and independent bounded HTTP uploader. Capture runs without waiting for preview network requests.
 - `apps/publisher/src/quality.rs`: portable source-bounded mode resolution, Auto/manual policy and live requested/congestion bitrate caps. `delivery.rs` collects bounded aggregate sender facts; the UI never receives raw RTC stats or per-frame callbacks. `StreamConfig` validates restart versus live edits before modifying the active capture.
+- `connection.rs` owns native SDK route/join policy. Browser `recovery.ts`/`network.ts` bound retries and reduce RTC reports to aggregate facts. `RoomAccess.tsx` owns the bounded operator form and memory-only key/new-invitation state.
 
 SQLite is sufficient for the initial single-VPS, single-app deployment. Do not point several independent instances at separate databases and expect shared sessions. Sessions are not accounts: a fresh admission creates a fresh participant identity.
 
@@ -22,9 +24,9 @@ SQLite is sufficient for the initial single-VPS, single-app deployment. Do not p
 
 The API does not trust forwarded IP headers by default. All mutating requests require an `Origin` matching `PUBLIC_URL`, including scripted/admin requests. The native publisher uses these same admission endpoints with an exact origin and a private memory-only cookie jar. It does not relax browser validation or receive the admin/server media keys.
 
-The local Compose configuration intentionally overrides the browser origin/media URL to `http://localhost:3000` and `ws://127.0.0.1:7880`. Native npm development uses the `.env` origin `http://localhost:5173`. A production static build can be served with `npm run build`, setting `PUBLIC_URL=http://localhost:3000` in `.env`, then `npm start`.
+The local Compose configuration intentionally overrides the browser origin/media URL to `http://localhost:3000` and the app admission gateway `ws://127.0.0.1:3000/media`. Native npm development uses the `.env` origin `http://localhost:5173`. A production static build can be served with `npm run build`, setting `PUBLIC_URL=http://localhost:3000` in `.env`, then `npm start`.
 
-`LIVEKIT_INTERNAL_URL` optionally supplies a private administrative HTTP(S) origin for publication lookups and preview notifications. It defaults to `LIVEKIT_URL` with ws/wss converted to http/https. Compose sets `http://livekit:7880` so containers reach the media service directly; this URL never enters browser responses.
+`LIVEKIT_INTERNAL_URL` optionally supplies a private administrative HTTP(S) origin for publication lookups and preview notifications. It defaults to `http://127.0.0.1:7880`. Public signaling derives from `PUBLIC_URL` and goes through `/media`; remove the former direct `LIVEKIT_URL` setting. Compose sets `http://livekit:7880` so containers reach the media service directly; this URL never enters browser responses.
 
 ## HTTP interface
 
@@ -43,7 +45,7 @@ Room creation is limited to 5 requests per minute per IP, admission to 10 per mi
 
 ## Deliberate current limits
 
-Browser camera/screen publication and playback are supported, with no microphone publication. Screen audio depends on what the browser/source offers. The browser baseline uses VP8 without simulcast; it does not establish native HEVC, hardware acceleration, Discord audio exclusion, 4K120, invite rotation, TURN/TLS or production deployment. Both publishers support private minute previews. A 24-hour session survives server restarts but is intentionally time-bounded. An invitation authorizes all holders equally; it does not authenticate a person's real identity. Existing media tokens can be used until expiration. The app's Leave action first disconnects media and stops local capture; API session deletion alone does not evict an arbitrary already-connected participant. Server-enforced revocation arrives in Phase 7.
+Browser camera/screen publication and playback are supported, with no microphone publication. Screen audio depends on the browser/source. The browser baseline uses VP8 without simulcast; native Windows hardware HEVC/H.264, audio exclusion and source-bounded quality are separate adapters with their own qualification records. Both publishers support private minute previews. A 24-hour session survives restarts but remains time-bounded. Invitations authorize holders equally and do not authenticate a person's real identity. Operators can rotate/disable invitations and revoke sessions. API, preview and signaling admission check current authority; SFU removal ends established media, with durable retries and explicit pending status when enforcement is unavailable. Keep SFU signaling private. See [access management](access.md) and [relay/recovery](network.md); production deployment remains Phase 8.
 
 One active app tab per browser room session is supported: tabs sharing a cookie receive the same media identity, so a second tab can replace the first connection. Separate browsers/devices join as separate participants. SDK diagnostic log-level preferences may appear in browser storage; invitations, session cookies and media tokens must not be stored there. SDK logging is suppressed to avoid exposing signaling credentials.
 

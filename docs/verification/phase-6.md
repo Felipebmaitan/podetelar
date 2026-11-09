@@ -13,7 +13,7 @@ Phase 6 adds native quality controls, live bitrate changes, explicit source/code
 
 The final regression passed all nine native scenarios through the Canada SFU and six desktop/mobile browser scenarios, with two intentional duplicate browser transport skips. This includes audio isolation/stereo, stopped A/V subscriptions, reconnect cleanup, minute previews/zero unwatched RTP, 4K120, live bitrate edits and the source/codec/mode restart. The native quality scenario also verified the real Low delay/Smooth control changes the receiver preference, without a test-injected override. The final synthetic 4K window decoded 119.9 fps with a 100 Mbps request; sampled encoder/RTP rates were about 40 Mbps with a 44 Mbps effective congestion target. The live H.264 edit retained its SID/1080p120 geometry and decoded about 120 fps at its settled 25 Mbps target.
 
-Docker smoke with restart/session persistence, Node checks (20 API/config and 19 media lifecycle tests), native format/clippy/20 Rust tests and three setup-integrity checks pass. Exact-head CI and a fresh GPT-6.1-Sol high review remain the final PR gate.
+Docker smoke/restart, Node checks, native format/clippy/20 Rust tests and three setup-integrity checks passed. All four exact-head CI jobs and a fresh GPT-6.1-Sol high review approved `524bfb1452da435a6fe6ce6ac5932c864589f2d9`. PR #5 merged at `4474650`.
 
 ## Qualification limits
 

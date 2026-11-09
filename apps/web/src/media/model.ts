@@ -1,4 +1,5 @@
-export type StreamKind = "screen" | "camera";
+import type { Preview, PreviewKind } from "@freedomstream/contracts";
+export type StreamKind = PreviewKind;
 export type LiveStream = {
   id: string;
   publisherId: string;
@@ -11,6 +12,7 @@ export type LiveStream = {
   watching: boolean;
   video: MediaStreamTrack | null;
   audio: MediaStreamTrack | null;
+  preview: Preview | null;
 };
 export type LiveParticipant = { id: string; name: string; local: boolean };
 export type MediaSnapshot = {

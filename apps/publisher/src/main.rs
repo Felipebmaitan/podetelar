@@ -2,6 +2,7 @@ mod admission;
 mod audio;
 mod diagnostics;
 mod encoding;
+mod preview;
 mod publisher;
 mod sources;
 mod ui;
@@ -234,8 +235,8 @@ struct AudioRequest {
 
 async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     ensure!(
-        (1..=45).contains(&request.seconds),
-        "Fixture duration must be between 1 and 45 seconds."
+        (1..=75).contains(&request.seconds),
+        "Fixture duration must be between 1 and 75 seconds."
     );
     ensure!(
         request.linger_seconds <= 8
@@ -289,7 +290,9 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
         None => sources::fixture(),
     };
     let result = async {
-        let active = publisher::Stream::start(&room, source, encoder.clone(), stop, request.audio, request.exclusions).await?;
+        let mut active = publisher::Stream::start(&room, source, encoder.clone(), stop, request.audio, request.exclusions).await?;
+        active.start_previews(admission.clone());
+        let preview_uploads = active.preview_uploads.clone();
         let audio_metrics = active.audio_metrics.clone();
         if let Some(after) = request.reconnect_after_seconds {
             tokio::time::sleep(Duration::from_secs(after)).await;
@@ -298,7 +301,7 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
         } else { tokio::time::sleep(Duration::from_secs(request.seconds)).await; }
         let metrics = active.stop(&room).await?;
         let audio = audio_metrics.lock().map(|value| value.clone()).unwrap_or_default();
-        println!("{}", serde_json::json!({"encoder": encoder.factory, "codec": encoder.codec, "metrics": metrics, "audio": audio, "captureStopped": true, "republished": republished.load(Ordering::Relaxed)}));
+        println!("{}", serde_json::json!({"encoder": encoder.factory, "codec": encoder.codec, "metrics": metrics, "audio": audio, "captureStopped": true, "republished": republished.load(Ordering::Relaxed), "previewUploads": preview_uploads.load(Ordering::Relaxed)}));
         tokio::time::sleep(Duration::from_secs(request.linger_seconds)).await;
         Ok::<_, anyhow::Error>(())
     }.await;

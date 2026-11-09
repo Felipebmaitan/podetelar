@@ -1,3 +1,4 @@
+use crate::preview::{self, Frame, Gate, Latest};
 use crate::sources::{self, Source, Target};
 use anyhow::{Context, Result, bail, ensure};
 use gstreamer::{self as gst, prelude::*};
@@ -96,6 +97,7 @@ pub struct Metrics {
     pub bytes: u64,
     pub fps: f64,
     pub encoder_bitrate: u64,
+    pub preview_frames: u64,
 }
 
 // Owns the native pipeline. Every return/error path transitions it to NULL.
@@ -108,6 +110,8 @@ pub struct Encoding {
     first: Option<gst::Sample>,
     epoch_us: i64,
     capture: Source,
+    preview_sink: AppSink,
+    previews: Latest,
 }
 
 impl Drop for Encoding {
@@ -117,6 +121,9 @@ impl Drop for Encoding {
 }
 
 impl Encoding {
+    pub fn previews(&self) -> Latest {
+        self.previews.clone()
+    }
     pub fn codec(&self) -> Codec {
         self.codec
     }
@@ -152,7 +159,7 @@ impl Encoding {
             ""
         };
         let processing = format!(
-            "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! {cadence}d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width={},height={},framerate={}/1 ! {} name=hardware bitrate={} gop-size={} ! {media_type},profile={profile} ! {parser} config-interval=-1 ! {media_type},stream-format=byte-stream,alignment=au ! appsink name=encoded max-buffers=2 sync=false",
+            "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! {cadence}d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width={},height={},framerate={}/1 ! tee name=raw raw. ! queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! {} name=hardware bitrate={} gop-size={} ! {media_type},profile={profile} ! {parser} config-interval=-1 ! {media_type},stream-format=byte-stream,alignment=au ! appsink name=encoded max-buffers=2 sync=false raw. ! queue name=preview_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=NV12,width=320,height=180 ! d3d11download ! video/x-raw,format=NV12 ! videoconvert ! video/x-raw,format=I420 ! jpegenc quality=60 ! appsink name=preview max-buffers=1 drop=true sync=false async=false wait-on-eos=false",
             mode.width,
             mode.height,
             mode.fps,
@@ -213,6 +220,23 @@ impl Encoding {
             .context("Missing encoded frame sink.")?
             .downcast::<AppSink>()
             .map_err(|_| anyhow::anyhow!("Invalid frame sink."))?;
+        let gate = Gate::new();
+        pipeline
+            .by_name("preview_gate")
+            .and_then(|element| element.static_pad("sink"))
+            .context("Missing preview gate.")?
+            .add_probe(gst::PadProbeType::BUFFER, move |_, _| {
+                if gate.take() {
+                    gst::PadProbeReturn::Ok
+                } else {
+                    gst::PadProbeReturn::Drop
+                }
+            });
+        let preview_sink = pipeline
+            .by_name("preview")
+            .context("Missing preview sink.")?
+            .downcast::<AppSink>()
+            .map_err(|_| anyhow::anyhow!("Invalid preview sink."))?;
         let epoch_us = SystemTime::now()
             .duration_since(UNIX_EPOCH)?
             .as_micros()
@@ -226,6 +250,8 @@ impl Encoding {
             first: None,
             epoch_us,
             capture: source.clone(),
+            preview_sink,
+            previews: Arc::new(Mutex::new(None)),
         };
         ensure!(!stop.load(Ordering::Acquire), "Capture was cancelled.");
         encoding
@@ -289,6 +315,18 @@ impl Encoding {
         let mut last_key_request = Instant::now() - Duration::from_secs(1);
         while !stop.load(Ordering::Acquire) {
             self.check_bus()?;
+            if let Some(sample) = self.preview_sink.try_pull_sample(gst::ClockTime::ZERO)
+                && let Some(buffer) = sample.buffer()
+                && let Ok(bytes) = buffer.map_readable()
+                && bytes.len() <= preview::MAX_BYTES
+                && let Ok(mut latest) = self.previews.lock()
+            {
+                counters.preview_frames += 1;
+                *latest = Some(Frame {
+                    sequence: counters.preview_frames,
+                    bytes: bytes.to_vec(),
+                });
+            }
             if let Some(source) = &source {
                 if source.take_keyframe_request()
                     || (waiting_for_key && last_key_request.elapsed() >= Duration::from_millis(500))

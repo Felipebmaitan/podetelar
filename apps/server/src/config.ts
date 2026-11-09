@@ -8,6 +8,7 @@ export type Config = {
   databasePath: string;
   adminToken: string;
   livekitUrl: string;
+  livekitInternalUrl: string;
   livekitApiKey: string;
   livekitApiSecret: string;
   webRoot: string;
@@ -52,6 +53,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error("An HTTPS deployment requires a wss:// LIVEKIT_URL.");
   }
   const port = Number(env.PORT ?? 3000);
+  const internalUrl = new URL(
+    env.LIVEKIT_INTERNAL_URL ?? livekitUrl.toString().replace(/^ws/, "http"),
+  );
+  if (
+    !["http:", "https:"].includes(internalUrl.protocol) ||
+    internalUrl.username ||
+    internalUrl.password ||
+    internalUrl.search ||
+    internalUrl.hash ||
+    internalUrl.pathname !== "/"
+  )
+    throw new Error(
+      "LIVEKIT_INTERNAL_URL must be an HTTP(S) origin without credentials.",
+    );
   if (!Number.isInteger(port) || port < 1 || port > 65535)
     throw new Error("PORT must be between 1 and 65535.");
   return {
@@ -64,6 +79,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ),
     adminToken: required("ADMIN_TOKEN", 32),
     livekitUrl: livekitUrl.toString().replace(/\/$/, ""),
+    livekitInternalUrl: internalUrl.origin,
     livekitApiKey: required("LIVEKIT_API_KEY", 8),
     livekitApiSecret: required("LIVEKIT_API_SECRET", 32),
     webRoot: fileURLToPath(new URL("../../web/dist", import.meta.url)),

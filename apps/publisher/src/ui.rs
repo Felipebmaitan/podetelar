@@ -196,6 +196,10 @@ impl PublisherUi {
                 ui.menu_button("Room options", |ui| {
                     ui.label(egui::RichText::new("Room and saved access").strong());
                     ui.label("Leaving keeps any saved room for next launch.");
+                    if ui.button("Advanced settings").clicked() {
+                        self.advanced_open = true;
+                        ui.close();
+                    }
                     if ui
                         .add_enabled(self.store.is_some(), egui::Button::new("Forget saved room"))
                         .clicked()
@@ -810,7 +814,9 @@ impl eframe::App for PublisherUi {
                 } else {
                     max_width
                         .min((row_height - 114.0).max(90.0) * 16.0 / 9.0 + 22.0)
-                        .max(202.0)
+                        // Keep Stop/Focus/Unmute and the volume editor inside the card.
+                        // Short windows scroll instead of squeezing playback controls.
+                        .max(302.0)
                 };
                 let inset =
                     ((ui.available_width() - width * columns as f32 - gap * (columns - 1) as f32)

@@ -16,11 +16,14 @@ accessibility compliance, media performance or hardware/network qualification.
 | Feedback and recovery             | 8.0                                  | 9.1                          |
 | Accessibility and discoverability | 7.5                                  | 9.0                          |
 
-**UI review target achieved:** a fresh independent Gemini 4 Argon context gave
+**Round 4 UI review target achieved:** a fresh independent Gemini 4 Argon context gave
 all seven categories at least 9/10 for application commit `d2573ad`. Its visual
 preflight matched the actual images. The parent verified the report and recorded
 inaccurate measurements and optional polish notes separately. This concludes the
-requested image-only refinement loop; it does not close release acceptance gates.
+requested image-only threshold for that commit; it does not close release acceptance gates.
+A subsequent technical review found two regressions in pre-join settings access
+and short-window control sizing. [Pass 3](pass-03.md) corrects them and requires a
+new independent visual review before the updated UI is finalized.
 
 The baseline included static source inspection and screenshots because that
 provider had no native desktop-control tool. It is supplemental and differs from
@@ -42,6 +45,7 @@ the parent's own screenshot checks remain the basis for implementation pass 1.
 - [Implementation pass 2: changes by category](pass-02.md)
 - [Round 4: independent final image review](round-04.md)
 - [Parent verification of the final review and remaining polish](round-04-validation.md)
+- [Post-review connection and compact-window corrections](pass-03.md)
 
 The `images/baseline` directory preserves the original multi-stream look.
 `images/round-01` contains early implementation captures, including issues caught

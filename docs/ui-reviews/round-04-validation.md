@@ -41,8 +41,10 @@ Its numerical scores are subjective judgments, not measured usability results.
   transitions” are image-derived intent, not hands-on evidence. Separate native
   validation covers the implemented behavior within its documented limits.
 
-No production UI changes follow the final scored commit. These documentation
-corrections do not alter the reviewed images. Native formatting/Clippy, the
+Round 4 scores apply to its recorded commit. These documentation corrections do
+not alter the reviewed images. A subsequent technical review led to the separately
+documented [pass 3 corrections](pass-03.md), which require a new image review.
+Native formatting/Clippy, the
 35 portable/native tests and the normal clean build passed for this refinement
 work. The final Node 24 `npm run check` also passed (formatting, types, API tests
 and builds). Temporary fixture/capture hooks were removed, and the local native

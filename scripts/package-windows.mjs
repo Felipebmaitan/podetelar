@@ -100,7 +100,7 @@ if (
 )
   throw new Error("The portable launcher requires a shared CRT.");
 if (
-  !/^\s+800\s+Dependent Load Flags\s*$/im.test(
+  !/^\s+0*800\s+Dependent Load Flags?\s*$/im.test(
     execFileSync(dumpbin, ["/LOADCONFIG", launcher], { encoding: "utf8" }),
   )
 )

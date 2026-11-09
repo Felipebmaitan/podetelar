@@ -111,9 +111,16 @@ on the room runtime, per-track volume and actual device-delay integration.
 
 A fresh GPT-6.1-Sol high-reasoning read-only reviewer approved code scope for
 `a916b6d..68e6ebf`, with no actionable regression. That approval explicitly excludes
-merge/release and physical synchronization. A subsequent CLI-fixture-only correction
-preserves its supplied upload ceiling across a source/mode restart; it does not
-change the GUI path.
+merge/release and physical synchronization. A second fresh reviewer approved
+`68e6ebf..407749c`, with no actionable findings, after the CLI fixture's supplied
+upload ceiling was preserved across restarts and the self-preview identity was
+bound to the active capture Arc. Holding that Arc prevents a freed allocation's
+address and reset frame sequence from accidentally reusing the previous image.
+The snapshot replaces the cache immediately when a new capture starts.
+
+The work and review progress are published in dependent draft
+[PR #11](https://github.com/Felipebmaitan/freedomstream/pull/11). Neither code-scope
+review qualifies merging or releasing the phase.
 
 Before releasing or merging this phase: qualify real upload/download through the
 production proxy under media load, multiple simultaneous joins, changing link

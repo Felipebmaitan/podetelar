@@ -18,7 +18,7 @@
     "build": "npm run build -w @freedomstream/contracts && npm run build -w @freedomstream/server && npm run build -w @freedomstream/web",
     "start": "npm run start -w @freedomstream/server",
     "typecheck": "npm run build -w @freedomstream/contracts && npm run typecheck --workspaces --if-present && tsc -p tsconfig.tools.json --noEmit",
-    "test": "npm run build -w @freedomstream/contracts && npm run test --workspaces --if-present && node --test scripts/relay-config.test.mjs",
+    "test": "npm run build -w @freedomstream/contracts && npm run test --workspaces --if-present && node --test scripts/relay-config.test.mjs scripts/production-config.test.mjs",
     "check": "npm run format:check && npm run typecheck && npm test && npm run build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -28,6 +28,7 @@
     "native:check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 check",
     "native:test": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 test",
     "native:probe": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 probe",
+    "native:package": "node scripts/package-windows.mjs",
     "native:qualify": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 qualify",
     "native:run": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 run",
     "native:e2e": "node --env-file=.env node_modules/@playwright/test/cli.js test -c playwright.native.config.ts"

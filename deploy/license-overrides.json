@@ -1,0 +1,317 @@
+{
+  "accesskit@0.25.2": [
+    {
+      "file": "deploy/licenses/upstream/AccessKit-accesskit/f3026222559c7f5f46d8f25cb7404de68eb149f0/LICENSE-APACHE",
+      "source": "https://github.com/AccessKit/accesskit/blob/f3026222559c7f5f46d8f25cb7404de68eb149f0/LICENSE-APACHE",
+      "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+    },
+    {
+      "file": "deploy/licenses/upstream/AccessKit-accesskit/f3026222559c7f5f46d8f25cb7404de68eb149f0/LICENSE-MIT",
+      "source": "https://github.com/AccessKit/accesskit/blob/f3026222559c7f5f46d8f25cb7404de68eb149f0/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    {
+      "file": "deploy/licenses/upstream/AccessKit-accesskit/f3026222559c7f5f46d8f25cb7404de68eb149f0/LICENSE.chromium",
+      "source": "https://github.com/AccessKit/accesskit/blob/f3026222559c7f5f46d8f25cb7404de68eb149f0/LICENSE.chromium",
+      "sha256": "845022e0c1db1abb41a6ba4cd3c4b674ec290f3359d9d3c78ae558d4c0ed9308"
+    }
+  ],
+  "clipboard-win@5.4.3": [
+    {
+      "file": "deploy/licenses/upstream/DoumanAsh-clipboard-win/ed27008ae5d1f10cfbb266de039f0fb35fd05a56/LICENSE",
+      "source": "https://github.com/DoumanAsh/clipboard-win/blob/ed27008ae5d1f10cfbb266de039f0fb35fd05a56/LICENSE",
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+    }
+  ],
+  "device-info@0.1.1": [
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/db06213ede5227c406116a27b3c08f4f6089b2d9/LICENSE",
+      "source": "https://github.com/livekit/rust-sdks/blob/db06213ede5227c406116a27b3c08f4f6089b2d9/LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/db06213ede5227c406116a27b3c08f4f6089b2d9/NOTICE",
+      "source": "https://github.com/livekit/rust-sdks/blob/db06213ede5227c406116a27b3c08f4f6089b2d9/NOTICE",
+      "sha256": "6d0f7c5e0deb284362296c5da110dd353831da2e67ca77cb5abc051b951b0fac"
+    }
+  ],
+  "ecolor@0.37.0": [
+    {
+      "file": "deploy/licenses/upstream/emilk-egui/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-APACHE",
+      "source": "https://github.com/emilk/egui/blob/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-APACHE",
+      "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+    },
+    {
+      "file": "deploy/licenses/upstream/emilk-egui/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-MIT",
+      "source": "https://github.com/emilk/egui/blob/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-MIT",
+      "sha256": "95ca92f5f8ea5231f1580b3a2a799e8260af3114b900e1def5355a7f44bcf60c"
+    }
+  ],
+  "eframe@0.37.0": [
+    {
+      "file": "deploy/licenses/upstream/emilk-egui/3c6eb8261c3293ad9c7ea1ed58487e038860ebef/LICENSE-APACHE",
+      "source": "https://github.com/emilk/egui/blob/3c6eb8261c3293ad9c7ea1ed58487e038860ebef/LICENSE-APACHE",
+      "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+    },
+    {
+      "file": "deploy/licenses/upstream/emilk-egui/3c6eb8261c3293ad9c7ea1ed58487e038860ebef/LICENSE-MIT",
+      "source": "https://github.com/emilk/egui/blob/3c6eb8261c3293ad9c7ea1ed58487e038860ebef/LICENSE-MIT",
+      "sha256": "95ca92f5f8ea5231f1580b3a2a799e8260af3114b900e1def5355a7f44bcf60c"
+    }
+  ],
+  "egui@0.37.0": [
+    {
+      "file": "deploy/licenses/upstream/emilk-egui/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-APACHE",
+      "source": "https://github.com/emilk/egui/blob/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-APACHE",
+      "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+    },
+    {
+      "file": "deploy/licenses/upstream/emilk-egui/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-MIT",
+      "source": "https://github.com/emilk/egui/blob/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-MIT",
+      "sha256": "95ca92f5f8ea5231f1580b3a2a799e8260af3114b900e1def5355a7f44bcf60c"
+    }
+  ],
+  "egui-wgpu@0.37.0": [
+    {
+      "file": "deploy/licenses/upstream/emilk-egui/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-APACHE",
+      "source": "https://github.com/emilk/egui/blob/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-APACHE",
+      "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+    },
+    {
+      "file": "deploy/licenses/upstream/emilk-egui/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-MIT",
+      "source": "https://github.com/emilk/egui/blob/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-MIT",
+      "sha256": "95ca92f5f8ea5231f1580b3a2a799e8260af3114b900e1def5355a7f44bcf60c"
+    }
+  ],
+  "egui-winit@0.37.0": [
+    {
+      "file": "deploy/licenses/upstream/emilk-egui/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-APACHE",
+      "source": "https://github.com/emilk/egui/blob/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-APACHE",
+      "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+    },
+    {
+      "file": "deploy/licenses/upstream/emilk-egui/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-MIT",
+      "source": "https://github.com/emilk/egui/blob/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-MIT",
+      "sha256": "95ca92f5f8ea5231f1580b3a2a799e8260af3114b900e1def5355a7f44bcf60c"
+    }
+  ],
+  "egui_glow@0.37.0": [
+    {
+      "file": "deploy/licenses/upstream/emilk-egui/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-APACHE",
+      "source": "https://github.com/emilk/egui/blob/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-APACHE",
+      "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+    },
+    {
+      "file": "deploy/licenses/upstream/emilk-egui/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-MIT",
+      "source": "https://github.com/emilk/egui/blob/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-MIT",
+      "sha256": "95ca92f5f8ea5231f1580b3a2a799e8260af3114b900e1def5355a7f44bcf60c"
+    }
+  ],
+  "emath@0.37.0": [
+    {
+      "file": "deploy/licenses/upstream/emilk-egui/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-APACHE",
+      "source": "https://github.com/emilk/egui/blob/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-APACHE",
+      "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+    },
+    {
+      "file": "deploy/licenses/upstream/emilk-egui/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-MIT",
+      "source": "https://github.com/emilk/egui/blob/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-MIT",
+      "sha256": "95ca92f5f8ea5231f1580b3a2a799e8260af3114b900e1def5355a7f44bcf60c"
+    }
+  ],
+  "epaint@0.37.0": [
+    {
+      "file": "deploy/licenses/upstream/emilk-egui/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-APACHE",
+      "source": "https://github.com/emilk/egui/blob/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-APACHE",
+      "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+    },
+    {
+      "file": "deploy/licenses/upstream/emilk-egui/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-MIT",
+      "source": "https://github.com/emilk/egui/blob/841a328ba2dd8f6996beb7189ebb7fc00e668a2a/LICENSE-MIT",
+      "sha256": "95ca92f5f8ea5231f1580b3a2a799e8260af3114b900e1def5355a7f44bcf60c"
+    }
+  ],
+  "from_variants@1.0.2": [
+    {
+      "file": "deploy/licenses/livekit-Apache-2.0.txt",
+      "source": "https://github.com/TedDriggs/from_variants/blob/5ced1950ed3f5bc01b10cf8c036588ac4b02558a/Cargo.toml",
+      "selectedLicense": "Apache-2.0 (standard text; upstream source does not include a license file)",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    }
+  ],
+  "from_variants_impl@1.0.2": [
+    {
+      "file": "deploy/licenses/livekit-Apache-2.0.txt",
+      "source": "https://github.com/TedDriggs/from_variants/blob/5ced1950ed3f5bc01b10cf8c036588ac4b02558a/Cargo.toml",
+      "selectedLicense": "Apache-2.0 (standard text; upstream source does not include a license file)",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    }
+  ],
+  "gl_generator@0.14.0": [
+    {
+      "file": "deploy/licenses/upstream/brendanzab-gl-rs/ea503e8d5fb6d73c6030e6191ce738cd3bf3433e/LICENSE",
+      "source": "https://github.com/brendanzab/gl-rs/blob/ea503e8d5fb6d73c6030e6191ce738cd3bf3433e/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    }
+  ],
+  "khronos_api@3.1.0": [
+    {
+      "file": "deploy/licenses/upstream/brendanzab-gl-rs/f150967b1c44ae888e6676f93f639ebc82771bdc/LICENSE",
+      "source": "https://github.com/brendanzab/gl-rs/blob/f150967b1c44ae888e6676f93f639ebc82771bdc/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    }
+  ],
+  "libwebrtc@0.4.0": [
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/88705b15086ecbe2c26ee91ede6203f974a0fc62/LICENSE",
+      "source": "https://github.com/livekit/rust-sdks/blob/88705b15086ecbe2c26ee91ede6203f974a0fc62/LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/88705b15086ecbe2c26ee91ede6203f974a0fc62/NOTICE",
+      "source": "https://github.com/livekit/rust-sdks/blob/88705b15086ecbe2c26ee91ede6203f974a0fc62/NOTICE",
+      "sha256": "6d0f7c5e0deb284362296c5da110dd353831da2e67ca77cb5abc051b951b0fac"
+    }
+  ],
+  "livekit@0.10.1": [
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/88705b15086ecbe2c26ee91ede6203f974a0fc62/LICENSE",
+      "source": "https://github.com/livekit/rust-sdks/blob/88705b15086ecbe2c26ee91ede6203f974a0fc62/LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/88705b15086ecbe2c26ee91ede6203f974a0fc62/NOTICE",
+      "source": "https://github.com/livekit/rust-sdks/blob/88705b15086ecbe2c26ee91ede6203f974a0fc62/NOTICE",
+      "sha256": "6d0f7c5e0deb284362296c5da110dd353831da2e67ca77cb5abc051b951b0fac"
+    }
+  ],
+  "livekit-common@0.1.6": [
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a/LICENSE",
+      "source": "https://github.com/livekit/rust-sdks/blob/fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a/LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a/NOTICE",
+      "source": "https://github.com/livekit/rust-sdks/blob/fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a/NOTICE",
+      "sha256": "6d0f7c5e0deb284362296c5da110dd353831da2e67ca77cb5abc051b951b0fac"
+    }
+  ],
+  "livekit-data-stream@0.2.0": [
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/ede8ac53843a8fb91d6f4fb5629f5245f1758e38/LICENSE",
+      "source": "https://github.com/livekit/rust-sdks/blob/ede8ac53843a8fb91d6f4fb5629f5245f1758e38/LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/ede8ac53843a8fb91d6f4fb5629f5245f1758e38/NOTICE",
+      "source": "https://github.com/livekit/rust-sdks/blob/ede8ac53843a8fb91d6f4fb5629f5245f1758e38/NOTICE",
+      "sha256": "6d0f7c5e0deb284362296c5da110dd353831da2e67ca77cb5abc051b951b0fac"
+    }
+  ],
+  "livekit-datatrack@0.2.4": [
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a/LICENSE",
+      "source": "https://github.com/livekit/rust-sdks/blob/fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a/LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a/NOTICE",
+      "source": "https://github.com/livekit/rust-sdks/blob/fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a/NOTICE",
+      "sha256": "6d0f7c5e0deb284362296c5da110dd353831da2e67ca77cb5abc051b951b0fac"
+    }
+  ],
+  "livekit-net@0.1.4": [
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a/LICENSE",
+      "source": "https://github.com/livekit/rust-sdks/blob/fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a/LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a/NOTICE",
+      "source": "https://github.com/livekit/rust-sdks/blob/fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a/NOTICE",
+      "sha256": "6d0f7c5e0deb284362296c5da110dd353831da2e67ca77cb5abc051b951b0fac"
+    }
+  ],
+  "livekit-region@0.1.1": [
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/8066415f8faa09a0ec0a6643e6cfdaa825167c65/LICENSE",
+      "source": "https://github.com/livekit/rust-sdks/blob/8066415f8faa09a0ec0a6643e6cfdaa825167c65/LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/8066415f8faa09a0ec0a6643e6cfdaa825167c65/NOTICE",
+      "source": "https://github.com/livekit/rust-sdks/blob/8066415f8faa09a0ec0a6643e6cfdaa825167c65/NOTICE",
+      "sha256": "6d0f7c5e0deb284362296c5da110dd353831da2e67ca77cb5abc051b951b0fac"
+    }
+  ],
+  "livekit-rpc@0.2.0": [
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/ede8ac53843a8fb91d6f4fb5629f5245f1758e38/LICENSE",
+      "source": "https://github.com/livekit/rust-sdks/blob/ede8ac53843a8fb91d6f4fb5629f5245f1758e38/LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/ede8ac53843a8fb91d6f4fb5629f5245f1758e38/NOTICE",
+      "source": "https://github.com/livekit/rust-sdks/blob/ede8ac53843a8fb91d6f4fb5629f5245f1758e38/NOTICE",
+      "sha256": "6d0f7c5e0deb284362296c5da110dd353831da2e67ca77cb5abc051b951b0fac"
+    }
+  ],
+  "livekit-signaling@0.1.9": [
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/88705b15086ecbe2c26ee91ede6203f974a0fc62/LICENSE",
+      "source": "https://github.com/livekit/rust-sdks/blob/88705b15086ecbe2c26ee91ede6203f974a0fc62/LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/88705b15086ecbe2c26ee91ede6203f974a0fc62/NOTICE",
+      "source": "https://github.com/livekit/rust-sdks/blob/88705b15086ecbe2c26ee91ede6203f974a0fc62/NOTICE",
+      "sha256": "6d0f7c5e0deb284362296c5da110dd353831da2e67ca77cb5abc051b951b0fac"
+    }
+  ],
+  "pbjson@0.9.0": [
+    {
+      "file": "deploy/licenses/upstream/influxdata-pbjson/48ee5989564e0ace82ad71b87736d3d1b2e0e1cd/LICENSE",
+      "source": "https://github.com/influxdata/pbjson/blob/48ee5989564e0ace82ad71b87736d3d1b2e0e1cd/LICENSE",
+      "sha256": "791a00933f2ea7e512856361e026998362241c3918d7be948c24d29441033b55"
+    }
+  ],
+  "pbjson-build@0.9.0": [
+    {
+      "file": "deploy/licenses/upstream/influxdata-pbjson/48ee5989564e0ace82ad71b87736d3d1b2e0e1cd/LICENSE",
+      "source": "https://github.com/influxdata/pbjson/blob/48ee5989564e0ace82ad71b87736d3d1b2e0e1cd/LICENSE",
+      "sha256": "791a00933f2ea7e512856361e026998362241c3918d7be948c24d29441033b55"
+    }
+  ],
+  "pbjson-types@0.9.0": [
+    {
+      "file": "deploy/licenses/upstream/influxdata-pbjson/48ee5989564e0ace82ad71b87736d3d1b2e0e1cd/LICENSE",
+      "source": "https://github.com/influxdata/pbjson/blob/48ee5989564e0ace82ad71b87736d3d1b2e0e1cd/LICENSE",
+      "sha256": "791a00933f2ea7e512856361e026998362241c3918d7be948c24d29441033b55"
+    }
+  ],
+  "profiling@1.0.18": [
+    {
+      "file": "deploy/licenses/upstream/aclysma-profiling/8271551172eb6fa4cba47369aedd93790c623df9/LICENSE-APACHE",
+      "source": "https://github.com/aclysma/profiling/blob/8271551172eb6fa4cba47369aedd93790c623df9/LICENSE-APACHE",
+      "sha256": "10d30a673cd5e9349bdc02aeb48f14b3386d27d0da32df8f0a555d4aa16aa551"
+    },
+    {
+      "file": "deploy/licenses/upstream/aclysma-profiling/8271551172eb6fa4cba47369aedd93790c623df9/LICENSE-MIT",
+      "source": "https://github.com/aclysma/profiling/blob/8271551172eb6fa4cba47369aedd93790c623df9/LICENSE-MIT",
+      "sha256": "c8167fdeeed46d3f244d3f85c5bf998ce889343691c32be2c61a8bc4b5c08333"
+    }
+  ],
+  "webrtc-sys-build@0.3.21": [
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/ead3a6936e7e526c6853255e2a731ba7648dd63d/LICENSE",
+      "source": "https://github.com/livekit/rust-sdks/blob/ead3a6936e7e526c6853255e2a731ba7648dd63d/LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "file": "deploy/licenses/upstream/livekit-rust-sdks/ead3a6936e7e526c6853255e2a731ba7648dd63d/NOTICE",
+      "source": "https://github.com/livekit/rust-sdks/blob/ead3a6936e7e526c6853255e2a731ba7648dd63d/NOTICE",
+      "sha256": "6d0f7c5e0deb284362296c5da110dd353831da2e67ca77cb5abc051b951b0fac"
+    }
+  ]
+}

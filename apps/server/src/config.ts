@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isIP } from "node:net";
 
 export type Config = {
   host: string;
@@ -12,6 +13,8 @@ export type Config = {
   livekitApiKey: string;
   livekitApiSecret: string;
   webRoot: string;
+  trustedProxy?: string;
+  publisherDirectory?: string;
 };
 
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
@@ -69,6 +72,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     );
   if (!Number.isInteger(port) || port < 1 || port > 65535)
     throw new Error("PORT must be between 1 and 65535.");
+  if (env.TRUSTED_PROXY && isIP(env.TRUSTED_PROXY) !== 4)
+    throw new Error(
+      "TRUSTED_PROXY must be the single IPv4 address of the private proxy gateway.",
+    );
   return {
     host: env.HOST ?? "127.0.0.1",
     port,
@@ -83,5 +90,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     livekitApiKey: required("LIVEKIT_API_KEY", 8),
     livekitApiSecret: required("LIVEKIT_API_SECRET", 32),
     webRoot: fileURLToPath(new URL("../../web/dist", import.meta.url)),
+    ...(env.TRUSTED_PROXY ? { trustedProxy: env.TRUSTED_PROXY } : {}),
+    ...(env.PUBLISHER_DIRECTORY
+      ? { publisherDirectory: resolve(env.PUBLISHER_DIRECTORY) }
+      : {}),
   };
 }

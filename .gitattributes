@@ -1,2 +1,4 @@
 * text=auto eol=lf
 *.png binary
+deploy/licenses/** -text
+deploy/production/*.sh text eol=lf

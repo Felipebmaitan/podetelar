@@ -8,6 +8,24 @@ const valid = {
   LIVEKIT_API_SECRET: "livekit-secret-with-at-least-thirty-two-characters",
 };
 
+test("proxy trust is opt-in and limited to one private peer address", () => {
+  assert.equal(loadConfig(valid).trustedProxy, undefined);
+  assert.equal(
+    loadConfig({ ...valid, TRUSTED_PROXY: "172.30.77.1" }).trustedProxy,
+    "172.30.77.1",
+  );
+  for (const TRUSTED_PROXY of [
+    "true",
+    "0.0.0.0/0",
+    "loopback",
+    "172.30.77.1,1.2.3.4",
+  ])
+    assert.throws(
+      () => loadConfig({ ...valid, TRUSTED_PROXY }),
+      /TRUSTED_PROXY/,
+    );
+});
+
 test("configuration rejects missing/placeholder credentials and invalid ports", () => {
   assert.throws(() => loadConfig({}), /ADMIN_TOKEN/);
   assert.throws(

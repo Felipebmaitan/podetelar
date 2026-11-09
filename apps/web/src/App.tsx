@@ -6,6 +6,7 @@ import { ApiError, request } from "./api";
 import { useMediaRoom } from "./media/useMediaRoom";
 import { LiveStreams } from "./media/LiveStreams";
 import { RoomAccess } from "./RoomAccess";
+import { PublisherDownload } from "./PublisherDownload";
 
 const managedRoomId = /^\/manage\/([A-Za-z0-9_-]{22})$/.exec(
   window.location.pathname,
@@ -263,6 +264,7 @@ export function App() {
                 </>
               )}
             </section>
+            <PublisherDownload roomId={session.room.id} />
           </div>
         ) : entryRoomId ? (
           <JoinRoom

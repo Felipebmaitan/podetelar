@@ -65,3 +65,16 @@ jobs:
       - run: npm run native:check
       - run: npm run native:test
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 build
+      - run: npm run native:package
+      - name: Qualify per-user installation
+        shell: powershell
+        run: |
+          $package = @(Get-ChildItem .local/distribution -Directory)[0].FullName
+          & scripts/qualify-installation.ps1 -PackageDirectory $package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: freedomstream-windows-x64
+          path: |
+            .local/distribution/*.zip
+            .local/distribution/publisher.json
+          retention-days: 14

@@ -60,7 +60,9 @@ The smoke and browser checks create uniquely named rooms in the running database
 - A room invitation contains 32 random bytes of authority after `#invite=`. The browser removes it from its address bar and keeps it in memory for the admission/copy flow; no token is stored in browser local storage.
 - SQLite holds hashes of invitations and session tokens, not their raw values. API responses are not cached and automatic request logging is disabled.
 - Admission creates an HttpOnly, SameSite=Strict cookie scoped to that room. HTTPS origins also use Secure cookies. Sessions last 24 hours; the pinned invitation remains valid across restarts and departures.
-- LiveKit tokens are room-scoped and expire after two minutes. A valid invitation holder can publish and subscribe; individual accounts, viewer-only grants, invitation revocation and media-disconnect enforcement arrive in Phase 7.
+- LiveKit tokens are room-scoped and expire after two minutes. A valid invitation holder can publish and subscribe. Invitation rotation, disablement and individual/all-session revocation enforce admission through the signaling gateway. Accounts and viewer-only roles are not implemented.
 - Leaving deletes the current session, not the room or invitation. A member can rejoin with the invitation.
 
 The original code in this repository is MIT licensed. Dependencies and any future bundled native runtime retain their own licenses. See [configuration and interfaces](docs/development.md) for the current module contracts and deliberate limits.
+
+See [Windows distribution](docs/distribution.md), [production deployment and recovery](docs/deployment.md), and [Phase 8 qualification](docs/phase8-qualification.md) for release/install steps, private room downloads, HTTPS without a domain, backup/restore and remaining hardware/group checks.

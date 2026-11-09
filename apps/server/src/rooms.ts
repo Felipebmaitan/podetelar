@@ -48,13 +48,16 @@ export class Rooms {
     const version = this.db.prepare("PRAGMA user_version").get() as {
       user_version: number;
     };
-    if (version.user_version > 2) {
+    if (version.user_version > 3) {
       this.db.close();
       throw new Error(
         "The database was created by a newer FreedomStream version.",
       );
     }
-    this.db.exec(`
+    try {
+      if (version.user_version < 3)
+        this.transaction(() => {
+          this.db.exec(`
       CREATE TABLE IF NOT EXISTS rooms (
         id TEXT PRIMARY KEY, name TEXT NOT NULL,
         invitation_hash BLOB NOT NULL, created_at INTEGER NOT NULL
@@ -65,8 +68,8 @@ export class Rooms {
       );
       CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
     `);
-    if (version.user_version < 2)
-      this.db.exec(`
+          if (version.user_version < 2)
+            this.db.exec(`
       ALTER TABLE rooms ADD COLUMN invitation_enabled INTEGER NOT NULL DEFAULT 1;
       CREATE TABLE removals (
         room_id TEXT NOT NULL, participant_id TEXT NOT NULL,
@@ -74,9 +77,18 @@ export class Rooms {
         PRIMARY KEY(room_id, participant_id)
       );
       CREATE INDEX sessions_identity ON sessions(room_id, participant_id);
-      PRAGMA user_version = 2;
     `);
-    this.expire();
+          this.db.exec(`
+          ALTER TABLE removals ADD COLUMN next_attempt_at INTEGER NOT NULL DEFAULT 0;
+          CREATE INDEX removals_due ON removals(next_attempt_at);
+          PRAGMA user_version = 3;
+        `);
+        });
+      this.expire();
+    } catch (error) {
+      this.db.close();
+      throw error;
+    }
   }
 
   create(input: CreateRoomInput): IssuedSession & { invitation: string } {
@@ -199,9 +211,9 @@ export class Rooms {
     return (
       this.db
         .prepare(
-          "SELECT room_id, participant_id, retry_until FROM removals ORDER BY retry_until LIMIT 128",
+          "SELECT room_id, participant_id, retry_until FROM removals WHERE next_attempt_at <= ? ORDER BY next_attempt_at, rowid LIMIT 128",
         )
-        .all() as {
+        .all(this.now()) as {
         room_id: string;
         participant_id: string;
         retry_until: number;
@@ -211,6 +223,13 @@ export class Rooms {
       identity: row.participant_id,
       retryUntil: row.retry_until,
     }));
+  }
+  scheduleRemoval(room: string, identity: string, nextAttemptAt: number): void {
+    this.db
+      .prepare(
+        "UPDATE removals SET next_attempt_at = ? WHERE room_id = ? AND participant_id = ?",
+      )
+      .run(nextAttemptAt, room, identity);
   }
   pending(id: string): number {
     return (
@@ -251,9 +270,9 @@ export class Rooms {
     // A short durable tombstone retries removal across an in-flight SFU handshake.
     this.db
       .prepare(
-        `INSERT INTO removals(room_id, participant_id, retry_until) SELECT room_id, participant_id, ? FROM sessions WHERE ${where} ON CONFLICT(room_id, participant_id) DO UPDATE SET retry_until = excluded.retry_until`,
+        `INSERT INTO removals(room_id, participant_id, retry_until, next_attempt_at) SELECT room_id, participant_id, ?, ? FROM sessions WHERE ${where} ON CONFLICT(room_id, participant_id) DO UPDATE SET retry_until = excluded.retry_until, next_attempt_at = excluded.next_attempt_at, acknowledged = 0`,
       )
-      .run(this.now() + 30_000, ...values);
+      .run(this.now() + 30_000, this.now(), ...values);
     this.db.prepare(`DELETE FROM sessions WHERE ${where}`).run(...values);
   }
 

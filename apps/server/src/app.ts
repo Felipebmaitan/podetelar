@@ -17,7 +17,12 @@ import {
   type MediaDirectory,
 } from "./media.js";
 import { Previews, previewRoutes } from "./previews.js";
-import { Access, accessRoutes, administrator } from "./access.js";
+import {
+  Access,
+  accessRoutes,
+  administrator,
+  ACCESS_SWEEP_MS,
+} from "./access.js";
 import { Signaling } from "./signaling.js";
 
 const COOKIE = "fs_session";
@@ -46,7 +51,7 @@ export async function buildApp(
   const previewSweep = setInterval(() => {
     previews.sweep();
     void access.settle();
-  }, 2000);
+  }, ACCESS_SWEEP_MS);
   previewSweep.unref();
   app.addHook("preClose", async () => {
     clearInterval(previewSweep);

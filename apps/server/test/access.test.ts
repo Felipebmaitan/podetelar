@@ -8,6 +8,8 @@ import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { Rooms, SESSION_TTL_MS } from "../src/rooms.js";
 import { MediaUnavailable } from "../src/media.js";
+import { Access } from "../src/access.js";
+import { Previews } from "../src/previews.js";
 
 const origin = "http://localhost:5173";
 const key = "test-server-access-key-not-for-production";
@@ -217,6 +219,7 @@ test("revocation fails closed immediately and retries media enforcement after re
   );
   await f.restart();
   f.unavailable(false);
+  f.advance(2000);
   await f.app.close();
   assert.ok(f.removed.includes(friend.identity));
 });
@@ -236,5 +239,67 @@ test("expired sessions queue media removal instead of silently pruning authority
     assert.equal(rooms.pending(issued.snapshot.room.id), 1);
   } finally {
     rooms.close();
+  }
+});
+
+test("persisted retry scheduling gives a newer removal a turn behind 128 repeated failures", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "freedomstream-fairness-"));
+  const path = join(directory, "rooms.db");
+  let rooms = new Rooms(path);
+  const identities: string[] = [];
+  let active = 0,
+    peak = 0;
+  const attempts: string[] = [];
+  const media = {
+    async participant() {
+      return null;
+    },
+    async attribute() {},
+    async remove(_room: string, identity: string) {
+      active++;
+      peak = Math.max(peak, active);
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        attempts.push(identity);
+        if (identity !== identities.at(-1)) throw new MediaUnavailable();
+      } finally {
+        active--;
+      }
+    },
+  };
+  try {
+    for (let group = 0; group < 5; group++) {
+      const issued = rooms.create({
+        name: "Fairness",
+        displayName: "Publisher",
+      });
+      const members = [issued.snapshot.participant.id];
+      if (group < 4)
+        for (let member = 1; member < 32; member++)
+          members.push(
+            rooms.join(issued.snapshot.room.id, issued.invitation, "Publisher")!
+              .snapshot.participant.id,
+          );
+      identities.push(...members);
+      for (const identity of members)
+        rooms.revoke(issued.snapshot.room.id, identity);
+    }
+    await new Access(rooms, media, new Previews(media), () => {}).settle();
+    assert.equal(attempts.length, 128);
+    assert.equal(attempts.includes(identities.at(-1)!), false);
+    rooms.close();
+    rooms = new Rooms(path);
+    await new Access(rooms, media, new Previews(media), () => {}).settle();
+    assert.equal(attempts.includes(identities.at(-1)!), true);
+    assert.ok(peak <= 8);
+  } finally {
+    rooms.close();
+    const resolved = realpathSync(directory);
+    assert.equal(
+      dirname(resolved).toLowerCase(),
+      realpathSync(tmpdir()).toLowerCase(),
+    );
+    assert.ok(basename(resolved).startsWith("freedomstream-fairness-"));
+    rmSync(resolved, { recursive: true });
   }
 });

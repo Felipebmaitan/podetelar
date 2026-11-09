@@ -8,7 +8,7 @@ import type { TestContext } from "node:test";
 import { TokenVerifier } from "livekit-server-sdk";
 import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
-import { SESSION_TTL_MS } from "../src/rooms.js";
+import { Rooms, SESSION_TTL_MS } from "../src/rooms.js";
 
 const ORIGIN = "http://localhost:5173";
 const ADMIN = "test-admin-key-only-not-a-production-secret";
@@ -256,6 +256,39 @@ test("version-one databases migrate without replacing existing room/session auth
     ).statusCode,
     401,
   );
+});
+
+test("migration failure rolls back partial DDL and restarts without losing existing authority", async (t) => {
+  const f = await fixture(t);
+  const created = await f.create();
+  await f.app.close();
+  let database = new DatabaseSync(f.config.databasePath);
+  database.exec(
+    "DROP TABLE removals; DROP INDEX sessions_identity; ALTER TABLE rooms DROP COLUMN invitation_enabled; CREATE TABLE removals(blocking INTEGER); PRAGMA user_version = 1;",
+  );
+  database.close();
+  assert.throws(() => new Rooms(f.config.databasePath), /already exists/);
+  database = new DatabaseSync(f.config.databasePath);
+  assert.equal(
+    (database.prepare("PRAGMA user_version").get() as { user_version: number })
+      .user_version,
+    1,
+  );
+  assert.equal(
+    (
+      database.prepare("PRAGMA table_info(rooms)").all() as { name: string }[]
+    ).some((column) => column.name === "invitation_enabled"),
+    false,
+  );
+  database.exec("DROP TABLE removals");
+  database.close();
+  await f.restart();
+  const resumed = await f.app.inject({
+    url: `/api/rooms/${created.body.room.id}/session`,
+    headers: { cookie: created.cookie },
+  });
+  assert.equal(resumed.statusCode, 200);
+  assert.deepEqual(resumed.json().participant, created.body.participant);
 });
 
 test("expiry blocks API/media access while the persistent invitation can admit again", async (t) => {

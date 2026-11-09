@@ -10,7 +10,7 @@ Open **Manage room access**, or `/manage/<room-id>`, and supply the server acces
 - **End session** revokes one browser/publisher and leaves other participants connected. A holder of a still-valid invitation can join again; rotate or disable a leaked invitation when ending its sessions.
 - Leaving, rejoining in the same browser and expiry also revoke the old session's media authority.
 
-Only invitation/session hashes enter SQLite. Schema version 2 preserves version-1 rooms/sessions while adding invitation state and a durable removal queue. Each room admits at most 32 current sessions.
+Only invitation/session hashes enter SQLite. Schema version 3 preserves version-1 rooms/sessions while adding invitation state and a durable removal queue. Migration DDL and its version update commit together, with rollback on failure. Version-2 qualification databases gain persisted retry scheduling in the same transaction. Each room admits at most 32 current sessions.
 
 ## Signaling admission
 
@@ -26,7 +26,7 @@ Only `/media/rtc`, `/media/rtc/v1` and their `/validate` endpoints are exposed. 
 
 Revocation commits session deletion and queued SFU removal in one SQLite transaction. API/preview/new signaling authority is denied immediately. Cached previews and pending uploads are purged; the gateway closes revoked links and rechecks authority while forwarding. Administrative participant removal has a three-second SDK request timeout.
 
-If SFU enforcement fails, management returns **202** with pending disconnections, rather than reporting a completed live disconnect. A non-overlapping two-second sweep retries persisted work after restart with at most eight concurrent RPCs. Successful removals retain a 30-second retry tombstone across a handshake already in flight; failed work remains until successful. Expiry uses the same path. Established encrypted transport cannot be recalled until an unreachable SFU enforces removal.
+If SFU enforcement fails, management returns **202** with pending disconnections, rather than reporting a completed live disconnect. A non-overlapping two-second sweep retries persisted work after restart with at most eight concurrent RPCs. Persisted next-attempt times move attempted work behind older due jobs, so repeated failures cannot monopolize a bounded batch. Successful removals retain a 30-second retry tombstone across a handshake already in flight; failed work remains until successful. Expiry uses the same path. Established encrypted transport cannot be recalled until an unreachable SFU enforces removal.
 
 The browser checks its session on connection changes and every 20 seconds while quiet, with one bounded request, and releases the room view/captures after loss of authority. Native terminal disconnect cancels its capture group. SDK recovery can resume admitted sessions after app restart; it cannot recreate revoked authority. Genuine new publications still require Watch.
 

@@ -8,6 +8,7 @@ import type { Config } from "./config.js";
 import { Rooms, secretsEqual } from "./rooms.js";
 import type { MediaDirectory } from "./media.js";
 import type { Previews } from "./previews.js";
+export const ACCESS_SWEEP_MS = 2000;
 
 /** Durable revocation owns retries; gateway admission never waits on an SFU RPC. */
 export class Access {
@@ -32,6 +33,13 @@ export class Access {
     for (let i = 0; i < pending.length; i += 8) {
       await Promise.all(
         pending.slice(i, i + 8).map(async (row) => {
+          // Claim before yielding, persistently moving attempted work behind
+          // newer due rows even if this process stops during the RPC.
+          this.rooms.scheduleRemoval(
+            row.room,
+            row.identity,
+            this.rooms.time() + ACCESS_SWEEP_MS,
+          );
           this.previews.removeOwner(row.room, row.identity);
           try {
             await this.media.remove(row.room, row.identity);

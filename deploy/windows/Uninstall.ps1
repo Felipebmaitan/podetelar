@@ -1,4 +1,3 @@
-param([switch]$KeepDownloads)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Ownership.ps1')
 Assert-FreedomStreamRoot $PSScriptRoot
@@ -11,12 +10,6 @@ if ((Test-Path -LiteralPath (Join-Path $root '.start-menu-shortcut')) -and (Test
     $shortcut = $shell.CreateShortcut($shortcutPath)
     if ($shortcut.Arguments.Contains((Join-Path $root 'Start-FreedomStream.ps1'))) { Remove-Item -LiteralPath $shortcutPath }
 }
-if ($KeepDownloads) {
-    foreach ($entry in Get-ChildItem -LiteralPath $root -Force) {
-        if ($entry.Name -notin @('downloads', '.freedomstream-install')) { Remove-Item -LiteralPath $entry.FullName -Recurse -Force }
-    }
-} else {
-    # Assert-FreedomStreamRoot resolved/checked this exact absolute target above.
-    Remove-Item -LiteralPath $root -Recurse -Force
-}
+# Assert-FreedomStreamRoot resolved/checked this exact absolute target above.
+Remove-Item -LiteralPath $root -Recurse -Force
 Write-Output 'Removed FreedomStream. Shared Microsoft/GPU/Chrome installations were kept.'

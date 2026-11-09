@@ -98,12 +98,19 @@ Start with:
 docker compose --env-file /opt/freedomstream/shared/.env \
   --env-file /opt/freedomstream/shared/release.env \
   -f /opt/freedomstream/current/deploy/production/compose.yaml up -d --wait
+/opt/freedomstream/current/deploy/production/certificates.sh renew
 /opt/freedomstream/current/deploy/production/ops.sh status
 ```
 
+The startup renewal command records that nginx and the running relay have applied
+the certificate. A failed validation/reload leaves
+this application marker pending, so subsequent timer runs retry it even when the
+certificate bytes have not changed. The `check` action is read-only and fails for
+an unapplied certificate.
+
 When a domain is available, point its DNS directly at the VPS (media must not be
 sent through an ordinary HTTP-only CDN proxy), regenerate the host configuration
-with the same secrets, issue its certificate and restart app/relay. Plan invitation
+with the same secrets, issue its certificate and restart app, SFU and relay. Plan invitation
 URL changes with the group. A dedicated domain could use 443 if it does not collide
 with an existing listener; this release deliberately keeps 8443 separate.
 
@@ -149,8 +156,13 @@ reason. Five manual 100 Mbps streams with those subscriptions exceed the port.
 Manual presets remain available; congestion feedback reduces effective delivery
 and the UI shows actual bitrate. There is no global bandwidth shaper or guarantee
 against manual overload of this shared host. Watch only selected streams and
-leave headroom for other services. TURN has allocation quotas and an 800 Mbps
-aggregate payload limit, but direct SFU traffic is not globally shaped.
+leave headroom for other services. TURN has allocation quotas (8 per participant,
+64 total) and an 800 Mbps per-allocation limit. Neither TURN nor direct SFU traffic
+has a measured aggregate bandwidth shaper. Coturn's `bps-capacity` reserves each
+allocation's full maximum at allocation time; configuring it equal to one
+allocation's maximum rejected additional idle ICE candidates with error 486.
+It is deliberately disabled rather than misrepresented as a shared traffic
+policer. See [upstream reservation accounting](https://github.com/coturn/coturn/blob/4.18.0/src/apps/relay/netengine.c).
 
 Before calling the service qualified, test native NVIDIA/AMD encoders, actual
 browser decode, game audio exclusion, direct and forced TLS routes, session

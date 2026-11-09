@@ -58,6 +58,7 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'freedomstream-publisher.exe') -
 $env:PATH = "$(Join-Path $gstRoot 'bin');$env:WINDIR\System32;$env:WINDIR"
 $env:GST_PLUGIN_PATH_1_0 = ''
 $env:GST_PLUGIN_SYSTEM_PATH_1_0 = Join-Path $gstRoot 'lib/gstreamer-1.0'
+$env:GST_PLUGIN_SCANNER_1_0 = Join-Path $gstRoot 'libexec/gstreamer-1.0/gst-plugin-scanner.exe'
 $env:GST_REGISTRY_1_0 = Join-Path $versionRoot 'registry.bin'
 $probe = & (Join-Path $gstRoot 'bin/freedomstream-publisher.exe') --probe
 if ($LASTEXITCODE -ne 0 -or -not ($probe -match 'GStreamer 1\.28\.8')) { throw 'Packaged runtime probe failed. The previous version remains current. Check the Visual C++ x64 prerequisite and GPU driver.' }

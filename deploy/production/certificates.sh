@@ -38,18 +38,26 @@ cert_pub=$(openssl x509 -in "$source_dir/fullchain.pem" -pubkey -noout | openssl
 key_pub=$(openssl pkey -in "$source_dir/privkey.pem" -pubout -outform DER | sha256sum | cut -d' ' -f1)
 [[ "$cert_pub" == "$key_pub" ]] || { echo 'Certificate/key mismatch.' >&2; exit 1; }
 fingerprint=$(sha256sum "$source_dir/fullchain.pem" | cut -d' ' -f1)
+applied=$(cat "$state/tls/applied" 2>/dev/null || true)
 if [[ "$action" == check ]]; then
   cmp -s "$source_dir/fullchain.pem" "$state/tls/current/fullchain.pem" || { echo 'Renewed certificate is not installed.' >&2; exit 1; }
+  [[ "$applied" == "$fingerprint" ]] || { echo 'Certificate service reload is pending; run certificates.sh renew.' >&2; exit 1; }
   exit 0
 fi
-if [[ -f "$state/tls/current/fullchain.pem" ]] && cmp -s "$source_dir/fullchain.pem" "$state/tls/current/fullchain.pem"; then exit 0; fi
+if [[ -f "$state/tls/current/fullchain.pem" ]] && cmp -s "$source_dir/fullchain.pem" "$state/tls/current/fullchain.pem" && [[ "$applied" == "$fingerprint" ]]; then exit 0; fi
 install -d -m 700 -o 1000 -g 1000 "$state/tls/$fingerprint"
 install -m 400 -o 1000 -g 1000 "$source_dir/fullchain.pem" "$state/tls/$fingerprint/fullchain.pem"
 install -m 400 -o 1000 -g 1000 "$source_dir/privkey.pem" "$state/tls/$fingerprint/privkey.pem"
-ln -s "$fingerprint" "$state/tls/current.new"
+[[ ! -e "$state/tls/current.new" || -L "$state/tls/current.new" ]] || { echo 'Unexpected certificate staging path.' >&2; exit 1; }
+ln -sfn "$fingerprint" "$state/tls/current.new"
 mv -Tf "$state/tls/current.new" "$state/tls/current"
-if [[ -f /etc/nginx/conf.d/freedomstream-https.conf ]]; then nginx -t; systemctl reload nginx; fi
-if [[ -f "$root/current/deploy/production/compose.yaml" ]]; then
+# Record application only after BOTH consumers reload successfully. If either
+# fails, the next timer retries even though the copied certificate is unchanged.
+if [[ -f /etc/nginx/conf.d/freedomstream-https.conf && -f "$root/current/deploy/production/compose.yaml" ]]; then
+  nginx -t
+  systemctl reload nginx
   docker compose --env-file "$state/.env" --env-file "$state/release.env" -f "$root/current/deploy/production/compose.yaml" restart relay
+  printf '%s\n' "$fingerprint" > "$state/tls/applied.new"
+  mv -Tf "$state/tls/applied.new" "$state/tls/applied"
 fi
 echo 'Installed the renewed FreedomStream certificate.'

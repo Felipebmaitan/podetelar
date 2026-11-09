@@ -1,4 +1,4 @@
-import type { APIRequestContext } from "@playwright/test";
+import { test, type APIRequestContext } from "@playwright/test";
 import { setTimeout as delay } from "node:timers/promises";
 
 /** Never let Playwright's network-error call log echo the administrator header. */
@@ -31,6 +31,9 @@ export async function createTestRoom(
     retry >= 1 &&
     retry <= 60
   ) {
+    // Admission may legitimately wait longer than Playwright's default 30s.
+    // Extend only for this one server-directed wait; streaming deadlines stay bounded.
+    test.setTimeout(test.info().timeout + retry * 1000 + 1000);
     await delay(retry * 1000 + 250);
     response = await create();
   }

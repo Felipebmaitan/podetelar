@@ -263,8 +263,8 @@ struct AudioRequest {
 
 async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     ensure!(
-        (1..=75).contains(&request.seconds),
-        "Fixture duration must be between 1 and 75 seconds."
+        (1..=900).contains(&request.seconds),
+        "Fixture duration must be between 1 and 900 seconds."
     );
     ensure!(
         request.linger_seconds <= 8

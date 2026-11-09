@@ -14,6 +14,7 @@ $id = Get-Content -LiteralPath (Join-Path $root 'current.json') -Raw | ConvertFr
 $runtime = Join-Path $root "versions/$id/runtime"
 $env:PATH = "$(Join-Path $runtime 'bin');$env:WINDIR\System32;$env:WINDIR"
 $env:GST_PLUGIN_SYSTEM_PATH_1_0 = Join-Path $runtime 'lib/gstreamer-1.0'
+$env:GST_PLUGIN_SCANNER_1_0 = Join-Path $runtime 'libexec/gstreamer-1.0/gst-plugin-scanner.exe'
 $env:GST_PLUGIN_PATH_1_0 = ''
 $probe = & (Join-Path $runtime 'bin/freedomstream-publisher.exe') --probe
 if ($LASTEXITCODE -ne 0) { throw 'Installed publisher probe failed.' }

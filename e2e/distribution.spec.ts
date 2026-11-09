@@ -8,8 +8,9 @@ test("room members download the verified Windows archive through the room UI", a
   baseURL,
 }, info) => {
   test.skip(
-    info.project.name === "mobile",
-    "One download verifies the shared artifact path.",
+    info.project.name === "mobile" ||
+      process.env.FREEDOMSTREAM_PUBLISHER_DOWNLOAD !== "1",
+    "Opt-in check for a server with an installed publisher archive.",
   );
   const created = await createTestRoom(
     request,
@@ -19,6 +20,8 @@ test("room members download the verified Windows archive through the room UI", a
   expect(created.status()).toBe(201);
   const { room, invitationUrl } = await created.json();
   const path = `/api/rooms/${room.id}/publisher`;
+  const available = await request.get(path);
+  expect(available.status()).toBe(200);
   expect((await page.request.get(`${path}/windows.zip`)).status()).toBe(401);
   await page.goto(invitationUrl);
   await page.getByLabel("Your name", { exact: true }).fill("Windows friend");
@@ -29,10 +32,6 @@ test("room members download the verified Windows archive through the room UI", a
     page.getByRole("button", { name: "Leave room", exact: true }),
   ).toBeVisible();
   const metadata = await page.request.get(path);
-  test.skip(
-    metadata.status() === 404,
-    "This server has no operator-installed publisher archive.",
-  );
   expect(metadata.status()).toBe(200);
   const release = await metadata.json();
   const download = page.waitForEvent("download");

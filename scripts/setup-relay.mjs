@@ -85,10 +85,13 @@ no-dynamic-realms
 allowed-peer-ip=${peer}
 denied-peer-ip=0.0.0.0-255.255.255.255
 denied-peer-ip=::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
-user-quota=4
-total-quota=32
+user-quota=8
+total-quota=64
 max-bps=100000000
-bps-capacity=100000000
+# Capacity accounts for reservations at allocation time, even for idle ICE
+# candidates. Reserving the whole port for each allocation admits only one.
+# Per-allocation policing stays enabled; aggregate host traffic is not shaped.
+bps-capacity=0
 relay-threads=1
 max-allocate-timeout=10
 max-allocate-lifetime=120

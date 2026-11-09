@@ -13,7 +13,7 @@ export async function loadPublisher(directory?: string) {
   ) as Record<string, unknown>;
   if (
     typeof release.filename !== "string" ||
-    !/^freedomstream-windows-x64-[\d.a-f-]+\.zip$/.test(release.filename) ||
+    !/^freedomstream-windows-x64-[\d.a-f-]+\.exe$/.test(release.filename) ||
     typeof release.version !== "string" ||
     !/^\d+\.\d+\.\d+$/.test(release.version) ||
     typeof release.commit !== "string" ||
@@ -53,23 +53,35 @@ export function publisherRoutes(
         commit: release.commit,
         sha256: release.sha256,
         size,
-        downloadUrl: `/api/rooms/${request.params.roomId}/publisher/windows.zip`,
+        downloadUrl: `/api/rooms/${request.params.roomId}/publisher/windows.exe`,
       };
     },
   );
   app.get<{ Params: { roomId: string } }>(
-    "/api/rooms/:roomId/publisher/windows.zip",
+    "/api/rooms/:roomId/publisher/windows.exe",
     async (request, reply) => {
       if (!admitted(request.params.roomId, request.cookies.fs_session))
         return reply.code(401).send({ error: "Room access required." });
       return reply
-        .type("application/zip")
+        .type("application/vnd.microsoft.portable-executable")
         .header(
           "Content-Disposition",
           `attachment; filename="${release.filename}"`,
         )
         .header("Content-Length", size)
         .send(createReadStream(path));
+    },
+  );
+  // Existing open room tabs can still follow their old download address.
+  app.get<{ Params: { roomId: string } }>(
+    "/api/rooms/:roomId/publisher/windows.zip",
+    async (request, reply) => {
+      if (!admitted(request.params.roomId, request.cookies.fs_session))
+        return reply.code(401).send({ error: "Room access required." });
+      return reply.redirect(
+        `/api/rooms/${request.params.roomId}/publisher/windows.exe`,
+        307,
+      );
     },
   );
 }

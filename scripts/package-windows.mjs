@@ -2,7 +2,6 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   copyFileSync,
-  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -11,6 +10,7 @@ import {
   utimesSync,
 } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
+import { preparePortableRuntime } from "./portable-runtime.mjs";
 
 if (process.platform !== "win32")
   throw new Error("Build the Windows release on Windows.");
@@ -60,27 +60,53 @@ if (existsSync(output))
 mkdirSync(output, { recursive: true });
 const notices = join(output, "notices");
 mkdirSync(notices);
-cpSync(
-  join(root, ".local/gstreamer/share/licenses"),
-  join(notices, "gstreamer"),
-  { recursive: true },
-);
-copyFileSync(
-  join(root, ".local/gstreamer/share/versions.txt"),
-  join(notices, "gstreamer-versions.txt"),
-);
+const { dumpbin } = await preparePortableRuntime(root, output, notices);
 const sha256 = (path) =>
   createHash("sha256").update(readFileSync(path)).digest("hex");
-copyFileSync(
-  join(root, "target/release/freedomstream-publisher.exe"),
-  join(output, "freedomstream-publisher.exe"),
+// The launcher must start even when the target PC has no shared Visual C++ CRT.
+execFileSync(
+  "cargo",
+  [
+    "build",
+    "--locked",
+    "--release",
+    "-p",
+    "freedomstream-portable",
+    "--target",
+    "x86_64-pc-windows-msvc",
+    "--target-dir",
+    join(root, ".local/portable-target"),
+  ],
+  {
+    cwd: root,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      RUSTFLAGS:
+        "-C target-feature=+crt-static -C link-arg=/DEPENDENTLOADFLAG:0x800",
+      CARGO_ENCODED_RUSTFLAGS:
+        "-C\x1ftarget-feature=+crt-static\x1f-C\x1flink-arg=/DEPENDENTLOADFLAG:0x800",
+    },
+  },
 );
-for (const file of readdirSync(join(root, "deploy/windows")))
-  copyFileSync(join(root, "deploy/windows", file), join(output, file));
-copyFileSync(
-  join(root, "deploy/native-runtime.json"),
-  join(output, "native-runtime.json"),
+const launcher = join(
+  root,
+  ".local/portable-target/x86_64-pc-windows-msvc/release/freedomstream-portable.exe",
 );
+if (
+  /^\s+(?:MSVCP|VCRUNTIME|api-ms-win-crt-).*\.dll\s*$/im.test(
+    execFileSync(dumpbin, ["/DEPENDENTS", launcher], { encoding: "utf8" }),
+  )
+)
+  throw new Error("The portable launcher requires a shared CRT.");
+if (
+  !/^\s+800\s+Dependent Load Flags\s*$/im.test(
+    execFileSync(dumpbin, ["/LOADCONFIG", launcher], { encoding: "utf8" }),
+  )
+)
+  throw new Error(
+    "The launcher must resolve its Windows imports from System32.",
+  );
 copyFileSync(join(root, "LICENSE"), join(notices, "FreedomStream-MIT.txt"));
 const metadata = JSON.parse(
   execFileSync(
@@ -98,13 +124,14 @@ const included = new Set(metadata.resolve.nodes.map((node) => node.id));
 const index = [
   "# Windows publisher dependency notices",
   "",
-  "FreedomStream is MIT licensed. Each dependency retains the license listed below. The runtime is downloaded directly from GStreamer; its complete share/licenses directory remains installed. No codec patent license or hardware qualification is implied.",
+  "FreedomStream is MIT licensed. Each dependency retains its own license. The curated runtime, complete corresponding library sources and build recipes accompany this executable. See RUNTIME.md and sources/README.md. No codec patent license or hardware qualification is implied.",
   "",
 ];
 for (const pkg of metadata.packages
   .filter((pkg) => included.has(pkg.id))
   .sort((a, b) => a.id.localeCompare(b.id))) {
-  if (pkg.name === "freedomstream-publisher") continue; // root MIT notice above
+  if (["freedomstream-publisher", "freedomstream-portable"].includes(pkg.name))
+    continue;
   const directory = resolve(pkg.manifest_path, "..");
   const files = readdirSync(directory, {
     recursive: true,
@@ -214,10 +241,7 @@ writeFileSync(
 );
 // Quote a literal path, not a command assembled from user-supplied values.
 const quote = (value) => "'" + value.replaceAll("'", "''") + "'";
-const archive = join(
-  resolve(output, ".."),
-  `freedomstream-windows-x64-${id}.zip`,
-);
+const archive = join(resolve(output, ".."), `freedomstream-payload-${id}.zip`);
 execFileSync(
   "powershell.exe",
   [
@@ -227,15 +251,28 @@ execFileSync(
   ],
   { stdio: "inherit" },
 );
-const { size } = await import("node:fs").then((fs) => fs.statSync(archive));
+const payload = readFileSync(archive);
+const footer = Buffer.alloc(56);
+footer.writeBigUInt64LE(BigInt(payload.length));
+createHash("sha256").update(payload).digest().copy(footer, 8);
+footer.write("FREEDOMSTREAM01!", 40, "ascii");
+const executable = join(
+  resolve(output, ".."),
+  `freedomstream-windows-x64-${id}.exe`,
+);
+writeFileSync(
+  executable,
+  Buffer.concat([readFileSync(launcher), payload, footer]),
+);
+const { size } = await import("node:fs").then((fs) => fs.statSync(executable));
 writeFileSync(
   join(resolve(output, ".."), "publisher.json"),
   JSON.stringify(
     {
-      filename: basename(archive),
+      filename: basename(executable),
       version,
       commit,
-      sha256: sha256(archive),
+      sha256: sha256(executable),
       size,
     },
     null,
@@ -243,5 +280,5 @@ writeFileSync(
   ) + "\n",
 );
 console.log(
-  `Packaged ${id}${process.argv.includes("--qualification") ? " (local qualification only)" : ""}. Archive and publisher.json: ${resolve(output, "..")}`,
+  `Packaged ${id}${process.argv.includes("--qualification") ? " (local qualification only)" : ""}. Portable EXE and publisher.json: ${resolve(output, "..")}`,
 );

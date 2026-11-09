@@ -71,15 +71,15 @@ jobs:
       - run: npm run native:test
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 build
       - run: npm run native:package
-      - name: Qualify per-user installation
+      - name: Qualify bundled portable application
         shell: powershell
         run: |
-          $package = @(Get-ChildItem .local/distribution -Directory)[0].FullName
-          & scripts/qualify-installation.ps1 -PackageDirectory $package
+          $release = Get-Content .local/distribution/publisher.json -Raw | ConvertFrom-Json
+          & scripts/qualify-portable.ps1 -Executable (Join-Path .local/distribution $release.filename)
       - uses: actions/upload-artifact@v4
         with:
           name: freedomstream-windows-x64
           path: |
-            .local/distribution/*.zip
+            .local/distribution/*.exe
             .local/distribution/publisher.json
           retention-days: 14

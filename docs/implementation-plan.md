@@ -2,7 +2,7 @@
 
 Each phase is an acceptance gate. Phase 1 is the initial commit on `main`; every later phase gets its own branch and PR. Felipe authorized autonomous implementation and merging: each PR must pass its acceptance checks and a new GPT-6.1-Sol review at high reasoning before merge. Address review findings before proceeding. Code can be MIT licensed while third-party runtimes retain their own licenses; qualify distribution licenses before bundling native media dependencies. Report external hardware/deployment verification separately and do not waive it merely to finish the sequence.
 
-**Current checkpoint:** Phases 1–8 are merged after checks and review approval. The deployed Windows test exposed missing system clipboard support and setup friction. The next two PRs repair clipboard integration, then replace the script ZIP with a fully bundled portable EXE. Hardware, fresh-PC, real-game/group-call and higher-rate qualification remain separate external gates; see [Phase 8 qualification](phase8-qualification.md).
+**Current checkpoint:** Phases 1–8 and the clipboard repair (PR #8) are merged after checks and review approval. Felipe confirmed pasting an invitation from Firefox; copying it back out remains an unperformed manual check. The next PR replaces the script ZIP with a fully bundled portable EXE. Hardware, fresh-PC, real-game/group-call and higher-rate qualification remain separate external gates; see [Phase 8 qualification](phase8-qualification.md).
 
 ## 1. Persistent private-room foundation — initial commit
 

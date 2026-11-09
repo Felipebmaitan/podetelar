@@ -1,0 +1,348 @@
+{
+  "gstreamerCommit": "202e42fa1bbff4ed61e08d47202db5c744987f0c",
+  "cerberoCommit": "6fab30afc5d71596a72f878727232da3d4bcf44d",
+  "files": [
+    {
+      "path": "bin/ffi-7.dll",
+      "component": "libffi",
+      "sha256": "f11c4da62fbee6ec72e8550be8f9a5f575b0011fece3c78998967abdb29d2777"
+    },
+    {
+      "path": "bin/gio-2.0-0.dll",
+      "component": "glib",
+      "sha256": "a875107c180fb248236d1e96e14f362f117124df2fee1237fa2142b7b363941b"
+    },
+    {
+      "path": "bin/glib-2.0-0.dll",
+      "component": "glib",
+      "sha256": "caf29cfc1467e3a3e5e91f0f649bd7a501107d9b3c32a2866b08e2ecfa209e3e"
+    },
+    {
+      "path": "bin/gmodule-2.0-0.dll",
+      "component": "glib",
+      "sha256": "86be81a7011ec07e1992ce7a742ad881a80ae38583bbcffbf973498d4748dac5"
+    },
+    {
+      "path": "bin/gobject-2.0-0.dll",
+      "component": "glib",
+      "sha256": "811dab4b420e520d91ac3fe5202975cc90caf2c53ef2f8f0fce8f8588a735c7a"
+    },
+    {
+      "path": "bin/gst-inspect-1.0.exe",
+      "component": "gstreamer",
+      "sha256": "79b877fa944f4bedd3f8f6b04ebfd16a149943c8479960a57e2796a2cb87dcda"
+    },
+    {
+      "path": "bin/gstapp-1.0-0.dll",
+      "component": "gstreamer",
+      "sha256": "5215eb22914baabec9dc5c4750d9b09ea3175000eaf7a715ea8c35b60643dc48"
+    },
+    {
+      "path": "bin/gstaudio-1.0-0.dll",
+      "component": "gstreamer",
+      "sha256": "96f0fe6ed46aeb9da0adf25cc4fe9736ad358910568e0a05f31de6121bdeb59d"
+    },
+    {
+      "path": "bin/gstbase-1.0-0.dll",
+      "component": "gstreamer",
+      "sha256": "7a5c93554532e2b0cd282ffd356a12ad5e65a7424447048107ef221bffbeca6c"
+    },
+    {
+      "path": "bin/gstcodecparsers-1.0-0.dll",
+      "component": "gstreamer",
+      "sha256": "4c59a8666635bd972e3eb92cea669366fd5f50b648c64fa43b88c7b15bc3c387"
+    },
+    {
+      "path": "bin/gstcodecs-1.0-0.dll",
+      "component": "gstreamer",
+      "sha256": "c1ca313592b5b632e899ed0689b35ad32c241e54c262b1816d5e2585e8253f00"
+    },
+    {
+      "path": "bin/gstcuda-1.0-0.dll",
+      "component": "gstreamer",
+      "sha256": "c0168d5aa784e14a3a2e978bc12401bc207d64827d34dbf926e25431173fa55d"
+    },
+    {
+      "path": "bin/gstd3d11-1.0-0.dll",
+      "component": "gstreamer",
+      "sha256": "cb5d091164c7fe66b146ea7a002116d01a7da6d3a3e4726f83d7f51ad4340df0"
+    },
+    {
+      "path": "bin/gstd3d12-1.0-0.dll",
+      "component": "gstreamer",
+      "sha256": "2adcb8a10c8a7034747dff0c15bc7430469ccd44aaa7ee56fb4420d6d4f9becc"
+    },
+    {
+      "path": "bin/gstd3dshader-1.0-0.dll",
+      "component": "gstreamer",
+      "sha256": "ce250f227e6dfc72996b0265d294dcfda134836be5840ec049e4dab9a34f36fd"
+    },
+    {
+      "path": "bin/gstdxva-1.0-0.dll",
+      "component": "gstreamer",
+      "sha256": "722f62010741c29003ac00171c5aa1f67addd72fa89c24ac8de18dfea3905098"
+    },
+    {
+      "path": "bin/gstfft-1.0-0.dll",
+      "component": "gstreamer",
+      "sha256": "339cbaad1b49b232763a911d93fe94ea0f2fd807bd92841c99b22aa802af5727"
+    },
+    {
+      "path": "bin/gstgl-1.0-0.dll",
+      "component": "gstreamer",
+      "sha256": "7ce669763c9335c7c02138191fdc65d87053e1ff5b6bcd748d7d87bcc188039c"
+    },
+    {
+      "path": "bin/gstpbutils-1.0-0.dll",
+      "component": "gstreamer",
+      "sha256": "3ff570aa36ae2b26898b9908a124ea25cf2573235f3e6e6baf18cc0275f96373"
+    },
+    {
+      "path": "bin/gstreamer-1.0-0.dll",
+      "component": "gstreamer",
+      "sha256": "fc24ab572185d53d85d4e4e8dbab11d7d26e6e0c852fe6dc992c34e98edc4ea1"
+    },
+    {
+      "path": "bin/gsttag-1.0-0.dll",
+      "component": "gstreamer",
+      "sha256": "97e0991574f51f4dddb9736d03454dc09e0c2dd5eed5ca18cfd970381efd38c5"
+    },
+    {
+      "path": "bin/gstvideo-1.0-0.dll",
+      "component": "gstreamer",
+      "sha256": "840ea975226baf73898fd0f7c26b62b8ee6b556bf2142cb88f29da468ed397f6"
+    },
+    {
+      "path": "bin/intl-8.dll",
+      "component": "proxy-libintl",
+      "sha256": "2ef6a23f712fd7b9bf72b2fef1a1fd5cde27ba88f7d164e9e6de18936c1f51b0"
+    },
+    {
+      "path": "bin/jpeg8.dll",
+      "component": "libjpeg-turbo",
+      "sha256": "79708ddadd007e181a64ca58ef084f7b0e48d4bce806154994bdd4d3539cbef3"
+    },
+    {
+      "path": "bin/orc-0.4-0.dll",
+      "component": "orc",
+      "sha256": "d2528c94165e7e1a05b57e8053bc328a79caa8e608c6126605fc778c0a1bec3f"
+    },
+    {
+      "path": "bin/pcre2-8-0.dll",
+      "component": "pcre2",
+      "sha256": "6e3a73868d2ace1cecd6bcd6f35051cac73259c3d852bd902ac4ea68bb97030a"
+    },
+    {
+      "path": "bin/z-1.dll",
+      "component": "zlib",
+      "sha256": "b84851f9084247f466c076ee993bd5a92f3462466c4877b5c4ecc4125743a060"
+    },
+    {
+      "path": "lib/gstreamer-1.0/gstamfcodec.dll",
+      "component": "gstreamer",
+      "sha256": "0dabd5cb9f7d4e3b644536141a2e25570f478944b719c461b6fe3e07ae143cb9"
+    },
+    {
+      "path": "lib/gstreamer-1.0/gstapp.dll",
+      "component": "gstreamer",
+      "sha256": "16dd9a5782b35f1aebe88724cda5a69840590cbd6c5a71444e5e78d4aab5deca"
+    },
+    {
+      "path": "lib/gstreamer-1.0/gstaudioconvert.dll",
+      "component": "gstreamer",
+      "sha256": "d9157b4f4c939d161c547de76016c7f9cf36762900222ced1149d00f9db1a6ec"
+    },
+    {
+      "path": "lib/gstreamer-1.0/gstaudiofx.dll",
+      "component": "gstreamer",
+      "sha256": "1117d5aa7f20faa3f68c5c93786423f7b229511655873843675e0a1fb39954c7"
+    },
+    {
+      "path": "lib/gstreamer-1.0/gstaudiomixer.dll",
+      "component": "gstreamer",
+      "sha256": "04e048f17fb05aa4b33c830d74f1761cea4243449676791111a284b500129deb"
+    },
+    {
+      "path": "lib/gstreamer-1.0/gstaudioresample.dll",
+      "component": "gstreamer",
+      "sha256": "faa9ac48b6f71ea18fb34cade5b987d9a1c15f961dc00af822d7f772d01a19ea"
+    },
+    {
+      "path": "lib/gstreamer-1.0/gstaudiotestsrc.dll",
+      "component": "gstreamer",
+      "sha256": "cb2f0540d07bb2cd7c11b9148000044c9483cdfb76964e883fa010c7210cc170"
+    },
+    {
+      "path": "lib/gstreamer-1.0/gstcoreelements.dll",
+      "component": "gstreamer",
+      "sha256": "0c0f41342d8a9fafeb89c0327e9951bb48efc343361af01807f86066d29cf36a"
+    },
+    {
+      "path": "lib/gstreamer-1.0/gstd3d11.dll",
+      "component": "gstreamer",
+      "sha256": "694661d2e182d29a8f42772c56baddb1a58c187ce63afd5296b40b4b87178808"
+    },
+    {
+      "path": "lib/gstreamer-1.0/gstjpeg.dll",
+      "component": "gstreamer",
+      "sha256": "a24d6f36a05543ef0564c5c13e8ae4d3be972fd9ee75a340d8a147d31d74fcc4"
+    },
+    {
+      "path": "lib/gstreamer-1.0/gstnvcodec.dll",
+      "component": "gstreamer",
+      "sha256": "5359f9cd4378b7b36f2203ad6e47f91b573d1cf2411af4781414015ec8838015"
+    },
+    {
+      "path": "lib/gstreamer-1.0/gstvideoconvertscale.dll",
+      "component": "gstreamer",
+      "sha256": "f09ef47ece05b570cf1af3e5dcb4fe6bc0815b43c28acb795caddceba5a78830"
+    },
+    {
+      "path": "lib/gstreamer-1.0/gstvideoparsersbad.dll",
+      "component": "gstreamer",
+      "sha256": "7d842f82613ac7f836889792f4a5dc0a98dab048fb0370a16af7930e2be8f9e4"
+    },
+    {
+      "path": "lib/gstreamer-1.0/gstvideorate.dll",
+      "component": "gstreamer",
+      "sha256": "1c6255cf70fa6b9f6f4aa6c8a7606ac83cf5f028644387ee6b5c14ae8b4f9862"
+    },
+    {
+      "path": "lib/gstreamer-1.0/gstwasapi2.dll",
+      "component": "gstreamer",
+      "sha256": "4f98fd226860e45eedc5f8db86aac0827efa1afd72ab76dad6c208a7422d1cab"
+    },
+    {
+      "path": "libexec/gstreamer-1.0/gst-plugin-scanner.exe",
+      "component": "gstreamer",
+      "sha256": "cdbbe81447a84a27c49d3867d918bbdea2e5f1368976e0883169098211202fd5"
+    }
+  ],
+  "sources": [
+    {
+      "filename": "cerbero-1.28.8.tar.gz",
+      "url": "https://codeload.github.com/GStreamer/cerbero/tar.gz/refs/tags/1.28.8",
+      "sha256": "50361646dbab5c2ccd3ff5a4135fe1aab78ebb8d0f00c21b778cd46ab8faaf34"
+    },
+    {
+      "filename": "directx-headers-1.611.0.tar.gz",
+      "url": "https://codeload.github.com/microsoft/DirectX-Headers/tar.gz/refs/tags/v1.611.0",
+      "sha256": "edb8b52b1379f841df5d0d5e11dde08e0c3912508179fb3711f163382e88865c"
+    },
+    {
+      "filename": "directxmath-feb2024.tar.gz",
+      "url": "https://codeload.github.com/microsoft/DirectXMath/tar.gz/refs/tags/feb2024",
+      "sha256": "f78bb400dcbedd987f2876b2fb6fe12199d795cd6a912f965ef3a2141c78303d"
+    },
+    {
+      "filename": "glib-2.82.4.tar.xz",
+      "url": "https://download.gnome.org/sources/glib/2.82/glib-2.82.4.tar.xz",
+      "sha256": "37dd0877fe964cd15e9a2710b044a1830fb1bd93652a6d0cb6b8b2dff187c709"
+    },
+    {
+      "filename": "gstreamer-202e42fa.tar.gz",
+      "url": "https://codeload.github.com/GStreamer/gstreamer/tar.gz/202e42fa1bbff4ed61e08d47202db5c744987f0c",
+      "sha256": "09e6f16822cf94503ab19674e4a877e915ab96319f5d2457e80f6c539c1cd163"
+    },
+    {
+      "filename": "libffi-meson-3.2.9999.5.tar.bz2",
+      "url": "https://gstreamer.freedesktop.org/src/mirror/libffi/libffi-meson-3.2.9999.5.tar.bz2",
+      "sha256": "b4d403932a8860589e571300e807e40bb4f7d9d2630c8ec19c29fb9e7b0fd227"
+    },
+    {
+      "filename": "libjpeg-turbo-3.1.0.tar.gz",
+      "url": "https://gstreamer.freedesktop.org/src/mirror/libjpeg-turbo/libjpeg-turbo-3.1.0.tar.gz",
+      "sha256": "9564c72b1dfd1d6fe6274c5f95a8d989b59854575d4bbee44ade7bc17aa9bc93"
+    },
+    {
+      "filename": "orc-0.4.42.tar.xz",
+      "url": "https://gstreamer.freedesktop.org/src/orc/orc-0.4.42.tar.xz",
+      "sha256": "7ec912ab59af3cc97874c456a56a8ae1eec520c385ec447e8a102b2bd122c90c"
+    },
+    {
+      "filename": "pcre2-10.42.tar.bz2",
+      "url": "https://gstreamer.freedesktop.org/src/mirror/pcre2/pcre2-10.42.tar.bz2",
+      "sha256": "8d36cd8cb6ea2a4c2bb358ff6411b0c788633a2a45dabbf1aeb4b701d1b5e840"
+    },
+    {
+      "filename": "proxy-libintl-0.5.tar.gz",
+      "url": "https://codeload.github.com/frida/proxy-libintl/tar.gz/refs/tags/0.5",
+      "sha256": "f7a1cbd7579baaf575c66f9d99fb6295e9b0684a28b095967cfda17857595303"
+    },
+    {
+      "filename": "zlib-1.3.1.tar.gz",
+      "url": "https://zlib.net/fossils/zlib-1.3.1.tar.gz",
+      "sha256": "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
+    }
+  ],
+  "licenseDirectories": [
+    "gstreamer-1.0",
+    "gst-plugins-base-1.0",
+    "gst-plugins-bad-1.0",
+    "glib",
+    "libffi",
+    "proxy-libintl",
+    "libjpeg-turbo",
+    "orc",
+    "pcre2",
+    "zlib"
+  ],
+  "windowsImports": [
+    "advapi32.dll",
+    "api-ms-win-core-synch-l1-2-0.dll",
+    "api-ms-win-core-winrt-l1-1-0.dll",
+    "api-ms-win-core-winrt-string-l1-1-0.dll",
+    "api-ms-win-crt-conio-l1-1-0.dll",
+    "api-ms-win-crt-convert-l1-1-0.dll",
+    "api-ms-win-crt-environment-l1-1-0.dll",
+    "api-ms-win-crt-filesystem-l1-1-0.dll",
+    "api-ms-win-crt-heap-l1-1-0.dll",
+    "api-ms-win-crt-locale-l1-1-0.dll",
+    "api-ms-win-crt-math-l1-1-0.dll",
+    "api-ms-win-crt-process-l1-1-0.dll",
+    "api-ms-win-crt-runtime-l1-1-0.dll",
+    "api-ms-win-crt-stdio-l1-1-0.dll",
+    "api-ms-win-crt-string-l1-1-0.dll",
+    "api-ms-win-crt-time-l1-1-0.dll",
+    "api-ms-win-crt-utility-l1-1-0.dll",
+    "avrt.dll",
+    "bcrypt.dll",
+    "bcryptprimitives.dll",
+    "combase.dll",
+    "crypt32.dll",
+    "d2d1.dll",
+    "d3d11.dll",
+    "d3d12.dll",
+    "dnsapi.dll",
+    "dwmapi.dll",
+    "dxgi.dll",
+    "gdi32.dll",
+    "imm32.dll",
+    "iphlpapi.dll",
+    "kernel32.dll",
+    "mmdevapi.dll",
+    "msdmo.dll",
+    "ntdll.dll",
+    "ole32.dll",
+    "oleaut32.dll",
+    "opengl32.dll",
+    "shell32.dll",
+    "shlwapi.dll",
+    "user32.dll",
+    "uxtheme.dll",
+    "winmm.dll",
+    "ws2_32.dll"
+  ],
+  "licenseDocuments": [
+    {
+      "source": "https://visualstudio.microsoft.com/wp-content/uploads/2024/03/Visual-Studio-2022-Diagnostic-Build-Tools-Agent-License_Update-March-2024_EN.docx",
+      "file": "deploy/licenses/Microsoft-BuildTools-License.txt",
+      "sha256": "0c1bb848fbc0cd9f1679d1a77db087141fa619cd2cd9a60291f1e20a0162b69d"
+    },
+    {
+      "source": "https://visualstudio.microsoft.com/wp-content/uploads/2021/09/Visual-C-Runtime-2015-2022-License-1.docx",
+      "file": "deploy/licenses/Microsoft-CRT-License.txt",
+      "sha256": "ed875263593823eb4b685cd543eda0ab075a6f57a76f7718908f2237466c442f"
+    }
+  ]
+}

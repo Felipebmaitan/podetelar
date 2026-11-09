@@ -1,5 +1,13 @@
-import { test, type APIRequestContext } from "@playwright/test";
+import { test, type APIRequestContext, type Page } from "@playwright/test";
 import { setTimeout as delay } from "node:timers/promises";
+import { appendFileSync } from "node:fs";
+
+/** Navigation errors must not echo a private invitation URL into a call log. */
+export async function openTestRoom(page: Page, invitation: string) {
+  await page.goto(invitation).catch(() => {
+    throw new Error("Could not open the private test room.");
+  });
+}
 
 /** Never let Playwright's network-error call log echo the administrator header. */
 export async function createTestRoom(
@@ -36,6 +44,14 @@ export async function createTestRoom(
     test.setTimeout(test.info().timeout + retry * 1000 + 1000);
     await delay(retry * 1000 + 250);
     response = await create();
+  }
+  // Optional cleanup ledger contains public room IDs only, never invitations/cookies.
+  const ledger = process.env.FREEDOMSTREAM_TEST_ROOM_IDS;
+  if (ledger && response.status() === 201) {
+    const body = await response.json();
+    if (!/^[A-Za-z0-9_-]{22}$/.test(body.room.id))
+      throw new Error("Invalid test room ID.");
+    appendFileSync(ledger, body.room.id + "\n", { mode: 0o600 });
   }
   return response;
 }

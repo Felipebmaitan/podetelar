@@ -13,8 +13,11 @@ export function toneFixtures(directory: string) {
   mkdirSync(directory, { recursive: true });
   const game = join(directory, "Game.exe");
   const discord = join(directory, "Discord.exe");
-  copyFileSync(nativeExecutable(), game);
-  copyFileSync(nativeExecutable(), discord);
+  // A portable launcher keeps its own name separate from the publisher process.
+  // Tone fixtures need their real process names for application-audio policy.
+  const tone = process.env.FREEDOMSTREAM_NATIVE_TONE_EXE ?? nativeExecutable();
+  copyFileSync(tone, game);
+  copyFileSync(tone, discord);
   const children: ChildProcess[] = [];
   const start = (executable: string, frequency: number) => {
     const child = spawn(executable, ["--audio-tone", String(frequency)], {

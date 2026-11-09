@@ -27,7 +27,7 @@ node /opt/freedomstream/releases/COMMIT/scripts/prepare-production.mjs /opt/free
 
 This preserves existing random secrets. `ROOM_HOST` may be the public IP;
 `TURN_HOST` must be a DNS name resolving directly to the VPS. It prepares `.env`, `secrets.json`, private SFU/relay config,
-and nginx snippets, without printing secrets. Copy a committed Windows ZIP and
+and nginx snippets, without printing secrets. Copy a committed portable Windows EXE and
 its `publisher.json` into `shared/publisher`, then make the files read-only to the
 app user. Keep all state directories mode 700 and credential files mode 600.
 

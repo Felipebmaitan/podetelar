@@ -27,12 +27,13 @@ export function PublisherDownload({ roomId }: { roomId: string }) {
     <section className="invite-panel">
       <h2>Share from Windows</h2>
       <p>
-        Get the desktop publisher for game audio and hardware encoding. Extract
-        the ZIP, then right-click Install.ps1 and choose Run with PowerShell.
-        Open FreedomStream from the Start menu and paste your room invitation.
+        Download and open the portable EXE for game audio and hardware encoding,
+        then paste your room invitation. Everything is bundled: no installation,
+        PowerShell, or dependency download. First launch prepares a private
+        runtime cache on your PC.
       </p>
       <a className="button secondary" href={release.downloadUrl}>
-        Download Windows publisher {release.version}
+        Download portable Windows app {release.version}
       </a>
       <details>
         <summary>Verify download</summary>

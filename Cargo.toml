@@ -1,5 +1,5 @@
 [workspace]
-members = ["apps/publisher"]
+members = ["apps/publisher", "apps/portable"]
 resolver = "3"
 exclude = [".local/native-sdk/livekit"]
 

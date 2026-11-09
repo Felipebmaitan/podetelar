@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
-import { createTestRoom } from "../scripts/test-room.js";
+import { createTestRoom, openTestRoom } from "../scripts/test-room.js";
 
 for (const codec of ["h265", "h264"] as const) {
   test(`native hardware ${codec} reaches a browser through the SFU`, async ({
@@ -50,7 +50,7 @@ for (const codec of ["h265", "h264"] as const) {
         }
       };
     });
-    await page.goto(invitationUrl);
+    await openTestRoom(page, invitationUrl);
     const receiveCodecs = await page.evaluate(() =>
       RTCRtpReceiver.getCapabilities("video")?.codecs.map((codec) =>
         codec.mimeType.toLowerCase(),

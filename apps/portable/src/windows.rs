@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, ensure};
 use std::{
-    os::windows::{ffi::OsStrExt, io::AsRawHandle},
+    os::windows::ffi::OsStrExt,
     path::Path,
     process::{Command, ExitStatus},
 };
@@ -10,19 +10,43 @@ use windows_sys::Win32::{
         GetFileVersionInfoSizeW, GetFileVersionInfoW, VS_FIXEDFILEINFO, VerQueryValueW,
     },
     System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
-        SetInformationJobObject,
+        CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JobObjectExtendedLimitInformation, SetInformationJobObject,
     },
     System::LibraryLoader::SetDllDirectoryW,
 };
 
-struct Job(HANDLE);
-impl Drop for Job {
+mod process;
+
+struct Handle(HANDLE);
+impl Drop for Handle {
     fn drop(&mut self) {
         unsafe {
             CloseHandle(self.0);
         }
+    }
+}
+
+fn lifetime_job() -> Result<Handle> {
+    unsafe {
+        let raw = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        ensure!(
+            !raw.is_null(),
+            "Could not create the publisher lifetime guard."
+        );
+        let job = Handle(raw);
+        let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        ensure!(
+            SetInformationJobObject(
+                job.0,
+                JobObjectExtendedLimitInformation,
+                &limits as *const _ as *const _,
+                std::mem::size_of_val(&limits) as u32
+            ) != 0,
+            "Could not configure the publisher lifetime guard."
+        );
+        Ok(job)
     }
 }
 
@@ -89,34 +113,146 @@ pub fn run(command: &mut Command, bundled_probe: bool) -> Result<ExitStatus> {
             SetDllDirectoryW(selected.as_ptr()) != 0,
             "Could not configure the runtime DLL directory."
         );
-        let raw_job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-        ensure!(
-            !raw_job.is_null(),
-            "Could not create the publisher lifetime guard."
-        );
-        let job = Job(raw_job);
-        let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        ensure!(
-            SetInformationJobObject(
-                job.0,
-                JobObjectExtendedLimitInformation,
-                &limits as *const _ as *const _,
-                std::mem::size_of_val(&limits) as u32
-            ) != 0,
-            "Could not configure the publisher lifetime guard."
-        );
-        let mut child = command
-            .spawn()
-            .context("Could not start the bundled publisher.")?;
-        if AssignProcessToJobObject(job.0, child.as_raw_handle() as HANDLE) == 0 {
-            let _ = child.kill();
-            let _ = child.wait();
-            anyhow::bail!("Could not guard the publisher process lifetime.");
-        }
-        let result = child.wait().context("Could not wait for the publisher.");
+        let job = lifetime_job()?;
+        // Job membership is established by the kernel during creation, before
+        // the publisher or any descendant can run, even if this launcher dies.
+        let child = process::spawn(command, job.0, 0)?;
+        let result = child.wait();
         // Closing the job also ends any unexpected surviving descendants.
         drop(job);
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        process::{Child, Stdio},
+        time::{Duration, Instant},
+    };
+    use windows_sys::Win32::{
+        Foundation::WAIT_OBJECT_0,
+        System::{
+            JobObjects::IsProcessInJob,
+            Threading::{
+                CREATE_SUSPENDED, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+                PROCESS_SYNCHRONIZE, TerminateProcess, WaitForSingleObject,
+            },
+        },
+    };
+
+    // Child-only fixture: stop immediately after kernel creation, before the
+    // publisher could execute any code. This is the former orphaning window.
+    #[test]
+    fn startup_guardian() {
+        let Some(root) = std::env::var_os("FREEDOMSTREAM_TEST_GUARDIAN") else {
+            return;
+        };
+        let root = std::path::PathBuf::from(root);
+        let job = lifetime_job().unwrap();
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command.args(["--exact", "windows::tests::argument_fixture"]);
+        let child = process::spawn(&command, job.0, CREATE_SUSPENDED).unwrap();
+        let mut member = 0;
+        assert_ne!(
+            unsafe { IsProcessInJob(child.raw_handle(), job.0, &mut member) },
+            0
+        );
+        assert_ne!(
+            member, 0,
+            "Child must belong to its job at the creation boundary."
+        );
+        std::fs::write(root.join("ready.tmp"), child.id.to_string()).unwrap();
+        std::fs::rename(root.join("ready.tmp"), root.join("ready")).unwrap();
+        loop {
+            std::thread::park();
+        }
+    }
+
+    struct Guardian(Child);
+    impl Drop for Guardian {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    #[test]
+    fn startup_termination_cannot_leave_an_unassigned_child() {
+        let root = tempfile::tempdir().unwrap();
+        let mut guardian = Guardian(
+            Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "windows::tests::startup_guardian", "--nocapture"])
+                .env("FREEDOMSTREAM_TEST_GUARDIAN", root.path())
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        let ready = root.path().join("ready");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !ready.is_file() {
+            assert!(
+                guardian.0.try_wait().unwrap().is_none(),
+                "Creation fixture exited early."
+            );
+            assert!(Instant::now() < deadline, "Creation fixture timed out.");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let pid: u32 = std::fs::read_to_string(ready).unwrap().parse().unwrap();
+        let raw = unsafe {
+            OpenProcess(
+                PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
+                0,
+                pid,
+            )
+        };
+        assert!(!raw.is_null());
+        let child = Handle(raw);
+        guardian.0.kill().unwrap();
+        guardian.0.wait().unwrap();
+        let outcome = unsafe { WaitForSingleObject(child.0, 5000) };
+        if outcome != WAIT_OBJECT_0 {
+            unsafe {
+                TerminateProcess(child.0, 1);
+                WaitForSingleObject(child.0, 1000);
+            }
+        }
+        assert_eq!(
+            outcome, WAIT_OBJECT_0,
+            "Publisher survived termination during startup."
+        );
+    }
+
+    #[test]
+    fn argument_fixture() {
+        let Some(expected) = std::env::var_os("FREEDOMSTREAM_TEST_ARGUMENT") else {
+            return;
+        };
+        assert_eq!(std::env::args_os().next_back().unwrap(), expected);
+    }
+
+    #[test]
+    fn windows_argument_quoting_and_environment_reach_the_real_child() {
+        let expected = "spaces λ \"quoted\" trailing\\";
+        let job = lifetime_job().unwrap();
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "windows::tests::argument_fixture",
+                "--nocapture",
+                "--skip",
+                expected,
+            ])
+            .env("FREEDOMSTREAM_TEST_ARGUMENT", expected);
+        assert!(
+            process::spawn(&command, job.0, 0)
+                .unwrap()
+                .wait()
+                .unwrap()
+                .success()
+        );
     }
 }

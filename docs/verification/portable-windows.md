@@ -7,7 +7,8 @@ a fresh PC, real games, physical 4K120 or a complete group evening.
 ## Passed evidence
 
 - Node 24 formatting/types/API/web/policy tests and builds; native formatting,
-  clippy and 23 Rust tests (20 publisher, three archive/cache tests).
+  clippy and 27 Rust tests (20 publisher, seven portable tests including Windows
+  process-creation fixture entry points).
 - Bundled payload generation with 43 allowlisted media files, 15 LGPL plugin
   metadata checks, PE dependency closure, 11 checksum-pinned source/build archives,
   Cargo/WebRTC notices and unmodified release CRT provenance/license texts.
@@ -20,6 +21,12 @@ a fresh PC, real games, physical 4K120 or a complete group evening.
 - The running publisher loaded the installed 14.51.36247.0 CRT trio after version
   comparison with the bundled 14.44.35211.0 files. Forcibly terminating its launcher
   ended the owned publisher through the Windows job guard.
+- Review found that post-spawn job assignment left a startup termination window.
+  The publisher now joins through `PROC_THREAD_ATTRIBUTE_JOB_LIST` during
+  `CreateProcessW`. A controlled regression confirms membership at creation,
+  kills the launcher while its child is still suspended, and verifies the child
+  terminates. A separate real-child test preserves quoted Unicode/trailing-slash
+  arguments and the requested environment. No nightly Rust API is required.
 - Docker build/smoke with persisted private rooms, and the standard browser suite:
   **10 passed, six skipped**. The opt-in room download separately passed and
   verified all EXE bytes against the authenticated release manifest.

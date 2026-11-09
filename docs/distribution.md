@@ -23,6 +23,10 @@ with older DLLs. The package remains usable without a shared CRT installation.
 An incomplete cache is retained
 for inspection instead of overwritten. Move that version folder aside to retry.
 
+The publisher joins its cleanup job during Windows process creation, before it
+can run or create descendants. Closing or forcibly terminating the launcher
+therefore ends its publisher and owned child processes, including during startup.
+
 Completed caches are reused without overwriting user changes. In particular,
 compatible LGPL DLL replacements remain usable. Each release gets a separate
 cache. The app's **Licenses and library sources** button opens its notices folder.

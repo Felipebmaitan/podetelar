@@ -58,6 +58,10 @@ impl Inventory {
                         == Some(image)
                 })
                 || discord(current)
+                // Broadcast can render a processed copy of the entire desktop,
+                // including Discord and our playback. Capture original apps,
+                // never this second mixed copy or any of its child processes.
+                || current.name.eq_ignore_ascii_case("nvidia broadcast.exe")
                 || current
                     .image
                     .as_ref()
@@ -256,6 +260,40 @@ mod tests {
             vec![Identity { pid: 6, created: 6 }]
         );
     }
+    #[test]
+    fn processed_desktop_proxy_and_its_helpers_cannot_reintroduce_excluded_audio() {
+        let state = inventory(
+            vec![
+                process(1, 0, "publisher.exe"),
+                process(6, 0, "game.exe"),
+                process(9, 0, "NVIDIA Broadcast.exe"),
+                process(10, 9, "audio-helper.exe"),
+            ],
+            &[6, 9, 10],
+        );
+        assert_eq!(
+            state.roots(&Choice::Desktop, &[], owner()),
+            vec![Identity { pid: 6, created: 6 }]
+        );
+        assert!(
+            state
+                .roots(
+                    &Choice::Window(Identity { pid: 9, created: 9 }),
+                    &[],
+                    owner()
+                )
+                .is_empty()
+        );
+        assert_eq!(
+            state
+                .applications(owner())
+                .iter()
+                .map(|a| a.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["game.exe"]
+        );
+    }
+
     #[test]
     fn restart_new_pid_is_filtered_by_image_and_unknown_processes_are_never_captured() {
         let mut state = inventory(

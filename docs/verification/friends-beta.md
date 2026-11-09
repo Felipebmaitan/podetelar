@@ -25,6 +25,71 @@ regression verifies desktop roots, a selected proxy window, and the allowed-app
 inventory. Native formatting/Clippy and **7 portable + 29 native tests** passed.
 UI source is unchanged from the final all-seven-9/10 Gemini review.
 
-The corrected portable package, final media tests, deployment and download
-verification are recorded below once actually completed. No unperformed hardware
-or interactive checks are replaced by the compiled/tested results.
+The fix received fresh GPT-6.1-Sol high code-scope approval without material
+findings. Its rebuilt portable package passed both previously failing audio
+checks and the complete eight-test native media suite.
+
+## Delivered portable executable
+
+- Build: `a4eb88e0c3df591486fdf446785ef1de2a61b8c2`.
+- Filename: `freedomstream-windows-x64-0.1.0-a4eb88e0c3df.exe`.
+- Size: **81,715,665 bytes**.
+- SHA-256: `598bbb87963f22025c15383cd300e7c5a9eb718f4a2cb27bef7f6e3376d91367`.
+- A verified identical copy is provided locally as `FreedomStream.exe` for sharing.
+- Portable qualification passed isolated/concurrent extraction, installed and
+  bundled runtime probes, source/payload integrity, cache preservation, explicit
+  extraction, damaged-package rejection and GUI-subsystem checks.
+- **Eight packaged native media tests passed** using the extracted shipped
+  runtime: H.264/HEVC decode, preview delivery, Stop/rewatch traffic, shared codec
+  fallback, stereo/Discord/owned-playback rejection, recovery and receiver caps.
+
+The UI is unchanged from the final independently rated seven-category 9/10 pass.
+Original application code remains MIT; matching third-party notices/sources stay
+inside the self-contained EXE. No installation or shared media runtime is needed.
+
+## VPS delivery and checks
+
+The earlier browser-era server was upgraded to the compatible native-app server.
+The final server/config release is `b04379f53069c95eb29ce1b1a6c0c889a680c103`,
+serving the EXE above. The existing Friends invitation remains valid. Verified
+WAL-aware backups and rollback copies were made before activation; private keys,
+room state, SFU and relay services were preserved. Unrelated site/container
+configurations and running services were not changed.
+
+The site's old 80KiB nginx input limit was corrected to **256KiB**, matching the
+native preview contract. A regression ties the generated proxy limit to
+`PREVIEW_MAX_BYTES`. The Node 24 full project check passed. `nginx -t` and app
+health checks passed. Through public HTTPS, a 100,000-byte preview request reached
+API admission (401 without a session), while 262,145 bytes was rejected with 413.
+
+Verified through the production origin with the actual existing invitation:
+
+- Join and native publish/subscribe grants work; browser media grants deny both.
+- Anonymous EXE download is denied. The admitted complete EXE download's size and
+  SHA-256 match the delivered binary.
+- Packaged native H.264 decoded **324 frames** in the first bounded production
+  check; an extended independent native HEVC check decoded **1,216 frames**.
+- A forced-relay H.264 **publisher** with an automatic-route native watcher decoded
+  **1,098 frames**. This is not a blocked-UDP or watcher-forced-relay qualification.
+- Test publications stopped, receiver clients closed, temporary test invitations
+  were disabled, and owned verification sessions were cleaned up.
+
+The short first mixed-codec production probe yielded insufficient HEVC frames;
+the longer standalone HEVC check above passed. A redundant full-download repeat
+later timed out/was stopped while bytes were still transferring; the earlier
+complete checksum verification passed. The final proxy-only checks were bounded
+and passed. These observations are retained rather than calling every probe a
+success or claiming download-throughput/startup-latency guarantees.
+
+Ignored operator evidence includes `friends-fixed-package-build.log`,
+`friends-fixed-portable-check.log`, `friends-fixed-packaged-media.log`,
+`friends-production-check.log`, `friends-vps-hevc-diagnostic.log`,
+`friends-vps-relay-check.log` and `friends-preview-proxy-check.log`.
+
+## Scope
+
+This is the user-authorized friends beta deployment, not a merge or broad release
+qualification. AMD, a genuinely fresh/offline Windows PC, real-game/Discord/group
+usage, synchronized A/V latency, deliberately blocked UDP, physical 4K120 and an
+evening with friends remain field checks. No compile result or synthetic frame
+count substitutes for them. The existing invitation is not published in the PR.

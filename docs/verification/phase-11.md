@@ -93,11 +93,14 @@ Watched screenshots used actual local native subscriptions; selected lifecycle
 screens used documented UI fixtures. All temporary capture hooks were removed,
 and the local runtime executable was updated from the clean build.
 
-These results concern the current source and local native build. The portable
-EXE and full packaged media evidence recorded earlier in this document are from
-`0e073b0` and predate the UI refinements; they are not a newly qualified package
-of the final UI. Interactive first-join saving and the external acceptance gates
-below remain separate from visual ratings.
+The portable evidence earlier in this document is from `0e073b0`. The subsequent
+user-authorized [friends beta delivery](friends-beta.md) packages the final UI
+plus an independently verified NVIDIA Broadcast exclusion correction as `a4eb88e`.
+Its portable checks and all eight packaged native media tests passed; the VPS
+serves that EXE with the compatible server and 256KiB preview proxy. The delivery
+record distinguishes complete checks, bounded production observations and
+remaining limitations. Interactive first-join saving and the external acceptance
+gates below remain separate from visual ratings and beta deployment.
 
 ![Final native multi-stream layout](../ui-reviews/images/pass-04/watching.png)
 

@@ -56,8 +56,30 @@ for (const directory of readdirSync(root)) {
     );
     const a = app[0],
       b = app.at(-1);
+    const counterDiscontinuities = [
+      "frames",
+      "convertedFrames",
+      "uploadedFrames",
+      "audioFrames",
+    ].filter((key) => {
+      const values = app.map((s) =>
+        Array.isArray(s[key]) ? s[key].reduce((sum, n) => sum + n, 0) : null,
+      );
+      return values.some(
+        (n, i) =>
+          i > 0 &&
+          Number.isFinite(n) &&
+          Number.isFinite(values[i - 1]) &&
+          n < values[i - 1],
+      );
+    });
     const frameRate = (key) =>
-      a && b && a !== b && Array.isArray(a[key]) && Array.isArray(b[key])
+      !counterDiscontinuities.includes(key) &&
+      a &&
+      b &&
+      a !== b &&
+      Array.isArray(a[key]) &&
+      Array.isArray(b[key])
         ? (b[key].reduce((s, n) => s + n, 0) -
             a[key].reduce((s, n) => s + n, 0)) /
           (b.second - a.second)
@@ -105,6 +127,7 @@ for (const directory of readdirSync(root)) {
         ),
       ),
       activeWatches: median(app.map((s) => s.activeWatches)),
+      counterDiscontinuities,
       decodedFramesPerSecond: frameRate("frames"),
       convertedFramesPerSecond: frameRate("convertedFrames"),
       textureUploadsPerSecond: frameRate("uploadedFrames"),

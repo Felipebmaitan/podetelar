@@ -141,6 +141,7 @@ for (const run of result.wholeApp.runs) {
               "activeWatches",
               "errors",
               "settledStoppedTail",
+              "counterDiscontinuities",
             ]),
           ),
           lastMinusFirst: Object.fromEntries(
@@ -196,6 +197,9 @@ result.selectedComparisons = [...families].map(([family, variants]) => ({
           );
           return {
             phase,
+            counterDiscontinuities: [
+              ...new Set(rows.flatMap((row) => row.counterDiscontinuities)),
+            ],
             ...Object.fromEntries(
               [
                 "cpuCorePercent",
@@ -388,6 +392,7 @@ for (const path of [
   "operations/process-events-status.json",
   "loaded-runtime.json",
   "host.json",
+  "implementation-review.json",
   "final-source-checks.json",
   "final-v4-matrix-status.json",
   "final-v4-tail-status.json",

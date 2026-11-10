@@ -1,6 +1,6 @@
 # Local performance experiment ledger
 
-**In progress — final configuration, long runs, acceptance and independent review remain.**
+**Local experiment matrix completed. Final packaged acceptance and evidence recheck remain.**
 
 Felipe authorized this complete local pass on 2026-11-10, including local network
 permission prompts and benchmark setup. Work is isolated on `perf/local-experiments`
@@ -42,12 +42,12 @@ This configuration snapshot is not a fixed-clock/thermal qualification.
   capture experiments discard their output instead of saving/transmitting it.
 - Short comparisons alternate order and use phase interiors, excluding state
   transitions. Three-pair repeated HEVC cases complement single-pair codec and
-  workload coverage. Longer steady and lifecycle checks remain pending below.
+  workload coverage. Longer steady and lifecycle checks are reported below.
 - The summary scripts select the upper middle observation for even sample
   counts. Two-pair 4K results also retain their individual values and ranges;
   they are not presented as a repeated three-pair estimate.
 - Raw sanitized evidence and preserved binaries live under `.local/experiments/`.
-  The compact committed aggregate and final artifact identities are pending.
+  The committed [sanitized aggregate](local-performance-results.json) preserves individual results, artifact identities and evidence hashes.
   Invitations, cookies, credentials, raw SDK diagnostics and process command
   lines are excluded from reports.
 
@@ -61,8 +61,8 @@ hardware acceptance to become a shipping change. Prototypes under the explicit
 | ID  | Point tested                                                                                                      | Evidence and decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | --- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | R01 | GPU-resident receive/render interface; minimal native presenter, flexible surface lease and common rendering seam | Native D3D11 presentation passed three alternating pairs for each H.264/HEVC/AV1 at 1080p and 4K, 300 frames per run. C++/Rust lease and supported SDK-wrapper probes also ran. **Reject the full renderer/SDK bridge for this patch:** isolated gains do not qualify GL import, synchronization, adapter/device loss or deferred GUI painting. R19 retains a smaller receive change.                                                                                                                                                                                                               |
-| R02 | Whole-app disconnected/empty/publish/watch/combined states, one/four streams, codecs, CPU/RAM/GPU and contention  | Repeated 1080p HEVC and H.264/AV1 hardware/software comparisons have run. **Measurement row, final matrix and long-run acceptance pending.** Failed or codec-changing 4K app attempts are recorded separately, not treated as controlled wins.                                                                                                                                                                                                                                                                                                                                                      |
-| R03 | Presentation demand; skip invisible conversion while keeping subscription, audio and health                       | **Retain.** The UI renews a 250 ms lease for displayed pictures, while receive health advances before conversion. Focus/fullscreen/minimize preserve subscriptions and audio; Stop unsubscribes. Native audio/codec/reconnect acceptance passed; final lifecycle and performance checks continue.                                                                                                                                                                                                                                                                                                   |
+| R02 | Whole-app disconnected/empty/publish/watch/combined states, one/four streams, codecs, CPU/RAM/GPU and contention  | Final short matrix, sustained publish/one/four-stream checks and seven-cycle before/after lifecycle runs completed. Coverage includes hardware H.264/HEVC/AV1, forced software AV1, audio and synthetic GPU contention. Invalid helpers and codec-changing attempts are excluded. Four-stream 4K remains capacity-limited; see the separate results.                                                                                                                                                                                                                                                |
+| R03 | Presentation demand; skip invisible conversion while keeping subscription, audio and health                       | **Retain.** The UI renews a 250 ms lease for displayed pictures, while receive health advances before conversion. Focus/fullscreen/minimize preserve subscriptions and audio; Stop unsubscribes. Native audio/codec/reconnect acceptance and both seven-cycle lifecycle runs passed.                                                                                                                                                                                                                                                                                                                |
 | R04 | Bounded conversion workers and frame-driven repaint                                                               | Two blocking workers preserved received rate but increased stopped-state CPU/private memory during settling. Frame-driven repaint had no consistent gain after other wins and worsened some 60 FPS tails. **Reject both defaults.** Existing 16 ms watching/250 ms idle policy remains.                                                                                                                                                                                                                                                                                                             |
 | R05 | Reuse owned CPU images; partial texture upload; bounded I420 pooling                                              | **Retain two reusable RGBA images.** Exclusive mutation preserves egui-owned pixels. Three images added RAM; one cached image with dropping lost updates. A bounded temporary image saved RAM but lost updates in the final combined configuration. Partial GL uploads gave no consistent return. I420 pooling added RAM without convincing whole-app CPU savings; reject those variants.                                                                                                                                                                                                           |
 | R06 | Unchanged JPEG/profile work and immutable snapshot collections                                                    | **Retain** revision/source checks before JPEG cloning and unchanged profile checks before parsing. Snapshot deep clones cost about 2 microseconds for a deliberately large 32-source fixture; **reject** a broad snapshot ownership rewrite on this evidence. Preview capture cadence remains unchanged.                                                                                                                                                                                                                                                                                            |
@@ -71,22 +71,22 @@ hardware acceptance to become a shipping change. Prototypes under the explicit
 | R09 | Stream portable verification/extraction from a bounded file range                                                 | **Retain candidate.** Five alternating cold/warm/concurrent pairs reduced wrapper startup peak commit from about 78.8–79.0 MiB to 1.3–1.5 MiB. Startup time/CPU did not consistently improve. Final packaged acceptance remains pending.                                                                                                                                                                                                                                                                                                                                                            |
 | R10 | Audio gain/control handles, owned PCM transfer, scalar telemetry and single-root bypass                           | **Retain** gain-on-change, cached bus and safe owned little-endian PCM storage. Full PCM byte equivalence passed. Publishing scalars every ten frames did not improve its operation timing; **reject** it. The single-root bypass had no consistent CPU gain and removes silence/restart behavior, so it is rejected.                                                                                                                                                                                                                                                                               |
 | R11 | Shared output/mixer and device-clock timing                                                                       | Four independent sinks versus shared output reduced threads from roughly 25 to 20 and about 0.4 MiB in the synthetic case, but CPU varied or worsened. Synchronization also added cost. **Reject the backend change:** independent gain/mute, stereo, hotplug, exclusion and physical A/V behavior would require additional qualification. No microphone-enabled SDK backend is introduced.                                                                                                                                                                                                         |
-| R12 | Software-AV1 thread budgets and explicit Tokio workers                                                            | Stock dav1d was tested at 1/2/4/8/16 requested cores with one/four 1080p and 4K contexts. All expected frames decoded. Lower counts can save substantial CPU/threads in these fixtures. **Reject a new global policy for this patch:** varied-content/game deadlines and aggregate fairness are not established. Small Tokio counts also reduce threads; final actual-app comparison remains pending.                                                                                                                                                                                               |
+| R12 | Software-AV1 thread budgets and explicit Tokio workers                                                            | Stock dav1d was tested at 1/2/4/8/16 requested cores with one/four 1080p and 4K contexts; all expected frames decoded. Lower counts can save substantial fixture CPU/threads, but varied-content/game deadlines and aggregate fairness remain unqualified: **reject a global decoder cap.** Three actual-app Tokio pairs reduced threads 121 to 110 but gave no meaningful private-memory/CPU win; retain the host default.                                                                                                                                                                         |
 | R13 | NVIDIA presets, DXGI/WGC, adapters and pacing                                                                     | Three-pair pipeline runs plus fixed-source quality checks ran. P1 did not show a consistent CPU advantage over existing P4; P7 cost more. Existing DXGI monitor capture used less memory than WGC on this host; WGC remains necessary for windows. Removing clocksync did not consistently help. **Retain existing defaults.** Only one physical adapter was available.                                                                                                                                                                                                                             |
 | R14 | Compressed frame/age limits and keyframe-safe recovery                                                            | A 750 ms output stall accumulated about 44 outstanding frames. Resetting at eight lowered tail age, but an example delivered only 150/300 frames and reset twice. **Reject:** dropping pictures is not a valid CPU improvement. Existing byte guards and timestamp bounds remain.                                                                                                                                                                                                                                                                                                                   |
 | R15 | Process/audio inventory caching and events                                                                        | A benchmark-only cache kept fresh process creation/access/parent/session checks and saved several ms per 500 ms sweep. **Reject for now:** modest return and incomplete rename/PID/protected-descendant equivalence do not justify capture-policy risk. WMI subscriptions failed with `CimException`, status 1; the cause was not established as access denial. No exclusion window or polling interval was weakened.                                                                                                                                                                               |
-| R16 | SDK factory lifetime, ADM timer, logging and weak registry                                                        | **Retain expired weak-track pruning** under the existing lock. Five 10,000-track pairs reduced churn from about 588 to 156 ms. Reusing a whole capability factory retains unnecessary execution contexts; reject that cache. ADM gating removed idle callbacks but gave no CPU win; reject. Native logging filter microbench ran; real-app message-rate check remains pending.                                                                                                                                                                                                                      |
+| R16 | SDK factory lifetime, ADM timer, logging and weak registry                                                        | **Retain expired weak-track pruning** under the existing lock. Five 10,000-track pairs reduced churn about 588 to 156 ms. Reusing a whole capability factory retains execution contexts; reject. ADM gating removed idle callbacks without CPU benefit; reject. Logging microbench and real-app count ran (about 129 messages/s in grid); no actual-app logging-policy CPU win established, so preserve diagnostics.                                                                                                                                                                                |
 | R17 | Upload blocks, prepared/narrow queries and SFU lookup coalescing                                                  | **Retain** one immutable bounded upload block and three prepared statements, while rechecking current authentication on every chunk. Five 100,000-session pairs reduced query wall time from about 1,253 to 425 ms. Actual HTTP transfers preserved one lease/seven busy clients but showed no consistent throughput/combined-process CPU gain. A boolean-only scalar join is faster but does not implement the full session-return contract; reject a second authority API for a small per-transfer saving. **Reject SFU coalescing:** a controlled unpublish race reused a stale positive answer. |
 | R18 | Direct NV12-to-owned-I420 conversion without the intermediate GStreamer I420 allocation/copy                      | Five pairs per one/four contexts and 1080p/4K passed whole sampled-frame checks. Single 1080p improved 17.5%, but four 1080p contexts regressed 11.7%; 4K cases improved. **Reject the fused-only variant.** R19 uses the conversion primitive with a different lifetime/scheduling path.                                                                                                                                                                                                                                                                                                           |
-| R19 | Defer CPU I420 planes behind the SDK’s supported interface                                                        | **Retain with R20.** Owned GstSamples retain GPU storage until supported I420 planes are read. One synchronized materialization produces immutable owned pixels; hidden frames avoid readback. Concurrency, failure initialization, old-generation isolation, sampled whole-plane equivalence and native codec/audio/reconnect acceptance passed. Final performance and endurance checks continue. Visible playback still reads back, converts and uploads.                                                                                                                                         |
+| R19 | Defer CPU I420 planes behind the SDK’s supported interface                                                        | **Retain with R20.** Owned GstSamples retain GPU storage until supported I420 planes are read. One synchronized materialization produces immutable owned pixels; hidden frames avoid readback. Concurrency, initialized failure output, old-generation isolation, sampled whole-plane equivalence, native codec/audio/reconnect acceptance, sustained 1080p and repeated lifecycle checks passed. Visible playback still reads back, converts and uploads. One-stream/4K memory costs and four-4K capacity limits remain explicit.                                                                  |
 
 ## Measured tradeoffs and rejected improvements
 
 The application matrix revealed one additional receive-path point:
 
-| ID  | Point tested                                      | Evidence and decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| --- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R20 | Bound CPU-readback staging per decoder generation | Two 48-run prototypes preserved all expected frames and sampled whole-plane hashes. The first increased four-decoder CPU; the revision narrows the device lock. A matched app pair saved about 62 MiB private memory with four 1080p streams, with a modest CPU increase. One 4K app pair saved about 203 MiB, but consumed/update rates differed, so its lower CPU is not an equal-work speedup. The candidate retains a generic GStreamer mapping fallback, releases staging on decoder shutdown and separates generations. Final matrix/long-run acceptance is pending. |
+| ID  | Point tested                                      | Evidence and decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| R20 | Bound CPU-readback staging per decoder generation | **Retain bounded staging with generic fallback.** Both 48-run prototypes preserved expected frames and sampled whole-plane hashes. The first increased four-decoder CPU; the revision narrows the device lock. A matched app pair saved about 62 MiB private memory with four 1080p streams at modest CPU cost versus the prior candidate. One 4K pair saved about 203 MiB but delivered unequal work. Final native acceptance, sustained 1080p and lifecycle runs passed. Staging releases on shutdown and generations remain isolated; original-baseline 4K tradeoffs are reported separately. |
 
 ### Positive results that are deliberately not shipped
 
@@ -108,6 +108,13 @@ GPU-counter HEVC runs, median 3D-engine utilization was roughly 2.83% to 0.49%
 at 1080p and 9.73% to 0.49% at 4K. Decode-engine utilization did not uniformly
 fall. These are separate driver engines, not a total GPU percentage or game
 performance result. The renderer bridge remains unshipped.
+
+The separate HEVC GPU-counter experiment also measured private memory
+238.67 to 185.20 MiB and dedicated GPU memory 67.02 to 50.05 MiB at 1080p.
+At 4K those were 487.98 to 263.30 MiB and 178.68 to 114.69 MiB. These compare
+an isolated CPU-round-trip presenter with a native D3D11 presenter, not two
+complete application builds. They show why a future renderer bridge is worth
+investigating, while its integration risks still prevent selecting it here.
 
 The common Glow probe ran 24 actual eframe uploads: one/four textures,
 1080p/4K and three alternating pairs. It verified synthetic texels and requested
@@ -155,6 +162,20 @@ hidden deferred frames retain GPU samples until validation. Those memory peaks
 are not equivalent ordinary app RAM measurements. Whole-app memory is reported
 separately. One early raw summary’s phrase “inflate ... equally” is incorrect;
 this paragraph and the corrected runner specify the actual limitation.
+
+In that isolated deferred-I420 matrix, median process CPU milliseconds for
+the same requested frame count were:
+
+| Geometry / contexts | Visible before → deferred | Hidden before → deferred |
+| ------------------- | ------------------------: | -----------------------: |
+| 1080p / one         |           1,062.5 → 937.5 |            984.4 → 484.4 |
+| 1080p / four        |         5,484.4 → 3,718.8 |          4,671.9 → 734.4 |
+| 4K / one            |         2,437.5 → 2,093.8 |          2,406.3 → 453.1 |
+| 4K / four           |        14,843.8 → 9,828.1 |         15,031.2 → 781.3 |
+
+Each context decoded 300 frames; three alternating pairs covered each case.
+All expected counts and sampled whole-plane hashes matched. These numbers
+precede bounded staging and isolate R19, rather than predicting final app CPU.
 
 ### Selected whole-app results
 
@@ -268,18 +289,52 @@ Some HEVC attempts changed to H.264, so they are invalid fixed-codec comparisons
 A forced-H.264 four-stream baseline attempt failed readiness. These failures are
 retained as limitations, not silently discarded as successes.
 
-A diagnostic receiver without egui presentation confirmed the native
-`FreedomStream Direct3D11` hardware backend. In a 30-second four-4K HEVC run, the
-candidate delivered about 240 frames/s in the final steady section; the original
-receiver changed codec and delivered about 76/s. This is a capacity observation
-with unequal delivered work, not an equal-work CPU percentage comparison.
-A separate one-stream 4K H.264 diagnostic delivered 60/s through the same hardware
-backend. Physical 4K120 remains unqualified.
+The final `v4-retry-final-4k-four-capacity` UI run retained HEVC without sampled
+errors, but grid delivered only 181.98 decoded frames/s and 108.71 texture
+updates/s. CPU was 499.74% of one core, private memory 2,678.57 MiB and working
+set 1,456.21 MiB. Focus/fullscreen/minimize kept decoded rate near 240/s while
+showing at most one picture. This is a demonstrated presentation-path capacity
+limit, not a four-stream 4K qualification.
+
+The frozen default publisher's separate 30-second four-4K diagnostic confirmed
+all four `FreedomStream Direct3D11` hardware backends and HEVC/3840×2160 images.
+Its final ten samples (seconds 20–29, after connection/admission startup) delivered
+241.67 aggregate frames/s without egui presentation. Earlier original-receiver
+attempts changed codec, so they do not provide an equal-work CPU comparison.
+A separate earlier one-stream 4K H.264 diagnostic delivered 60/s through the same
+hardware backend. Physical 4K120 remains unqualified.
 
 One original 4K UI attempt wrote a completed phase report but failed child-exit
 validation. A repeat exited normally. The first attempt is excluded; the runner
 now preserves numeric exit/timeout and sanitized failure classifications if it
 recurs. No root cause is claimed from that single failure.
+
+### Repeated lifecycle and cleanup
+
+Both `v4-retry-cycles-four-*` runs completed seven two-minute cycles, including
+three Leave/rejoins, with stable HEVC and no sampled errors. All stopped phase
+interiors had zero active watches and decoded-frame delivery. Texture counters
+sometimes reset when media ends, so rates with detected decreases are null in
+the aggregate. A cached picture update is distinct from continued traffic. Minimized
+phases kept all four watches near 240 decoded frames/s with zero texture updates.
+
+The last 4.5 seconds of each 20-second Stop phase start at least 15 seconds
+after Stop, beyond the ordinary blocking-thread retirement interval. First/last
+cycle observations were:
+
+| Settled stopped measure | Baseline first → last cycle | Selected first → last cycle |
+| ----------------------- | --------------------------: | --------------------------: |
+| Private MiB             |             237.02 → 314.60 |             261.12 → 339.07 |
+| Working set MiB         |             177.70 → 211.26 |             175.88 → 213.35 |
+| Handles                 |               2,320 → 2,291 |               2,320 → 2,288 |
+| Threads                 |                     44 → 35 |                     45 → 34 |
+
+Private memory rose about 77.6/78.0 MiB in the baseline/selected session, with
+no corresponding monotonic handle/thread growth. This bounded-session test
+does **not** establish a settled memory plateau, identify all retained owners or
+prove leak freedom. It also does not establish a new stopped-memory saving.
+Grid intervals immediately after rejoining include connection settling; use the
+separate sustained grid comparison for throughput and CPU claims.
 
 ### Portable, audio, control and server
 
@@ -324,6 +379,21 @@ locks are advisory; that platform’s added test has not been run on this host.
 Waiting memory was already small before this pass. The roughly 77.5 MiB new
 saving is startup peak, not a second waiting-memory saving.
 
+Small-operation measurements used five runs of the same batch. These are
+median **total wall milliseconds per batch**, not whole-app CPU percentages:
+
+| Operation / iterations                                | Before → retained change, ms |
+| ----------------------------------------------------- | ---------------------------: |
+| Unchanged profile parsing / 50,000                    |                18.60 → 0.121 |
+| Unchanged 96 KiB JPEG copy / 10,000                   |                 8.69 → 0.002 |
+| Unchanged audio gain / 100,000                        |                39.05 → 0.037 |
+| Audio bus lookup / 100,000                            |                 9.73 → 0.019 |
+| Owned PCM plus copy → owned transfer / 100,000        |                33.45 → 30.00 |
+| Fresh → shared immutable 64 KiB upload block / 20,000 |                 6.93 → 0.180 |
+
+These remove redundant operations; they do not establish a multi-percent
+native-app CPU gain individually. The PCM comparison checked every byte.
+
 The audio scalar test preserved all sample peaks: 20,000 frames took about
 13.23 ms with per-frame publication and 13.47 ms with publication every ten
 frames. No benefit was found. Gain/control and owned-PCM changes are small safe
@@ -335,6 +405,27 @@ created/dropped 10,000 real SDK tracks on one factory per child; no frames were
 submitted. Median final-500-track time fell from about 46.8 to 7.8 ms. This
 removes metadata/search growth; it does not establish that the old registry
 retained video frames or decoders.
+
+The real-app message counter enabled Debug logging but retained only counts.
+The final four-stream case counted about 128.8 native SDK messages/s in grid,
+53.7/s minimized and 31.4/s stopped. The separate formatting/filter operation
+test's 100,000 messages are a stress batch, not this app's observed rate. No
+actual-app CPU benefit from changing the logging policy was established, so
+the default diagnostics policy is retained.
+
+Twenty temporary capability factories took a median 30.83 ms versus 1.18 ms
+when one was reused, but the reused factory retains execution contexts. That
+small occasional saving does not justify a persistent capability-factory cache.
+
+The three-pair monitor-capture pipeline experiment measured sampled peak
+private memory about 233.84 MiB for existing DXGI versus 272.25 MiB for WGC,
+with 72 versus 78 threads. Delivered buffers over roughly three seconds were
+175 versus 169–170. This is a short capture-stage observation, not a game
+frame-time result or a reason to remove WGC window capture. NVIDIA P1/P4/P7 and
+clocksync experiments did not justify changing the existing P4/pacing defaults.
+The fixed-source encoder quality check used 30-frame ball/snow sequences and
+the same bitrate target; output bytes varied and it is not a perceptual-quality
+or gameplay qualification.
 
 The server query microbenchmark uses fresh token hashes, room/session reads and
 current expiry on every call. Immediate revocation, expiry and room separation
@@ -348,7 +439,7 @@ server changes.
 
 | ID  | Gate                                                                   | Treatment                                                                                                 |
 | --- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| X01 | AMD AMF/AV1, RX 7600 and the reported Siege capture/stutter case       | No AMD hardware supplied. Keep separate; NVIDIA evidence does not qualify it.                             |
+| X01 | AMD AMF/AV1, RX 7600 and the reported Siege capture/stutter case       | No AMD GPU supplied. Keep separate; NVIDIA evidence does not qualify it.                                  |
 | X02 | Physical 4K120 source/display and other GPU generations                | Synthetic 4K experiments are labelled individually. No physical 4K120 or cross-generation claim.          |
 | X03 | Fresh physical PCs, other OS backends and friends/group field sessions | Isolated cache/PATH/dependency checks only; no fresh-PC or physically disconnected-network qualification. |
 | X04 | Production WAN/VPS capacity, deployment and field latency              | Local API/SFU experiments only.                                                                           |
@@ -397,8 +488,12 @@ The branch also includes `main` through `0d16ce8` (merge `18d1d29`). Completed:
   audio/exclusions/restart, full reconnect and aggregate connection allowance.
 - All 22 `v4-final-*` short actual-app comparisons completed.
 
-**Still required before the final PR update:** finish lifecycle/audio/contention
-and explicit-worker comparisons; long steady and repeated lifecycle checks;
-packaged qualification; final aggregate and report; the required fresh
-GPT-6.1-Sol high review of the exact final range. This draft does not claim those
-remaining checks or a completed PR update.
+The final recovery (six), explicit-worker (six) and endurance (eleven) cases
+completed successfully. The original matrix status retains helper failures and
+intentional suite-boundary stops; `final-v4-tail-status.json` records the successful
+reruns. No failed helper is counted as a successful contention workload.
+
+The required GPT-6.1-Sol high implementation review approved
+`0d16ce85a4408209a49975da1d36ddff6c652d14..ff5a3e3d473a286d30259d97d80cdfcacddc2c5b`
+with no blocking findings. Packaged qualification and the separate final-range
+evidence recheck remain before the final PR update.

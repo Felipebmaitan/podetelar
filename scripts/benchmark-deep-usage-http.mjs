@@ -1,13 +1,23 @@
 import { fork } from "node:child_process";
 import { randomBytes, createHash } from "node:crypto";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  mkdirSync,
+  copyFileSync,
+} from "node:fs";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { setTimeout as delay } from "node:timers/promises";
 import assert from "node:assert/strict";
 const root = resolve(import.meta.dirname, ".."),
-  out = resolve(root, ".local/experiments/deep-pass/usage");
-const fixture = JSON.parse(readFileSync(resolve(out, "queries.json"))).fixture;
+  original = resolve(root, ".local/experiments/deep-pass/usage"),
+  out = process.argv[4] ? resolve(process.argv[4]) : original;
+mkdirSync(out, { recursive: true });
+const fixture = JSON.parse(
+  readFileSync(resolve(original, "queries.json")),
+).fixture;
 const treatment = process.argv[2] ?? "batched";
 const steady = process.argv[3] === "steady";
 assert.ok(
@@ -65,8 +75,17 @@ for (let pair = 1; pair <= (steady ? 1 : 5); pair++)
       const simulateWrites =
         treatment.startsWith("cached") || treatment === "production-json";
       const ready = wait("ready");
+      const isolatedFile = resolve(out, `http-${pair}-${variant}.sqlite`);
+      if (out !== original) {
+        assert.ok(
+          !existsSync(isolatedFile),
+          "Choose a fresh benchmark output directory.",
+        );
+        copyFileSync(fixture.file, isolatedFile);
+      }
       child.send({
         ...fixture,
+        ...(out !== original ? { file: isolatedFile } : {}),
         password,
         mediaSecret,
         variant,

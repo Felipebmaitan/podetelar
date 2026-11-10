@@ -110,7 +110,22 @@ bool CheckDeferred(const wchar_t* path){
  GstVideoInfo bad_info{};gst_video_info_set_format(&bad_info,GST_VIDEO_FORMAT_NV12,2,2);auto* bad_caps=gst_video_info_to_caps(&bad_info);auto* bad_buffer=gst_buffer_new();auto* bad_sample=gst_sample_new(bad_buffer,bad_caps,nullptr,nullptr);gst_buffer_unref(bad_buffer);gst_caps_unref(bad_caps);
  freedomstream_deferred::Decoder decoder(true);webrtc::VideoDecoder::Settings settings;valid=valid&&decoder.Configure(settings);auto old_generation=decoder.ErrorStateForProbe();auto bad=freedomstream_probe::DeferredI420Buffer::Create(bad_sample,bad_info,old_generation);gst_sample_unref(bad_sample);valid=valid&&decoder.Configure(settings);
  const auto* black=bad->DataY();valid=valid&&black[0]==16&&black[1]==16&&black[2]==16&&black[3]==16&&bad->DataU()[0]==128&&bad->DataV()[0]==128&&old_generation->load()&&!decoder.ErrorStateForProbe()->load();decoder.Release();
- std::ofstream report(path);report<<"{\"schema\":1,\"completed\":true,\"valid\":"<<(valid?"true":"false")<<",\"sdkI420Wrapper\":true,\"oddPaddedPlanesChecked\":true,\"concurrentPlaneReaders\":8,\"validFrameMaterializations\":1,\"bufferReleasedAfterMaterialization\":"<<(released?"true":"false")<<",\"failurePixelsInitialized\":true,\"oldFailureGenerationIsolated\":true,\"limits\":\"Actual pinned SDK wrapper with a custom I420 interface. Synthetic CPU NV12 layout and deliberate map failure; GPU retention across decoder shutdown is checked separately by real fixture runs. No microphone or room.\"}";return valid;
+ bool fallback_checked=false;
+#ifdef GST_D3D11_MEMORY_CAST
+ auto* cpu_buffer=gst_buffer_new_allocate(nullptr,bad_info.size,nullptr);
+ gst_buffer_memset(cpu_buffer,0,16,bad_info.size);
+ gst_buffer_memset(cpu_buffer,bad_info.offset[1],128,bad_info.size-bad_info.offset[1]);
+ auto* cpu_caps=gst_video_info_to_caps(&bad_info);
+ auto* cpu_sample=gst_sample_new(cpu_buffer,cpu_caps,nullptr,nullptr);gst_buffer_unref(cpu_buffer);gst_caps_unref(cpu_caps);
+ auto readback=std::make_shared<freedomstream_probe::BoundedReadback>();
+ auto wrong=webrtc::I420Buffer::Create(4,4);wrong->MutableDataY()[0]=77;
+ valid=valid&&!readback->Copy(cpu_sample,bad_info,wrong.get())&&wrong->DataY()[0]==77;
+ auto cpu_failure=std::make_shared<std::atomic<bool>>(false);
+ auto cpu_frame=freedomstream_probe::DeferredI420Buffer::Create(cpu_sample,bad_info,cpu_failure,readback);gst_sample_unref(cpu_sample);
+ fallback_checked=cpu_frame&&cpu_frame->DataY()[0]==16&&cpu_frame->DataY()[3]==16&&cpu_frame->DataU()[0]==128&&cpu_frame->DataV()[0]==128&&!cpu_failure->load();
+ valid=valid&&fallback_checked;
+#endif
+ std::ofstream report(path);report<<"{\"schema\":1,\"completed\":true,\"valid\":"<<(valid?"true":"false")<<",\"sdkI420Wrapper\":true,\"oddPaddedPlanesChecked\":true,\"concurrentPlaneReaders\":8,\"validFrameMaterializations\":1,\"bufferReleasedAfterMaterialization\":"<<(released?"true":"false")<<",\"failurePixelsInitialized\":true,\"oldFailureGenerationIsolated\":true,\"genericReadbackFallbackChecked\":"<<(fallback_checked?"true":"false")<<",\"limits\":\"Actual pinned SDK wrapper with a custom I420 interface. Synthetic CPU NV12 layout and deliberate map failure; GPU retention across decoder shutdown is checked separately by real fixture runs. No microphone or room.\"}";return valid;
 }
 struct Packet { std::vector<uint8_t> bytes; bool key; };
 std::vector<Packet> ReadFixture(const wchar_t* filename,bool av1){

@@ -72,7 +72,9 @@ class DeferredI420Buffer : public webrtc::I420BufferInterface {
       // synchronized staging/readback. Retaining the GstSample also retains its
       // buffer, array slice and device; a naked texture pointer is insufficient.
       if (readback_) { converted = readback_->Copy(sample_, info_, pixels.get()); }
-      else if (buffer && gst_video_frame_map(&mapped, &info_, buffer, GST_MAP_READ)) {
+      // Preserve the existing GStreamer mapper for layouts the bounded D3D11
+      // path cannot handle. Only report failure when neither path can read it.
+      if (!converted && buffer && gst_video_frame_map(&mapped, &info_, buffer, GST_MAP_READ)) {
         converted = libyuv::NV12ToI420(
             static_cast<const uint8_t*>(GST_VIDEO_FRAME_PLANE_DATA(&mapped, 0)),
             GST_VIDEO_FRAME_PLANE_STRIDE(&mapped, 0),

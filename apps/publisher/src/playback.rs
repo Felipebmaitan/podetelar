@@ -10,7 +10,6 @@ use livekit::{
         MediaType,
         audio_stream::native::{NativeAudioStream, NativeAudioStreamOptions},
         peer_connection_factory::PeerConnectionFactory,
-        video_frame::VideoFormatType,
         video_stream::native::{NativeVideoStream, NativeVideoStreamOptions},
     },
 };
@@ -456,18 +455,8 @@ impl Playback {
                                 {
                                     break;
                                 }
-                                let mut rgba = vec![0; width as usize * height as usize * 4];
-                                frame.buffer.to_argb(
-                                    VideoFormatType::ABGR,
-                                    &mut rgba,
-                                    width * 4,
-                                    width as i32,
-                                    height as i32,
-                                );
-                                let image = egui::ColorImage::from_rgba_unmultiplied(
-                                    [width as usize, height as usize],
-                                    &rgba,
-                                );
+                                let image =
+                                    crate::video_image::to_color_image(frame.buffer.as_ref());
                                 if let Ok(mut latest) = picture.lock() {
                                     *latest = Some(image);
                                 }

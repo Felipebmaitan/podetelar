@@ -19,6 +19,9 @@ fn run() -> Result<i32> {
         PathBuf::from(std::env::var_os("LOCALAPPDATA").context("Local AppData is unavailable.")?)
             .join("FreedomStreamPortable");
     let directory = bundle.prepare(&base)?;
+    // The verified runtime directory owns what launch needs. Do not retain the
+    // complete compressed payload throughout the supervised child's lifetime.
+    drop(bundle);
     if args.first().is_some_and(|arg| arg == "--licenses") {
         ensure!(args.len() == 1, "Usage: FreedomStream.exe --licenses");
         #[cfg(windows)]

@@ -14,6 +14,7 @@ mod quality;
 mod settings;
 mod sources;
 mod ui;
+mod video_image;
 #[cfg(windows)]
 mod win32;
 

@@ -1,19 +1,22 @@
 //! CPU presentation conversion shared with the standalone release benchmark.
-use eframe::egui::ColorImage;
+use eframe::egui::{Color32, ColorImage};
 use livekit::webrtc::video_frame::{VideoBuffer, VideoFormatType};
 
 pub fn to_color_image(buffer: &dyn VideoBuffer) -> ColorImage {
     let width = buffer.width();
     let height = buffer.height();
-    let mut rgba = vec![0; width as usize * height as usize * 4];
+    let mut image = ColorImage::filled([width as usize, height as usize], Color32::TRANSPARENT);
+    // The pinned SDK converts our decoded I420/NV12 pictures to opaque RGBA
+    // bytes in ABGR mode. With alpha=255 these already satisfy Color32's
+    // premultiplied layout: write once into the exclusively owned final pixels.
     buffer.to_argb(
         VideoFormatType::ABGR,
-        &mut rgba,
+        image.as_raw_mut(),
         width * 4,
         width as i32,
         height as i32,
     );
-    ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &rgba)
+    image
 }
 
 #[cfg(test)]

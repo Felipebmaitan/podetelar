@@ -30,18 +30,28 @@ remain external gates.
   Preview capture scheduling remains on its existing 60-second gate.
 - Preserve source-picker clearing when hidden and the new close/cleanup path.
   Optional frame-driven repaint remains experimental; default repaint is retained.
+- Prune retired textures before the fullscreen early return, so another stream
+  stopping does not retain its GPU texture until fullscreen exits.
 - Add the new UI/source-picker modules to the feature-only benchmark example.
   Permit an immutable UI baseline in the existing source-export instrumenter,
   with counters and the same benchmark driver rather than performance patches.
 
 ## Validation in progress
 
-Node 24 workspace checks passed for the initial resolved integration. Native
-builds, targeted regression coverage, silent application measurements, final
-source review and PR checks are still pending. Runtime recovery uses a separate
-local SDK directory; no missing runtime directory in the original checkout is
-modified. The recovered SDK is a build prerequisite, not a newly qualified
-redistributable runtime.
+Node 24 workspace checks, all-target/all-feature Clippy, 59 publisher tests and
+nine portable tests passed. The two normally ignored Windows hardware tests were
+also attempted silently. Window filtering passed; initial still capture passed
+the pattern and monitor but failed on its arbitrary largest user window. The
+test now creates and destroys its own non-activating Windows fixture rather than
+depending on a potentially protected or disappearing user window. Both hardware
+tests pass with that isolation. No product capture logic was changed for it.
+
+Silent application measurements, final source review and PR checks are pending.
+Runtime recovery uses a separate local SDK directory; no missing runtime
+directory in the original checkout is modified. The installer matches the
+existing SHA-256 pin. The recovered SDK is a build prerequisite, not a newly
+qualified redistributable runtime. Execution uses a clean copy of the 44 preserved
+runtime files, each verified against the existing distribution manifest.
 
 ## PR23 adaptation
 

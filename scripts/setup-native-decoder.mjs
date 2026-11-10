@@ -40,6 +40,12 @@ const patch = readFileSync(
 ).replaceAll("\r\n", "\n");
 if (hash(patch) !== pin.adapterSha256)
   throw new Error("Decoder adapter differs from its pin.");
+const deferred = readFileSync(
+  join(root, "apps/publisher/decoder/deferred_i420.h"),
+  "utf8",
+).replaceAll("\r\n", "\n");
+if (hash(deferred) !== pin.deferredI420Sha256)
+  throw new Error("Deferred I420 buffer differs from its pin.");
 if (existsSync(destination)) {
   if (treeHash(destination) !== pin.treeSha256)
     throw new Error("Generated decoder SDK differs from its pin.");
@@ -107,6 +113,17 @@ if (existsSync(destination)) {
     "#ifdef _WIN32\n  factories_.push_back(std::make_unique<freedomstream::DecoderFactory>());\n#endif\n#ifdef __APPLE__",
   );
   modify(
+    "src/webrtc.cpp",
+    "  webrtc::MutexLock lock(&mutex_);\n  for (std::weak_ptr<MediaStreamTrack> weak_existing_track :",
+    `  webrtc::MutexLock lock(&mutex_);
+  // Keep live wrapper identity; expired weak entries own no usable track.
+  media_stream_tracks_.erase(
+      std::remove_if(media_stream_tracks_.begin(), media_stream_tracks_.end(),
+                     [](const auto& track) { return track.expired(); }),
+      media_stream_tracks_.end());
+  for (std::weak_ptr<MediaStreamTrack> weak_existing_track :`,
+  );
+  modify(
     "build.rs",
     '        "windows" => {',
     `        "windows" => {
@@ -119,9 +136,11 @@ if (existsSync(destination)) {
                 println!("cargo:rustc-link-lib=dylib={lib}");
             }
             println!("cargo:rerun-if-env-changed=GSTREAMER_1_0_ROOT_MSVC_X86_64");
-            println!("cargo:rerun-if-changed=src/freedomstream_decoder.h");`,
+            println!("cargo:rerun-if-changed=src/freedomstream_decoder.h");
+            println!("cargo:rerun-if-changed=src/deferred_i420.h");`,
   );
   writeFileSync(join(source, "src/freedomstream_decoder.h"), patch);
+  writeFileSync(join(source, "src/deferred_i420.h"), deferred);
   const actual = treeHash(source);
   if (actual !== pin.treeSha256)
     throw new Error(`Decoder patched tree mismatch: ${actual}`);

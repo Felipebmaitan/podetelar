@@ -100,6 +100,16 @@ pub fn count_sdk_logs() -> Result<()> {
 }
 #[cfg(feature = "performance-experiments")]
 pub static SDK_MESSAGES: AtomicU64 = AtomicU64::new(0);
+#[cfg(feature = "performance-experiments")]
+pub static SUBSCRIPTION_SETTERS: AtomicU64 = AtomicU64::new(0);
+
+fn apply_subscription(publication: &RemoteTrackPublication, enabled: bool) {
+    if publication.is_desired() != enabled {
+        #[cfg(feature = "performance-experiments")]
+        SUBSCRIPTION_SETTERS.fetch_add(1, Ordering::Relaxed);
+        publication.set_subscribed(enabled);
+    }
+}
 
 #[cfg(feature = "performance-experiments")]
 pub fn frame_driven_repaint() -> bool {
@@ -421,7 +431,7 @@ impl Playback {
                     .values()
                     .filter(|p| p.source() == TrackSource::ScreenshareAudio)
                 {
-                    publication.set_subscribed(false);
+                    apply_subscription(publication, false);
                 }
                 // Retain watch intent while a codec/source replacement is in flight.
                 if self.watches.contains_key(&id) {
@@ -519,9 +529,7 @@ impl Playback {
                 )
             }) {
                 let enabled = watching && compatible && admitted;
-                if publication.is_desired() != enabled {
-                    publication.set_subscribed(enabled);
-                }
+                apply_subscription(publication, enabled);
                 let sid = publication.sid().to_string();
                 if !enabled {
                     continue;
@@ -541,11 +549,12 @@ impl Playback {
                         let last_frame = watch.last_frame.clone();
                         let presentation = watch.presentation.clone();
                         tokio::spawn(async move {
-                            #[cfg(feature = "performance-experiments")]
                             let mut image_pool = crate::video_image::ImagePool::default();
                             #[cfg(feature = "performance-experiments")]
                             let pooled = std::env::var("FREEDOMSTREAM_IMAGE_POOL")
                                 .is_ok_and(|value| value == "1");
+                            #[cfg(not(feature = "performance-experiments"))]
+                            let pooled = true;
                             let mut stream = NativeVideoStream::with_options(
                                 track.rtc_track(),
                                 NativeVideoStreamOptions {
@@ -569,13 +578,20 @@ impl Playback {
                                     if let Ok(mut latest) = picture.lock() {
                                         *latest = None;
                                     }
-                                    #[cfg(feature = "performance-experiments")]
                                     image_pool.clear();
                                     continue;
                                 }
-                                #[cfg(feature = "performance-experiments")]
                                 if pooled {
-                                    if let Some(image) = image_pool.convert(frame.buffer.as_ref()) {
+                                    let mut image = image_pool.convert(frame.buffer.as_ref());
+                                    if image.is_none() {
+                                        // Release an overwritten mailbox image before retrying;
+                                        // an egui-owned image still prevents exclusive mutation.
+                                        if let Ok(mut latest) = picture.lock() {
+                                            *latest = None;
+                                        }
+                                        image = image_pool.convert(frame.buffer.as_ref());
+                                    }
+                                    if let Some(image) = image {
                                         presentation.publish(&picture, image);
                                     } else if let Ok(mut latest) = picture.lock() {
                                         *latest = None;

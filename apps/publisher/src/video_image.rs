@@ -1,7 +1,6 @@
 //! CPU presentation conversion shared with the standalone release benchmark.
 use eframe::egui::{Color32, ColorImage};
 use livekit::webrtc::video_frame::{VideoBuffer, VideoFormatType};
-#[cfg(any(test, feature = "performance-experiments"))]
 use std::sync::Arc;
 
 pub fn to_color_image(buffer: &dyn VideoBuffer) -> ColorImage {
@@ -30,12 +29,26 @@ fn write_color_image(buffer: &dyn VideoBuffer, image: &mut ColorImage) {
 
 /// Exclusive mutation comes from Arc::get_mut, including while egui retains an
 /// image for deferred upload. No buffer is recycled while another owner reads it.
-#[cfg(any(test, feature = "performance-experiments"))]
-#[derive(Default)]
 pub struct ImagePool {
     images: Vec<Arc<ColorImage>>,
+    limit: usize,
 }
-#[cfg(any(test, feature = "performance-experiments"))]
+impl Default for ImagePool {
+    fn default() -> Self {
+        #[cfg(feature = "performance-experiments")]
+        let limit = std::env::var("FREEDOMSTREAM_IMAGE_POOL_LIMIT")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|limit| (1..=2).contains(limit))
+            .unwrap_or(2);
+        #[cfg(not(feature = "performance-experiments"))]
+        let limit = 2;
+        Self {
+            images: Vec::new(),
+            limit,
+        }
+    }
+}
 impl ImagePool {
     pub fn clear(&mut self) {
         self.images.clear();
@@ -52,7 +65,7 @@ impl ImagePool {
         let index = if let Some(index) = free {
             index
         } else {
-            if self.images.len() >= 3 {
+            if self.images.len() >= self.limit {
                 return None;
             }
             self.images
@@ -68,6 +81,24 @@ impl ImagePool {
 mod tests {
     use super::*;
     use livekit::webrtc::video_frame::I420Buffer;
+    #[test]
+    fn one_image_pool_never_overwrites_a_held_image() {
+        let buffer = I420Buffer::new_black(17, 9);
+        let mut pool = ImagePool {
+            images: Vec::new(),
+            limit: 1,
+        };
+        let held = pool.convert(buffer.as_ref()).unwrap();
+        let address = held.pixels.as_ptr();
+        let pixels = held.pixels.clone();
+        assert!(pool.convert(buffer.as_ref()).is_none());
+        assert_eq!(held.pixels, pixels);
+        drop(held);
+        assert_eq!(
+            pool.convert(buffer.as_ref()).unwrap().pixels.as_ptr(),
+            address
+        );
+    }
     #[test]
     fn bounded_pool_preserves_live_images_and_reuses_only_released_storage() {
         let mut black = I420Buffer::new(17, 9);
@@ -85,10 +116,9 @@ mod tests {
         let expected = first.pixels.clone();
         let address = first.pixels.as_ptr();
         let second = pool.convert(red.as_ref()).unwrap();
-        let third = pool.convert(red.as_ref()).unwrap();
         assert_eq!(first.pixels, expected);
         assert!(pool.convert(red.as_ref()).is_none());
-        assert_eq!(pool.images.len(), 3);
+        assert_eq!(pool.images.len(), 2);
         drop(first);
         let reused = pool.convert(red.as_ref()).unwrap();
         assert_eq!(reused.pixels.as_ptr(), address);
@@ -96,8 +126,7 @@ mod tests {
         let changed = I420Buffer::new_black(2, 2);
         let resized = pool.convert(changed.as_ref()).unwrap();
         assert_eq!(resized.size, [2, 2]);
-        assert_eq!(third.size, [17, 9]);
-        assert_eq!(third.pixels, second.pixels);
+        assert_eq!(second.size, [17, 9]);
         pool.clear();
         assert!(pool.images.is_empty());
         assert_eq!(reused.pixels, second.pixels);

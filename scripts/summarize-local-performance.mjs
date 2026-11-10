@@ -22,7 +22,8 @@ for (const directory of readdirSync(root)) {
     r.schema !== 1 ||
     r.app?.kind !== "actual-native-ui-room" ||
     !r.appStartedAt ||
-    !r.process?.startedAt
+    !r.process?.startedAt ||
+    (r.rounds ?? 1) !== 1
   )
     continue;
   const ready = r.app.wallSeconds - r.phaseSeconds * 6;
@@ -81,6 +82,22 @@ for (const directory of readdirSync(root)) {
       decodedFramesPerSecond: frameRate("frames"),
       convertedFramesPerSecond: frameRate("convertedFrames"),
       textureUploadsPerSecond: frameRate("uploadedFrames"),
+      audioSamplesPerSecond: frameRate("audioFrames"),
+      audioQueueMaxMs: Math.max(
+        0,
+        ...app.flatMap((s) => s.audioQueueMaxMs ?? []),
+      ),
+      audioDroppedFrames: Math.max(
+        0,
+        ...app.flatMap((s) => s.audioDroppedFrames ?? []),
+      ),
+      subscriptionSetterCallsPerSecond:
+        a && b && a !== b && Number.isFinite(a.subscriptionSetterCalls)
+          ? (b.subscriptionSetterCalls - a.subscriptionSetterCalls) /
+            (b.second - a.second)
+          : null,
+      uiIntervals:
+        r.app.uiInvocationIntervals?.find((s) => s.phase === phase) ?? null,
       errors: app.some((s) => s.errorPresent || s.streamErrorCount > 0),
     };
   });
@@ -90,6 +107,12 @@ for (const directory of readdirSync(root)) {
     count: r.count,
     codec: r.codec,
     phaseSeconds: r.phaseSeconds,
+    fps: r.fps ?? null,
+    resolution: r.resolution ?? null,
+    publishFixture: r.publishFixture ?? false,
+    disconnected: r.disconnected ?? false,
+    audioEnabled: r.audioEnabled ?? false,
+    contention: r.contention ?? false,
     appSha256: r.appSha256,
     publisherSha256: r.publisherSha256,
     counterFailures: r.process.counterFailures,

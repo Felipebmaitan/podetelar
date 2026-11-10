@@ -9,10 +9,10 @@
 #include <gst/app/gstappsrc.h>
 #include <gst/app/gstappsink.h>
 #include <gst/video/video.h>
+#include "deferred_i420.h"
 #include "api/video/i420_buffer.h"
 #include "api/video/video_frame.h"
 #include "modules/video_coding/include/video_error_codes.h"
-#include "libyuv/planar_functions.h"
 
 namespace freedomstream {
 class Decoder final : public webrtc::VideoDecoder {
@@ -22,11 +22,12 @@ class Decoder final : public webrtc::VideoDecoder {
 
   bool Configure(const Settings&) override {
     Stop();
+    failed_generation_ = std::make_shared<std::atomic<bool>>(false);
     const char* pipeline = av1_
-      ? "appsrc name=input is-live=true format=time max-bytes=4194304 block=false caps=video/x-av1,stream-format=obu-stream,alignment=tu ! av1parse ! d3d11av1dec ! d3d11download ! videoconvert ! video/x-raw,format=I420 ! appsink name=output sync=false max-buffers=2 drop=true"
+      ? "appsrc name=input is-live=true format=time max-bytes=4194304 block=false caps=video/x-av1,stream-format=obu-stream,alignment=tu ! av1parse ! d3d11av1dec ! video/x-raw(memory:D3D11Memory),format=NV12 ! appsink name=output sync=false max-buffers=2 drop=true"
       : hevc_
-      ? "appsrc name=input is-live=true format=time max-bytes=4194304 block=false caps=video/x-h265,stream-format=byte-stream,alignment=au ! h265parse ! d3d11h265dec ! d3d11download ! videoconvert ! video/x-raw,format=I420 ! appsink name=output sync=false max-buffers=2 drop=true"
-      : "appsrc name=input is-live=true format=time max-bytes=4194304 block=false caps=video/x-h264,stream-format=byte-stream,alignment=au ! h264parse ! d3d11h264dec ! d3d11download ! videoconvert ! video/x-raw,format=I420 ! appsink name=output sync=false max-buffers=2 drop=true";
+      ? "appsrc name=input is-live=true format=time max-bytes=4194304 block=false caps=video/x-h265,stream-format=byte-stream,alignment=au ! h265parse ! d3d11h265dec ! video/x-raw(memory:D3D11Memory),format=NV12 ! appsink name=output sync=false max-buffers=2 drop=true"
+      : "appsrc name=input is-live=true format=time max-bytes=4194304 block=false caps=video/x-h264,stream-format=byte-stream,alignment=au ! h264parse ! d3d11h264dec ! video/x-raw(memory:D3D11Memory),format=NV12 ! appsink name=output sync=false max-buffers=2 drop=true";
     GError* error = nullptr;
     pipeline_ = gst_parse_launch(pipeline, &error);
     if (error) { g_error_free(error); Stop(); return false; }
@@ -44,6 +45,7 @@ class Decoder final : public webrtc::VideoDecoder {
   }
 
   int32_t Decode(const webrtc::EncodedImage& image, bool, int64_t) override {
+    if (failed_generation_->load(std::memory_order_acquire)) return WEBRTC_VIDEO_CODEC_ERROR;
     const size_t prefix = av1_ ? 2 : 0;
     if (!input_ || !image.data() || image.size() > 4194304 - prefix)
       return WEBRTC_VIDEO_CODEC_ERROR;
@@ -105,23 +107,16 @@ class Decoder final : public webrtc::VideoDecoder {
     GstSample* sample = gst_app_sink_pull_sample(sink);
     if (!sample) return GST_FLOW_EOS;
     GstVideoInfo info;
-    GstVideoFrame mapped;
     auto* buffer = gst_sample_get_buffer(sample);
     if (!gst_video_info_from_caps(&info, gst_sample_get_caps(sample)) ||
         info.width < 2 || info.height < 2 || info.width > 3840 || info.height > 3840 ||
         static_cast<int64_t>(info.width) * info.height > 3840LL * 2160 ||
-        !gst_video_frame_map(&mapped, &info, buffer, GST_MAP_READ)) {
+        GST_VIDEO_INFO_FORMAT(&info) != GST_VIDEO_FORMAT_NV12) {
       gst_sample_unref(sample);
       return GST_FLOW_ERROR;
     }
-    auto pixels = webrtc::I420Buffer::Create(info.width, info.height);
-    libyuv::I420Copy(
-      static_cast<const uint8_t*>(GST_VIDEO_FRAME_PLANE_DATA(&mapped, 0)), GST_VIDEO_FRAME_PLANE_STRIDE(&mapped, 0),
-      static_cast<const uint8_t*>(GST_VIDEO_FRAME_PLANE_DATA(&mapped, 1)), GST_VIDEO_FRAME_PLANE_STRIDE(&mapped, 1),
-      static_cast<const uint8_t*>(GST_VIDEO_FRAME_PLANE_DATA(&mapped, 2)), GST_VIDEO_FRAME_PLANE_STRIDE(&mapped, 2),
-      pixels->MutableDataY(), pixels->StrideY(), pixels->MutableDataU(), pixels->StrideU(),
-      pixels->MutableDataV(), pixels->StrideV(), info.width, info.height);
-    gst_video_frame_unmap(&mapped);
+    auto pixels = DeferredI420Buffer::Create(sample, info, failed_generation_);
+    if (!pixels) { gst_sample_unref(sample); return GST_FLOW_ERROR; }
     uint32_t timestamp = 0;
     bool found = false;
     {
@@ -137,6 +132,7 @@ class Decoder final : public webrtc::VideoDecoder {
     }
     return GST_FLOW_OK;
   }
+  std::shared_ptr<std::atomic<bool>> failed_generation_ = std::make_shared<std::atomic<bool>>(false);
   const bool hevc_;
   const bool av1_;
   GstElement *pipeline_ = nullptr, *input_ = nullptr, *output_ = nullptr;

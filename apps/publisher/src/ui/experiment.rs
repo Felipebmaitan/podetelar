@@ -21,6 +21,13 @@ pub struct Request {
     empty_room: bool,
     #[serde(default)]
     publish_fixture: bool,
+    #[serde(default)]
+    disconnected: bool,
+    #[serde(default = "one_round")]
+    rounds: u64,
+}
+fn one_round() -> u64 {
+    1
 }
 fn phase_seconds() -> u64 {
     10
@@ -28,7 +35,9 @@ fn phase_seconds() -> u64 {
 
 pub fn run(request: Request) -> Result<()> {
     ensure!(
-        request.expected_streams <= 4 && (5..=20).contains(&request.phase_seconds),
+        request.expected_streams <= 4
+            && (5..=20).contains(&request.phase_seconds)
+            && (1..=7).contains(&request.rounds),
         "Invalid local benchmark workload."
     );
     ensure!(
@@ -51,11 +60,13 @@ pub fn run(request: Request) -> Result<()> {
             inner.store = None;
             inner.invitation = request.invitation_url.clone();
             inner.name = "Local benchmark".into();
-            inner.controller.send(Command::Join {
-                invitation: request.invitation_url.clone(),
-                name: inner.name.clone(),
-                route: Route::Auto,
-            });
+            if !request.disconnected {
+                inner.controller.send(Command::Join {
+                    invitation: request.invitation_url.clone(),
+                    name: inner.name.clone(),
+                    route: Route::Auto,
+                });
+            }
             inner.download_budget = Some(200_000_000);
             inner.controller.send(Command::DownloadBudget {
                 bps: inner.download_budget,
@@ -76,6 +87,8 @@ pub fn run(request: Request) -> Result<()> {
                 frame_cpu: 0.0,
                 fault: None,
                 publishing_started: false,
+                frame_intervals: std::array::from_fn(|_| Vec::new()),
+                last_ui_at: None,
             }))
         }),
     )
@@ -99,6 +112,8 @@ struct BenchmarkUi {
     frame_cpu: f64,
     fault: Option<&'static str>,
     publishing_started: bool,
+    frame_intervals: [Vec<f64>; 6],
+    last_ui_at: Option<Instant>,
 }
 const PHASES: [&str; 6] = [
     "grid",
@@ -153,10 +168,11 @@ impl BenchmarkUi {
             .filter(|tile| tile.watching && tile.frames.load(Ordering::Relaxed) > 10)
             .count();
         if self.ready.is_none()
-            && state.connection == "connected"
-            && !state.testing_connection
-            && (!self.request.publish_fixture || state.sharing)
-            && (self.request.empty_room || active >= self.request.expected_streams)
+            && (self.request.disconnected
+                || (state.connection == "connected"
+                    && !state.testing_connection
+                    && (!self.request.publish_fixture || state.sharing)
+                    && (self.request.empty_room || active >= self.request.expected_streams)))
         {
             self.ready = Some(Instant::now() + Duration::from_secs(3));
         }
@@ -172,13 +188,16 @@ impl BenchmarkUi {
         let Some(elapsed) = Instant::now().checked_duration_since(ready) else {
             return;
         };
-        let phase = (elapsed.as_secs() / self.request.phase_seconds) as usize;
-        if phase >= PHASES.len() {
+        let step = (elapsed.as_secs() / self.request.phase_seconds) as usize;
+        if step >= PHASES.len() * self.request.rounds as usize {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
+        let phase = step % PHASES.len();
+        let cycle = step / PHASES.len();
         if phase != self.phase {
             self.phase = phase;
+            self.last_ui_at = None;
             let first = state
                 .tiles
                 .iter()
@@ -186,6 +205,18 @@ impl BenchmarkUi {
                 .map(|tile| tile.id.clone());
             match PHASES[phase] {
                 "grid" => {
+                    if cycle > 0 {
+                        self.stopped = false;
+                        self.watched.clear();
+                        if cycle % 2 == 0 {
+                            self.inner.controller.send(Command::Leave);
+                            self.inner.controller.send(Command::Join {
+                                invitation: self.request.invitation_url.clone(),
+                                name: "Local benchmark".into(),
+                                route: Route::Auto,
+                            });
+                        }
+                    }
                     self.inner.focused = None;
                     self.inner.set_fullscreen(ctx, None);
                 }
@@ -218,7 +249,7 @@ impl BenchmarkUi {
                 .values()
                 .map(|texture| texture.size()[0] * texture.size()[1] * 4)
                 .sum();
-            self.samples.push(json!({"second":elapsed.as_secs_f64(),"phase":PHASES[phase],"connection":state.connection,"activeWatches":state.tiles.iter().filter(|tile|tile.watching).count(),"convertedFrames":state.tiles.iter().map(|tile|tile.presentation.converted.load(Ordering::Relaxed)).collect::<Vec<_>>(),"uploadedFrames":state.tiles.iter().map(|tile|tile.presentation.uploaded.load(Ordering::Relaxed)).collect::<Vec<_>>(),"nativeLogMessages":crate::playback::SDK_MESSAGES.load(Ordering::Relaxed),"sharing":state.sharing,"encodedFrames":state.metrics.frames,"previewFrames":state.metrics.preview_frames,"frames":state.tiles.iter().map(|tile|tile.frames.load(Ordering::Relaxed)).collect::<Vec<_>>(),"videoBps":state.tiles.iter().map(|tile|tile.received_bps.load(Ordering::Relaxed)).sum::<u64>(),"textureBytes":texture_bytes,"textures":self.inner.textures.len(),"uiCalls":self.ui_calls,"uiWorkMs":self.ui_work_ns as f64/1e6,"reportedFrameCpuSeconds":self.frame_cpu,"errorPresent":!state.error.is_empty(),"streamErrorCount":state.tiles.iter().filter(|tile|!tile.status.is_empty()).count()}));
+            self.samples.push(json!({"second":elapsed.as_secs_f64(),"cycle":cycle,"phase":PHASES[phase],"connection":state.connection,"activeWatches":state.tiles.iter().filter(|tile|tile.watching).count(),"videoCodecs":state.tiles.iter().filter(|tile|tile.watching).map(|tile|tile.codec.clone()).collect::<Vec<_>>(),"convertedFrames":state.tiles.iter().map(|tile|tile.presentation.converted.load(Ordering::Relaxed)).collect::<Vec<_>>(),"uploadedFrames":state.tiles.iter().map(|tile|tile.presentation.uploaded.load(Ordering::Relaxed)).collect::<Vec<_>>(),"subscriptionSetterCalls":crate::playback::SUBSCRIPTION_SETTERS.load(Ordering::Relaxed),"nativeLogMessages":crate::playback::SDK_MESSAGES.load(Ordering::Relaxed),"sharing":state.sharing,"encodedFrames":state.metrics.frames,"previewFrames":state.metrics.preview_frames,"frames":state.tiles.iter().map(|tile|tile.frames.load(Ordering::Relaxed)).collect::<Vec<_>>(),"audioFrames":state.tiles.iter().map(|tile|tile.audio.lock().map(|m|m.frames).unwrap_or_default()).collect::<Vec<_>>(),"audioQueueMaxMs":state.tiles.iter().map(|tile|tile.audio.lock().map(|m|m.playback_queue_max_ms).unwrap_or_default()).collect::<Vec<_>>(),"audioDroppedFrames":state.tiles.iter().map(|tile|tile.audio.lock().map(|m|m.playback_dropped_frames).unwrap_or_default()).collect::<Vec<_>>(),"videoBps":state.tiles.iter().map(|tile|tile.received_bps.load(Ordering::Relaxed)).sum::<u64>(),"textureBytes":texture_bytes,"textures":self.inner.textures.len(),"uiCalls":self.ui_calls,"uiWorkMs":self.ui_work_ns as f64/1e6,"reportedFrameCpuSeconds":self.frame_cpu,"errorPresent":!state.error.is_empty(),"streamErrorCount":state.tiles.iter().filter(|tile|!tile.status.is_empty()).count()}));
             self.last_sample = Instant::now();
         }
         if PHASES[phase] == "minimized" {
@@ -232,6 +263,13 @@ impl eframe::App for BenchmarkUi {
     }
     fn ui(&mut self, root: &mut egui::Ui, frame: &mut eframe::Frame) {
         let now = Instant::now();
+        if self.phase < PHASES.len() {
+            if let Some(last) = self.last_ui_at {
+                self.frame_intervals[self.phase]
+                    .push(now.duration_since(last).as_secs_f64() * 1000.0);
+            }
+            self.last_ui_at = Some(now);
+        }
         self.inner.ui(root, frame);
         self.ui_work_ns += now.elapsed().as_nanos() as u64;
         self.ui_calls += 1;
@@ -244,10 +282,17 @@ impl eframe::App for BenchmarkUi {
                 Instant::now()
                     .checked_duration_since(ready)
                     .is_some_and(|elapsed| {
-                        elapsed.as_secs() >= self.request.phase_seconds * PHASES.len() as u64
+                        elapsed.as_secs()
+                            >= self.request.phase_seconds
+                                * PHASES.len() as u64
+                                * self.request.rounds
                     })
             });
-        let report = json!({"schema":1,"kind":"actual-native-ui-room","completed":completed,"fault":self.fault,"expectedStreams":self.request.expected_streams,"phaseSeconds":self.request.phase_seconds,"wallSeconds":self.started.elapsed().as_secs_f64(),"samples":self.samples});
+        let intervals:Vec<_>=self.frame_intervals.iter().enumerate().map(|(phase,values)|{
+            let mut sorted=values.clone();sorted.sort_by(f64::total_cmp);let percentile=|p:f64|sorted.get(((sorted.len().saturating_sub(1))as f64*p)as usize).copied();
+            json!({"phase":PHASES[phase],"count":values.len(),"p50Ms":percentile(0.5),"p95Ms":percentile(0.95),"p99Ms":percentile(0.99),"maxMs":sorted.last()})
+        }).collect();
+        let report = json!({"schema":1,"kind":"actual-native-ui-room","completed":completed,"fault":self.fault,"expectedStreams":self.request.expected_streams,"phaseSeconds":self.request.phase_seconds,"rounds":self.request.rounds,"wallSeconds":self.started.elapsed().as_secs_f64(),"uiInvocationIntervals":intervals,"samples":self.samples});
         if let Some(parent) = self.request.report.parent() {
             let _ = std::fs::create_dir_all(parent);
         }

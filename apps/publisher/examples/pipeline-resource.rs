@@ -32,7 +32,7 @@ struct Request {
 }
 fn run(request: Request) -> Result<serde_json::Value> {
     ensure!(
-        request.description.len() < 16384 && request.stall_ms <= 2000 && request.seconds <= 60,
+        request.description.len() < 16384 && request.stall_ms <= 2000 && request.seconds <= 120,
         "Invalid local probe."
     );
     gst::init()?;

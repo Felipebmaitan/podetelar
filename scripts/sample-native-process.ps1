@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory=$true)][int]$ProcessId,
     [Parameter(Mandatory=$true)][string]$Output,
-    [ValidateRange(1,300)][int]$Seconds=120,
+    [ValidateRange(1,1000)][int]$Seconds=120,
     [ValidateRange(1,20)][int]$RestoreAfterSeconds=5
 )
 $ErrorActionPreference='Stop'

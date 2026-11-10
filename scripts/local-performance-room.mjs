@@ -1,7 +1,13 @@
 // Real isolated SFU/API/native-UI workload. Every invitation stays in memory/stdin.
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  copyFileSync,
+} from "node:fs";
 import { resolve, join } from "node:path";
 import { networkInterfaces } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
@@ -17,16 +23,27 @@ const count = Number(countText),
   phaseSeconds = Number(phaseText);
 const fps = Number(process.env.FREEDOMSTREAM_BENCH_FPS ?? 60);
 const publishFixture = process.env.FREEDOMSTREAM_BENCH_PUBLISH === "1";
+const disconnected = process.env.FREEDOMSTREAM_BENCH_DISCONNECTED === "1";
+const audioEnabled = process.env.FREEDOMSTREAM_BENCH_AUDIO === "1";
+const contention = process.env.FREEDOMSTREAM_BENCH_CONTENTION === "1";
+const resolution = process.env.FREEDOMSTREAM_BENCH_RESOLUTION ?? "p1080";
+const rounds = Number(process.env.FREEDOMSTREAM_BENCH_ROUNDS ?? 1);
 if (
   !/^[a-z0-9-]{1,50}$/.test(label) ||
   ![0, 1, 4].includes(count) ||
   ![15, 30, 60].includes(fps) ||
+  !["p1080", "p2160"].includes(resolution) ||
   !["h264", "h265", "av1", "av1-software"].includes(codec) ||
   !Number.isInteger(phaseSeconds) ||
   phaseSeconds < 5 ||
-  phaseSeconds > 10
+  phaseSeconds > 20 ||
+  !Number.isInteger(rounds) ||
+  rounds < 1 ||
+  rounds > 7
 )
   throw new Error("Invalid local workload.");
+if (disconnected && (count !== 0 || publishFixture || audioEnabled))
+  throw new Error("Disconnected workload cannot publish or watch.");
 const root = resolve(import.meta.dirname, "..");
 process.chdir(root);
 const run = join(
@@ -153,18 +170,85 @@ try {
   });
   if (response.status !== 201) throw new Error("Local room creation failed.");
   const { invitationUrl } = await response.json();
+  let load = null,
+    loadSampler = null;
+  const loadReport = join(run, "contention.json"),
+    loadOsReport = join(run, "contention-process.json");
+  if (contention) {
+    const request = join(run, "contention-request.json");
+    const passes = Array.from(
+      { length: 3 },
+      () =>
+        "d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12 ! d3d11convert ! video/x-raw(memory:D3D11Memory),format=RGBA",
+    ).join(" ! ");
+    writeFileSync(
+      request,
+      JSON.stringify({
+        description: `d3d11testsrc is-live=false pattern=ball ! video/x-raw(memory:D3D11Memory),width=3840,height=2160,framerate=60/1 ! ${passes} ! identity name=count ! fakesink sync=false`,
+        seconds: 90,
+      }),
+    );
+    load = start(
+      resolve("target/release/examples/pipeline-resource.exe"),
+      [request, loadReport],
+      nativeEnv,
+    );
+    loadSampler = start("pwsh.exe", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-WindowStyle",
+      "Hidden",
+      "-File",
+      resolve("scripts/sample-native-process.ps1"),
+      "-ProcessId",
+      String(load.child.pid),
+      "-Output",
+      loadOsReport,
+      "-Seconds",
+      "110",
+    ]);
+    await delay(1500);
+  }
+  let audioPath = null;
+  if (audioEnabled && count > 0) {
+    audioPath = join(run, "SyntheticGameAudio.exe");
+    copyFileSync(
+      resolve("target/release/examples/pipeline-resource.exe"),
+      audioPath,
+    );
+    const request = join(run, "audio-source.json"),
+      report = join(run, "audio-source-result.json");
+    const tone = (frequency, pan) =>
+      `audiotestsrc is-live=true samplesperbuffer=480 freq=${frequency} volume=0.005 ! audio/x-raw,format=F32LE,rate=48000,channels=1 ! audiopanorama panorama=${pan} ! mix.`;
+    writeFileSync(
+      request,
+      JSON.stringify({
+        description: `audiomixer name=mix ! audioconvert ! audio/x-raw,rate=48000,channels=2 ! wasapi2sink low-latency=true ${tone(440, -1)} ${tone(660, 1)}`,
+        seconds: 90,
+      }),
+    );
+    start(audioPath, [request, report], nativeEnv);
+    await delay(1000);
+  }
   const publishers = [];
   for (let i = 0; i < count; i++) {
     const publisher = start(exe, ["--publish-fixture"], nativeEnv, {
       invitationUrl,
       displayName: `Synthetic publisher ${i + 1}`,
       codec: codec.replace("-software", ""),
-      seconds: phaseSeconds * 6 + 35,
+      seconds: phaseSeconds * 6 * rounds + 35,
+      fixture4k: resolution === "p2160",
+      audio: audioPath
+        ? { mode: "application", application: audioPath.toLowerCase() }
+        : { mode: "off" },
       quality: {
-        resolution: "p1080",
+        resolution,
         fps,
         profile: "motion",
-        bitrate: { mode: "manual", bps: 6_000_000 },
+        bitrate: {
+          mode: "manual",
+          bps: resolution === "p2160" ? 18_000_000 : 6_000_000,
+        },
       },
     });
     publishers.push(publisher);
@@ -193,7 +277,9 @@ try {
     report: appReport,
     phaseSeconds,
     emptyRoom: count === 0,
-    publishFixture,
+    ...(publishFixture ? { publishFixture: true } : {}),
+    ...(disconnected ? { disconnected: true } : {}),
+    ...(rounds > 1 ? { rounds } : {}),
   });
   const sampler = start("pwsh.exe", [
     "-NoProfile",
@@ -207,18 +293,31 @@ try {
     "-Output",
     osReport,
     "-Seconds",
-    "150",
+    String(phaseSeconds * 6 * rounds + 60),
     "-RestoreAfterSeconds",
     String(phaseSeconds),
   ]);
   let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    app.child.kill();
-  }, 150000);
+  const timer = setTimeout(
+    () => {
+      timedOut = true;
+      app.child.kill();
+    },
+    (phaseSeconds * 6 * rounds + 60) * 1000,
+  );
   const code = await app.closed;
   clearTimeout(timer);
   await sampler.closed;
+  if (load) {
+    const loadCode = await load.closed;
+    await loadSampler.closed;
+    if (
+      loadCode !== 0 ||
+      !existsSync(loadReport) ||
+      JSON.parse(readFileSync(loadReport)).deliveredBuffers < 100
+    )
+      throw new Error("Synthetic contention workload did not run correctly.");
+  }
   if (timedOut || code !== 0 || !existsSync(appReport))
     throw new Error("Native UI benchmark failed to finish.");
   const appResult = JSON.parse(readFileSync(appReport));
@@ -232,6 +331,13 @@ try {
     count,
     codec,
     phaseSeconds,
+    fps,
+    resolution,
+    publishFixture,
+    disconnected,
+    audioEnabled,
+    contention,
+    rounds,
     appStartedAt,
     appSha256: hash(uiExe),
     publisherSha256: hash(exe),
@@ -241,6 +347,10 @@ try {
     process: existsSync(osReport)
       ? JSON.parse(readFileSync(osReport, "utf8").replace(/^\uFEFF/, ""))
       : null,
+    contentionProcess:
+      contention && existsSync(loadOsReport)
+        ? JSON.parse(readFileSync(loadOsReport, "utf8").replace(/^\uFEFF/, ""))
+        : null,
     limits:
       "Actual native UI/SDK/SFU decode, no microphone or personal screen publication. Publishers are separate synthetic processes. GPU engine/VRAM counters are per receiver; these are not game frame times.",
   };

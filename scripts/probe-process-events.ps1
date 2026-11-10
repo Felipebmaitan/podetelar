@@ -9,7 +9,7 @@ try{
   $subscriptions.Add((Register-CimIndicationEvent -Namespace root/cimv2 -ClassName Win32_ProcessStartTrace -SourceIdentifier "$prefix-start"))
   $subscriptions.Add((Register-CimIndicationEvent -Namespace root/cimv2 -ClassName Win32_ProcessStopTrace -SourceIdentifier "$prefix-stop"))
  }catch{
-  @{schema=1;subscriptionSucceeded=$false;administrator=$administrator;errorType=$_.Exception.GetType().FullName;limits='Read-only WMI process-event subscription unavailable in this token. No elevation, policy change or polling/exclusion change was performed.'}|ConvertTo-Json|Set-Content -LiteralPath $path -Encoding utf8
+  @{schema=1;subscriptionSucceeded=$false;administrator=$administrator;errorType=$_.Exception.GetType().FullName;cimStatus=[string]$_.Exception.StatusCode;limits='Read-only WMI process-event subscription unavailable in this token. No elevation, policy change or polling/exclusion change was performed.'}|ConvertTo-Json|Set-Content -LiteralPath $path -Encoding utf8
   return
  }
  $started=[Collections.Generic.HashSet[int]]::new();$stopped=[Collections.Generic.HashSet[int]]::new();$owned=[Collections.Generic.HashSet[int]]::new()

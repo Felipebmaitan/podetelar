@@ -64,6 +64,27 @@ evidence identifies unused shipped code; compressed file size is not RAM use.
 GPUI is an architectural alternative, not an assumed improvement; a native GPU
 presenter will be tested without requiring a UI rewrite.
 
+**Additional opportunity found during execution — R18:** the hardware receive
+adapter currently downloads NV12, asks GStreamer to allocate/convert I420, then
+copies that I420 into the SDK's owned I420 frame. Test downloading NV12 and using
+the already linked libyuv directly into that same owned SDK I420 frame. This
+keeps the public SDK frame type and CPU-readback behavior; it does not require a
+native GPU buffer bridge. Run matched one/four-context 1080p/4K comparisons,
+whole visible-plane pixel checks outside timing, actual H.264/HEVC/AV1 app/SFU
+acceptance and resource/lifecycle checks before retaining it. Status: **pending
+measured prototype**.
+
+**R19 — deferred CPU planes, investigated after R18:** retain an owned decoded
+GPU sample behind the SDK's supported I420 plane interface. Materialize owned
+CPU I420 only when a consumer actually reads a plane. This tests avoiding GPU
+readback for unpresented pictures without changing subscriptions or exposing an
+unsupported native-buffer enum. Required gates: zero pre-hash materializations
+while hidden, all visible-frame materializations, pixel equality after graph
+shutdown, concurrent plane reads, initialized failure pixels, generation-safe
+error signaling and real SDK/app lifecycle acceptance. It remains an isolated
+prototype until those gates and whole-app measurements pass. No further new
+candidate scope is needed to finish this pass.
+
 ## Unavailable hardware and external gates — not executed as qualifications tonight
 
 | ID  | Gate                                                                                                | Local work still permitted                                                                                             |

@@ -13,6 +13,7 @@
 #include <vector>
 #include "api/environment/environment_factory.h"
 #include "api/make_ref_counted.h"
+#include "rtc_base/logging.h"
 #include "synthetic-probe.cpp"
 using Clock=std::chrono::steady_clock;
 double Millis(Clock::duration value){return std::chrono::duration<double,std::milli>(value).count();}
@@ -27,8 +28,21 @@ class Transport final:public webrtc::AudioTransport {
  }
  void PullRenderData(int bits,int,size_t channels,size_t frames,void* data,int64_t* elapsed,int64_t* ntp)override{std::memset(data,0,frames*channels*(bits/8));*elapsed=0;*ntp=0;}
 };
+class CountLog final:public webrtc::LogSink {
+ public: uint64_t messages=0,bytes=0;
+ void OnLogMessage(const std::string& message)override{messages++;bytes+=message.size();}
+ void OnLogMessage(const std::string& message,webrtc::LoggingSeverity)override{OnLogMessage(message);}
+};
 int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR,int){
  int argc=0;auto** args=CommandLineToArgvW(GetCommandLineW(),&argc);if(argc!=3)return 2;const bool gated=std::wstring(args[1])==L"gated";std::ofstream report(args[2]);
+ if(std::wstring(args[1]).starts_with(L"log-")){
+  const bool filtered=std::wstring(args[1])==L"log-warning";CountLog sink;
+  webrtc::LogMessage::SetLogToStderr(false);webrtc::LogMessage::LogToDebug(webrtc::LS_NONE);webrtc::LogMessage::AddLogToStream(&sink,filtered?webrtc::LS_WARNING:webrtc::LS_VERBOSE);
+  const auto begin=Clock::now();const auto cpu=CpuMs();for(int i=0;i<100000;i++){RTC_LOG(LS_VERBOSE)<<"Synthetic local SDK formatting record "<<i;}
+  const auto used=CpuMs()-cpu;const auto wall=Millis(Clock::now()-begin);webrtc::LogMessage::RemoveLogToStream(&sink);
+  const bool valid=sink.messages==(filtered?0:100000);
+  report<<"{\"schema\":1,\"completed\":true,\"valid\":"<<(valid?"true":"false")<<",\"filtered\":"<<(filtered?"true":"false")<<",\"attemptedMessages\":100000,\"deliveredMessages\":"<<sink.messages<<",\"formattedBytes\":"<<sink.bytes<<",\"cpuMs\":"<<used<<",\"wallMs\":"<<wall<<",\"limits\":\"Actual pinned native logging formatter and severity filter with a text-discarding count sink. Excludes Rust/CXX string copying. Synthetic 100,000-message workload; actual app message rate must be measured separately. No log text exported.\"}";return valid?0:3;
+ }
  const auto env=webrtc::CreateEnvironment();auto device=webrtc::make_ref_counted<livekit_ffi::SyntheticAudioDevice>(env);Transport transport;device->RegisterAudioCallback(&transport);device->Init();
  const auto start=Clock::now();const auto cpu=CpuMs();std::vector<uint64_t> ticks;std::vector<int> callbacks;
  for(int phase=0;phase<4;phase++){

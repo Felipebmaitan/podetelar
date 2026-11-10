@@ -98,6 +98,32 @@ pub fn run(report: &Path) -> Result<()> {
     results.push(timed("audio-pcm-owned-transfer", 100_000, || {
         black_box(crate::playback::audio_buffer(black_box(&samples).clone()));
     }));
+    // Preserve every sample peak. Lower-rate publication may reduce locking,
+    // whereas skipping sample scans could miss transients and is not equivalent.
+    let mut direct_peak = 0.0_f64;
+    let scalar = std::sync::Mutex::new((0_u64, 0.0_f64));
+    results.push(timed("audio-scalars-every-frame", 20_000, || {
+        let mut current = scalar.lock().unwrap();
+        for pair in black_box(&samples).chunks_exact(2) {
+            current.1 = current.1.max(pair[0].unsigned_abs() as f64 / 32768.0);
+        }
+        current.0 += 480;
+        direct_peak = current.1;
+        black_box(&current);
+    }));
+    let mut local_peak = 0.0_f64;
+    let mut local_frames = 0_u64;
+    results.push(timed("audio-scalars-publish-ten-frames", 20_000, || {
+        for pair in black_box(&samples).chunks_exact(2) {
+            local_peak = local_peak.max(pair[0].unsigned_abs() as f64 / 32768.0);
+        }
+        local_frames += 480;
+        if local_frames % 4800 == 0 {
+            *scalar.lock().unwrap() = (local_frames, local_peak);
+        }
+        black_box(local_peak);
+    }));
+    ensure!(local_peak == direct_peak, "Scalar peak changed.");
     results.push(timed("upload-fresh-64k-chunk", 20_000, || {
         black_box(vec![0x5a_u8; black_box(65_536)]);
     }));

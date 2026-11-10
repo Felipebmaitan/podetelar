@@ -6,6 +6,8 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { resolve, join } from "node:path";
@@ -25,13 +27,6 @@ const originalAdapter = execute("git", [
   "show",
   `${base}:apps/publisher/decoder/freedomstream_decoder.h`,
 ]);
-const currentAdapter = readFileSync(
-  join(root, ".local/native-sdk/webrtc-sys/src/freedomstream_decoder.h"),
-);
-if (hash(originalAdapter) !== hash(currentAdapter))
-  throw new Error(
-    "Prepare the original pinned decoder source before exporting this baseline.",
-  );
 const archive = join(output, "source.tar");
 execute("git", [
   "archive",
@@ -40,6 +35,7 @@ execute("git", [
   base,
   "Cargo.toml",
   "Cargo.lock",
+  ".cargo/config.toml",
   "apps/publisher",
   "apps/portable",
   "assets/windows",
@@ -54,6 +50,53 @@ for (const name of ["livekit", "webrtc-sys"])
     join(output, ".local/native-sdk", name),
     { recursive: true, errorOnExist: true, force: false },
   );
+// Restore only the known adapter changes in this private copy, then verify the
+// complete original tree. The current candidate SDK is never mutated.
+const sdk = join(output, ".local/native-sdk/webrtc-sys");
+writeFileSync(join(sdk, "src/freedomstream_decoder.h"), originalAdapter);
+const deferredHeader = join(sdk, "src/deferred_i420.h");
+if (existsSync(deferredHeader)) rmSync(deferredHeader);
+const sdkBuild = join(sdk, "build.rs");
+writeFileSync(
+  sdkBuild,
+  readFileSync(sdkBuild, "utf8").replace(
+    '            println!("cargo:rerun-if-changed=src/deferred_i420.h");\n',
+    "",
+  ),
+);
+const rtcSource = join(sdk, "src/webrtc.cpp");
+writeFileSync(
+  rtcSource,
+  readFileSync(rtcSource, "utf8").replace(
+    `  // Keep live wrapper identity; expired weak entries own no usable track.
+  media_stream_tracks_.erase(
+      std::remove_if(media_stream_tracks_.begin(), media_stream_tracks_.end(),
+                     [](const auto& track) { return track.expired(); }),
+      media_stream_tracks_.end());
+`,
+    "",
+  ),
+);
+const digest = createHash("sha256");
+function visitSdk(directory) {
+  for (const entry of readdirSync(directory, { withFileTypes: true }).sort(
+    (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
+  )) {
+    const file = join(directory, entry.name);
+    if (entry.isDirectory()) visitSdk(file);
+    else if (entry.isFile())
+      digest.update(
+        `${file.slice(sdk.length + 1).replaceAll("\\", "/")}\0${hash(readFileSync(file))}\n`,
+      );
+    else throw new Error("Unexpected baseline SDK link.");
+  }
+}
+visitSdk(sdk);
+const originalPin = JSON.parse(
+  readFileSync(join(output, "deploy/native-decoder.json")),
+);
+if (digest.digest("hex") !== originalPin.treeSha256)
+  throw new Error("Original baseline SDK tree was not reproduced exactly.");
 const changes = [];
 function edit(relative, action) {
   const path = join(output, relative);
@@ -102,6 +145,7 @@ edit("apps/publisher/src/playback.rs", (text) => {
     `#[derive(Default)]
 pub struct Presentation {pub converted:AtomicU64,pub uploaded:AtomicU64}
 pub static SDK_MESSAGES:AtomicU64=AtomicU64::new(0);
+pub static SUBSCRIPTION_SETTERS:AtomicU64=AtomicU64::new(0);
 pub type Picture =`,
   );
   text = once(
@@ -128,6 +172,10 @@ pub type Picture =`,
     text,
     "                                frames.fetch_add(1, Ordering::Relaxed);",
     "                                frames.fetch_add(1, Ordering::Relaxed);\n                                presentation.converted.fetch_add(1,Ordering::Relaxed);",
+  );
+  text = text.replace(
+    /^(\s*)publication\.set_subscribed\((false|enabled)\);/gm,
+    "$1SUBSCRIPTION_SETTERS.fetch_add(1,Ordering::Relaxed);$1publication.set_subscribed($2);",
   );
   return once(
     text,

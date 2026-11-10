@@ -1,6 +1,7 @@
 # Independent follow-up performance experiments
 
-Status: **all local experiments completed; final package/review acceptance pending**.
+Status: **local experiment campaign completed**. Packaged acceptance and its
+remaining verification limits are documented at the end of this report.
 These experiments start from the optimized application at
 `e93b71d437810192bd1648e65088f1a6b9196754`, not the original pre-optimization
 application. Work is isolated on `perf/deep-individual-experiments` in
@@ -113,7 +114,7 @@ documented [HeapOptimizeResources API](https://learn.microsoft.com/en-us/windows
 acts on the process's own default heap in the separate E4 experiment; it is not a
 working-set trim and does not free live allocations. E4's remaining comparisons,
 the completed seven-cycle comparison is documented below. Final package and
-independent evidence acceptance remain outstanding.
+independent review is tracked with the PR.
 
 ## Validation checkpoint and measurement repair
 
@@ -186,7 +187,7 @@ fallback and nontransactional partial GL initialization. Both have been hardened
 and pass actual-GL transition, failure and retry qualification on frozen sdk-v8
 in both retention modes. Default application changes currently consist
 of rectangle-based presentation demand and the bounded historical-report cache;
-final adopted-path acceptance and independent review remain outstanding.
+packaged acceptance is documented below; independent review is tracked with the PR.
 
 The longer all-visible control has now completed three alternating pairs, each
 with a 70-second grid phase. Excluding the first ten seconds, CPU medians were
@@ -431,5 +432,32 @@ node scripts/summarize-deep-pass.mjs
 node scripts/render-deep-performance.mjs
 ```
 
-Final clean packaging, packaged native acceptance and a new immutable-range
-independent review are the remaining acceptance steps at this checkpoint.
+## Final package and audio qualification caveat
+
+The default-feature portable package was built from clean implementation commit
+`e24856c6308375083f5dbb2dd30f0f725e5e839f`. File:
+`freedomstream-windows-x64-0.1.0-e24856c63083.exe`, 81,891,966 bytes, SHA-256
+`edddc75ec4b552f9d9c28b56dd29a958ac56e5e5be7f8f9d72a1c6107f37b5ec`.
+The bundled publisher is a Windows GUI executable, SHA-256
+`4093ff6b4c5eb90dac940ca511de1f7be749ecb49d314f5695cc44057077dd7f`.
+Experimental renderer/device/heap/observer markers are absent. The original
+native SDK and dependency manifests are preserved. Later fixture/report changes
+do not alter the packaged application sources.
+
+The initial actual portable/API/SFU suite passes **10 of 11 cases** at its normal
+cache. The desktop-audio test fails a frequency-rejection threshold. Four matched
+controls on the earlier and current packages also fail with ordinary background
+desktop audio present. Four further controls, two per package, pass every original
+audio criterion after pre-existing background application images are excluded
+before starting the synthetic tones. No raw PCM, background image paths, personal
+audio, or user volume changes enter the evidence; only counts and fixed-frequency
+magnitudes are retained. This is consistent with background contamination of the
+spectral test, rather than a newly introduced audio-policy regression.
+
+The official fixture now uses the same isolation while keeping its rejection
+thresholds and restart checks. Node checks pass after that test-only change.
+**The complete audible suite was not rerun after the fixture correction because
+Felipe requested no further audible tests.** The initial failure and all eight
+controls remain recorded; no clean 11/11 single-run result is claimed. Audio
+product code is unchanged. This caveat and the independent final review are
+explicit PR acceptance information, not hidden by the performance wins.

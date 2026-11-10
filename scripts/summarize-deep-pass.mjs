@@ -374,6 +374,7 @@ for (const label of [
   "protocol-v6",
   "protocol-v8",
   "product-v1",
+  "product-v2",
   "report-memory",
 ]) {
   const file = resolve(dir, `source-${label}/manifest.json`);
@@ -593,6 +594,32 @@ for (const size of ["1080p", "4k"])
     );
     fixtures.push({ size, codec, sha256: digest, bytes: bytes.length });
   }
+const acceptance = json(resolve(dir, "final-acceptance.json"));
+const packagedSource = builds.find((build) => build.label === "product-v2");
+assert.ok(packagedSource);
+for (const entry of packagedSource.files)
+  assert.equal(
+    sha(tracked(resolve(root, entry.file))),
+    entry.sha256,
+    `Packaged checked source changed: ${entry.file}`,
+  );
+for (const row of [
+  ...acceptance.checks,
+  ...acceptance.receipts,
+  ...acceptance.audioControls,
+])
+  assert.equal(sha(tracked(resolve(root, row.path))), row.sha256);
+assert.equal(
+  sha(tracked(resolve(root, acceptance.package.path))),
+  acceptance.package.sha256,
+);
+const defaultBinary = json(resolve(dir, "default-binary-check.json"));
+assert.equal(defaultBinary.passed, true);
+assert.equal(
+  sha(tracked(resolve(root, acceptance.package.defaultBinary))),
+  defaultBinary.sha256,
+);
+assert.ok(acceptance.audioControls[1].runs.every((run) => run.passed));
 const output = {
   schema: 1,
   base: "e93b71d437810192bd1648e65088f1a6b9196754",
@@ -612,6 +639,7 @@ const output = {
   historyReplay,
   helperFailures,
   inputArtifacts,
+  acceptance,
   excluded,
   native,
   nativeComparisons,

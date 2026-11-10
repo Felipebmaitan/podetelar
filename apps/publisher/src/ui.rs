@@ -736,14 +736,14 @@ impl PublisherUi {
                 {
                     self.set_fullscreen(&ctx, None);
                 }
-                let hud = egui::Rect::from_min_size(
-                    rect.right_bottom() - egui::vec2(108.0, 30.0),
-                    egui::vec2(102.0, 24.0),
-                );
-                ui.painter()
-                    .rect_filled(hud, 4.0, egui::Color32::from_black_alpha(190));
-                Self::bitrate(ui, hud, tile);
                 if Instant::now() < self.fullscreen_controls_until {
+                    let hud = egui::Rect::from_min_size(
+                        rect.right_bottom() - egui::vec2(108.0, 30.0),
+                        egui::vec2(102.0, 24.0),
+                    );
+                    ui.painter()
+                        .rect_filled(hud, 4.0, egui::Color32::from_black_alpha(190));
+                    Self::bitrate(ui, hud, tile);
                     egui::Area::new(egui::Id::unique("fullscreen-controls"))
                         .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(16.0, -16.0))
                         .order(egui::Order::Foreground)

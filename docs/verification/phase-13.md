@@ -10,7 +10,7 @@ claim that those separate features are included.
   or F11 also enters native borderless fullscreen; Escape/F11, double-click or the
   fullscreen exit control returns to the window. F11 selects the focused watched
   stream, otherwise the first watched stream. The video preserves its aspect
-  ratio. Controls hide after three seconds without input, including when the
+  ratio. Controls and the fullscreen bitrate label hide after three seconds without input, including when the
   cursor rests over a control. Mouse movement or a fresh click/key press brings
   them back; hovering or holding a key does not keep them visible. Entering
   fullscreen closes Advanced; key repeats do not toggle it.

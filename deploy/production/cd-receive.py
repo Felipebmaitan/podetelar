@@ -10,9 +10,16 @@ import tarfile
 import tempfile
 
 ROOT = Path('/opt/freedomstream')
-match = re.fullmatch(r'deploy ([0-9a-f]{40})', os.environ.get('SSH_ORIGINAL_COMMAND', ''))
+command = os.environ.get('SSH_ORIGINAL_COMMAND', '')
+if command == 'current':
+    current = (ROOT / 'current').resolve().name
+    if not re.fullmatch(r'[0-9a-f]{40}', current):
+        raise SystemExit('Active release has no commit identity')
+    print(current)
+    raise SystemExit(0)
+match = re.fullmatch(r'deploy ([0-9a-f]{40})', command)
 if not match:
-    raise SystemExit('Only deploy COMMIT is supported')
+    raise SystemExit('Only current or deploy COMMIT is supported')
 os.umask(0o077)
 with (ROOT / 'cd/work/deploy.lock').open('a') as lock:
     # Serialize deployments; never interrupt an activation for a newer commit.

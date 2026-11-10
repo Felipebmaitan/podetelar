@@ -11,6 +11,15 @@ The SFU image is reused by source hash until its collector/build files change.
 This workflow preserves the existing portable download; Windows application
 packaging/release remains a separate manual operation.
 
+Before transferring source or building, the workflow reads the active release's
+commit through the restricted SSH `current` command. It compares all changes from
+that deployed version to checked main. Only API, served website/dashboard, shared
+contracts, server build inputs, production/SFU/relay files and the CD workflow
+trigger deployment. Native publisher/portable, assets, Cargo and documentation-only
+changes skip source transfer, builds and container restart. Comparing to the active
+release also catches an earlier pending server update followed by a native-only
+merge. A short GitHub preflight job still evaluates this condition after Checks.
+
 The `production` environment holds `VPS_DEPLOY_KEY` and `VPS_KNOWN_HOSTS`; its
 variables are `VPS_HOST` and `VPS_USER`. Allow deployments only from main. The key
 is dedicated to this repository and has a forced SSH command with forwarding/PTY
@@ -18,7 +27,7 @@ disabled. Install `cd-receive.py` at `/opt/freedomstream/cd/receive.py` and auth
 its public key as `restrict,command="/usr/bin/python3 /opt/freedomstream/cd/receive.py"`.
 Use the previously verified server host keys, never an unverified keyscan in CI.
 
-The receiver accepts only `deploy <40-character-SHA>` plus a bounded source
+The receiver accepts only `current` (the active SHA) or `deploy <40-character-SHA>` plus a bounded source
 archive. It rejects links/traversal/private state and stages immutable releases.
 The release script builds before activation, creates an integrity-checked SQLite
 online backup (including committed WAL pages), and preserves the original database
@@ -38,7 +47,7 @@ No `compose down`, volume removal, database replacement or pruning runs during C
 The app's documented 400-day traffic retention remains a separate application policy.
 
 Run the backup/history regression tests with
-`python3 -m unittest discover -s deploy/production -p 'test_cd_state.py'`.
+`python3 -m unittest discover -s deploy/production -p 'test_cd_*.py'`.
 
 This deployment owns `/opt/freedomstream`, its Compose project, two nginx snippets,
 two timers and explicitly named firewall rules. Existing sites on 80/443, databases

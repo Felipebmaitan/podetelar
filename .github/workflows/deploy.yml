@@ -47,6 +47,7 @@ jobs:
         if: steps.target.outputs.skip != 'true'
         with:
           ref: ${{ steps.target.outputs.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - name: Send committed source to the restricted deploy command
         if: steps.target.outputs.skip != 'true'
@@ -64,6 +65,13 @@ jobs:
           trap 'rm -f "$key" "$hosts"' EXIT
           printf '%s\n' "$DEPLOY_KEY" > "$key"
           printf '%s\n' "$KNOWN_HOSTS" > "$hosts"
+          active=$(ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts" \
+            -o ConnectTimeout=15 -i "$key" "$DEPLOY_USER@$DEPLOY_HOST" current)
+          [[ "$active" =~ ^[a-f0-9]{40}$ ]]
+          if [[ $(python3 deploy/production/server-changes.py "$active" "$DEPLOY_SHA") != true ]]; then
+            echo 'No server changes since active release; skipping source transfer, builds and restart'
+            exit 0
+          fi
           git archive --format=tar "$DEPLOY_SHA" | gzip -n | \
             ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts" \
               -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \

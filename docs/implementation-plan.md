@@ -188,6 +188,57 @@ independent GPT-6.1-Sol high-reasoning review. Coordinate the deployment base wi
 the parallel friends-beta/fullscreen release before activation; do not overwrite
 its network-test/proxy changes or existing invitations.
 
+## 15. Stream-first native UI — design branch
+
+Implement the approved ImageGen concept on `feat/stream-first-ui`: charcoal
+surfaces, a compact sharing/member sidebar, and large 16:9 stream surfaces.
+Move viewing actions into a right-click menu, with a hover ellipsis alternative;
+retain explicit Watch/Stop subscriptions, mute/volume, focus and fullscreen.
+Show the received publication's codec immediately left of its measured video
+bitrate inside watched video only on mouse hover; fullscreen may fade its HUD
+after mouse inactivity. Never show delivery metrics on an unsubscribed preview.
+
+Keep source resolution and FPS controls, source-derived audio, start/minute
+preview cadence and saved-room behavior. In short windows, pin sharing actions
+and keep source/FPS accessible; source confirmation can be expanded in the sidebar.
+Truncate long room names while preserving invitation, leave and language controls.
+Default the automatic watching allowance to 30 Mbps when no download measurement
+is available. Remove the connection-route selector and use automatic routing.
+Match the approved concept's visual treatment with embedded Inter regular and
+semibold fonts, charcoal controls, custom stream menu rows with vector icons,
+volume slider and mute switch, consistent corner radii and compact identity chips.
+Keep the stream menu open while changing audio settings; preserve keyboard and
+pointer controls and distribute the font's OFL notice with the application.
+
+Implement the subsequently approved settings/source mockups: roomier Advanced
+groups (Video, Reception, Connection), two-column encoder/bitrate controls, short
+status text, help tooltips and collapsed diagnostics. Remove the redundant
+microphone-off row. Add a local source-list confirmation popover on the right:
+hover/focus requests one still after a short debounce, clicking only changes the
+pending source, and Start/Apply remains explicit. This authorized local capture
+is separate from uploaded previews, whose start/minute gate is unchanged. Bound
+the local worker/request/cache, cancel stale/dismissed work and release its
+source-only pipeline without starting audio, encoding or a publication.
+
+Keep the last pointer-hovered preview across row gaps and the preview popover;
+use focused rows when navigating by keyboard. Retry a transient local capture
+failure once after a cancellable delay. Refresh the source catalogue quietly
+while its list is open and exclude hidden, minimized, DWM-cloaked, tool and
+nonactivating windows from discovery. Preserve HWND/PID validation for an active
+publication so minimizing an already shared window does not revoke its source.
+
+Intercept native window close before process teardown. Cancel pending join and
+capture authority, prioritize shutdown independently of the bounded command queue,
+await stream unpublication and session departure, then allow window destruction.
+Keep a responsive closing screen; offer explicit forced exit after ten seconds if
+driver or network cleanup stalls. Repeated close requests must not skip cleanup.
+
+Accept with native-renderer captures at 1280×720 and 960×540, open stream menus,
+sharing, onboarding/error and focus states; native Clippy/tests and Node 24 checks;
+and independent technical/visual review. Synthetic UI captures establish layout
+only. Existing uncommitted media/packaging prerequisites and outstanding physical
+hardware/network acceptance remain separate from this design branch.
+
 ## Later portability
 
 After the Windows experience meets the above gates, add macOS and Linux in separate PRs. Preserve the room, invitation, subscription and preview contracts; replace platform capture/audio/encoder adapters. No cross-platform promise until each backend is tested on its actual OS.

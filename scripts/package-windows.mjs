@@ -123,6 +123,10 @@ if (
     "The launcher must resolve its Windows imports from System32.",
   );
 copyFileSync(join(root, "LICENSE"), join(notices, "FreedomStream-MIT.txt"));
+copyFileSync(
+  join(root, "assets/fonts/OFL-Inter.txt"),
+  join(notices, "Inter-OFL.txt"),
+);
 const metadata = JSON.parse(
   execFileSync(
     "cargo",
@@ -140,6 +144,8 @@ const index = [
   "# Windows publisher dependency notices",
   "",
   "FreedomStream is MIT licensed. Each dependency retains its own license. The curated runtime, complete corresponding library sources and build recipes accompany this executable. See RUNTIME.md and sources/README.md. No codec patent license or hardware qualification is implied.",
+  "",
+  "Inter Regular and SemiBold fonts: SIL Open Font License 1.1. Copyright 2020 The Inter Project Authors. See Inter-OFL.txt.",
   "",
 ];
 for (const pkg of metadata.packages

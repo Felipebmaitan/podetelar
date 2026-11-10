@@ -12,8 +12,10 @@ mod preview;
 mod publisher;
 mod quality;
 mod settings;
+mod source_picker;
 mod sources;
 mod ui;
+mod ui_style;
 #[cfg(windows)]
 mod win32;
 

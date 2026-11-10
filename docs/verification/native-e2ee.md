@@ -40,12 +40,22 @@ path limits. The GStreamer runtime is the existing verified local runtime.
   rejection behavior.
 - `node --test scripts/native-tools.test.mjs`: 3 passed, including tampered
   archive/generated source rejection.
-- Native formatting, Clippy and 41 publisher + 7 portable tests passed, including
+- Native formatting, Clippy and 41 publisher + 7 portable tests passed on the final
+  hardened source, including
   Windows DPAPI protected invitation save/restore, root absence, tampering and
-  Forget. Re-run after the final SDK attachment-order change remains required.
-- Real SFU `native-e2e/e2ee.spec.ts`: pending final recording. These tests must
-  verify actual native decode/audio/preview and denial paths, not only requested
-  encryption settings.
+  Forget. The debug acceptance executable SHA-256 is
+  `10513f0829f47b8099d24d123378f064dafc0aacf6ffe49e030c4e3511806f76`.
+- Real local SFU `e2ee.spec.ts` + `e2ee-faults.spec.ts`: **11 passed** on the
+  hashed binary above, using the RTX 5080. H.264, HEVC and AV1 native playback,
+  encrypted JPEG previews, actual Stop/rewatch byte checks, AV1-to-H.264 fallback,
+  stereo game audio with Discord exclusion, wrong/missing-root denial, legacy
+  plaintext denial, descriptor tampering/removal and both signaling faults passed.
+  The H.264 sender and receiver actively tried disabling their cryptors; both
+  remained enabled and encrypted playback continued.
+- `node scripts/test-sdk-receiver.mjs`: **1 passed**, deliberately overlapping
+  same-SID publication attachments while the first notification is blocked. It
+  runs the pinned SDK's real track/publication implementation in a separate
+  generated test workspace, without modifying the app manifest or lockfile.
 - CPU measurement: pending. The opt-in `e2ee-performance.spec.ts` uses two
   alternating-order rounds with one/four independent watcher processes, a D3D11
   snow fixture, 1080p60 and a 35 Mbps target. It records actual delivery separately.
@@ -96,7 +106,17 @@ attachment and refuses disable requests for their lifetime, including cleanup.
 Protected SDK paths suppress standalone timing transforms and their advertised
 trailers. The H.264 media fixture actively requests sender/receiver cryptor
 disablement and requires it to remain enabled while encrypted playback succeeds.
-Final re-review is pending.
+The final fresh GPT-6.1-Sol high-reasoning review approved implementation commit
+`351c6df62c743ddce1b740ae1470a63302bb30c2` for the documented boundary. It
+independently verified both generated source-tree hashes and the patched C++
+cryptor hash. Approval is source-based and does not substitute for the recorded
+runtime checks.
+
+The reviewer identified a nonblocking future integration constraint: SDK
+`publish_timing_events()` and `subscribe_timing_events()` lazily install standalone
+transformers. Neither has an application callsite. Future instrumentation must
+preserve mandatory encryption rather than invoke these helpers on protected
+tracks without an enforcing chain.
 
 Optional upstream hardening remains separate: the C++ cryptor's malformed short
 frame parsing has unchecked indexing/subtraction in the supplied source. Review

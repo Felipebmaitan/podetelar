@@ -727,9 +727,14 @@ async fn serve_fixture(
         let second = started.elapsed().as_secs();
         if sample_rates && second >= next_sample {
             let metrics = active.metrics.lock().map(|m| m.clone()).unwrap_or_default();
+            let delivered = active
+                .delivery
+                .lock()
+                .map(|m| m.clone())
+                .unwrap_or_default();
             println!(
                 "{}",
-                serde_json::json!({"rateSample":true,"second":second,"encoderBps":metrics.encoder_bitrate,"fps":metrics.fps,"watcherCap":playback::requested_cap(room)})
+                serde_json::json!({"rateSample":true,"second":second,"encoderBps":metrics.encoder_bitrate,"encodedBps":metrics.encoded_bps,"deliveryBps":delivered.bitrate_bps,"sentFps":delivered.sent_fps,"fps":metrics.fps,"watcherCap":playback::requested_cap(room)})
             );
             next_sample = second + 1;
         }

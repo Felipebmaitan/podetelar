@@ -74,8 +74,40 @@ test("measure invitation encryption on/off at 35 Mbps with one and four watchers
           invitationUrl,
           displayName: "Measured publisher",
           codec: "h264",
-          seconds: 29,
+          seconds: 39,
           quality,
+          sampleRates: true,
+        });
+        const rateSamples: {
+          at: number;
+          deliveryBps: number;
+          encodedBps: number;
+          sentFps: number;
+        }[] = [];
+        let pendingRates = "";
+        sender.child.stdout!.on("data", (data: Buffer) => {
+          pendingRates = (pendingRates + data.toString()).slice(-65536);
+          const lines = pendingRates.split("\n");
+          pendingRates = lines.pop()!;
+          for (const line of lines) {
+            try {
+              const sample = JSON.parse(line);
+              if (
+                sample.rateSample === true &&
+                Number.isFinite(sample.deliveryBps) &&
+                Number.isFinite(sample.encodedBps) &&
+                Number.isFinite(sample.sentFps)
+              )
+                rateSamples.push({
+                  at: performance.now(),
+                  deliveryBps: sample.deliveryBps,
+                  encodedBps: sample.encodedBps,
+                  sentFps: sample.sentFps,
+                });
+            } catch {
+              /* Partial/non-metric output is not included in reports. */
+            }
+          }
         });
         if (previousNoise === undefined)
           delete process.env.FREEDOMSTREAM_FIXTURE_NOISE;
@@ -87,12 +119,13 @@ test("measure invitation encryption on/off at 35 Mbps with one and four watchers
             receivers.push(
               nativeRequest("--watch-fixture", {
                 invitationUrl,
-                seconds: 25,
+                seconds: 35,
                 consumePictures: true,
+                downloadLimitMbps: 200,
               }),
             );
           // Exclude initial admission/decode and the fixture's Stop/rewatch phase.
-          await delay(12_000);
+          await delay(20_000);
           const ids = [
             sender.child.pid!,
             ...receivers.map((r) => r.child.pid!),
@@ -102,6 +135,13 @@ test("measure invitation encryption on/off at 35 Mbps with one and four watchers
           await delay(8000);
           const last = await cpuSeconds(ids);
           const elapsed = (performance.now() - start) / 1000;
+          const window = rateSamples.filter(
+            (sample) =>
+              sample.at >= start && sample.at <= start + elapsed * 1000,
+          );
+          expect(window.length).toBeGreaterThanOrEqual(5);
+          const mean = (values: number[]) =>
+            values.reduce((sum, value) => sum + value, 0) / values.length;
           const processes = last.map((sample) => ({
             role: sample.id === sender.child.pid ? "publisher" : "watcher",
             oneCorePercent:
@@ -129,6 +169,12 @@ test("measure invitation encryption on/off at 35 Mbps with one and four watchers
               cpus().length,
             delivery: sent.delivery,
             encodedBps: sent.metrics.encoded_bps,
+            measurementWindow: {
+              samples: window.length,
+              deliveryBps: mean(window.map((s) => s.deliveryBps)),
+              encodedBps: mean(window.map((s) => s.encodedBps)),
+              sentFps: mean(window.map((s) => s.sentFps)),
+            },
           });
         } finally {
           sender.child.kill();

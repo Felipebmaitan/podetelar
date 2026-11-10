@@ -65,6 +65,10 @@ streams do not install the optional standalone packet-timing transformer or
 advertise its trailers. Legacy transports do not create frame cryptors and retain
 their existing behavior.
 
+Future instrumentation must not call SDK `publish_timing_events()` or
+`subscribe_timing_events()` on protected tracks without preserving an enforcing
+cryptor chain. These lazy helpers currently have no application callsites.
+
 Previews use separate authenticated encryption. The native sender encrypts its
 bounded JPEG before uploading. The server stores only an opaque bounded `FSP1`
 envelope under `application/vnd.freedomstream.preview-v1`; it cannot authenticate

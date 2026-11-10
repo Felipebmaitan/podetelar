@@ -472,6 +472,22 @@ impl Playback {
                 if !enabled {
                     continue;
                 }
+                // Signaling metadata is mutable. Require the actual receiver
+                // transform before starting or retaining any protected pump.
+                if admission.protection.is_some() && publication.track().is_some() {
+                    let key = (participant.identity(), publication.sid());
+                    if !room.e2ee_manager().enabled()
+                        || !room
+                            .e2ee_manager()
+                            .frame_cryptors()
+                            .get(&key)
+                            .is_some_and(|cryptor| cryptor.enabled())
+                    {
+                        publication.set_subscribed(false);
+                        self.pumps.remove(&sid);
+                        continue;
+                    }
+                }
                 pumps.insert(sid.clone());
                 if self.pumps.contains_key(&sid) {
                     continue;

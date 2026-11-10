@@ -60,6 +60,13 @@ const restartedCheck = `        if self.e2ee_manager.enabled() {
             return;
         }
 `;
+const receiverMarker =
+  "        if !self.initialized() || publication.encryption_type() == EncryptionType::None {\n";
+const receiverCheck = `        // A protected client requires a receiver cryptor even when signaling
+        // labels a track plaintext. Later metadata updates must never turn an
+        // already-attached plaintext decoder into an apparently protected track.
+        if !self.initialized() {
+`;
 
 function treeHash(root) {
   const digest = createHash("sha256");
@@ -182,6 +189,25 @@ if (existsSync(destination)) {
   if (hash(roomPatched) !== pin.roomPatchedSourceSha256)
     throw new Error("Native SDK protected reconnect patch checksum mismatch.");
   writeFileSync(roomTarget, roomPatched);
+  const managerTarget = join(source, "src/room/e2ee/manager.rs");
+  const managerOriginal = readFileSync(managerTarget, "utf8").replaceAll(
+    "\r\n",
+    "\n",
+  );
+  if (
+    hash(managerOriginal) !== pin.managerOriginalSourceSha256 ||
+    managerOriginal.split(receiverMarker).length !== 3
+  )
+    throw new Error(
+      "Native SDK mandatory receiver cryptor patch marker mismatch.",
+    );
+  // Replace the first occurrence (remote receiver), retaining the local check.
+  const managerPatched = managerOriginal.replace(receiverMarker, receiverCheck);
+  if (hash(managerPatched) !== pin.managerPatchedSourceSha256)
+    throw new Error(
+      "Native SDK mandatory receiver cryptor patch checksum mismatch.",
+    );
+  writeFileSync(managerTarget, managerPatched);
   const actualTree = treeHash(source);
   if (actualTree !== pin.treeSha256)
     throw new Error(

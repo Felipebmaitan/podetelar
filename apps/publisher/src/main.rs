@@ -301,6 +301,10 @@ fn run() -> Result<()> {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FixtureRequest {
     #[serde(default)]
+    media_server_url: Option<String>,
+    #[serde(default)]
+    media_token: Option<String>,
+    #[serde(default)]
     sample_rates: bool,
     #[serde(default)]
     upload_limit_bps: Option<u64>,
@@ -350,6 +354,8 @@ struct AudioRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct WatchRequest {
     invitation_url: String,
+    #[serde(default)]
+    media_server_url: Option<String>,
     seconds: u64,
     #[serde(default)]
     h264_only: bool,
@@ -365,6 +371,58 @@ struct WatchRequest {
     reconnect_after_seconds: Option<u64>,
 }
 
+/// Local-only signaling fault injection for native fixtures. Product admission,
+/// room options and UI never call this helper or accept these override fields.
+fn fixture_media_access(
+    invitation: &str,
+    mut access: admission::MediaAccess,
+    server_url: Option<&str>,
+    token: Option<&str>,
+) -> Result<admission::MediaAccess> {
+    if server_url.is_none() && token.is_none() {
+        return Ok(access);
+    }
+    let (legacy, _) = protection::unwrap_invitation(invitation)?;
+    let (origin, _) = admission::invitation_context(&legacy)?;
+    let origin =
+        url::Url::parse(&origin).map_err(|_| anyhow::anyhow!("Invalid local fixture origin."))?;
+    let loopback =
+        |host: Option<&str>| matches!(host, Some("localhost" | "127.0.0.1" | "::1" | "[::1]"));
+    ensure!(
+        origin.scheme() == "http" && loopback(origin.host_str()),
+        "Signaling overrides require a localhost HTTP fixture room."
+    );
+    let server_url = server_url
+        .ok_or_else(|| anyhow::anyhow!("A token override requires a local signaling proxy."))?;
+    ensure!(server_url.len() <= 256, "Invalid local signaling proxy.");
+    let proxy = url::Url::parse(server_url)
+        .map_err(|_| anyhow::anyhow!("Invalid local signaling proxy."))?;
+    ensure!(
+        proxy.scheme() == "ws"
+            && loopback(proxy.host_str())
+            && proxy.port().is_some_and(|port| port >= 1024)
+            && proxy.username().is_empty()
+            && proxy.password().is_none()
+            && matches!(proxy.path(), "" | "/")
+            && proxy.query().is_none()
+            && proxy.fragment().is_none(),
+        "Signaling overrides require a localhost WebSocket proxy."
+    );
+    access.server_url = proxy.to_string();
+    if let Some(token) = token {
+        ensure!(
+            !token.is_empty()
+                && token.len() <= 4096
+                && token
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.')),
+            "Invalid local fixture media token."
+        );
+        access.token = token.to_owned();
+    }
+    Ok(access)
+}
+
 async fn watch_fixture(request: WatchRequest) -> Result<()> {
     ensure!(
         (10..=120).contains(&request.seconds),
@@ -372,7 +430,12 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     );
     let admission =
         admission::Admission::join(&request.invitation_url, "Native playback check").await?;
-    let access = admission.media_access().await?;
+    let access = fixture_media_access(
+        &request.invitation_url,
+        admission.media_access().await?,
+        request.media_server_url.as_deref(),
+        None,
+    )?;
     let (room, mut events) = Room::connect(
         &access.server_url,
         &access.token,
@@ -380,6 +443,9 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     )
     .await
     .map_err(|error| {
+        if request.media_server_url.is_some() {
+            return anyhow::anyhow!("Local signaling fixture connection failed.");
+        }
         anyhow::anyhow!(
             "Native watcher connection failed: {}",
             admission::media_diagnostic(error)
@@ -513,7 +579,12 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     );
     let admission =
         admission::Admission::join(&request.invitation_url, &request.display_name).await?;
-    let access = admission.media_access().await?;
+    let access = fixture_media_access(
+        &request.invitation_url,
+        admission.media_access().await?,
+        request.media_server_url.as_deref(),
+        request.media_token.as_deref(),
+    )?;
     let options = admission.room_options(request.route);
     let (room, mut events) = tokio::time::timeout(
         Duration::from_secs(15),
@@ -522,6 +593,9 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     .await
     .context("Fixture media connection timed out.")?
     .map_err(|error| {
+        if request.media_server_url.is_some() {
+            return anyhow::anyhow!("Local signaling fixture connection failed.");
+        }
         anyhow::anyhow!(
             "Fixture media connection failed: {}",
             admission::media_diagnostic(error)
@@ -651,4 +725,69 @@ async fn serve_fixture(
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
     Ok(active)
+}
+
+#[cfg(test)]
+mod signaling_fixture_tests {
+    use super::*;
+
+    fn access() -> admission::MediaAccess {
+        admission::MediaAccess {
+            server_url: "ws://127.0.0.1:17880/".into(),
+            token: "fixture.token.value".into(),
+        }
+    }
+    fn invitation(origin: &str) -> String {
+        format!("{origin}/r/{}#invite={}", "a".repeat(22), "b".repeat(43))
+    }
+
+    #[test]
+    fn fault_injection_is_bound_to_local_http_admission_and_loopback_ws_proxy() {
+        let local = invitation("http://localhost:3010");
+        let private = protection::protect_invitation(&local).unwrap();
+        for link in [&local, &private] {
+            let overridden = fixture_media_access(
+                link,
+                access(),
+                Some("ws://127.0.0.1:49153/"),
+                Some("other.fixture.token"),
+            )
+            .unwrap();
+            assert_eq!(overridden.server_url, "ws://127.0.0.1:49153/");
+            assert_eq!(overridden.token, "other.fixture.token");
+        }
+        for origin in ["https://example.test", "https://localhost:3010"] {
+            assert!(
+                fixture_media_access(
+                    &invitation(origin),
+                    access(),
+                    Some("ws://localhost:49153"),
+                    None
+                )
+                .is_err()
+            );
+        }
+        for proxy in [
+            "ws://example.test:49153",
+            "wss://localhost:49153",
+            "ws://localhost:80",
+            "ws://localhost",
+            "ws://user:password@localhost:49153",
+            "ws://localhost:49153/rtc",
+            "ws://localhost:49153/?token=value",
+            "ws://localhost:49153/#secret",
+        ] {
+            assert!(fixture_media_access(&local, access(), Some(proxy), None).is_err());
+        }
+        assert!(fixture_media_access(&local, access(), None, Some("other.fixture.token")).is_err());
+        assert!(
+            fixture_media_access(
+                &local,
+                access(),
+                Some("ws://localhost:49153"),
+                Some("token with spaces")
+            )
+            .is_err()
+        );
+    }
 }

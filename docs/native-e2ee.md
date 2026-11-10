@@ -44,6 +44,12 @@ saved-room restore and source changes must retain this requirement. An encrypted
 room setting alone is insufficient: the SDK skips cryptors on publications
 marked as plaintext.
 
+The pinned SDK patch also attaches receiver cryptors independently of remote
+encryption metadata. Playback checks actual cryptor readiness before retaining
+any pump, so changing a publication label cannot turn plaintext into protected
+content. The native client clears server-provided injected-frame bypass material
+before subscriptions.
+
 Previews use separate authenticated encryption. The native sender encrypts its
 bounded JPEG before uploading. The server stores only an opaque bounded `FSP1`
 envelope under `application/vnd.freedomstream.preview-v1`; it cannot authenticate

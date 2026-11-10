@@ -196,7 +196,7 @@ for (const pkg of metadata.packages
     }
     if (pkg.name === "livekit")
       index.push(
-        "Local SDK changes: advertise TF_STEREO for two-channel AddTrackRequest; reject SFU track encryption downgrades before sender activation; close protected full reconnects before RTP cryptor state can reset under retained keys. See scripts/setup-native-sdk.mjs and deploy/native-sdk.json for pinned originals and patches.",
+        "Local SDK changes: advertise TF_STEREO for two-channel AddTrackRequest; reject SFU track encryption downgrades before sender activation; require receiver cryptors independently of mutable signaling labels; close protected full reconnects before RTP cryptor state can reset under retained keys. See scripts/setup-native-sdk.mjs and deploy/native-sdk.json for pinned originals and patches.",
         "",
       );
     continue;

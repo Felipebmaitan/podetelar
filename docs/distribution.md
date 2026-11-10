@@ -162,8 +162,8 @@ explains its plugin license boundary. Hardware codec support is not a codec pate
 
 Cargo notices include the pinned upstream license overrides in
 `deploy/license-overrides.json` and the Apache-licensed LiveKit stereo and strict
-encryption patches. Their full modified source is included with the corresponding
-source bundle; `deploy/native-sdk.json` pins both changed source files and the
+encryption patches, including mandatory receiver cryptors. Their full modified source is included with the corresponding
+source bundle; `deploy/native-sdk.json` pins all three changed source files and the
 complete generated source tree. See [native encryption](native-e2ee.md) for the
 protection boundary and runtime acceptance requirements.
 

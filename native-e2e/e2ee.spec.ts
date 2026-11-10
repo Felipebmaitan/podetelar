@@ -130,8 +130,9 @@ test("removing an authenticated descriptor stops an existing protected subscript
     const participants = await admin.listParticipants(
       `freedomstream_${room.room.id}`,
     );
-    const publisher = participants.find((p) =>
-      Boolean(p.attributes["freedomstream.e2ee.v1"]),
+    const publisher = participants.find(
+      (p) =>
+        Boolean(p.attributes["freedomstream.e2ee.v1"]) && p.tracks.length > 0,
     );
     expect(Boolean(publisher)).toBe(true);
     await admin.updateParticipant(
@@ -350,8 +351,9 @@ test("server-tampered sender descriptor cannot grant a protected subscription", 
   const participants = await admin.listParticipants(
     `freedomstream_${room.room.id}`,
   );
-  const publisher = participants.find((p) =>
-    Boolean(p.attributes["freedomstream.e2ee.v1"]),
+  const publisher = participants.find(
+    (p) =>
+      Boolean(p.attributes["freedomstream.e2ee.v1"]) && p.tracks.length > 0,
   );
   expect(Boolean(publisher)).toBe(true);
   await admin.updateParticipant(

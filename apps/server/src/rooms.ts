@@ -9,6 +9,7 @@ import { dirname } from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import type {
   CreateRoomInput,
+  ManagedRoom,
   Room,
   RoomSession,
 } from "@freedomstream/contracts";
@@ -103,29 +104,60 @@ export class Rooms {
     );
   }
 
-  create(input: CreateRoomInput): IssuedSession & { invitation: string } {
+  private insertRoom(name: string) {
     const invitation = randomSecret();
     const room: RoomRow = {
       id: randomBytes(16).toString("base64url"),
-      name: input.name,
+      name,
       invitation_hash: digest(invitation),
       invitation_enabled: 1,
       created_at: this.now(),
     };
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      this.db
-        .prepare(
-          "INSERT INTO rooms(id, name, invitation_hash, created_at) VALUES (?, ?, ?, ?)",
-        )
-        .run(room.id, room.name, room.invitation_hash, room.created_at);
-      const issued = this.issue(room, input.displayName);
-      this.db.exec("COMMIT");
-      return { ...issued, invitation };
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
+    this.db
+      .prepare(
+        "INSERT INTO rooms(id, name, invitation_hash, created_at) VALUES (?, ?, ?, ?)",
+      )
+      .run(room.id, room.name, room.invitation_hash, room.created_at);
+    return { room, invitation };
+  }
+
+  create(input: CreateRoomInput): IssuedSession & { invitation: string } {
+    return this.transaction(() => {
+      const { room, invitation } = this.insertRoom(input.name);
+      return { ...this.issue(room, input.displayName), invitation };
+    });
+  }
+
+  createManaged(name: string): { room: Room; invitation: string } {
+    const { room, invitation } = this.insertRoom(name);
+    return {
+      room: {
+        id: room.id,
+        name: room.name,
+        createdAt: new Date(room.created_at).toISOString(),
+      },
+      invitation,
+    };
+  }
+
+  list(offset: number): { rooms: ManagedRoom[]; nextOffset: number | null } {
+    const rows = this.db
+      .prepare(
+        "SELECT id, name, created_at, invitation_enabled FROM rooms ORDER BY created_at DESC, id DESC LIMIT 51 OFFSET ?",
+      )
+      .all(offset) as Pick<
+      RoomRow,
+      "id" | "name" | "created_at" | "invitation_enabled"
+    >[];
+    return {
+      rooms: rows.slice(0, 50).map((row) => ({
+        id: row.id,
+        name: row.name,
+        createdAt: new Date(row.created_at).toISOString(),
+        invitationEnabled: Boolean(row.invitation_enabled),
+      })),
+      nextOffset: rows.length > 50 ? offset + 50 : null,
+    };
   }
 
   join(

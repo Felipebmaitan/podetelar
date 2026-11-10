@@ -4,6 +4,7 @@ import type { UsagePoint, UsageReport } from "@freedomstream/contracts";
 import { ApiError, request } from "./api";
 import { dataSize, periodRange, speed, type Period } from "./usage";
 import "./admin.css";
+import { AdminRooms } from "./AdminRooms";
 
 const periods: Period[] = [
   "Real time",
@@ -25,6 +26,7 @@ export function Admin() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [section, setSection] = useState<"usage" | "rooms">("usage");
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     const abort = new AbortController();
@@ -63,6 +65,7 @@ export function Admin() {
     try {
       await request("/api/admin/logout", { method: "POST" });
       setAuth("login");
+      setSection("usage");
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -93,12 +96,35 @@ export function Admin() {
           <div className="admin-top-error">
             {error && <p role="alert">{error}</p>}
           </div>
-          <Dashboard
-            onExpired={() => {
-              setAuth("login");
-              setError("Your session expired. Sign in again.");
-            }}
-          />
+          <nav className="admin-nav" aria-label="Administration sections">
+            <button
+              aria-pressed={section === "usage"}
+              onClick={() => setSection("usage")}
+            >
+              Usage
+            </button>
+            <button
+              aria-pressed={section === "rooms"}
+              onClick={() => setSection("rooms")}
+            >
+              Rooms
+            </button>
+          </nav>
+          {section === "usage" ? (
+            <Dashboard
+              onExpired={() => {
+                setAuth("login");
+                setError("Your session expired. Sign in again.");
+              }}
+            />
+          ) : (
+            <AdminRooms
+              onExpired={() => {
+                setAuth("login");
+                setError("Your session expired. Sign in again.");
+              }}
+            />
+          )}
         </>
       ) : (
         <div className="admin-center">
@@ -137,7 +163,7 @@ export function Admin() {
                   <path d="M11 19V12a9 9 0 0 1 18 0v7M20 28v6" />
                 </svg>
                 <h1>Administrator login</h1>
-                <p>Sign in to view service usage.</p>
+                <p>Sign in to manage rooms and view service usage.</p>
                 <label className="admin-account">
                   Account
                   <input

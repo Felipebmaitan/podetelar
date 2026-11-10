@@ -1,6 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { expect, test } from "@playwright/test";
-import { createTestRoom } from "../scripts/test-room.js";
+import { createTestRoom, openTestRoom } from "../scripts/test-room.js";
 import { nativeRequest, toneFixtures } from "./fixtures.js";
 
 test("selected application stereo audio reaches a browser and stops with Watch", async ({
@@ -34,7 +34,7 @@ test("selected application stereo audio reaches a browser and stops with Watch",
         }
       };
     });
-    await page.goto(invitationUrl);
+    await openTestRoom(page, invitationUrl);
     const publisher = nativeRequest("--publish-fixture", {
       invitationUrl,
       displayName: "Native audio",

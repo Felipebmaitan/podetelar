@@ -11,7 +11,7 @@ test("release downloads require current room authority and verify the installed 
   const root = mkdtempSync(join(tmpdir(), "freedomstream-release-"));
   const archive = Buffer.from("operator-installed test archive");
   const manifest = {
-    filename: "freedomstream-windows-x64-0.1.0-aaaaaaaaaaaa.zip",
+    filename: "freedomstream-windows-x64-0.1.0-aaaaaaaaaaaa.exe",
     version: "0.1.0",
     commit: "a".repeat(40),
     sha256: createHash("sha256").update(archive).digest("hex"),
@@ -59,6 +59,17 @@ test("release downloads require current room authority and verify the installed 
       headers: { cookie },
     });
     assert.deepEqual(download.rawPayload, archive);
+    assert.equal(
+      download.headers["content-type"],
+      "application/vnd.microsoft.portable-executable",
+    );
+    assert.match(String(download.headers["content-disposition"]), /\.exe"$/);
+    const legacy = await app.inject({
+      url: `${url}/windows.zip`,
+      headers: { cookie },
+    });
+    assert.equal(legacy.statusCode, 307);
+    assert.equal(legacy.headers.location, release.json().downloadUrl);
     assert.equal(download.headers["cache-control"], "no-store");
     assert.equal(
       (await app.inject({ url: "/publisher.json" })).statusCode,

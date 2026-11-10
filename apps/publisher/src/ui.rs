@@ -15,6 +15,8 @@ pub struct PublisherUi {
     exclusions: Vec<String>,
     quality: Settings,
     route: Route,
+    notices: Option<std::path::PathBuf>,
+    notice_error: bool,
 }
 
 impl PublisherUi {
@@ -29,6 +31,11 @@ impl PublisherUi {
             exclusions: Vec::new(),
             quality: Settings::default(),
             route: Route::Auto,
+            notices: std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent()?.parent().map(|path| path.join("notices")))
+                .filter(|path| path.join("README.md").is_file()),
+            notice_error: false,
         }
     }
 }
@@ -56,6 +63,18 @@ impl eframe::App for PublisherUi {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.heading("FreedomStream");
                 ui.label("Share a screen or game. Watch friends in your private room.");
+                #[cfg(windows)]
+                if let Some(notices) = &self.notices
+                    && ui.small_button("Licenses and library sources").clicked()
+                {
+                    self.notice_error = std::env::var_os("WINDIR")
+                        .map(std::path::PathBuf::from)
+                        .is_none_or(|windows| std::process::Command::new(windows.join("explorer.exe"))
+                            .arg(notices).spawn().is_err());
+                }
+                if self.notice_error {
+                    ui.label("Could not open the notices folder. It is beside the bundled runtime.");
+                }
                 ui.add_space(16.0);
                 if state.connection != "connected" && state.connection != "reconnecting" {
                     ui.label("Room invitation");

@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { createTestRoom } from "../scripts/test-room.js";
+import { createTestRoom, openTestRoom } from "../scripts/test-room.js";
 
-test("room members download the verified Windows archive through the room UI", async ({
+test("room members download the verified portable EXE through the room UI", async ({
   page,
   request,
   baseURL,
@@ -10,7 +10,7 @@ test("room members download the verified Windows archive through the room UI", a
   test.skip(
     info.project.name === "mobile" ||
       process.env.FREEDOMSTREAM_PUBLISHER_DOWNLOAD !== "1",
-    "Opt-in check for a server with an installed publisher archive.",
+    "Opt-in check for a server with an installed portable publisher.",
   );
   const created = await createTestRoom(
     request,
@@ -22,8 +22,8 @@ test("room members download the verified Windows archive through the room UI", a
   const path = `/api/rooms/${room.id}/publisher`;
   const available = await request.get(path);
   expect(available.status()).toBe(200);
-  expect((await page.request.get(`${path}/windows.zip`)).status()).toBe(401);
-  await page.goto(invitationUrl);
+  expect((await page.request.get(`${path}/windows.exe`)).status()).toBe(401);
+  await openTestRoom(page, invitationUrl);
   await page.getByLabel("Your name", { exact: true }).fill("Windows friend");
   await page
     .getByRole("button", { name: "Join private room", exact: true })
@@ -37,7 +37,7 @@ test("room members download the verified Windows archive through the room UI", a
   const download = page.waitForEvent("download");
   await page
     .getByRole("link", {
-      name: `Download Windows publisher ${release.version}`,
+      name: `Download portable Windows app ${release.version}`,
       exact: true,
     })
     .click();

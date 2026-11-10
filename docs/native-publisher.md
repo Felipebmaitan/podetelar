@@ -14,7 +14,7 @@ npm run native:probe
 npm run native:run
 ```
 
-Setup downloads the pinned official GStreamer 1.28.8 development installer, verifies SHA-256, and installs it for the current user into ignored `.local/gstreamer`. No administrator install is required. Set `FREEDOMSTREAM_GSTREAMER` to an equivalent development installation to use an existing runtime. The helper sets its DLL and pkg-config paths. Runtime redistribution and an installer are Phase 8; copying the executable alone is insufficient.
+Setup downloads the pinned official GStreamer 1.28.8 development installer, verifies SHA-256, and installs it for the current user into ignored `.local/gstreamer`. No administrator install is required. Set `FREEDOMSTREAM_GSTREAMER` to an equivalent development installation to use an existing runtime. The helper sets its DLL and pkg-config paths. For friends, use the [fully bundled portable EXE](distribution.md); the raw executable in `target/release` still needs its development runtime.
 
 Setup also prepares a checksum-verified LiveKit SDK source package in `.local/native-sdk/livekit`, with a narrow fix for announcing native stereo. Run setup before any Cargo command on a fresh checkout. The source transformation and complete source-tree pin are reviewed repository files; altered generated source is rejected. See the [SDK maintenance decision](adr/0003-native-stereo-publication-feature.md). The SDK retains Apache-2.0 licensing and is not copied into the tracked application source.
 
@@ -40,6 +40,13 @@ The first command encodes a GPU-generated pattern; the other commands capture th
 
 For the automated native-to-browser test, run the app and a reachable SFU, install Chrome, and set `FREEDOMSTREAM_NATIVE_EXE` to the built executable. Add GStreamer's `bin` directory to PATH, then `npm run native:e2e`. It supplies invitation authority through bounded standard input, never command-line arguments. It checks hardware HEVC and H.264 decode, late Watch, stopped RTP traffic, rewatch and native cleanup. A synthetic test is not a game benchmark.
 
+The same checks can target the portable EXE. For audio fixtures, set
+`FREEDOMSTREAM_NATIVE_TONE_EXE` to the raw publisher in that EXE's extracted cache,
+and point fixture PATH/plugin variables at that runtime. Renamed Game/Discord
+stimuli need their own process identities; the actual publisher still runs through
+the portable launcher. `FREEDOMSTREAM_TEST_ROOM_IDS` optionally records public room
+IDs for administrator cleanup, without recording invitation/session authority.
+
 The loopback-only Docker development SFU passes browser tests, but the current Rust WebRTC build timed out establishing ICE through Windows Docker Desktop's loopback forwarding. Native qualification therefore used a separate SFU on the VPS with public media candidates and authenticated TLS signaling. Do not expose the local Compose stack to work around this; production networking belongs to Phases 7/8.
 
 ## Boundaries and dependencies
@@ -48,4 +55,4 @@ The GUI never handles per-frame callbacks. A bounded worker channel owns admissi
 
 Room invitations and cookies stay in process memory. Remote cleartext origins, URL credentials, query parameters, redirects and malformed invitation authorities are rejected. Normal logs exclude SDK diagnostics. Optional `FREEDOMSTREAM_DIAGNOSTICS=1` emits a strict allowlist of connection-state/candidate information without signaling tokens or SDP authority. Keep diagnostic output private because candidate IP addresses remain network information.
 
-Original application code is MIT licensed. GStreamer and its plugins retain their upstream licenses (including LGPL components), as do LiveKit/WebRTC and other dependencies. The installer is fetched separately for development; a redistributable package must include applicable notices, license texts and LGPL compliance materials before release. The application does not link libobs or a GPL software encoder. Adding Linux/macOS requires platform capture/encoder adapters and runtime qualification, not changes to private-room authorization or browser subscriptions.
+Original application code is MIT licensed. GStreamer and its plugins retain their upstream licenses (including LGPL components), as do LiveKit/WebRTC and other dependencies. Development setup fetches the upstream installer; the portable release bundles a qualified subset, applicable notices, corresponding sources and build recipes. The application does not link libobs or a GPL software encoder. Adding Linux/macOS requires platform capture/encoder adapters and runtime qualification, not changes to private-room authorization or browser subscriptions.

@@ -1,5 +1,20 @@
 # Development interfaces
 
+## CI budget and native acceptance
+
+Pull requests and pushes run the project checks and Docker/browser smoke checks.
+Superseded runs for the same event and branch/PR cancel automatically. The costly
+hosted `native-windows` job runs only through **Actions → Checks → Run workflow**
+with `run_native` selected; it has a 45-minute limit. Leave that option off for
+ordinary checks. Native packaging already builds the release executable.
+
+Before merging native changes, run `npm run native:check`, `npm run native:test`,
+`npm run native:package` and `scripts/qualify-portable.ps1 -Executable <EXE>` on
+the local Windows machine, retaining the commit and results in the verification
+record. Run the phase's actual media acceptance checks as well. A skipped hosted
+job or a cancelled run is not a successful native validation. Local compilation
+does not qualify unavailable hardware, physical audio/video timing or field use.
+
 ## Modules
 
 - `packages/contracts`: validated admission inputs and shared response types; preview cadence is 60,000 ms.

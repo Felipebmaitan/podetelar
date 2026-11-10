@@ -36,8 +36,8 @@ mod freedomstream_receiver_publication_tests {
         let (release_tx, release_rx) = mpsc::channel();
         let release_rx = Mutex::new(release_rx);
         publication.on_subscribed(move |publication, track| {
-            // The real subscription callback installs the receiver cryptor.
-            // Neither first attachment nor replacement may be visible yet.
+            // Encryption is prepared directly by the attachment path. This
+            // notification must finish before either replacement is visible.
             assert!(publication.track().is_none());
             entered_tx.send(track.name()).unwrap();
             if track.name() == "first" {

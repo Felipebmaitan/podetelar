@@ -67,6 +67,48 @@ const receiverCheck = `        // A protected client requires a receiver cryptor
         // already-attached plaintext decoder into an apparently protected track.
         if !self.initialized() {
 `;
+const roomReceiverChanges = [
+  [
+    `        if let Some(remote_participant) = remote_participant {
+            tokio::spawn(async move {
+                remote_participant.add_subscribed_media_track(track_id, track, transceiver).await;
+`,
+    `        if let Some(remote_participant) = remote_participant {
+            let receiver_encryption = self.e2ee_manager.clone();
+            tokio::spawn(async move {
+                remote_participant.add_subscribed_media_track(track_id, track, transceiver, receiver_encryption).await;
+`,
+  ],
+  [
+    `        participant.on_track_subscribed({
+            let dispatcher = self.dispatcher.clone();
+            let e2ee_manager = self.e2ee_manager.clone();
+`,
+    `        participant.on_track_subscribed({
+            let dispatcher = self.dispatcher.clone();
+`,
+  ],
+  [
+    "                e2ee_manager.on_track_subscribed(track, publication, participant);\n",
+    "",
+  ],
+];
+const participantReceiverChanges = [
+  [
+    "        transceiver: RtpTransceiver,\n    ) {\n",
+    "        transceiver: RtpTransceiver,\n        receiver_encryption: crate::room::e2ee::manager::E2eeManager,\n    ) {\n",
+  ],
+  [
+    "            self.add_publication(TrackPublication::Remote(remote_publication.clone()));\n            track.enable();\n",
+    `            // Security preparation is mandatory, not a removable notification
+            // callback. Even a retired publication's late attachment must keep
+            // its actual receiver encrypted before enabling/exposing the track.
+            receiver_encryption.on_track_subscribed(track.clone(), remote_publication.clone(), self.clone());
+            self.add_publication(TrackPublication::Remote(remote_publication.clone()));
+            track.enable();
+`,
+  ],
+];
 const publicationChanges = [
   [
     "struct RemoteInner {\n",
@@ -93,9 +135,9 @@ const publicationChanges = [
             }
         }
 `,
-    `        // Keep a replacement private until its synchronous subscription
-        // callback has installed/enabled mandatory receiver encryption. Serialize
-        // attachments so same-SID callbacks cannot publish another receiver's key.
+    `        // Encryption is installed directly by the receiver attachment path.
+        // Serialize notifications and expose each replacement only when its
+        // synchronous subscription callback has completed.
         super::set_track(&self.inner, &TrackPublication::Remote(self.clone()), None);
         if let Some(track) = track.as_ref() {
             if let Some(subscribed) = self.remote.events.subscribed.lock().as_ref() {
@@ -226,12 +268,36 @@ if (existsSync(destination)) {
     roomOriginal.split(restartedMarker).length !== 2
   )
     throw new Error("Native SDK protected reconnect patch marker mismatch.");
-  const roomPatched = roomOriginal
+  let roomPatched = roomOriginal
     .replace(restartingMarker, restartingMarker + restartingCheck)
     .replace(restartedMarker, restartedMarker + restartedCheck);
+  for (const [marker, replacement] of roomReceiverChanges) {
+    if (roomPatched.split(marker).length !== 2)
+      throw new Error("Native SDK direct receiver encryption marker mismatch.");
+    roomPatched = roomPatched.replace(marker, replacement);
+  }
   if (hash(roomPatched) !== pin.roomPatchedSourceSha256)
     throw new Error("Native SDK protected reconnect patch checksum mismatch.");
   writeFileSync(roomTarget, roomPatched);
+  const participantTarget = join(
+    source,
+    "src/room/participant/remote_participant.rs",
+  );
+  const participantOriginal = readFileSync(
+    participantTarget,
+    "utf8",
+  ).replaceAll("\r\n", "\n");
+  if (hash(participantOriginal) !== pin.participantOriginalSourceSha256)
+    throw new Error("Native SDK receiver participant source mismatch.");
+  let participantPatched = participantOriginal;
+  for (const [marker, replacement] of participantReceiverChanges) {
+    if (participantPatched.split(marker).length !== 2)
+      throw new Error("Native SDK receiver participant patch marker mismatch.");
+    participantPatched = participantPatched.replace(marker, replacement);
+  }
+  if (hash(participantPatched) !== pin.participantPatchedSourceSha256)
+    throw new Error("Native SDK receiver participant patch checksum mismatch.");
+  writeFileSync(participantTarget, participantPatched);
   const managerTarget = join(source, "src/room/e2ee/manager.rs");
   const managerOriginal = readFileSync(managerTarget, "utf8").replaceAll(
     "\r\n",

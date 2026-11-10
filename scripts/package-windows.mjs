@@ -82,6 +82,7 @@ for (const file of ["scripts/setup-native-sdk.mjs", "deploy/native-sdk.json"]) {
 }
 for (const file of [
   "src/room/participant/local_participant.rs",
+  "src/room/participant/remote_participant.rs",
   "src/room/mod.rs",
   "src/room/e2ee/manager.rs",
   "src/room/publication/remote.rs",

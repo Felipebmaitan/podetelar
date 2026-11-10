@@ -50,11 +50,12 @@ any pump, so changing a publication label cannot turn plaintext into protected
 content. The native client clears server-provided injected-frame bypass material
 before subscriptions.
 
-Receiver attachments for one publication are serialized in the pinned SDK. The
-subscription callback installs encryption before a replacement becomes visible
-through the publication. Playback uses one captured track for readiness and pump
-creation. This avoids treating a cryptor for an overlapping same-SID receiver as
-readiness for a different receiver.
+The pinned SDK installs encryption directly in the receiver attachment path,
+before enabling or exposing the track. Protection does not depend on a removable
+notification callback, including if a publication is retired during attachment.
+Attachments for one publication are also serialized. Playback uses one captured
+track for readiness and pump creation. A stale map entry for another same-SID
+receiver cannot turn an untransformed receiver into protected content.
 
 Previews use separate authenticated encryption. The native sender encrypts its
 bounded JPEG before uploading. The server stores only an opaque bounded `FSP1`

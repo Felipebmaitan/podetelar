@@ -25,7 +25,7 @@ reconnect without republishing under retained keys; native recovery must create
 fresh admission and sender-session material. Source/codec replacement retains the
 protection requirement. Source inspection is not packet-level nonce telemetry.
 
-`deploy/native-sdk.json` pins upstream archive, all four patched source files and the
+`deploy/native-sdk.json` pins upstream archive, all five patched source files and the
 whole generated SDK tree. The original checkout's generated decoder differed
 from this branch's pins, so this worktree generated its own SDK from the verified
 archives. Builds use a short target path to avoid Windows dependency-extraction
@@ -77,8 +77,17 @@ also refuses remote descriptors targeting the local sender key slot. A subsequen
 focused review traced overlapping same-SID SDK callbacks which could still
 associate readiness with another receiver. The final SDK patch serializes each
 publication's attachments and exposes its receiver only after the synchronous
-subscription/encryption callback completes. A dedicated regression test overlaps
-two attachments while the first callback is blocked. Final re-review is pending.
+subscription callback completes. A dedicated regression test overlaps two
+attachments while the first callback is blocked; it passed against the real SDK
+track/publication implementation.
+
+The next review found that removal/recreation could clear the notification
+callback before an in-flight attachment ran it. Mandatory cryptor setup now runs
+directly in `RemoteParticipant::add_subscribed_media_track`, before enabling the
+receiver or adding/exposing its publication. The Room notification callback no
+longer owns encryption setup. Thus a removed callback or stale publication cannot
+produce an untransformed receiver. The exact retirement/RTP race is source
+reviewed rather than deterministically reproduced. Final re-review is pending.
 
 Optional upstream hardening remains separate: the C++ cryptor's malformed short
 frame parsing has unchecked indexing/subtraction in the supplied source. Review

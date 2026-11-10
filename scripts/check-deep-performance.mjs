@@ -76,6 +76,37 @@ for (const run of summary.runs) {
             0,
             `${run.label}: ${key} remained after Stop`,
           );
+      if (p.ownersAtEnd?.enabled) {
+        assert.equal(
+          p.ownersAtEnd.videoTasksStarted,
+          p.ownersAtEnd.videoTasksCompleted,
+          `${run.label}: video task survived Stop`,
+        );
+        assert.equal(
+          p.ownersAtEnd.rgbaPools,
+          0,
+          `${run.label}: RGBA pool survived Stop`,
+        );
+        assert.equal(
+          p.ownersAtEnd.rgbaPoolBytes,
+          0,
+          `${run.label}: pooled RGBA pixels survived Stop`,
+        );
+      }
+      if (
+        [
+          "planar-memory",
+          "shared-4k",
+          "shared-contention",
+          "shared-recovery",
+          "shared-selective",
+        ].includes(family)
+      )
+        assert.equal(
+          p.ownersAtEnd?.rgbaGl?.taggedTextures,
+          0,
+          `${run.label}: stopped preview remained tagged as video`,
+        );
     }
     if (
       family.startsWith("clip") &&
@@ -109,9 +140,53 @@ for (const run of summary.runs) {
       );
       assert.equal(p.nativeAtEnd.mapErrors, 0, `${run.label}: readback failed`);
     }
+    if (
+      family === "shared-selective" &&
+      ["focus", "restore"].includes(p.phase)
+    ) {
+      const expected = p.phase === "focus" ? 3 : 4;
+      assert.equal(
+        p.activeWatches,
+        expected,
+        `${run.label}: selective Stop/rewatch count failed`,
+      );
+      assert.ok(
+        p.decoded > expected * 50,
+        `${run.label}: remaining or restored subscriptions stalled`,
+      );
+      assert.equal(
+        p.nativeAtEnd.devicesLive,
+        run.variant === "after" ? 1 : expected,
+        `${run.label}: unexpected device ownership after selective Stop/rewatch`,
+      );
+    }
   }
   assertions.push({ label: run.label, passed: true });
 }
+
+if (family === "ownership")
+  for (const run of summary.runs) {
+    const cycles = new Set(run.phases.map((p) => p.cycle));
+    assert.equal(
+      cycles.size,
+      7,
+      "Ownership qualification did not execute seven cycles",
+    );
+    for (const cycle of cycles)
+      if (cycle > 0)
+        assert.ok(
+          run.firstHandoffs.some((h) => h.cycle === cycle),
+          `${run.label}: missing first handoff after cycle ${cycle}`,
+        );
+    if (run.variant === "before")
+      assert.equal(run.heapActions.length, 0, "Baseline optimized its heap");
+    else
+      assert.equal(
+        run.heapActions.length,
+        7,
+        "Candidate did not evaluate idle heap optimization in every cycle",
+      );
+  }
 
 const comparisons = [];
 for (const beforeRun of summary.runs.filter((r) => r.variant === "before")) {
@@ -128,7 +203,11 @@ for (const beforeRun of summary.runs.filter((r) => r.variant === "before")) {
     );
     const valid = [before, after].every(
       (p) =>
-        p && p.samples >= 4 && !p.errors && Number.isFinite(p.cpuCorePercent),
+        p &&
+        p.samples >= 4 &&
+        p.processSamples >= 4 &&
+        !p.errors &&
+        Number.isFinite(p.cpuCorePercent),
     );
     const decodeRatio =
       valid && before.decoded > 0 ? after.decoded / before.decoded : null;
@@ -154,13 +233,14 @@ for (const beforeRun of summary.runs.filter((r) => r.variant === "before")) {
     const nonInferiorUsefulWork =
       valid &&
       decodeRatio !== null &&
-      Math.abs(decodeRatio - 1) <= 0.03 &&
+      decodeRatio >= 0.97 &&
       handoffRatio !== null &&
       handoffRatio >= 0.95 &&
       (beforeRun.group !== "combined" ||
         (publicationRatio !== null && publicationRatio >= 0.97));
     const equalUsefulWork =
       nonInferiorUsefulWork &&
+      decodeRatio <= 1.03 &&
       handoffRatio <= 1.05 &&
       (publicationRatio === null || publicationRatio <= 1.03);
     if (
@@ -245,7 +325,7 @@ writeFileSync(
       assertions,
       comparisons,
       limits:
-        "Functional assertions and pair-by-pair measured comparisons. Equal-work eligibility requires consumer delivery within 3% and comparable visible handoffs within 5%; simultaneous publication must stay within 3%. Noninferiority also permits more handoffs/publication work. These checks do not establish physical display FPS, A/V synchronization, device-loss behavior, or equal latency.",
+        "Functional assertions and pair-by-pair measured comparisons. Equal-work eligibility requires consumer delivery within 3% and comparable visible handoffs within 5%; simultaneous publication must stay within 3%. Noninferiority also permits greater delivery/handoff/publication work. These checks do not establish physical display FPS, A/V synchronization, device-loss behavior, or equal latency.",
     },
     null,
     2,

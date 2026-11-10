@@ -6,7 +6,7 @@ use std::{
     collections::HashMap,
     sync::{
         Arc, Mutex, OnceLock,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Instant,
 };
@@ -17,9 +17,16 @@ pub static DRAWS: AtomicU64 = AtomicU64::new(0);
 pub static FAULTS: AtomicU64 = AtomicU64::new(0);
 pub static UPLOAD_NS: AtomicU64 = AtomicU64::new(0);
 pub static MAX_AGE_US: AtomicU64 = AtomicU64::new(0);
+static FAILED: AtomicBool = AtomicBool::new(false);
+pub fn retain_planes() -> bool {
+    static RETAIN: OnceLock<bool> = OnceLock::new();
+    *RETAIN
+        .get_or_init(|| std::env::var("FREEDOMSTREAM_DEEP_RETAIN_PLANES").is_ok_and(|v| v == "1"))
+}
 pub fn enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var("FREEDOMSTREAM_DEEP_PLANAR").is_ok_and(|v| v == "1"))
+        && !FAILED.load(Ordering::Relaxed)
 }
 pub struct Picture {
     pub buffer: BoxVideoBuffer,
@@ -43,24 +50,45 @@ pub struct Videos {
     states: HashMap<String, Arc<Mutex<State>>>,
 }
 impl Videos {
+    pub fn rgba(&mut self, id: &str) {
+        if let Some(state) = self.states.get(id) {
+            let mut state = state.lock().unwrap();
+            state.pending = None;
+            state.uploaded = None;
+            state.retained = None;
+        }
+    }
+    pub fn has_picture(&self, id: &str) -> bool {
+        self.states
+            .get(id)
+            .is_some_and(|state| state.lock().unwrap().dimensions().is_some())
+    }
+    /// Qualification-only drawing; the caller must have this GL context current.
+    pub unsafe fn qualify_draw(&self, id: &str, gl: &glow::Context) -> Result<(), String> {
+        let state = self.states.get(id).ok_or("Missing qualification picture")?;
+        unsafe { state.lock().unwrap().draw(gl) }
+    }
     pub fn update(&mut self, id: &str, picture: Arc<Picture>) {
         self.states
             .entry(id.into())
             .or_default()
             .lock()
             .unwrap()
-            .picture = Some(picture);
+            .pending = Some(picture);
     }
     pub fn paint(&self, ui: &egui::Ui, id: &str, rect: egui::Rect) -> bool {
+        if FAILED.load(Ordering::Relaxed) {
+            return false;
+        }
         let Some(state) = self.states.get(id) else {
             return false;
         };
         let aspect = {
             let state = state.lock().unwrap();
-            let Some(p) = &state.picture else {
+            let Some([width, height]) = state.dimensions() else {
                 return false;
             };
-            p.buffer.width() as f32 / p.buffer.height() as f32
+            width as f32 / height as f32
         };
         let size = egui::vec2(
             rect.width().min(rect.height() * aspect),
@@ -72,12 +100,13 @@ impl Videos {
             rect: target,
             callback: Arc::new(egui_glow::CallbackFn::new(move |_info, painter| {
                 let mut state = state.lock().unwrap();
-                if state.destroyed {
+                if state.destroyed || FAILED.load(Ordering::Relaxed) {
                     return;
                 }
                 // SAFETY: Glow invokes this callback with its owning GL context current.
-                if unsafe { state.draw(painter.gl()) }.is_err() {
-                    FAULTS.fetch_add(1, Ordering::Relaxed);
+                let result = unsafe { state.draw(painter.gl()) };
+                unsafe {
+                    state.finish_draw(painter.gl(), result);
                 }
             })),
         });
@@ -86,10 +115,11 @@ impl Videos {
     pub fn retain(&mut self, gl: Option<&Arc<glow::Context>>, keep: impl Fn(&str) -> bool) {
         if let Some(gl) = gl {
             self.states.retain(|id, state| {
-                if keep(id) {
+                let mut state = state.lock().unwrap();
+                if keep(id) && state.dimensions().is_some() {
                     true
                 } else {
-                    unsafe { state.lock().unwrap().destroy(gl) };
+                    unsafe { state.destroy(gl) };
                     false
                 }
             });
@@ -106,12 +136,17 @@ impl Videos {
 }
 #[derive(Default)]
 pub struct State {
-    picture: Option<Arc<Picture>>,
-    uploaded: Option<Arc<Picture>>,
+    pending: Option<Arc<Picture>>,
+    uploaded: Option<Uploaded>,
+    retained: Option<Arc<Picture>>,
     program: Option<glow::Program>,
     vao: Option<glow::VertexArray>,
     textures: Vec<glow::Texture>,
     destroyed: bool,
+}
+struct Uploaded {
+    size: [u32; 2],
+    arrived: Instant,
 }
 const VERTEX: &str = r#"#version 330 core
 out vec2 uv;
@@ -133,36 +168,86 @@ void main(){vec2 p=uv*vec2(textureSize(plane_y,0))-0.5;ivec2 b=ivec2(floor(p));v
  color=vec4(mix(mix(rgb(b),rgb(b+ivec2(1,0)),f.x),mix(rgb(b+ivec2(0,1)),rgb(b+ivec2(1,1)),f.x),f.y),1.0);}
 "#;
 impl State {
-    unsafe fn initialize(&mut self, gl: &glow::Context) -> Result<(), String> {
+    fn dimensions(&self) -> Option<[u32; 2]> {
+        self.pending
+            .as_ref()
+            .map(|p| [p.buffer.width(), p.buffer.height()])
+            .or_else(|| self.uploaded.as_ref().map(|u| u.size))
+    }
+    unsafe fn finish_draw(&mut self, gl: &glow::Context, result: Result<(), String>) -> bool {
+        if result.is_ok() {
+            return true;
+        }
+        FAULTS.fetch_add(1, Ordering::Relaxed);
+        // The receiver observes this before preparing another picture and uses
+        // its regular RGBA path. No repeated shader failures or partial state.
+        FAILED.store(true, Ordering::Relaxed);
         unsafe {
-            let program = gl.create_program()?;
-            for (kind, source) in [
-                (glow::VERTEX_SHADER, VERTEX),
-                (glow::FRAGMENT_SHADER, FRAGMENT),
-            ] {
-                let shader = gl.create_shader(kind)?;
-                gl.shader_source(shader, source);
-                gl.compile_shader(shader);
-                if !gl.get_shader_compile_status(shader) {
-                    let e = gl.get_shader_info_log(shader);
+            self.destroy(gl);
+        }
+        false
+    }
+    unsafe fn initialize(&mut self, gl: &glow::Context) -> Result<(), String> {
+        unsafe { self.initialize_at(gl, None) }
+    }
+    // Fault injection follows the same cleanup path as create_* failures.
+    unsafe fn initialize_at(
+        &mut self,
+        gl: &glow::Context,
+        fail_at: Option<usize>,
+    ) -> Result<(), String> {
+        unsafe {
+            let mut pending = State::default();
+            let mut step = 0;
+            let mut checkpoint = || {
+                step += 1;
+                if fail_at == Some(step) {
+                    Err("Injected GL allocation failure".to_owned())
+                } else {
+                    Ok(())
+                }
+            };
+            let built = (|| -> Result<(), String> {
+                checkpoint()?;
+                let program = gl.create_program()?;
+                pending.program = Some(program);
+                for (kind, source) in [
+                    (glow::VERTEX_SHADER, VERTEX),
+                    (glow::FRAGMENT_SHADER, FRAGMENT),
+                ] {
+                    checkpoint()?;
+                    let shader = gl.create_shader(kind)?;
+                    gl.shader_source(shader, source);
+                    gl.compile_shader(shader);
+                    if !gl.get_shader_compile_status(shader) {
+                        let e = gl.get_shader_info_log(shader);
+                        gl.delete_shader(shader);
+                        return Err(e);
+                    }
+                    gl.attach_shader(program, shader);
                     gl.delete_shader(shader);
-                    gl.delete_program(program);
+                }
+                gl.link_program(program);
+                if !gl.get_program_link_status(program) {
+                    let e = gl.get_program_info_log(program);
                     return Err(e);
                 }
-                gl.attach_shader(program, shader);
-                gl.delete_shader(shader);
+                checkpoint()?;
+                pending.vao = Some(gl.create_vertex_array()?);
+                for _ in 0..3 {
+                    checkpoint()?;
+                    pending.textures.push(gl.create_texture()?);
+                }
+                checkpoint()?;
+                Ok(())
+            })();
+            if let Err(error) = built {
+                pending.destroy(gl);
+                return Err(error);
             }
-            gl.link_program(program);
-            if !gl.get_program_link_status(program) {
-                let e = gl.get_program_info_log(program);
-                gl.delete_program(program);
-                return Err(e);
-            }
-            self.program = Some(program);
-            self.vao = Some(gl.create_vertex_array()?);
-            for _ in 0..3 {
-                self.textures.push(gl.create_texture()?);
-            }
+            self.program = pending.program.take();
+            self.vao = pending.vao.take();
+            self.textures = std::mem::take(&mut pending.textures);
             Ok(())
         }
     }
@@ -171,33 +256,48 @@ impl State {
             if self.program.is_none() {
                 self.initialize(gl)?;
             }
-            let Some(picture) = self.picture.as_ref() else {
+            if self.dimensions().is_none() {
                 return Ok(());
-            };
-            let planes = picture.buffer.as_i420().ok_or("Missing I420 owner")?;
+            }
+            let picture = self.pending.take();
+            let planes = picture
+                .as_ref()
+                .map(|p| p.buffer.as_i420().ok_or("Missing I420 owner"))
+                .transpose()?;
+            let data = planes.map(|p| {
+                let (y, u, v) = p.data();
+                [y, u, v]
+            });
+            let widths = planes
+                .map(|p| [p.width(), p.chroma_width(), p.chroma_width()])
+                .unwrap_or([0; 3]);
+            let heights = planes
+                .map(|p| [p.height(), p.chroma_height(), p.chroma_height()])
+                .unwrap_or([0; 3]);
+            let strides = planes
+                .map(|p| {
+                    let (y, u, v) = p.strides();
+                    [y, u, v]
+                })
+                .unwrap_or([0; 3]);
             gl.use_program(self.program);
             gl.bind_vertex_array(self.vao);
-            let old_alignment = gl.get_parameter_i32(glow::UNPACK_ALIGNMENT);
-            let old_row = gl.get_parameter_i32(glow::UNPACK_ROW_LENGTH);
-            gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 1);
-            let changed = self
-                .uploaded
-                .as_ref()
-                .is_none_or(|old| !Arc::ptr_eq(old, picture));
+            let unpack = picture.as_ref().map(|_| {
+                (
+                    gl.get_parameter_i32(glow::UNPACK_ALIGNMENT),
+                    gl.get_parameter_i32(glow::UNPACK_ROW_LENGTH),
+                    gl.get_parameter_buffer(glow::PIXEL_UNPACK_BUFFER_BINDING),
+                )
+            });
+            if unpack.is_some() {
+                gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 1);
+                gl.bind_buffer(glow::PIXEL_UNPACK_BUFFER, None);
+            }
             let start = Instant::now();
-            let (y, u, v) = planes.data();
-            let widths = [planes.width(), planes.chroma_width(), planes.chroma_width()];
-            let heights = [
-                planes.height(),
-                planes.chroma_height(),
-                planes.chroma_height(),
-            ];
-            let (sy, su, sv) = planes.strides();
-            let strides = [sy, su, sv];
-            for (index, data) in [y, u, v].iter().enumerate() {
+            for index in 0..3 {
                 gl.active_texture(glow::TEXTURE0 + index as u32);
                 gl.bind_texture(glow::TEXTURE_2D, Some(self.textures[index]));
-                if changed {
+                if let Some(data) = data.as_ref() {
                     for n in [glow::TEXTURE_MIN_FILTER, glow::TEXTURE_MAG_FILTER] {
                         gl.tex_parameter_i32(glow::TEXTURE_2D, n, glow::NEAREST as i32)
                     }
@@ -214,7 +314,7 @@ impl State {
                         0,
                         glow::RED,
                         glow::UNSIGNED_BYTE,
-                        glow::PixelUnpackData::Slice(Some(data)),
+                        glow::PixelUnpackData::Slice(Some(data[index])),
                     );
                     BYTES.fetch_add(
                         widths[index] as u64 * heights[index] as u64,
@@ -228,15 +328,29 @@ impl State {
                     index as i32,
                 );
             }
-            gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, old_alignment);
-            gl.pixel_store_i32(glow::UNPACK_ROW_LENGTH, old_row);
-            if changed {
-                self.uploaded = Some(picture.clone());
+            if let Some((alignment, row, buffer)) = unpack {
+                gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, alignment);
+                gl.pixel_store_i32(glow::UNPACK_ROW_LENGTH, row);
+                gl.bind_buffer(glow::PIXEL_UNPACK_BUFFER, buffer);
+            }
+            if let Some(picture) = picture {
+                self.uploaded = Some(Uploaded {
+                    size: [picture.buffer.width(), picture.buffer.height()],
+                    arrived: picture.arrived,
+                });
+                // Client-memory texImage2D has consumed all planes before returning.
+                // Keep only GPU pixels and scalar metadata for subsequent redraws.
+                self.retained = retain_planes().then_some(picture);
                 UPDATES.fetch_add(1, Ordering::Relaxed);
                 UPLOAD_NS.fetch_add(start.elapsed().as_nanos() as u64, Ordering::Relaxed);
             }
             MAX_AGE_US.fetch_max(
-                picture.arrived.elapsed().as_micros() as u64,
+                self.uploaded
+                    .as_ref()
+                    .unwrap()
+                    .arrived
+                    .elapsed()
+                    .as_micros() as u64,
                 Ordering::Relaxed,
             );
             gl.draw_arrays(glow::TRIANGLES, 0, 3);
@@ -262,8 +376,9 @@ impl State {
             if let Some(vao) = self.vao.take() {
                 gl.delete_vertex_array(vao)
             }
-            self.picture = None;
+            self.pending = None;
             self.uploaded = None;
+            self.retained = None;
         }
     }
 }
@@ -283,10 +398,20 @@ pub fn check(report: std::path::PathBuf) -> anyhow::Result<()> {
             let result = frame
                 .gl()
                 .ok_or_else(|| "No GL context".to_owned())
-                .and_then(|gl| unsafe { check_pixels(gl) });
+                .and_then(|gl| unsafe {
+                    let mut lifecycle = check_initialization(gl)?;
+                    lifecycle.extend(
+                        crate::ui::experiment::qualify_planar_transitions(ui, gl).map_err(
+                            |_| "Representation transition qualification failed".to_owned(),
+                        )?,
+                    );
+                    let pixels = check_pixels(gl)?;
+                    lifecycle.push(check_failover(gl)?);
+                    Ok((pixels, lifecycle))
+                });
             let value = match result {
-                Ok(rows) => {
-                    serde_json::json!({"completed":rows.iter().all(|r|r["passed"]==true),"maxAllowedComponentError":2,"maxAllowedMeanError":0.35,"cases":rows})
+                Ok((rows, lifecycle)) => {
+                    serde_json::json!({"completed":rows.iter().all(|r|r["passed"]==true)&&lifecycle.iter().all(|r|r["passed"]==true),"maxAllowedComponentError":2,"maxAllowedMeanError":0.35,"cases":rows,"lifecycle":lifecycle})
                 }
                 Err(e) => serde_json::json!({"completed":false,"fault":e}),
             };
@@ -310,6 +435,76 @@ pub fn check(report: std::path::PathBuf) -> anyhow::Result<()> {
         }),
     )
     .map_err(|_| anyhow::anyhow!("Planar qualification could not run"))
+}
+unsafe fn check_initialization(gl: &glow::Context) -> Result<Vec<serde_json::Value>, String> {
+    let mut rows = Vec::new();
+    for fail_at in 1..=8 {
+        let mut state = State::default();
+        let failed = unsafe { state.initialize_at(gl, Some(fail_at)) }.is_err();
+        let unchanged = state.program.is_none() && state.vao.is_none() && state.textures.is_empty();
+        let retry = unsafe { state.initialize(gl) }.is_ok();
+        let complete = state.program.is_some() && state.vao.is_some() && state.textures.len() == 3;
+        unsafe {
+            state.destroy(gl);
+        }
+        if !failed
+            || !unchanged
+            || !retry
+            || !complete
+            || unsafe { gl.get_error() } != glow::NO_ERROR
+        {
+            return Err(format!(
+                "GL initialization cleanup/retry failed at stage {fail_at}"
+            ));
+        }
+        rows.push(serde_json::json!({"test":"GL allocation failure and retry","stage":fail_at,"passed":true}));
+    }
+    Ok(rows)
+}
+unsafe fn check_failover(gl: &glow::Context) -> Result<serde_json::Value, String> {
+    use livekit::webrtc::video_frame::I420Buffer;
+    let mut buffer = I420Buffer::new(17, 9);
+    let (y, u, v) = buffer.data_mut();
+    y.fill(16);
+    u.fill(128);
+    v.fill(128);
+    let owner =
+        Picture::prepare(Box::new(buffer)).map_err(|_| "Cannot prepare failover picture")?;
+    let mut state = State {
+        pending: Some(owner.clone()),
+        ..Default::default()
+    };
+    unsafe {
+        state.draw(gl)?;
+    }
+    let program = state.program.unwrap();
+    let vao = state.vao.unwrap();
+    let textures = state.textures.clone();
+    state.pending = Some(owner.clone());
+    let faults = FAULTS.load(Ordering::Relaxed);
+    let initially_available = !FAILED.load(Ordering::Relaxed);
+    unsafe {
+        gl.bind_vertex_array(Some(vao));
+    }
+    let rejected = !unsafe { state.finish_draw(gl, Err("Injected renderer fault".into())) };
+    let deleted = unsafe {
+        !gl.is_program(program)
+            && gl.get_parameter_i32(glow::VERTEX_ARRAY_BINDING) == 0
+            && textures.iter().all(|t| !gl.is_texture(*t))
+    };
+    if !initially_available
+        || !rejected
+        || enabled()
+        || !FAILED.load(Ordering::Relaxed)
+        || FAULTS.load(Ordering::Relaxed) != faults + 1
+        || !deleted
+        || Arc::strong_count(&owner) != 1
+    {
+        return Err("Renderer failover or GL/frame cleanup failed".into());
+    }
+    Ok(
+        serde_json::json!({"test":"GL failure selects RGBA and releases actual GL/frame owners","passed":true}),
+    )
 }
 unsafe fn check_pixels(gl: &glow::Context) -> Result<Vec<serde_json::Value>, String> {
     use livekit::webrtc::video_frame::{I420Buffer, VideoFormatType};
@@ -389,7 +584,7 @@ unsafe fn check_pixels(gl: &glow::Context) -> Result<Vec<serde_json::Value>, Str
                 let picture =
                     Picture::prepare(Box::new(buffer)).map_err(|_| "I420 preparation failed")?;
                 let mut state = State {
-                    picture: Some(picture),
+                    pending: Some(picture),
                     ..Default::default()
                 };
                 for (ow, oh) in [(width, height), (303, 171), (960, 540)] {

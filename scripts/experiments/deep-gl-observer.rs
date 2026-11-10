@@ -13,6 +13,7 @@ pub fn tag_video(id: egui::TextureId) {
 pub(crate) fn forget(id: egui::TextureId) {
     if let Some(tags)=TAGS.get() { tags.lock().unwrap().remove(&id); }
 }
+pub fn untag_video(id: egui::TextureId) { forget(id); }
 pub(crate) fn uploaded(id: egui::TextureId, bytes: usize, partial: bool) {
     if TAGS.get().is_some_and(|tags|tags.lock().unwrap().contains(&id)) {
         CALLS.fetch_add(1,Ordering::Relaxed);

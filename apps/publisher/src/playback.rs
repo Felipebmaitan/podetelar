@@ -618,16 +618,25 @@ impl Playback {
                                     match crate::planar_experiment::Picture::prepare(frame.buffer) {
                                         Ok(planar) => {
                                             image_pool.clear();
+                                            // Never let an older RGBA mailbox replace this newer planar frame.
+                                            if let Ok(mut latest) = picture.lock() {
+                                                *latest = None;
+                                            }
                                             presentation.converted.fetch_add(1, Ordering::Relaxed);
                                             if let Ok(mut latest) = presentation.planar.lock() {
                                                 *latest = Some(planar);
                                             }
                                             continue;
                                         }
-                                        Err(buffer) => livekit::webrtc::video_frame::VideoFrame {
-                                            buffer,
-                                            ..frame
-                                        },
+                                        Err(buffer) => {
+                                            if let Ok(mut latest) = presentation.planar.lock() {
+                                                *latest = None;
+                                            }
+                                            livekit::webrtc::video_frame::VideoFrame {
+                                                buffer,
+                                                ..frame
+                                            }
+                                        }
                                     }
                                 } else {
                                     frame

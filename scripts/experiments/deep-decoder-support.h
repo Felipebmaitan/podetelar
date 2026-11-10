@@ -50,7 +50,10 @@ inline std::shared_ptr<Device> Setup(GstElement* pipeline){
  auto* decoder=gst_bin_get_by_name(GST_BIN(pipeline),"fsdeepdecoder");if(!decoder)return {};
  gint64 luid=0;g_object_get(decoder,"adapter-luid",&luid,nullptr);
  std::shared_ptr<Device> result;
- {std::lock_guard<std::mutex> lock(shared_mutex);result=active_devices[luid].lock();
+ {std::lock_guard<std::mutex> lock(shared_mutex);
+  for(auto it=active_devices.begin();it!=active_devices.end();){if(it->second.expired())it=active_devices.erase(it);else ++it;}
+  result=active_devices[luid].lock();
+  if(result){auto* native=gst_d3d11_device_get_device_handle(result->value);if(!native||FAILED(native->GetDeviceRemovedReason())){result.reset();active_devices.erase(luid);}}
   if(!result){auto* device=gst_d3d11_device_new_for_adapter_luid(luid,D3D11_CREATE_DEVICE_BGRA_SUPPORT);if(device){result=std::make_shared<Device>(device);active_devices[luid]=result;}}}
  if(result){auto* context=gst_d3d11_context_new(result->value);gst_element_set_context(pipeline,context);gst_element_set_context(decoder,context);gst_context_unref(context);}
  gst_object_unref(decoder);return result;

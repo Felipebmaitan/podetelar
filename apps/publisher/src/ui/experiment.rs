@@ -51,6 +51,128 @@ fn phase_seconds() -> u64 {
     10
 }
 
+/// Exercises the real UI mailbox consumer without opening saved profiles or joining.
+pub fn qualify_planar_transitions(
+    ui: &mut egui::Ui,
+    gl: &std::sync::Arc<eframe::glow::Context>,
+) -> Result<Vec<serde_json::Value>> {
+    use livekit::webrtc::video_frame::{I420Buffer, NV12Buffer};
+    use std::sync::Arc;
+    let mut app = PublisherUi {
+        controller: Controller::new(),
+        invitation: String::new(),
+        name: String::new(),
+        source_id: String::new(),
+        encoder: String::new(),
+        quality: Settings::default(),
+        route: Route::Auto,
+        download_budget: None,
+        textures: HashMap::new(),
+        focused: None,
+        fullscreen: None,
+        fullscreen_controls_until: Instant::now(),
+        store: None,
+        attempted_profile: None,
+        settings_error: String::new(),
+        forgetting: false,
+        copied_until: None,
+        remembered_volume: HashMap::new(),
+        advanced_open: false,
+        show_invitation: false,
+        self_preview_revision: None,
+        planar: Default::default(),
+    };
+    let tile = Tile {
+        id: "qualification".into(),
+        name: String::new(),
+        codec: String::new(),
+        watching: true,
+        picture: Arc::default(),
+        presentation: Arc::default(),
+        frames: Arc::default(),
+        received_bps: Arc::default(),
+        volume: Arc::default(),
+        audio: Arc::default(),
+        status: String::new(),
+    };
+    let make = |luma| -> Result<_> {
+        let mut buffer = I420Buffer::new(17, 9);
+        let (y, u, v) = buffer.data_mut();
+        y.fill(luma);
+        u.fill(128);
+        v.fill(128);
+        crate::planar_experiment::Picture::prepare(Box::new(buffer))
+            .map_err(|_| anyhow::anyhow!("Cannot prepare synthetic I420"))
+    };
+    let result = (|| -> Result<Vec<serde_json::Value>> {
+        let first = make(16)?;
+        *tile.presentation.planar.lock().unwrap() = Some(first.clone());
+        app.update_picture(ui.ctx(), &tile);
+        unsafe { app.planar.qualify_draw(&tile.id, gl) }
+            .map_err(|_| anyhow::anyhow!("Cannot upload first planar picture"))?;
+        ensure!(
+            app.planar.has_picture(&tile.id)
+                && !app.textures.contains_key(&tile.id)
+                && Arc::strong_count(&first)
+                    == if crate::planar_experiment::retain_planes() {
+                        2
+                    } else {
+                        1
+                    },
+            "First planar ownership mismatch"
+        );
+        let mut unsupported = NV12Buffer::new(18, 10);
+        let (y, uv) = unsupported.data_mut();
+        y.fill(100);
+        uv.fill(128);
+        let unsupported = match crate::planar_experiment::Picture::prepare(Box::new(unsupported)) {
+            Ok(_) => anyhow::bail!("NV12 unexpectedly entered the I420-only shader"),
+            Err(buffer) => buffer,
+        };
+        *tile.picture.lock().unwrap() = Some(Arc::new(crate::video_image::to_color_image(
+            unsupported.as_ref(),
+        )));
+        app.update_picture(ui.ctx(), &tile);
+        ensure!(
+            !app.planar.has_picture(&tile.id)
+                && app.textures.contains_key(&tile.id)
+                && Arc::strong_count(&first) == 1,
+            "RGBA fallback kept an old planar owner"
+        );
+        ensure!(
+            !app.planar.paint(ui, &tile.id, ui.max_rect()),
+            "RGBA fallback suppressed by planar drawing"
+        );
+        app.planar.retain(Some(gl), |_| true);
+        let next = make(235)?;
+        *tile.presentation.planar.lock().unwrap() = Some(next.clone());
+        app.update_picture(ui.ctx(), &tile);
+        unsafe { app.planar.qualify_draw(&tile.id, gl) }
+            .map_err(|_| anyhow::anyhow!("Cannot upload replacement planar picture"))?;
+        ensure!(
+            app.planar.has_picture(&tile.id)
+                && !app.textures.contains_key(&tile.id)
+                && Arc::strong_count(&next)
+                    == if crate::planar_experiment::retain_planes() {
+                        2
+                    } else {
+                        1
+                    },
+            "Replacement planar ownership mismatch"
+        );
+        app.planar.destroy(Some(gl));
+        ensure!(Arc::strong_count(&next) == 1, "Final planar owner retained");
+        Ok(vec![
+            json!({"test":"I420 upload owns the current picture","passed":true}),
+            json!({"test":"Native NV12 rejection and RGBA fallback select the new texture and release old planes","passed":true}),
+            json!({"test":"I420 resumes after RGBA and releases on destroy","passed":true}),
+        ])
+    })();
+    app.planar.destroy(Some(gl));
+    app.textures.clear();
+    result
+}
+
 pub fn run(request: Request) -> Result<()> {
     ensure!(
         request.expected_streams <= 5
@@ -272,8 +394,28 @@ impl BenchmarkUi {
                     self.inner.focused = None;
                     self.inner.set_fullscreen(ctx, None);
                 }
-                "focus" => self.inner.focused = first,
-                "fullscreen" => self.inner.set_fullscreen(ctx, first),
+                "focus" => {
+                    if std::env::var("FREEDOMSTREAM_DEEP_SELECTIVE_STOP").is_ok_and(|v| v == "1")
+                        && let Some(id) = first.as_ref()
+                    {
+                        self.inner.controller.send(Command::Watch {
+                            id: id.clone(),
+                            enabled: false,
+                        });
+                    }
+                    self.inner.focused = first;
+                }
+                "fullscreen" => {
+                    if std::env::var("FREEDOMSTREAM_DEEP_SELECTIVE_STOP").is_ok_and(|v| v == "1")
+                        && let Some(tile) = state.tiles.iter().find(|tile| !tile.watching)
+                    {
+                        self.inner.controller.send(Command::Watch {
+                            id: tile.id.clone(),
+                            enabled: true,
+                        });
+                    }
+                    self.inner.set_fullscreen(ctx, first);
+                }
                 "minimized" => {
                     self.inner.set_fullscreen(ctx, None);
                     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));

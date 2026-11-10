@@ -557,7 +557,10 @@ async function executeWorkload() {
         countSdkLogs: appEnv.FREEDOMSTREAM_COUNT_SDK_LOGS === "1",
         deepClip: appEnv.FREEDOMSTREAM_DEEP_CLIP === "1",
         deepPlanar: appEnv.FREEDOMSTREAM_DEEP_PLANAR === "1",
+        requestedPlaneRetention:
+          appEnv.FREEDOMSTREAM_DEEP_RETAIN_PLANES ?? "default",
         sharedDecoderDevice: appEnv.FREEDOMSTREAM_DEEP_SHARED_DEVICE === "1",
+        selectiveStop: appEnv.FREEDOMSTREAM_DEEP_SELECTIVE_STOP === "1",
         relaxedReadback: appEnv.FREEDOMSTREAM_DEEP_RELAXED_MAP === "1",
         flushBeforeReadbackPoll: appEnv.FREEDOMSTREAM_DEEP_FLUSH_MAP === "1",
         poolTrace: appEnv.FREEDOMSTREAM_DEEP_POOL_TRACE === "1",

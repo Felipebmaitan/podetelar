@@ -37,6 +37,7 @@ const runs = cases.runs.map((c) => {
     exeSha256:
       r.appSha256 ?? r.executableSha256 ?? r.uiExecutableSha256 ?? null,
     codecStable: r.codecStable,
+    processCounterFailures: r.process.counterFailures,
     heapActions: r.app.heapActions ?? [],
     firstHandoffs: r.app.firstHandoffs ?? [],
     phases: Array.from({ length: phases.length * (r.rounds ?? 1) }, (_, i) => {
@@ -70,6 +71,7 @@ const runs = cases.runs.map((c) => {
         phase,
         cycle,
         samples: a.length,
+        processSamples: p.length,
         cpuCorePercent:
           first && last && last.second > first.second
             ? (100 * (last.cpuMs - first.cpuMs)) /
@@ -132,6 +134,16 @@ const runs = cases.runs.map((c) => {
         activeWatches: median(a.map((s) => s.activeWatches)),
         errors: a.some((s) => s.errorPresent || s.streamErrorCount > 0),
         nativeAtEnd: y?.nativeOwners ?? null,
+        nativePlaneMiBMedian: median(
+          a.map((s) =>
+            s.nativeOwners ? s.nativeOwners.planeBytesLive / 2 ** 20 : NaN,
+          ),
+        ),
+        nativePlaneMiBPeak: a.some((s) => s.nativeOwners)
+          ? Math.max(
+              ...a.map((s) => (s.nativeOwners?.planeBytesLive ?? 0) / 2 ** 20),
+            )
+          : null,
         ownersAtEnd: y?.owners ?? null,
         nativeStage:
           x?.nativeOwners && y?.nativeOwners
@@ -197,6 +209,7 @@ for (const group of [...new Set(runs.map((r) => r.group))])
     const eligible = (p) =>
       p &&
       p.samples >= 4 &&
+      p.processSamples >= 4 &&
       !p.errors &&
       Number.isFinite(p.cpuCorePercent) &&
       (phase === "stopped" || Number.isFinite(p.decoded));
@@ -224,6 +237,8 @@ for (const group of [...new Set(runs.map((r) => r.group))])
           [
             "cpuCorePercent",
             "privateMiB",
+            "nativePlaneMiBMedian",
+            "nativePlaneMiBPeak",
             "workingSetMiB",
             "decoded",
             "converted",

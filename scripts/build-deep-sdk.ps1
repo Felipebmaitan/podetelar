@@ -51,5 +51,10 @@ $exe=".local/experiments/deep-pass/$Label-room.exe"
 Copy-Item -LiteralPath "$root/target/release/examples/room-benchmark.exe" -Destination "$root/$exe"
 & $node "$root/scripts/record-deep-build.mjs" $Label $exe
 if($LASTEXITCODE -ne 0){throw 'Build source identity capture failed'}
+$decoderArchive=Join-Path $root ".local/experiments/deep-pass/decoder-$Label"
+if(Test-Path -LiteralPath $decoderArchive){throw 'Existing generated decoder archive is immutable'}
+New-Item -ItemType Directory -Path $decoderArchive|Out-Null
+foreach($name in @('freedomstream_decoder.h','deferred_i420.h','bounded_readback.h','deep-decoder-support.h')){Copy-Item -LiteralPath "$target/src/$name" -Destination "$decoderArchive/$name"}
+Copy-Item -LiteralPath "$root/.local/experiments/deep-pass/decoder/source.json" -Destination "$decoderArchive/source.json"
 & $node "$root/scripts/setup-native-decoder.mjs"
 if($LASTEXITCODE -ne 0){throw 'Original SDK changed during isolated build'}

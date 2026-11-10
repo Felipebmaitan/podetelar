@@ -28,7 +28,9 @@ const common = {
   FREEDOMSTREAM_IMAGE_POOL_LIMIT: "2",
   FREEDOMSTREAM_DEEP_CLIP: "0",
   FREEDOMSTREAM_DEEP_PLANAR: "0",
+  FREEDOMSTREAM_DEEP_RETAIN_PLANES: "0",
   FREEDOMSTREAM_DEEP_SHARED_DEVICE: "0",
+  FREEDOMSTREAM_DEEP_SELECTIVE_STOP: "0",
   FREEDOMSTREAM_DEEP_RELAXED_MAP: "0",
   FREEDOMSTREAM_DEEP_POOL_TRACE: "0",
   FREEDOMSTREAM_AV1_DECODER: "",
@@ -51,51 +53,38 @@ const common = {
   FREEDOMSTREAM_BENCH_RESOLUTION: "p1080",
 };
 const groups =
-  family === "clip-gl-confirm"
-    ? [{ name: "narrow", pairs: 1, env: { FREEDOMSTREAM_DEEP_NARROW: "1" } }]
-    : family === "clip"
+  family === "shared-selective"
+    ? [
+        {
+          name: "four",
+          pairs: 1,
+          env: { FREEDOMSTREAM_DEEP_SELECTIVE_STOP: "1" },
+        },
+      ]
+    : family === "shared-4k"
       ? [
-          { name: "narrow", pairs: 3, env: { FREEDOMSTREAM_DEEP_NARROW: "1" } },
-          { name: "wide", pairs: 1, env: {} },
+          {
+            name: "four4k",
+            pairs: 1,
+            env: { FREEDOMSTREAM_BENCH_RESOLUTION: "p2160" },
+          },
         ]
-      : family === "clip-control"
+      : family === "shared-contention"
         ? [
             {
-              name: "narrow",
-              pairs: 3,
-              env: { FREEDOMSTREAM_DEEP_NARROW: "1" },
-            },
-            { name: "wide", pairs: 3, env: {} },
-            {
-              name: "scroll",
+              name: "four",
               pairs: 1,
-              env: {
-                FREEDOMSTREAM_DEEP_NARROW: "1",
-                FREEDOMSTREAM_DEEP_SCROLL: "1",
-              },
-            },
-            {
-              name: "audio",
-              pairs: 1,
-              env: {
-                FREEDOMSTREAM_DEEP_NARROW: "1",
-                FREEDOMSTREAM_BENCH_AUDIO: "1",
-              },
-            },
-            {
-              name: "five",
-              count: 5,
-              pairs: 1,
-              env: { FREEDOMSTREAM_DEEP_NARROW: "1" },
+              env: { FREEDOMSTREAM_BENCH_CONTENTION: "1" },
             },
           ]
-        : family === "clip-wide-sustained"
+        : family === "shared-recovery"
           ? [
               {
-                name: "wide",
-                pairs: 3,
+                name: "four",
+                pairs: 1,
+                seconds: 20,
                 env: {
-                  FREEDOMSTREAM_BENCH_STEADY: "60",
+                  FREEDOMSTREAM_BENCH_ROUNDS: "3",
                   FREEDOMSTREAM_PERFORMANCE_PUBLISHER: resolve(
                     root,
                     ".local/experiments/final-selected-v4/freedomstream-publisher.exe",
@@ -103,111 +92,215 @@ const groups =
                 },
               },
             ]
-          : family === "calibration"
+          : family === "planar-memory"
             ? [
-                { name: "four", pairs: 2, env: {} },
-                { name: "one", pairs: 1, env: {} },
+                {
+                  name: "four",
+                  pairs: 3,
+                  env: {
+                    FREEDOMSTREAM_DEEP_PLANAR: "1",
+                    FREEDOMSTREAM_DEEP_OWNERS: "1",
+                  },
+                },
+                {
+                  name: "one4k",
+                  pairs: 1,
+                  env: {
+                    FREEDOMSTREAM_DEEP_PLANAR: "1",
+                    FREEDOMSTREAM_DEEP_OWNERS: "1",
+                    FREEDOMSTREAM_BENCH_RESOLUTION: "p2160",
+                  },
+                },
               ]
-            : family === "planar"
+            : family === "clip-gl-confirm"
               ? [
-                  { name: "four", pairs: 3, env: {} },
-                  { name: "one", pairs: 3, env: {} },
                   {
-                    name: "four4k",
+                    name: "narrow",
                     pairs: 1,
-                    env: { FREEDOMSTREAM_BENCH_RESOLUTION: "p2160" },
+                    env: { FREEDOMSTREAM_DEEP_NARROW: "1" },
                   },
                 ]
-              : family === "planar-final"
+              : family === "clip"
                 ? [
-                    { name: "four", pairs: 3, env: {} },
-                    { name: "one", pairs: 3, env: {} },
                     {
-                      name: "one4k",
-                      pairs: 2,
-                      env: { FREEDOMSTREAM_BENCH_RESOLUTION: "p2160" },
+                      name: "narrow",
+                      pairs: 3,
+                      env: { FREEDOMSTREAM_DEEP_NARROW: "1" },
                     },
-                    {
-                      name: "four4k",
-                      pairs: 1,
-                      env: { FREEDOMSTREAM_BENCH_RESOLUTION: "p2160" },
-                    },
+                    { name: "wide", pairs: 1, env: {} },
                   ]
-                : family === "planar-equal"
+                : family === "clip-control"
                   ? [
                       {
-                        name: "four30",
+                        name: "narrow",
                         pairs: 3,
-                        env: { FREEDOMSTREAM_BENCH_FPS: "30" },
+                        env: { FREEDOMSTREAM_DEEP_NARROW: "1" },
+                      },
+                      { name: "wide", pairs: 3, env: {} },
+                      {
+                        name: "scroll",
+                        pairs: 1,
+                        env: {
+                          FREEDOMSTREAM_DEEP_NARROW: "1",
+                          FREEDOMSTREAM_DEEP_SCROLL: "1",
+                        },
                       },
                       {
-                        name: "one4k30",
-                        pairs: 3,
+                        name: "audio",
+                        pairs: 1,
                         env: {
-                          FREEDOMSTREAM_BENCH_FPS: "30",
-                          FREEDOMSTREAM_BENCH_RESOLUTION: "p2160",
+                          FREEDOMSTREAM_DEEP_NARROW: "1",
+                          FREEDOMSTREAM_BENCH_AUDIO: "1",
                         },
                       },
+                      {
+                        name: "five",
+                        count: 5,
+                        pairs: 1,
+                        env: { FREEDOMSTREAM_DEEP_NARROW: "1" },
+                      },
                     ]
-                  : family === "planar-codecs"
+                  : family === "clip-wide-sustained"
                     ? [
-                        { name: "h264", codec: "h264", pairs: 1, env: {} },
-                        { name: "av1", codec: "av1", pairs: 1, env: {} },
                         {
-                          name: "av1sw",
-                          codec: "av1-software",
-                          pairs: 1,
-                          env: {},
+                          name: "wide",
+                          pairs: 3,
+                          env: {
+                            FREEDOMSTREAM_BENCH_STEADY: "60",
+                            FREEDOMSTREAM_PERFORMANCE_PUBLISHER: resolve(
+                              root,
+                              ".local/experiments/final-selected-v4/freedomstream-publisher.exe",
+                            ),
+                          },
                         },
                       ]
-                    : family === "pool-observation"
+                    : family === "calibration"
                       ? [
-                          { name: "four", pairs: 1, env: {} },
-                          {
-                            name: "four4k",
-                            pairs: 1,
-                            env: { FREEDOMSTREAM_BENCH_RESOLUTION: "p2160" },
-                          },
+                          { name: "four", pairs: 2, env: {} },
+                          { name: "one", pairs: 1, env: {} },
                         ]
-                      : ["shared-device", "relaxed-map"].includes(family)
+                      : family === "planar"
                         ? [
                             { name: "four", pairs: 3, env: {} },
+                            { name: "one", pairs: 3, env: {} },
                             {
-                              name: "one4k",
+                              name: "four4k",
                               pairs: 1,
                               env: { FREEDOMSTREAM_BENCH_RESOLUTION: "p2160" },
                             },
-                            {
-                              name: "mixed",
-                              pairs: 1,
-                              env: { FREEDOMSTREAM_DEEP_MIXED: "1" },
-                            },
-                            {
-                              name: "combined",
-                              pairs: 1,
-                              env: {
-                                FREEDOMSTREAM_BENCH_PUBLISH: "1",
-                                FREEDOMSTREAM_BENCH_AUDIO: "1",
-                              },
-                            },
                           ]
-                        : family === "ownership"
+                        : family === "planar-final"
                           ? [
+                              { name: "four", pairs: 3, env: {} },
+                              { name: "one", pairs: 3, env: {} },
                               {
-                                name: "four",
-                                pairs: 1,
-                                seconds: 20,
+                                name: "one4k",
+                                pairs: 2,
                                 env: {
-                                  FREEDOMSTREAM_DEEP_OWNERS: "1",
-                                  FREEDOMSTREAM_BENCH_ROUNDS: "7",
-                                  FREEDOMSTREAM_PERFORMANCE_PUBLISHER: resolve(
-                                    root,
-                                    ".local/experiments/final-selected-v4/freedomstream-publisher.exe",
-                                  ),
+                                  FREEDOMSTREAM_BENCH_RESOLUTION: "p2160",
+                                },
+                              },
+                              {
+                                name: "four4k",
+                                pairs: 1,
+                                env: {
+                                  FREEDOMSTREAM_BENCH_RESOLUTION: "p2160",
                                 },
                               },
                             ]
-                          : [];
+                          : family === "planar-equal"
+                            ? [
+                                {
+                                  name: "four30",
+                                  pairs: 3,
+                                  env: { FREEDOMSTREAM_BENCH_FPS: "30" },
+                                },
+                                {
+                                  name: "one4k30",
+                                  pairs: 3,
+                                  env: {
+                                    FREEDOMSTREAM_BENCH_FPS: "30",
+                                    FREEDOMSTREAM_BENCH_RESOLUTION: "p2160",
+                                  },
+                                },
+                              ]
+                            : family === "planar-codecs"
+                              ? [
+                                  {
+                                    name: "h264",
+                                    codec: "h264",
+                                    pairs: 1,
+                                    env: {},
+                                  },
+                                  {
+                                    name: "av1",
+                                    codec: "av1",
+                                    pairs: 1,
+                                    env: {},
+                                  },
+                                  {
+                                    name: "av1sw",
+                                    codec: "av1-software",
+                                    pairs: 1,
+                                    env: {},
+                                  },
+                                ]
+                              : family === "pool-observation"
+                                ? [
+                                    { name: "four", pairs: 1, env: {} },
+                                    {
+                                      name: "four4k",
+                                      pairs: 1,
+                                      env: {
+                                        FREEDOMSTREAM_BENCH_RESOLUTION: "p2160",
+                                      },
+                                    },
+                                  ]
+                                : ["shared-device", "relaxed-map"].includes(
+                                      family,
+                                    )
+                                  ? [
+                                      { name: "four", pairs: 3, env: {} },
+                                      {
+                                        name: "one4k",
+                                        pairs: 1,
+                                        env: {
+                                          FREEDOMSTREAM_BENCH_RESOLUTION:
+                                            "p2160",
+                                        },
+                                      },
+                                      {
+                                        name: "mixed",
+                                        pairs: 1,
+                                        env: { FREEDOMSTREAM_DEEP_MIXED: "1" },
+                                      },
+                                      {
+                                        name: "combined",
+                                        pairs: 1,
+                                        env: {
+                                          FREEDOMSTREAM_BENCH_PUBLISH: "1",
+                                          FREEDOMSTREAM_BENCH_AUDIO: "1",
+                                        },
+                                      },
+                                    ]
+                                  : family === "ownership"
+                                    ? [
+                                        {
+                                          name: "four",
+                                          pairs: 1,
+                                          seconds: 20,
+                                          env: {
+                                            FREEDOMSTREAM_DEEP_OWNERS: "1",
+                                            FREEDOMSTREAM_BENCH_ROUNDS: "7",
+                                            FREEDOMSTREAM_PERFORMANCE_PUBLISHER:
+                                              resolve(
+                                                root,
+                                                ".local/experiments/final-selected-v4/freedomstream-publisher.exe",
+                                              ),
+                                          },
+                                        },
+                                      ]
+                                    : [];
 if (!groups.length) throw Error("Unknown comparison family.");
 for (const group of groups)
   for (let pair = 1; pair <= group.pairs; pair++)
@@ -216,18 +309,25 @@ for (const group of groups)
       : ["after", "before"]) {
       const label = `deep-${family}-${group.name}-${variant}-${pair}`;
       const env = { ...common, ...group.env };
-      const key = family.startsWith("clip")
-        ? "FREEDOMSTREAM_DEEP_CLIP"
-        : family === "shared-device"
-          ? "FREEDOMSTREAM_DEEP_SHARED_DEVICE"
-          : family === "relaxed-map"
-            ? "FREEDOMSTREAM_DEEP_RELAXED_MAP"
-            : family === "ownership"
-              ? "FREEDOMSTREAM_DEEP_HEAP"
-              : family === "pool-observation"
-                ? "FREEDOMSTREAM_DEEP_POOL_TRACE"
-                : "FREEDOMSTREAM_DEEP_PLANAR";
-      if (family !== "calibration") env[key] = variant === "after" ? "1" : "0";
+      const key =
+        family === "planar-memory"
+          ? "FREEDOMSTREAM_DEEP_RETAIN_PLANES"
+          : family.startsWith("clip")
+            ? "FREEDOMSTREAM_DEEP_CLIP"
+            : family.startsWith("shared-")
+              ? "FREEDOMSTREAM_DEEP_SHARED_DEVICE"
+              : family === "relaxed-map"
+                ? "FREEDOMSTREAM_DEEP_RELAXED_MAP"
+                : family === "ownership"
+                  ? "FREEDOMSTREAM_DEEP_HEAP"
+                  : family === "pool-observation"
+                    ? "FREEDOMSTREAM_DEEP_POOL_TRACE"
+                    : "FREEDOMSTREAM_DEEP_PLANAR";
+      if (family !== "calibration")
+        env[key] =
+          variant === (family === "planar-memory" ? "before" : "after")
+            ? "1"
+            : "0";
       if (family === "relaxed-map" && variant === "after")
         env.FREEDOMSTREAM_DEEP_FLUSH_MAP = "1";
       const count = group.count ?? (group.name.startsWith("one") ? 1 : 4);
@@ -291,14 +391,10 @@ for (const group of groups)
         const meters = data.app.samples.map((s) => s.owners?.rgbaGl);
         if (!meters.length || meters.some((m) => !m || m.tagOverflow !== 0))
           throw Error("GL observer missing or tag bound exceeded");
-        if (
-          !(family.startsWith("planar") && variant === "after") &&
-          meters.at(-1).calls <= 0
-        )
+        if (env.FREEDOMSTREAM_DEEP_PLANAR !== "1" && meters.at(-1).calls <= 0)
           throw Error("RGBA path issued no observed video uploads");
         if (
-          family.startsWith("planar") &&
-          variant === "after" &&
+          env.FREEDOMSTREAM_DEEP_PLANAR === "1" &&
           !data.app.samples.some((s) => s.planarGlUpdates > 0)
         )
           throw Error("Planar path issued no observed video uploads");

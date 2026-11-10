@@ -1,24 +1,26 @@
 # Independent follow-up performance experiments
 
-Status: **in progress**. These experiments start from the optimized application at
+Status: **all local experiments completed; final package/review acceptance pending**.
+These experiments start from the optimized application at
 `e93b71d437810192bd1648e65088f1a6b9196754`, not the original pre-optimization
 application. Work is isolated on `perf/deep-individual-experiments` in
 `freedomstream-perf`. The original checkout is preserved.
 
 Each family is compared separately. An experimental switch is not a shipping
 default, and a source-level cost or calculated byte reduction is not a measured
-performance win. Successful assertions must include equivalent useful output.
+performance win. Functional success and performance qualification are separate;
+unequal work does not establish an equal-work CPU gain.
 Raw sanitized measurements, executable identities and diagnostic receipts are
 kept under `.local/experiments/deep-pass` and named actual-room run directories.
 
-| Experiment         | Baseline                             | Candidate                                             | Required countermetrics                                       | Status                                                                    |
-| ------------------ | ------------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| E1 clipped tiles   | Renew all tile leases                | Renew intersecting video rectangles only              | Same subscriptions/audio/delivery; visible updates; restore   | Repeating actual app, including scroll/audio/five incoming streams        |
-| E2 planar Glow     | I420 to pooled RGBA to egui          | Owned I420 planes and video shader                    | Rendered pixel equivalence, unique frames, age, GL work, RAM  | 27 actual-GL pixel cases passed; repeating resource comparisons           |
-| E3 usage reports   | Current synchronous full report      | Batched queries; bounded closed-history JSON cache    | Every response field, history edges/pages, concurrent latency | Batching rejected; cache measured; production integration awaiting checks |
-| E4 stopped memory  | Current lifecycle                    | Attribution and conditional default-heap optimization | Completed teardown, live resources, next-watch latency        | Observed native owners drain; seven-cycle comparisons queued              |
-| E5 decoder devices | Independent pipeline contexts        | Compatible active shared context                      | Actual device count, equal pixels/frames, locks, recovery     | Native comparisons positive; actual-app qualification queued              |
-| E6 pool/readback   | Current pool and one staging texture | Polling with and without explicit submission          | No stale pixels/drops, frame age, memory, CPU and waits       | Both native variants measured; latency costs documented below             |
+| Experiment         | Baseline                             | Candidate                                             | Required countermetrics                                       | Status                                                                                                        |
+| ------------------ | ------------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| E1 clipped tiles   | Renew all tile leases                | Renew intersecting video rectangles only              | Same subscriptions/audio/delivery; visible updates; restore   | Retain by default; scroll/audio/restoration passed; all-visible control has no gain                           |
+| E2 planar Glow     | I420 to pooled RGBA to egui          | Owned I420 planes and video shader                    | Rendered pixel equivalence, unique frames, age, GL work, RAM  | Keep disabled prototype; 27 pixels and 12 lifecycle checks pass in both ownership modes; CPU tradeoffs remain |
+| E3 usage reports   | Current synchronous full report      | Batched queries; bounded closed-history JSON cache    | Every response field, history edges/pages, concurrent latency | Batching rejected; production cache and authenticated HTTP checks passed                                      |
+| E4 stopped memory  | Current lifecycle                    | Attribution and conditional default-heap optimization | Completed teardown, live resources, next-watch latency        | Reject default heap optimization; seven-cycle pairs and diagnostic-history replay completed                   |
+| E5 decoder devices | Independent pipeline contexts        | Compatible active shared context                      | Actual device count, equal pixels/frames, locks, recovery     | Keep disabled prototype; 20 app cases pass; 4K delivery/memory tradeoff prevents broad adoption               |
+| E6 pool/readback   | Current pool and one staging texture | Polling with and without explicit submission          | No stale pixels/drops, frame age, memory, CPU and waits       | Reject polling latency tradeoff; no observed pool-copy pressure justifies resizing                            |
 
 Trials alternate order and never run simultaneous performance workloads. CPU is
 reported with one core equal to 100%; private bytes are commit and working set is
@@ -27,10 +29,9 @@ named actual GL uploads. Diagnostic instrumentation is separated from ordinary
 release measurements. External AMD, physical 4K120, device-loss, WAN/VPS and
 physical A/V qualification remain open.
 
-## Completed intermediate results
+## Experiment results
 
-These are intermediate receipts, not final acceptance or adopted-default claims.
-The frozen application repeat uses `sdk-v4-room.exe`, SHA-256
+The first frozen clipping repeat uses `sdk-v4-room.exe`, SHA-256
 `08e59fd265bcf3bc42a7975deb4670bffa5b60dcc37d1c10fa55c20082d4ad64`.
 Every comparison within that campaign changes one candidate switch in the same
 executable. Experimental SDK hooks remain in an isolated copy; the normal pinned
@@ -53,6 +54,10 @@ five-pair burst medians were 9,046 → 62 ms server CPU for ten reports and fort
 health requests, report p50 929.176 → 4.192 ms and health p95 922.622 → 2.560 ms.
 These are warmed, unchanged-history hits; they do not speed every report or its
 first SQL calculation.
+The normal Today/7 days/Month dashboard ranges include the live minute and bypass
+this cache. The measured benefit applies to repeated closed custom-history
+requests; it must not be advertised as a blanket reduction in ordinary server
+CPU or the default dashboard's query work.
 
 The short burst's end RSS increased about 26.9 MiB, with different elapsed times
 and garbage-collection opportunities. A separate fixed 60-second pair delivered
@@ -107,7 +112,8 @@ The polling, device and ownership hooks are experimental source copies. The
 documented [HeapOptimizeResources API](https://learn.microsoft.com/en-us/windows/win32/api/heapapi/nf-heapapi-heapsetinformation)
 acts on the process's own default heap in the separate E4 experiment; it is not a
 working-set trim and does not free live allocations. E4's remaining comparisons,
-final adopted-path checks and final evidence review are still outstanding.
+the completed seven-cycle comparison is documented below. Final package and
+independent evidence acceptance remain outstanding.
 
 ## Validation checkpoint and measurement repair
 
@@ -140,6 +146,12 @@ IDs. The temporary resolution is verified to differ solely in Glow's
 registry-to-local-source origin; Cargo.lock is restored byte for byte. No
 distributed dependency or runtime is changed. The decoder SDK is separately
 verified before and after building.
+The v6 observer retains a tag if a watched texture ID is later reused for a
+stopped thumbnail. The active watched-grid comparisons remain valid; stopped
+thumbnail uploads must not be described as live-video work. The next observer
+explicitly untags that transition and will assert zero live-video tags after
+Stop. Stopped memory still intentionally includes four thumbnails (about 8 MiB
+of logical RGBA texture content in the seven-cycle baseline).
 
 The first GL-observed clipping pair measured video API upload payload
 1.860 → 0.458 GB/s and RGBA upload calls 224.282 → 55.167/s while all four
@@ -168,10 +180,11 @@ intentionally stopped at its idle validation boundary after the 18 cases; the
 remaining matrix uses the new frozen build.
 
 The planar renderer and decoder-device/readback changes remain prototypes.
-In particular, the current planar prototype is qualified for the exercised I420
-path and does not establish robust recovery for a later unsupported-buffer
-transition or partial GL initialization failure. Those paths need hardening and
-qualification before promotion. Default application changes currently consist
+The implementation checkpoint review approved the default clipping/cache paths
+and identified two experimental-only issues: stale planar state after an RGBA
+fallback and nontransactional partial GL initialization. Both have been hardened
+and pass actual-GL transition, failure and retry qualification on frozen sdk-v8
+in both retention modes. Default application changes currently consist
 of rectangle-based presentation demand and the bounded historical-report cache;
 final adopted-path acceptance and independent review remain outstanding.
 
@@ -189,3 +202,234 @@ per-phase and per-pair values remain available. Equal-work classification uses
 consumer rates within 3%, visible handoffs within 5%, and simultaneous publication
 within 3%. A separate noninferiority flag permits greater delivered work. Neither
 flag establishes equal physical presentation or equal latency.
+
+## Completed visible-presentation experiments
+
+Percentage headlines below use the **median of paired percentage changes**.
+The before/after values are separate empirical medians and need not produce
+that percentage when divided. For example, the one-1080p planar CPU medians
+are 28.918 → 23.247% of a core, but the three paired CPU savings are 23.9%,
+3.1% and 5.2%; the typical paired saving is **5.2%**, not 19.6%.
+
+### E2: planar rendering is a resource tradeoff
+
+All comparisons in this section use the frozen GL-observed `sdk-v6` executable.
+The custom renderer remains disabled by default. The original 27 actual-GL
+pixel comparisons cover odd/padded planes, three patterns and three output
+sizes, with at most two component levels of error and mean error ≤ 0.35.
+They qualify those synthetic pictures, not every graphics driver or color mode.
+
+| Workload                       | Paired CPU saving | Paired resident RAM saving | Paired 3D-engine saving | Paired API upload-payload saving | Interpretation                                                                                |
+| ------------------------------ | ----------------: | -------------------------: | ----------------------: | -------------------------------: | --------------------------------------------------------------------------------------------- |
+| Four HEVC 1080p60, three pairs |             22.7% |                      20.7% |                   51.6% |                            61.5% | Delivered about 240 consumer frames/s; every pair noninferior, one pair has >5% more handoffs |
+| One HEVC 1080p60, three pairs  |              5.2% |                      12.3% |                   47.5% |                            62.4% | CPU improvement varies substantially by pair                                                  |
+| Four HEVC 1080p30, three pairs |         **−9.8%** |                      13.4% |                   51.5% |                            62.5% | More CPU despite lower memory/GPU costs at comparable useful work                             |
+| One HEVC 4K30, three pairs     |         **−1.9%** |                      25.0% |     Lower in every pair |                      About 62.5% | Not a CPU win; 1080p physical display                                                         |
+
+For four 1080p60 streams the independent medians are CPU 96.932 → 74.973% of
+one core, private commit 784.457 → 675.953 MiB, working set 457.949 →
+366.449 MiB, 3D engine 24.595 → 11.759%, and API payload 1.831 → 0.699 GB/s.
+Dedicated GPU memory falls 292.113 → 271.910 MiB. Decode-engine occupancy
+does **not** fall uniformly (11.766 → 12.870% medians); these GPU engines must
+not be added or described as a total GPU saving. The paired CPU reductions are
+29.7%, 5.8% and 22.7%, with only three trials and unlocked GPU clocks.
+
+The two one-4K60 pairs show CPU 55.731 → 56.675% of one core, resident RAM
+487.363 → 429.133 MiB, 3D engine 21.026 → 8.549%, and payload 1.635 →
+0.637 GB/s. One pair delivers more than 3% additional decoded frames. No
+equal-work CPU improvement is established.
+
+The single four-4K60 capacity pair delivers 178.856 → 231.656 consumer frames/s
+and 98.329 → 194.824 picture updates/s while using CPU 492.593 → 214.014% of
+one core. That is substantially **unequal work**. It demonstrates local
+presentation-path capacity, not an equal-work CPU percentage, physical 4K
+presentation, 4K120 support or game-FPS improvement.
+
+Single four-1080p60 pairs also complete for H.264, hardware AV1 and forced
+software AV1. Their CPU values are 160.975 → 82.325, 94.611 → 72.514 and
+116.495 → 99.264% of one core, respectively. Resident RAM and API upload payload
+fall in each pair; software AV1 has no hardware decode-engine work. These are
+codec coverage and single-pair observations, not replicated codec-specific gains.
+
+An independent ownership refinement compares retaining versus releasing I420
+planes after their synchronous client-memory uploads, with planar rendering
+enabled on both sides. Ordinary client-memory GL transfers consume the supplied memory
+before returning; pixel unpack buffers have different ownership semantics.
+The prototype explicitly unbinds/restores the unpack buffer around client data
+([Khronos pixel buffer contract](https://wikis.khronos.org/opengl/Pixel_Buffer_Object),
+[synchronization contract](https://wikis.khronos.org/opengl/Synchronization)).
+The hardened `sdk-v8` build, SHA-256
+`6d127fda7e0e013cf0a802c079f5a3544820a93e5147148f4d9ea214dd7f603c`,
+passes all 27 pixel comparisons and 12 injected-failure/lifecycle checks in both
+retention modes. The transition check uses a real native NV12 buffer rejected by
+the I420-only path, normal RGBA conversion, and the UI mailbox consumer, followed
+by I420 again. This is a synthetic consumer/API qualification, not a negotiated
+unsupported-buffer media-session test or physical device-loss test.
+
+Eight actual-app cases compare only CPU-plane retention. Across three
+four-1080p60 pairs, observed median live I420 bytes fall **23.730 → 11.865 MiB**
+in every pair. Other owners still retain planes; they do not all disappear after
+upload. Paired median private/resident savings are only **1.4% / 1.9%**. CPU
+changes are mixed (+14.1% saving, 5.7% cost, 0.3% saving), so no CPU gain is
+claimed. Consumer delivery stays about 240 frames/s and API payload is unchanged.
+The single one-4K pair also halves observed live plane bytes, but process private
+memory rises 596.313 → 599.070 MiB, resident RAM rises 378.316 → 388.242 MiB and
+CPU rises 47.318 → 49.202% of a core. Logical owner reduction is not a universal
+OS-memory saving. Keep the simpler ownership lifetime inside the disabled
+prototype; it does not become a shipping-default performance claim.
+
+### E4: no worthwhile idle-heap improvement
+
+Both 14-minute runs finish seven Watch/Stop cycles, including Leave/rejoin on
+cycles 3, 5 and 7. Every stopped phase has zero observed decoder devices,
+GstSamples, deferred frames, I420 plane bytes and staging textures. Video task
+completion catches up with starts, and RGBA pools release. The four stopped
+thumbnails remain intentionally present. These observations qualify the counted
+owners; they do not account for every driver or allocator object.
+
+All seven candidate idle-heap evaluations are eligible and the Windows API
+returns success. The first five calls immediately decommit about 1.00–1.66 MiB;
+the last two decommit **nothing**. Calls take 1.27–2.20 ms. Default-heap committed
+memory ends at 156.555 MiB without the call and 156.758 MiB with it. Last-cycle
+stopped-tail private memory is 297.355 → 319.609 MiB, while resident RAM is
+217.938 → 212.379 MiB. There is no useful persistent private-memory reduction.
+**Do not adopt automatic heap optimization.**
+
+Six non-prewarmed restart observations per run complete. The comparison preserves
+actual subscriptions and expected received frames after restart, but individual
+handoff/CPU results vary and two grid cycles miss the strict handoff noninferiority
+threshold. No active-playback or restart-speed gain is claimed. Seven cycles
+inside one before/after pair are not seven independent process trials.
+
+An attribution limitation is explicit: the benchmark itself retains every
+per-second JSON snapshot in `BenchmarkUi.samples`. That diagnostic history is
+absent from the shipped UI and contributes live allocations during a long run.
+The default-heap allocated growth must not be attributed entirely to product
+media owners or called a leak. A separate process replays ownership of the same
+799 JSON snapshots while holding its parsed input constant. Cloning the history
+increases allocated default-heap storage by about **8.49 MiB**; dropping those
+clones releases about **8.48 MiB** of live allocations. Committed heap storage
+does not return to its initial level. This demonstrates diagnostic-history
+ownership; it is not the exact overhead of the original GUI collector, an app
+optimization, or a substitute for allocation-stack attribution. No precise
+fraction of the app run's growth is assigned to it.
+
+### E5: actual-app device sharing
+
+Three alternating four-HEVC-1080p60 pairs deliver approximately 240 consumer
+frames/s in both variants. Private commit medians fall 771.410 → 515.426 MiB,
+resident RAM 444.051 → 332.371 MiB, dedicated GPU memory 292.066 → 203.266 MiB,
+and threads 157 → 87. Median paired reductions are **34.1% private commit,
+26.0% resident RAM, 30.4% dedicated GPU memory and 43.8% threads**. Actual
+contexts use one observed device instead of four. CPU medians are 92.579 →
+86.819% of a core, but median paired CPU saving is only **3.6%**. Graphics
+work and upload payload remain essentially unchanged; this is chiefly a
+resource-sharing benefit.
+
+The one-4K control increases private/resident memory (681.563 → 726.840 MiB and
+445.383 → 487.844 MiB). A single decoder does not establish a memory benefit.
+The mixed-codec pair reduces resident RAM 425.980 → 352.910 MiB. The combined
+publish/watch/audio pair reduces resident RAM 488.328 → 423.156 MiB and CPU
+110.785 → 97.509% of a core, but publication rises 54.215 → 59.149 frames/s;
+that pair is noninferior and **not strict equal work**. Received PCM remains
+about 191,930 frames/s. No physical A/V claim follows.
+
+Eight further cases on sdk-v8 finish successfully: four-4K capacity, synthetic
+GPU conversion contention, three repeated recovery cycles per process, and
+stopping one subscription while three remain active. All counted native
+resources drain after the final Stop. Selective Stop preserves one shared device
+for the remaining streams and restores four subscriptions when rewatching.
+The revised source rejects removed devices and prunes expired weak entries.
+
+The four-4K capacity pair lowers private/resident memory 1,947.000 → 1,253.305 MiB
+and 1,152.758 → 816.551 MiB, but consumer delivery falls **185.149 → 173.767/s
+(6.1%)** while handoffs increase **99.561 → 109.657/s (10.1%)**. This fails the
+delivery noninferiority threshold; CPU 506.149 → 467.051% of one core is not an
+equal-work win. The contention pair preserves about 240 consumer frames/s and
+lowers private/resident memory 751.770 → 547.973 and 423.266 → 342.488 MiB.
+Its load is repeated 4K RGBA/NV12 GPU conversion, not a game benchmark. Recovery
+and selective Stop pass, but their cycles do not constitute independent repeats.
+**Keep sharing experimental:** the strong 1080p footprint return does not establish
+a uniform benefit at 4K capacity. Physical device removal, adapter switching,
+other drivers and AMD also remain unqualified.
+The reuse guard checks the documented HRESULT from
+[GetDeviceRemovedReason](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11device-getdeviceremovedreason);
+it does not itself qualify device-removal recovery.
+
+### E6: whole-app readback and pool observations
+
+The revised flush/poll candidate completes twelve actual-app cases: three
+four-1080p60 pairs, one one-4K60 pair, one mixed-codec pair and one simultaneous
+publish/watch/audio pair. The four-stream grid has median paired CPU reduction
+**30.7%**, with consumer delivery approximately 240 frames/s and comparable
+handoffs in every pair. CPU medians are 102.749 → 69.058% of one core. This is a
+real CPU reduction, but the separate fixed-work native comparison establishes
+increased materialization age. The implementation is **not adopted**: a CPU win
+with worse frame-age tails is not the intended low-latency outcome. The combined
+case also delivers >3% more publication frames and is not strict equal work.
+
+Four additional actual-app cases compare tracing disabled/enabled at four
+1080p60 and four-4K60 subscriptions. Trace-enabled runs classify 28,178 and
+28,150 fixed-category messages, respectively, with zero pool-full or output-copy
+classifications and no mapping failures. This agrees with the earlier native
+probe for the exercised single-texture path. It does not prove all driver paths
+avoid copies or identify every allocated DPB surface. Trace-on CPU/RAM differences
+are not optimization gains. **No decoder-pool resizing is implemented.**
+
+## Evidence, adoption and reproduction
+
+All **108 controlled actual-app cases** across 15 families complete with stable
+codecs and pass their functional assertions. Work eligibility is separate:
+unequal/capacity cases remain labeled and are not counted as equal-work CPU wins.
+Another 28 successful pilot/calibration runs are preserved but excluded from
+headlines. Native probes, authenticated HTTP runs, pixel/lifecycle checks and the
+history-ownership replay are separate evidence classes.
+
+The [sanitized aggregate](deep-performance-results.json) preserves paired values,
+workload classifications, fixture/binary/source identities and hashes of the
+local evidence. The [interactive comparison](deep-performance-comparison.html)
+uses those values for 32 selectable scenarios. Positive bars mean reduced cost;
+negative bars expose increases. Percentages are not additive across experiments
+or with the earlier performance pass.
+
+The first 26 clipping receipts predate recording the new switches in
+`experimentSettings`. Their frozen runner records the before/after selection,
+and conversion/visibility assertions establish the exercised clipping behavior.
+Their raw receipts remain unchanged; the aggregate explicitly marks missing
+switch metadata rather than inventing it. Later switch receipts are checked
+directly. Publisher/helper identities and all other recorded enabled settings
+must agree inside each pair. All measured publisher/helper binaries are retained.
+Server source and compiled modules are archived after the runs and checked
+against the final compilation; these are not falsely dated as pre-run hashes.
+
+**Retained defaults:** clipped video rectangles stop renewing presentation demand,
+and repeated closed historical usage reports reuse bounded JSON. The shipped
+native decoder headers, their pins, Cargo.lock and distributed runtime remain
+unchanged. **Disabled experiments:** planar rendering and compatible device
+sharing, with their measured benefits and counterexamples above. **Rejected:**
+automatic idle heap optimization, SQL batching and both polling-readback policies.
+No pool resizing is justified by the observed classifications.
+
+Node 24 `npm run check`, all-target/all-feature Clippy, Rust formatting and all
+49 Rust tests pass for the implementation. Every one of the 257 fixed chart
+configurations passes the chart validator. Desktop/dark and 320px/light rendering
+show no console errors or clipped content. The control configs are validated;
+automated browser interaction coverage is not claimed.
+
+Use the preserved local runtime, fixtures and frozen publishers described in the
+aggregate. The runners protect existing measurements and require a fresh output
+workspace for a new campaign. `build-deep-sdk.ps1 -Label <new-label> -ObserveGl`
+creates a separate candidate SDK and GL observer, preserves source/binary
+identities and restores Cargo.lock. Run each family sequentially with
+`run-deep-performance.mjs`; never benchmark alongside builds or another workload.
+To recompute the current evidence and chart:
+
+```powershell
+node scripts/summarize-deep-performance.mjs <family>
+node scripts/check-deep-performance.mjs <family>
+node scripts/summarize-deep-pass.mjs
+node scripts/render-deep-performance.mjs
+```
+
+Final clean packaging, packaged native acceptance and a new immutable-range
+independent review are the remaining acceptance steps at this checkpoint.

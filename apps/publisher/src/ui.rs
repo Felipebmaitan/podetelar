@@ -630,6 +630,12 @@ impl PublisherUi {
     fn update_picture(&mut self, ctx: &egui::Context, tile: &Tile) {
         tile.presentation.request_context(ctx);
         #[cfg(feature = "performance-experiments")]
+        if !tile.watching
+            && let Some(texture) = self.textures.get(&tile.id)
+        {
+            crate::resource_experiment::untag_rgba_texture(texture.id());
+        }
+        #[cfg(feature = "performance-experiments")]
         if let Ok(mut latest) = tile.presentation.planar.lock()
             && let Some(picture) = latest.take()
         {
@@ -640,6 +646,8 @@ impl PublisherUi {
         if let Ok(mut picture) = tile.picture.lock()
             && let Some(image) = picture.take()
         {
+            #[cfg(feature = "performance-experiments")]
+            self.planar.rgba(&tile.id);
             tile.presentation.uploaded.fetch_add(1, Ordering::Relaxed);
             if let Some(texture) = self.textures.get_mut(&tile.id) {
                 texture.set(egui::ImageData::Color(image), egui::TextureOptions::LINEAR);

@@ -88,6 +88,13 @@ pub fn tag_rgba_texture(id: eframe::egui::TextureId) {
     let _ = id;
 }
 #[allow(unexpected_cfgs)]
+pub fn untag_rgba_texture(id: eframe::egui::TextureId) {
+    #[cfg(freedomstream_deep_gl)]
+    eframe::egui_glow::deep_gl_observer::untag_video(id);
+    #[cfg(not(freedomstream_deep_gl))]
+    let _ = id;
+}
+#[allow(unexpected_cfgs)]
 pub fn gl_snapshot() -> serde_json::Value {
     #[cfg(freedomstream_deep_gl)]
     {

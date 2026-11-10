@@ -1,6 +1,7 @@
 param([switch]$SdkIdle, [switch]$BoundedReadback)
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
+$productionReadback = Test-Path -LiteralPath "$root/apps/publisher/decoder/bounded_readback.h"
 $output=Join-Path $root '.local/experiments/decoder';New-Item -ItemType Directory -Force -Path $output|Out-Null
 $adapter=(& git -C $root show '93d6ee13d72898fa52b22305ff0f64e7ea05aea2:apps/publisher/decoder/freedomstream_decoder.h') -join "`n"
 $factory=$adapter.IndexOf("`nclass DecoderFactory final")
@@ -38,7 +39,7 @@ $deferred=$deferred.Substring(0,$start)+$replacement+$deferred.Substring($end)
 $deferred=$deferred.Replace('  const bool hevc_;','  std::shared_ptr<std::atomic<bool>> failed_generation_ = std::make_shared<std::atomic<bool>>(false);'+"`n"+'  const bool hevc_;')
 $deferred=$deferred.Replace('  explicit Decoder(', '  std::shared_ptr<std::atomic<bool>> ErrorStateForProbe() const { return failed_generation_; }'+"`n"+'  explicit Decoder(')
 [IO.File]::WriteAllText((Join-Path $output 'decoder-deferred-adapter.h'),$deferred+"`n} // namespace freedomstream_deferred`n")
-if ($BoundedReadback) {
+if ($BoundedReadback -or $productionReadback) {
  $deferred=$deferred.Replace('sample, info, failed_generation_);','sample, info, failed_generation_, readback_);')
  $deferred=$deferred.Replace('    failed_generation_ = std::make_shared<std::atomic<bool>>(false);', '    failed_generation_ = std::make_shared<std::atomic<bool>>(false);' + "`n" + '    readback_ = std::make_shared<freedomstream_probe::BoundedReadback>();')
  $deferred=$deferred.Replace('  const bool hevc_;', '  std::shared_ptr<freedomstream_probe::BoundedReadback> readback_ = std::make_shared<freedomstream_probe::BoundedReadback>();' + "`n" + '  const bool hevc_;')
@@ -46,6 +47,7 @@ if ($BoundedReadback) {
 }
 Copy-Item -LiteralPath "$root/apps/publisher/examples/deferred-i420.h" -Destination "$output/deferred-i420.h" -Force
 Copy-Item -LiteralPath "$root/apps/publisher/decoder/deferred_i420.h" -Destination "$output/deferred_i420.h" -Force
+if ($productionReadback) { Copy-Item -LiteralPath "$root/apps/publisher/decoder/bounded_readback.h" -Destination "$output/bounded_readback.h" -Force }
 if ($BoundedReadback) {
  Copy-Item -LiteralPath "$root/scripts/experiments/bounded-deferred-i420.h" -Destination "$output/deferred_i420.h" -Force
  Copy-Item -LiteralPath "$root/scripts/experiments/bounded-readback.h" -Destination "$output/bounded-readback.h" -Force
@@ -62,7 +64,7 @@ $webrtc="$($scratch.FullName)/out/livekit_webrtc/livekit/win-x64-release-webrtc-
 $sys=Get-ChildItem "$root/target/release/build" -Directory -Filter 'webrtc-sys-*'|Where-Object {Test-Path "$($_.FullName)/out/webrtcsys-cxx.lib"}|Select-Object -First 1
 $arguments=@('/nologo','/O2','/EHsc','/MT','/std:c++20','/W4','/DNDEBUG','/DWEBRTC_WIN','/D_CRT_SECURE_NO_WARNINGS',"/I$output","/I$webrtc/include","/I$webrtc/include/third_party/abseil-cpp","/I$webrtc/include/third_party/libyuv/include","/I$gst/include/gstreamer-1.0","/I$gst/include/glib-2.0","/I$gst/lib/glib-2.0/include","/Fo$output/decoder-resource.obj","/Fe$output/decoder-resource.exe","$root/apps/publisher/examples/decoder-resource.cpp",'/link','/SUBSYSTEM:WINDOWS',"$webrtc/lib/webrtc.lib",'gstreamer-1.0.lib','gstapp-1.0.lib','gstvideo-1.0.lib','glib-2.0.lib','gobject-2.0.lib','d3d11.lib','dxgi.lib','shell32.lib','user32.lib','winmm.lib','ws2_32.lib','iphlpapi.lib','secur32.lib','crypt32.lib','ole32.lib','strmiids.lib','dmoguids.lib','msdmo.lib','wmcodecdspuuid.lib')
 $linkIndex=[array]::IndexOf($arguments,'/link')
-if ($BoundedReadback) {
+if ($BoundedReadback -or $productionReadback) {
  $arguments=@($arguments[0..($linkIndex-1)])+@("/I$gst/lib/gstreamer-1.0/include",'/DGST_USE_UNSTABLE_API')+@($arguments[$linkIndex..($arguments.Length-1)])+@('gstd3d11-1.0.lib')
  $linkIndex=[array]::IndexOf($arguments,'/link')
 }

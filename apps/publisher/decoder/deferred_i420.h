@@ -13,6 +13,7 @@
 #include "api/make_ref_counted.h"
 #include "api/video/i420_buffer.h"
 #include "libyuv/convert.h"
+#include "bounded_readback.h"
 
 namespace freedomstream {
 #ifdef FREEDOMSTREAM_DECODER_PROBE
@@ -24,7 +25,7 @@ class DeferredI420Buffer : public webrtc::I420BufferInterface {
  public:
   static webrtc::scoped_refptr<DeferredI420Buffer> Create(
       GstSample* sample, const GstVideoInfo& info,
-      std::shared_ptr<std::atomic<bool>> failed) {
+      std::shared_ptr<std::atomic<bool>> failed, std::shared_ptr<BoundedReadback> readback = nullptr) {
     if (!sample || !failed || GST_VIDEO_INFO_FORMAT(&info) != GST_VIDEO_FORMAT_NV12 ||
         info.width < 2 || info.height < 2 || info.width > 3840 || info.height > 3840 ||
         static_cast<int64_t>(info.width) * info.height > 3840LL * 2160)
@@ -35,12 +36,12 @@ class DeferredI420Buffer : public webrtc::I420BufferInterface {
     if (crop && (crop->x || crop->y || crop->width != static_cast<guint>(info.width) ||
                  crop->height != static_cast<guint>(info.height)))
       return nullptr;
-    return webrtc::make_ref_counted<DeferredI420Buffer>(sample, info, std::move(failed));
+    return webrtc::make_ref_counted<DeferredI420Buffer>(sample, info, std::move(failed), std::move(readback));
   }
 
   DeferredI420Buffer(GstSample* sample, const GstVideoInfo& info,
-                     std::shared_ptr<std::atomic<bool>> failed)
-      : sample_(gst_sample_ref(sample)), info_(info), failed_(std::move(failed)) {}
+                     std::shared_ptr<std::atomic<bool>> failed, std::shared_ptr<BoundedReadback> readback = nullptr)
+      : sample_(gst_sample_ref(sample)), info_(info), failed_(std::move(failed)), readback_(std::move(readback)) {}
 
   int width() const override { return info_.width; }
   int height() const override { return info_.height; }
@@ -70,7 +71,8 @@ class DeferredI420Buffer : public webrtc::I420BufferInterface {
       // Mapping a D3D11 buffer through the generic video-frame API performs
       // synchronized staging/readback. Retaining the GstSample also retains its
       // buffer, array slice and device; a naked texture pointer is insufficient.
-      if (buffer && gst_video_frame_map(&mapped, &info_, buffer, GST_MAP_READ)) {
+      if (readback_) { converted = readback_->Copy(sample_, info_, pixels.get()); }
+      else if (buffer && gst_video_frame_map(&mapped, &info_, buffer, GST_MAP_READ)) {
         converted = libyuv::NV12ToI420(
             static_cast<const uint8_t*>(GST_VIDEO_FRAME_PLANE_DATA(&mapped, 0)),
             GST_VIDEO_FRAME_PLANE_STRIDE(&mapped, 0),
@@ -95,6 +97,7 @@ class DeferredI420Buffer : public webrtc::I420BufferInterface {
 #endif
       }
       pixels_ = std::move(pixels);
+      readback_.reset();
       gst_sample_unref(sample_);
       sample_ = nullptr;
     }
@@ -106,6 +109,7 @@ class DeferredI420Buffer : public webrtc::I420BufferInterface {
   mutable GstSample* sample_;
   const GstVideoInfo info_;
   const std::shared_ptr<std::atomic<bool>> failed_;
+  mutable std::shared_ptr<BoundedReadback> readback_;
   mutable std::mutex mutex_;
   mutable webrtc::scoped_refptr<webrtc::I420Buffer> pixels_;
 };

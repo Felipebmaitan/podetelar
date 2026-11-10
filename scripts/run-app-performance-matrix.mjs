@@ -65,7 +65,20 @@ const accepted =
   process.env.FREEDOMSTREAM_BENCH_REPAINT === "1"
     ? { ...selectedCache, FREEDOMSTREAM_FRAME_REPAINT: "1" }
     : selectedCache;
-if (suite === "receive") {
+if (suite === "staging") {
+  const control = ".local/experiments/final-selected-v2/room-benchmark.exe";
+  pairs("staging-four", 4, "h265", control, candidate, pool, pool, 1);
+  pairs(
+    "staging-4k-one",
+    1,
+    "h265",
+    control,
+    candidate,
+    { ...pool, FREEDOMSTREAM_BENCH_RESOLUTION: "p2160" },
+    { ...pool, FREEDOMSTREAM_BENCH_RESOLUTION: "p2160" },
+    1,
+  );
+} else if (suite === "receive") {
   add("deferred-smoke", 4, "h265", candidate, {}, 5);
   pairs("deferred-pool", 4, "h265", candidate, candidate, {}, pool, 2);
   pairs("deferred-repaint60", 4, "h265", candidate, candidate, pool, driven, 2);

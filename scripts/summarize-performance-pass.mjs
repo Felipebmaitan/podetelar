@@ -69,6 +69,7 @@ const result = {
   pipelines: [],
   decoders: [],
   i420Pools: [],
+  readbackStaging: [],
   sdkIdle: [],
   sdkLogging: [],
   sdkChurn: [],
@@ -197,7 +198,9 @@ for (const directory of directories) {
   )
     result.portable.push(read(`${directory}/result.json`));
   if (!existsSync(join(root, summary))) continue;
-  if (directory.startsWith("gpu-counters-")) {
+  if (directory.startsWith("readback-")) {
+    result.readbackStaging.push(read(summary));
+  } else if (directory.startsWith("gpu-counters-")) {
     const j = read(summary);
     result.gpuCounters.push({
       limits: j.limits,

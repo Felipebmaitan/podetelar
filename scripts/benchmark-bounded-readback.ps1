@@ -1,4 +1,4 @@
-param([ValidateRange(3,7)][int]$Pairs=3)
+param([ValidateRange(3,7)][int]$Pairs=3, [ValidateSet('bounded','bounded-v2')][string]$Candidate='bounded')
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 $env:PATH="$root/.local/gstreamer/bin;$env:PATH"
@@ -7,7 +7,7 @@ New-Item -ItemType Directory -Path $run|Out-Null
 $rows=[Collections.Generic.List[object]]::new()
 foreach($size in @('1080p','4k')) { foreach($contexts in @(1,4)) { foreach($visibility in @('visible','hidden')) { for($pair=1;$pair -le $Pairs;$pair++) {
  $checksums=@{}
- foreach($variant in $(if($pair%2){@('original','bounded')}else{@('bounded','original')})) {
+ foreach($variant in $(if($pair%2){@('original',$Candidate)}else{@($Candidate,'original')})) {
   $exe=Join-Path $root ".local/experiments/readback-$variant/decoder-resource.exe"
   $report=Join-Path $run "$size-$contexts-$visibility-$pair-$variant.json"
   $mode=if($visibility -eq 'hidden'){'deferred-hidden'}else{'deferred'}
@@ -29,8 +29,8 @@ foreach($size in @('1080p','4k')) { foreach($contexts in @(1,4)) { foreach($visi
    $rows.Add(@{size=$size;contexts=$contexts;visibility=$visibility;pair=$pair;variant=$variant;executableSha256=(Get-FileHash $exe).Hash;sampledPeakPrivateBytes=$private;sampledPeakWorkingSetBytes=$working;peakThreads=$threads;result=$r})
   } finally {if(-not $p.HasExited){$p.Kill();$p.WaitForExit()};$p.Dispose()}
  }
- if($checksums.original -ne $checksums.bounded){throw 'Bounded readback changed sampled whole-plane pixels.'}
+ if($checksums.original -ne $checksums[$Candidate]){throw 'Bounded readback changed sampled whole-plane pixels.'}
  Write-Output "Readback $size $contexts contexts $visibility pair $pair preserved counts and sampled whole planes."
 } } } }
-@{schema=1;runs=$rows.ToArray();sources=@{original=(Get-Content "$root/.local/experiments/readback-original/source.json" -Raw|ConvertFrom-Json);bounded=(Get-Content "$root/.local/experiments/readback-bounded/source.json" -Raw|ConvertFrom-Json)};limits='Same deferred interface and original Decoder class in both variants. Only readback staging ownership differs. CPU/wall exclude full-plane hashing of six retained validation frames per context; visible variants have the same validation ownership. Hidden frames retain GPU samples until post-timing validation in both variants. These are isolated peaks, not ordinary app RAM.'}|ConvertTo-Json -Depth 12|Set-Content -LiteralPath (Join-Path $run 'summary.json') -Encoding utf8
+@{schema=1;runs=$rows.ToArray();sources=@{original=(Get-Content "$root/.local/experiments/readback-original/source.json" -Raw|ConvertFrom-Json);bounded=(Get-Content "$root/.local/experiments/readback-$Candidate/source.json" -Raw|ConvertFrom-Json)};limits='Same deferred interface and original Decoder class in both variants. Only readback staging ownership differs. CPU/wall exclude full-plane hashing of six retained validation frames per context; visible variants have the same validation ownership. Hidden frames retain GPU samples until post-timing validation in both variants. These are isolated peaks, not ordinary app RAM.'}|ConvertTo-Json -Depth 12|Set-Content -LiteralPath (Join-Path $run 'summary.json') -Encoding utf8
 Write-Output "Saved $run/summary.json"

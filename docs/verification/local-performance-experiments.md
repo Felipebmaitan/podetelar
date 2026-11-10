@@ -144,7 +144,7 @@ are not equivalent ordinary app RAM measurements. Whole-app memory is reported
 separately. One early raw summary’s phrase “inflate ... equally” is incorrect;
 this paragraph and the corrected runner specify the actual limitation.
 
-### Selected whole-app configuration
+### Receive and two-image checkpoint, before bounded staging
 
 Three alternating 1080p60 HEVC pairs, four watched publishers, native source
 `02c401d4fb19ecaf74c41dffc1a3cb6a6a78fef9`, labels `v2-final-four-*`.
@@ -193,6 +193,15 @@ readback-related 3D activity fell, while decode utilization rose and dedicated
 memory was nearly unchanged. No uniform total-GPU or VRAM saving is claimed.
 
 ### 4K capacity and failed attempts
+
+The completed `v2-final-*` matrix has 22 successful application runs. It exposed
+an active one-stream 4K private-memory increase of roughly 300 MiB, so that
+configuration is not treated as the final accepted memory outcome. R20 is an
+additional bounded-staging experiment prompted by this result. The first
+prototype preserved all counts and sampled planes in 48 runs and reduced
+isolated staging peaks, but increased CPU with four decoders. A second variant
+limits the device lock to graphics API calls; its results and actual-app
+acceptance remain pending.
 
 Isolated 4K decode/presentation and complete sampled-plane equivalence passed.
 Actual four-stream 4K UI tests did not establish 240 displayed/updated frames/s.

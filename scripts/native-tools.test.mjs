@@ -72,7 +72,12 @@ for (const state of ["archive", "source"]) {
   });
 }
 
-for (const tampered of ["freedomstream_decoder.h", "deferred_i420.h"]) {
+const decoderHeaders = [
+  "freedomstream_decoder.h",
+  "deferred_i420.h",
+  "bounded_readback.h",
+];
+for (const tampered of decoderHeaders) {
   test(`Native decoder setup rejects changed ${tampered} before SDK reuse`, () => {
     const root = mkdtempSync(join(tmpdir(), "FreedomStream native decoder "));
     try {
@@ -90,7 +95,7 @@ for (const tampered of ["freedomstream_decoder.h", "deferred_i420.h"]) {
         new URL("../deploy/native-decoder.json", import.meta.url),
         join(root, "deploy/native-decoder.json"),
       );
-      for (const name of ["freedomstream_decoder.h", "deferred_i420.h"]) {
+      for (const name of decoderHeaders) {
         const bytes = readFileSync(
           new URL(`../apps/publisher/decoder/${name}`, import.meta.url),
           "utf8",
@@ -111,7 +116,9 @@ for (const tampered of ["freedomstream_decoder.h", "deferred_i420.h"]) {
         result.stderr,
         tampered === "freedomstream_decoder.h"
           ? /Decoder adapter differs from its pin/
-          : /Deferred I420 buffer differs from its pin/,
+          : tampered === "deferred_i420.h"
+            ? /Deferred I420 buffer differs from its pin/
+            : /Bounded readback differs from its pin/,
       );
     } finally {
       removeFixture(root);

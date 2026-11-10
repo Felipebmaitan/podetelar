@@ -57,7 +57,10 @@ class BoundedReadback {
       GstD3D11Device* device;
       explicit DeviceLock(GstD3D11Device* value) : device(value) { gst_d3d11_device_lock(device); }
       ~DeviceLock() { gst_d3d11_device_unlock(device); }
-    } locked(dmem->device);
+    };
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    {
+    DeviceLock locked(dmem->device);
     if (device_ != dmem->device || width_ != desc.Width || height_ != desc.Height) {
       staging_.Reset();
       if (device_) gst_object_unref(device_);
@@ -78,8 +81,8 @@ class BoundedReadback {
         return false;
     }
     context->CopySubresourceRegion(staging_.Get(), 0, 0, 0, 0, source, slice, nullptr);
-    D3D11_MAPPED_SUBRESOURCE mapped{};
     if (FAILED(context->Map(staging_.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
+    }
     bool converted = false;
     if (mapped.pData && mapped.RowPitch >= width_ &&
         mapped.RowPitch <= static_cast<UINT>(std::numeric_limits<int>::max())) {
@@ -92,7 +95,10 @@ class BoundedReadback {
           pixels->MutableDataU(), pixels->StrideU(), pixels->MutableDataV(), pixels->StrideV(),
           info.width, info.height) == 0;
     }
-    context->Unmap(staging_.Get(), 0);
+    {
+      DeviceLock locked(device_);
+      context->Unmap(staging_.Get(), 0);
+    }
     return converted;
   }
 

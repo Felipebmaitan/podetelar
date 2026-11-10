@@ -67,6 +67,7 @@ mkdirSync(decoderPatch, { recursive: true });
 for (const file of [
   "apps/publisher/decoder/freedomstream_decoder.h",
   "apps/publisher/decoder/deferred_i420.h",
+  "apps/publisher/decoder/bounded_readback.h",
   "scripts/setup-native-decoder.mjs",
   "deploy/native-decoder.json",
 ]) {
@@ -74,7 +75,7 @@ for (const file of [
 }
 writeFileSync(
   join(decoderPatch, "README.txt"),
-  "FreedomStream modifies webrtc-sys 0.3.53 (Apache-2.0) to use native Direct3D11 decoders through the dynamically linked GStreamer runtime and prune expired weak track entries. The adapter and deferred I420 helper are MIT licensed. Both headers, the setup script and checksum pin reproduce the change from the original crate. No browser runtime is included.\n",
+  "FreedomStream modifies webrtc-sys 0.3.53 (Apache-2.0) to use native Direct3D11 decoders through the dynamically linked GStreamer runtime and prune expired weak track entries. The adapter, deferred I420 and bounded readback helpers are MIT licensed. All three headers, the setup script and checksum pin reproduce the change from the original crate. No browser runtime is included.\n",
 );
 const { dumpbin } = await preparePortableRuntime(root, output, notices);
 const sha256 = (path) =>

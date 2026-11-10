@@ -23,6 +23,7 @@ class Decoder final : public webrtc::VideoDecoder {
   bool Configure(const Settings&) override {
     Stop();
     failed_generation_ = std::make_shared<std::atomic<bool>>(false);
+    readback_ = std::make_shared<BoundedReadback>();
     const char* pipeline = av1_
       ? "appsrc name=input is-live=true format=time max-bytes=4194304 block=false caps=video/x-av1,stream-format=obu-stream,alignment=tu ! av1parse ! d3d11av1dec ! video/x-raw(memory:D3D11Memory),format=NV12 ! appsink name=output sync=false max-buffers=2 drop=true enable-last-sample=false"
       : hevc_
@@ -97,6 +98,7 @@ class Decoder final : public webrtc::VideoDecoder {
     if (output_) gst_object_unref(output_);
     if (pipeline_) gst_object_unref(pipeline_);
     input_ = output_ = pipeline_ = nullptr;
+    readback_.reset();
     std::lock_guard<std::mutex> lock(timestamps_mutex_);
     timestamps_.clear();
   }
@@ -115,7 +117,7 @@ class Decoder final : public webrtc::VideoDecoder {
       gst_sample_unref(sample);
       return GST_FLOW_ERROR;
     }
-    auto pixels = DeferredI420Buffer::Create(sample, info, failed_generation_);
+    auto pixels = DeferredI420Buffer::Create(sample, info, failed_generation_, readback_);
     if (!pixels) { gst_sample_unref(sample); return GST_FLOW_ERROR; }
     uint32_t timestamp = 0;
     bool found = false;
@@ -133,6 +135,7 @@ class Decoder final : public webrtc::VideoDecoder {
     return GST_FLOW_OK;
   }
   std::shared_ptr<std::atomic<bool>> failed_generation_ = std::make_shared<std::atomic<bool>>(false);
+  std::shared_ptr<BoundedReadback> readback_;
   const bool hevc_;
   const bool av1_;
   GstElement *pipeline_ = nullptr, *input_ = nullptr, *output_ = nullptr;

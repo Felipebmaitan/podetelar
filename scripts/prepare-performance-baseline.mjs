@@ -56,13 +56,26 @@ const sdk = join(output, ".local/native-sdk/webrtc-sys");
 writeFileSync(join(sdk, "src/freedomstream_decoder.h"), originalAdapter);
 const deferredHeader = join(sdk, "src/deferred_i420.h");
 if (existsSync(deferredHeader)) rmSync(deferredHeader);
+const readbackHeader = join(sdk, "src/bounded_readback.h");
+if (existsSync(readbackHeader)) rmSync(readbackHeader);
 const sdkBuild = join(sdk, "build.rs");
 writeFileSync(
   sdkBuild,
-  readFileSync(sdkBuild, "utf8").replace(
-    '            println!("cargo:rerun-if-changed=src/deferred_i420.h");\n',
-    "",
-  ),
+  readFileSync(sdkBuild, "utf8")
+    .replace(
+      '            println!("cargo:rerun-if-changed=src/deferred_i420.h");\n',
+      "",
+    )
+    .replace(
+      '            println!("cargo:rerun-if-changed=src/bounded_readback.h");\n',
+      "",
+    )
+    .replace(
+      '                .include(gst.join("lib/gstreamer-1.0/include"))\n',
+      "",
+    )
+    .replace('                .define("GST_USE_UNSTABLE_API", None)\n', "")
+    .replace('"gstvideo-1.0", "gstd3d11-1.0",', '"gstvideo-1.0",'),
 );
 const rtcSource = join(sdk, "src/webrtc.cpp");
 writeFileSync(

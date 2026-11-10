@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Config } from "./config.js";
-import { secretsEqual } from "./rooms.js";
+import { adminCreateRoomSchema } from "@freedomstream/contracts";
+import { Rooms, secretsEqual } from "./rooms.js";
 import type { Usage } from "./usage.js";
 
 const COOKIE = "fs_admin";
@@ -14,6 +15,7 @@ export async function adminRoutes(
   app: FastifyInstance,
   config: Config,
   usage: Usage,
+  rooms: Rooms,
   now = Date.now,
 ) {
   const sessions = new Map<string, number>();
@@ -67,6 +69,37 @@ export async function adminRoutes(
     reply.clearCookie(COOKIE, cookie);
     return reply.code(204).send();
   });
+  app.get<{ Querystring: { offset?: string } }>(
+    "/api/admin/rooms",
+    async (request, reply) => {
+      if (!authenticated(request))
+        return reply.code(401).send({ error: "Sign in as administrator." });
+      const offset = request.query.offset ?? "0";
+      if (!/^(0|[1-9][0-9]{0,8})$/.test(offset))
+        return reply
+          .code(400)
+          .send({ error: "Invalid room directory offset." });
+      return rooms.list(Number(offset));
+    },
+  );
+  app.post(
+    "/api/admin/rooms",
+    { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      if (!authenticated(request))
+        return reply.code(401).send({ error: "Sign in as administrator." });
+      const input = adminCreateRoomSchema.safeParse(request.body);
+      if (!input.success)
+        return reply
+          .code(400)
+          .send({ error: "Enter a room name of up to 60 characters." });
+      const created = rooms.createManaged(input.data.name);
+      return reply.code(201).send({
+        room: created.room,
+        invitationUrl: `${config.publicUrl}/r/${created.room.id}#invite=${created.invitation}`,
+      });
+    },
+  );
   app.get<{ Querystring: { from?: string; to?: string; page?: string } }>(
     "/api/admin/usage",
     async (request, reply) => {

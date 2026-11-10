@@ -191,3 +191,16 @@ its network-test/proxy changes or existing invitations.
 ## Later portability
 
 After the Windows experience meets the above gates, add macOS and Linux in separate PRs. Preserve the room, invitation, subscription and preview contracts; replace platform capture/audio/encoder adapters. No cross-platform promise until each backend is tested on its actual OS.
+
+## Administrator room directory — independent PR
+
+Add a Rooms tab to the authenticated administrator dashboard. List persistent
+rooms in bounded pages and create a named room without admitting the administrator
+as a participant. Return a fresh invitation only on creation, with explicit copy
+and manual-copy fallback; keep it in memory. Use the existing expiring HttpOnly
+administrator session for both APIs, retaining native admission compatibility.
+
+Accept with unauthenticated/participant/expired/revoked session denial, same-origin
+mutation checks, restart persistence and invitation admission, bounded pagination,
+Node 24 checks, desktop/mobile browser workflows and a fresh independent review.
+Simpler native onboarding (app links or short-lived pairing) remains a proposal.

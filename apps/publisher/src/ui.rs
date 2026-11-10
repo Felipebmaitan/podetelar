@@ -1506,6 +1506,14 @@ impl eframe::App for PublisherUi {
             }
         }
         let state = self.controller.snapshot();
+        // Fullscreen returns early below; retired stream/source textures must
+        // still be released when another participant stops or leaves.
+        self.textures.retain(|id, _| {
+            (state.sharing && id == "__self_preview") || state.tiles.iter().any(|t| &t.id == id)
+        });
+        if !state.sharing {
+            self.self_preview_revision = None;
+        }
         let hidden = ctx.input(|i| {
             i.viewport().visible() == Some(false) || i.viewport().minimized == Some(true)
         });
@@ -1577,12 +1585,6 @@ impl eframe::App for PublisherUi {
                 .first()
                 .map(|e| e.factory.clone())
                 .unwrap_or_default();
-        }
-        self.textures.retain(|id, _| {
-            (state.sharing && id == "__self_preview") || state.tiles.iter().any(|t| &t.id == id)
-        });
-        if !state.sharing {
-            self.self_preview_revision = None;
         }
         self.remembered_volume
             .retain(|id, _| state.tiles.iter().any(|t| &t.id == id));

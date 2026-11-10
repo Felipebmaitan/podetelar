@@ -21,7 +21,9 @@ export async function preparePortableRuntime(root, output, notices) {
   const manifest = JSON.parse(
     readFileSync(join(root, "deploy/portable-runtime.json")),
   );
-  const runtime = join(root, ".local/gstreamer");
+  const runtime = process.env.FREEDOMSTREAM_GSTREAMER
+    ? resolve(process.env.FREEDOMSTREAM_GSTREAMER)
+    : join(root, ".local/gstreamer");
   mkdirSync(join(output, "bin"), { recursive: true });
   copyFileSync(
     join(root, "target/release/freedomstream-publisher.exe"),

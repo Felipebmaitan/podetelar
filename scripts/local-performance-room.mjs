@@ -147,7 +147,7 @@ async function ready(url) {
 }
 const nativeEnv = {
   ...process.env,
-  PATH: `${join(root, ".local/gstreamer/bin")};${process.env.PATH}`,
+  PATH: `${join(process.env.FREEDOMSTREAM_GSTREAMER ?? join(root, ".local/gstreamer"), "bin")};${process.env.PATH}`,
 };
 const exe = resolve(
   process.env.FREEDOMSTREAM_PERFORMANCE_PUBLISHER ??

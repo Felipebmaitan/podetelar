@@ -64,9 +64,14 @@ pub fn run(request: Request) -> Result<()> {
         request.report.is_absolute() && !request.report.exists(),
         "Choose a new absolute report path."
     );
+    let narrow = std::env::var("FREEDOMSTREAM_DEEP_NARROW").is_ok_and(|v| v == "1");
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1280.0, 720.0])
+            .with_inner_size(if narrow {
+                [960.0, 540.0]
+            } else {
+                [1280.0, 720.0]
+            })
             .with_min_inner_size([960.0, 540.0]),
         renderer: eframe::Renderer::Glow,
         ..Default::default()
@@ -281,6 +286,7 @@ impl BenchmarkUi {
 impl eframe::App for BenchmarkUi {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.drive(ctx);
+        self.inner.logic(ctx, _frame);
     }
     fn ui(&mut self, root: &mut egui::Ui, frame: &mut eframe::Frame) {
         let now = Instant::now();

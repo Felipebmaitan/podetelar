@@ -10,8 +10,10 @@ claim that those separate features are included.
   or F11 also enters native borderless fullscreen; Escape/F11, double-click or the
   fullscreen exit control returns to the window. F11 selects the focused watched
   stream, otherwise the first watched stream. The video preserves its aspect
-  ratio. Controls appear on activity, hide after three seconds and remain visible
-  while hovered. Entering fullscreen closes Advanced; key repeats do not toggle it.
+  ratio. Controls hide after three seconds without input, including when the
+  cursor rests over a control. Mouse movement or a fresh click/key press brings
+  them back; hovering or holding a key does not keep them visible. Entering
+  fullscreen closes Advanced; key repeats do not toggle it.
 - Actual received **video payload bitrate** appears at the bottom right of watched
   cards and fullscreen. It uses inbound byte deltas and actual elapsed time,
   sampled approximately every two seconds. It is not the configured encoder

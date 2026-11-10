@@ -31,7 +31,9 @@ Conversion p95 also decreased in all four workloads: 2.805→1.161,
 5.032→2.340, 11.336→4.266 and 27.537→18.042 ms respectively. Median process
 CPU milliseconds per converted picture, including identical setup/warm-up, fell
 from 2.292→1.042, 4.210→2.105, 9.505→4.167 and 27.197→16.260 respectively.
-The checksum was identical before/after in each workload.
+The checksum was identical before/after in each workload. It samples one fixed
+pixel per worker and is only a consumption/sanity check, not full-image
+equivalence evidence; the separate color/stride fixtures compare all pixels.
 
 The wrapper's private-byte medians ranged from 78.76–78.84 MiB before and
 1.23–1.27 MiB after. Both wrappers used zero measurable CPU time during their
@@ -119,6 +121,15 @@ runs reduce temporal bias but do not eliminate background scheduling variance.
   checks, payload/source integrity, modified-cache preservation, explicit
   extraction, redirected-path rejection and damaged-payload rejection.
   This does not certify a fresh PC or a disconnected network.
+- The same four codec/preview/Stop/rewatch cases also passed using the actual
+  packaged EXE and its isolated bundled runtime (four passed in two minutes).
+  The 81,869,962-byte package has SHA-256
+  `7c6ba8fa2befc97d35983c55410e69eff68891f5297ec1e1858fd5d5828019e3`.
+- A fresh GPT-6.1-Sol high-reasoning read-only review approved
+  `c90410d..69f0b24` with no blocking correctness or benchmark-claim findings.
+  Its nonblocking P3 noted the checksum's limited pixel coverage; that limit is
+  explicit above. Whole-frame hashing can strengthen a future benchmark version
+  without changing this version's recorded measurements.
 
 AMD, physical-game performance, group field usage, fresh-PC/offline operation
 and physical A/V timing remain separate acceptance gates. This PR does not claim

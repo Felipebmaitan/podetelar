@@ -122,7 +122,7 @@ fn run(request: Request) -> Result<serde_json::Value> {
                 break;
             }
             ensure!(
-                start.elapsed() < Duration::from_secs(75),
+                start.elapsed() < Duration::from_secs(request.seconds.max(70) + 5),
                 "Synthetic pipeline timeout."
             );
             if sink.is_none() {

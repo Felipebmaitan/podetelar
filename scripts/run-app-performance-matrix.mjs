@@ -65,7 +65,26 @@ const accepted =
   process.env.FREEDOMSTREAM_BENCH_REPAINT === "1"
     ? { ...selectedCache, FREEDOMSTREAM_FRAME_REPAINT: "1" }
     : selectedCache;
-if (suite === "staging") {
+if (suite === "recovery") {
+  for (const [name, env] of [
+    [
+      "combined-audio",
+      { FREEDOMSTREAM_BENCH_PUBLISH: "1", FREEDOMSTREAM_BENCH_AUDIO: "1" },
+    ],
+    ["audio-four", { FREEDOMSTREAM_BENCH_AUDIO: "1" }],
+    ["contention-four", { FREEDOMSTREAM_BENCH_CONTENTION: "1" }],
+  ])
+    pairs(
+      `accepted-${name}`,
+      4,
+      "h265",
+      baseline,
+      candidate,
+      env,
+      { ...accepted, ...env },
+      1,
+    );
+} else if (suite === "staging") {
   const control = ".local/experiments/final-selected-v2/room-benchmark.exe";
   pairs("staging-four", 4, "h265", control, candidate, pool, pool, 1);
   pairs(
@@ -222,6 +241,15 @@ if (suite === "staging") {
       1,
     );
 } else if (suite === "endurance") {
+  add("steady-publish-before", 0, "h265", baseline, {
+    FREEDOMSTREAM_BENCH_PUBLISH: "1",
+    FREEDOMSTREAM_BENCH_STEADY: "120",
+  });
+  add("steady-publish-after", 0, "h265", candidate, {
+    ...accepted,
+    FREEDOMSTREAM_BENCH_PUBLISH: "1",
+    FREEDOMSTREAM_BENCH_STEADY: "120",
+  });
   add("steady-one-before", 1, "h265", baseline, {
     FREEDOMSTREAM_BENCH_STEADY: "180",
   });

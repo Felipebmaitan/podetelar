@@ -71,7 +71,18 @@ if ($BoundedReadback -or $productionReadback) {
 $arguments=@($arguments[0..($linkIndex-1)])+@("/I$root/.local/native-sdk/webrtc-sys/include","/I$($sys.FullName)/out/cxxbridge/include")+@($arguments[$linkIndex..($arguments.Length-1)])+@("$($sys.FullName)/out/webrtcsys-cxx.lib")
 & "$($msvc.FullName)/bin/Hostx64/x64/cl.exe" @arguments
 if($LASTEXITCODE -ne 0){throw 'Decoder experiment compilation failed.'}
-@{decoderClassSourceCommit='93d6ee13d72898fa52b22305ff0f64e7ea05aea2';boundedReadback=[bool]$BoundedReadback;deferredHeaderSha256=(Get-FileHash "$output/deferred_i420.h").Hash;readbackHeaderSha256=$(if($BoundedReadback){(Get-FileHash "$output/bounded-readback.h").Hash}else{$null});generatedAdapterSha256=(Get-FileHash "$output/decoder-deferred-adapter.h").Hash;adapterSha256=(Get-FileHash "$root/apps/publisher/decoder/freedomstream_decoder.h").Hash;probeSha256=(Get-FileHash "$root/apps/publisher/examples/decoder-resource.cpp").Hash;executableSha256=(Get-FileHash "$output/decoder-resource.exe").Hash;decoderPin=(Get-Content -Raw "$root/deploy/native-decoder.json"|ConvertFrom-Json)}|ConvertTo-Json -Depth 8|Set-Content "$output/source.json"
+@{
+ decoderClassSourceCommit='93d6ee13d72898fa52b22305ff0f64e7ea05aea2'
+ boundedReadback=[bool]($BoundedReadback -or $productionReadback)
+ readbackVariant=$(if($BoundedReadback){'prototype'}elseif($productionReadback){'product'}else{'generic'})
+ deferredHeaderSha256=(Get-FileHash "$output/deferred_i420.h").Hash
+ readbackHeaderSha256=$(if($BoundedReadback){(Get-FileHash "$output/bounded-readback.h").Hash}elseif($productionReadback){(Get-FileHash "$output/bounded_readback.h").Hash}else{$null})
+ generatedAdapterSha256=(Get-FileHash "$output/decoder-deferred-adapter.h").Hash
+ adapterSha256=(Get-FileHash "$root/apps/publisher/decoder/freedomstream_decoder.h").Hash
+ probeSha256=(Get-FileHash "$root/apps/publisher/examples/decoder-resource.cpp").Hash
+ executableSha256=(Get-FileHash "$output/decoder-resource.exe").Hash
+ decoderPin=(Get-Content -Raw "$root/deploy/native-decoder.json"|ConvertFrom-Json)
+}|ConvertTo-Json -Depth 8|Set-Content "$output/source.json"
 if($SdkIdle){
  $original=Get-Content -Raw "$root/.local/native-sdk/webrtc-sys/src/synthetic_audio_device.cpp"
  $marker='[this]() {'

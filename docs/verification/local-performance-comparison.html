@@ -133,13 +133,13 @@
     ></div>
     <p id="meaning" aria-live="polite"></p>
     <p class="note">
-      Grid: about 240 decoded frames/s both ways; 235.3 → 236.8 texture
+      Grid: about 240 decoded frames/s both ways; 233.9 → 236.0 texture
       updates/s. Minimized video remains subscribed. Frame counters do not
       establish physical presented FPS.
     </p>
     <p class="note">
       Windows · Ryzen 7 9800X3D · RTX 5080. Per-state medians. Baseline 93d6ee1;
-      native candidate 02c401d. Private memory is process commit; resident
+      native candidate 000129f. Private memory is process commit; resident
       memory is the working set, including shared pages. Neither is EXE size.
     </p>
     <script>
@@ -154,24 +154,24 @@
       const metrics = {
         cpu: {
           unit: "% of one CPU core",
-          before: [135.12, 108.05, 109.39, 103.83, 131.03, 0.46],
-          after: [75.9, 31.11, 34.19, 16.68, 77.74, 0.69],
+          before: [129.4803, 111.8306, 104.19, 103.6687, 134.1499, 0.6939],
+          after: [75.1977, 37.86, 31.0421, 18.4572, 78.8203, 0.9268],
           meaning:
-            "Grid CPU fell about 44%; minimized CPU fell about 84%. One full CPU core equals 100%.",
+            "Grid CPU fell about 42%; minimized CPU fell about 82%. One full CPU core equals 100%.",
         },
         private: {
           unit: "MiB of process commit",
-          before: [837.16, 835.55, 831.97, 832.84, 842.96, 261.7],
-          after: [865.57, 817.7, 801.71, 785.96, 867.17, 267.76],
+          before: [839.8594, 842.7578, 832.4609, 835.8633, 838.4453, 265.8555],
+          after: [806.8125, 757.1133, 742.5742, 726.918, 810.3125, 266.7617],
           meaning:
-            "Grid private memory rose about 28 MiB; minimized private memory fell about 47 MiB. The two-image cache trades memory for CPU and update rate.",
+            "Grid private memory fell about 33 MiB; minimized private memory fell about 109 MiB. These are process-memory measurements, not EXE size.",
         },
         resident: {
           unit: "MiB of working set",
-          before: [380.7, 374.22, 383.82, 386.86, 386.63, 176.07],
-          after: [468.61, 421.46, 415.28, 400.38, 472.84, 184.19],
+          before: [376.3945, 379.4297, 382.4805, 384.2266, 378.5078, 180.1523],
+          after: [410.4805, 360.4336, 354.3477, 339.9102, 412.5547, 185.3086],
           meaning:
-            "Resident memory increased: about 88 MiB more in the grid. This result does not support a claim that all RAM measures fell.",
+            "Grid resident memory rose about 34 MiB; minimized resident memory fell about 44 MiB. Not every RAM measure decreased.",
         },
       };
       function draw(key) {

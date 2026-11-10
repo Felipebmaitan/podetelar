@@ -44,6 +44,10 @@ for (const directory of readdirSync(root)) {
     );
     const first = samples[0],
       last = samples.at(-1);
+    const tail =
+      phase === "stopped" && r.phaseSeconds >= 20
+        ? samples.filter((s) => s.relativeSecond >= end - 5)
+        : [];
     const app = r.app.samples.filter(
       (s) =>
         s.phase === phase &&
@@ -57,6 +61,10 @@ for (const directory of readdirSync(root)) {
         ? (b[key].reduce((s, n) => s + n, 0) -
             a[key].reduce((s, n) => s + n, 0)) /
           (b.second - a.second)
+        : null;
+    const scalarRate = (key) =>
+      a && b && a !== b && Number.isFinite(a[key]) && Number.isFinite(b[key])
+        ? (b[key] - a[key]) / (b.second - a.second)
         : null;
     const engines = Object.keys(samples[0]?.gpuEnginesPercent ?? {});
     return {
@@ -72,6 +80,16 @@ for (const directory of readdirSync(root)) {
       workingSetMiB: median(samples.map((s) => s.workingSetBytes / 2 ** 20)),
       threads: median(samples.map((s) => s.threads)),
       handles: median(samples.map((s) => s.handles)),
+      settledStoppedTail: tail.length
+        ? {
+            samples: tail.length,
+            secondsAfterStopAtLeast: r.phaseSeconds - 5,
+            privateMiB: median(tail.map((s) => s.privateBytes / 2 ** 20)),
+            workingSetMiB: median(tail.map((s) => s.workingSetBytes / 2 ** 20)),
+            threads: median(tail.map((s) => s.threads)),
+            handles: median(tail.map((s) => s.handles)),
+          }
+        : null,
       textureBytesMedian: median(app.map((s) => s.textureBytes)),
       textureBytesMax: Math.max(0, ...app.map((s) => s.textureBytes ?? 0)),
       texturesMedian: median(app.map((s) => s.textures)),
@@ -90,6 +108,15 @@ for (const directory of readdirSync(root)) {
       decodedFramesPerSecond: frameRate("frames"),
       convertedFramesPerSecond: frameRate("convertedFrames"),
       textureUploadsPerSecond: frameRate("uploadedFrames"),
+      encodedFramesPerSecond: scalarRate("encodedFrames"),
+      previewFramesInPhase:
+        a &&
+        b &&
+        Number.isFinite(a.previewFrames) &&
+        Number.isFinite(b.previewFrames)
+          ? b.previewFrames - a.previewFrames
+          : null,
+      sharing: app.some((s) => s.sharing),
       audioSamplesPerSecond: frameRate("audioFrames"),
       audioQueueMaxMs: Math.max(
         0,
@@ -127,6 +154,8 @@ for (const directory of readdirSync(root)) {
     publishFixture: r.publishFixture ?? false,
     disconnected: r.disconnected ?? false,
     audioEnabled: r.audioEnabled ?? false,
+    audioSourceAliveAtAppExit: r.audioSourceAliveAtAppExit ?? null,
+    fixtureHelperSha256: r.fixtureHelperSha256 ?? null,
     contention: r.contention ?? false,
     experimentSettings: r.experimentSettings ?? null,
     appSha256: r.appSha256,
@@ -140,7 +169,7 @@ const result = {
   schema: 1,
   runs,
   limits:
-    "CPU percentages use one full CPU core = 100%; not whole-machine normalization. Per-phase interior samples exclude transitions. Phase origin inferred from completed wall time, up to close/event scheduling error. Received decoded frames and UI calls are not presented video frames. Short runs need matched repetitions; GPU engine percentages are separate driver counters.",
+    "CPU percentages use one full CPU core = 100%; not whole-machine normalization. Medians choose the upper middle observation for even sample counts. Per-phase interior samples exclude transitions. Phase origin inferred from completed wall time, up to close/event scheduling error. Received decoded frames and UI calls are not presented video frames. Short runs need matched repetitions; GPU engine percentages are separate driver counters.",
 };
 const output = resolve(process.argv[2] ?? join(root, "ui-summary.json"));
 writeFileSync(output, JSON.stringify(result, null, 2));

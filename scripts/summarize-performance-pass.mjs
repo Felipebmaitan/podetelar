@@ -47,6 +47,8 @@ const measureOs = (samples) => ({
 const result = {
   schema: 1,
   units: {
+    statistics:
+      "Summary medians select the upper middle observation for even sample counts. Individual run values and repetition counts remain available.",
     cpu: "One full CPU core = 100%. CPU ms are process CPU time, not elapsed time.",
     memory:
       "MiB = 2^20 bytes. Private bytes are process commit; working set is resident private/shared pages. Neither is EXE size.",
@@ -54,15 +56,17 @@ const result = {
     frames:
       "Decoded/conversion/texture-upload counts are distinct; none establishes physical presented FPS.",
   },
-  artifacts: existsSync(join(root, "final-selected-v2/source.json"))
-    ? read("final-selected-v2/source.json")
+  artifacts: existsSync(join(root, "final-selected-v4/source.json"))
+    ? read("final-selected-v4/source.json")
     : null,
   artifactHistory: [],
   capacityDiagnostics: [],
+  lifecycle: [],
   failedAttempts: [],
   wholeApp: read("ui-summary.json"),
   portable: [],
   nativeGpu: [],
+  gpuLeases: [],
   gpuCounters: [],
   textures: [],
   operations: [],
@@ -89,6 +93,8 @@ for (const directory of [
   "final-selected",
   "accepted",
   "final-selected-v2",
+  "final-selected-v3",
+  "final-selected-v4",
 ])
   if (existsSync(join(root, directory, "source.json")))
     result.artifactHistory.push({
@@ -106,10 +112,55 @@ for (const run of result.wholeApp.runs) {
   if (raw.contentionPipeline) run.contentionPipeline = raw.contentionPipeline;
   if (raw.contentionProcess)
     run.contentionProcess = measureOs(raw.contentionProcess.samples);
+  if (run.rounds > 1) {
+    result.lifecycle.push({
+      directory: run.directory,
+      label: run.label,
+      appSha256: run.appSha256,
+      rounds: run.rounds,
+      wallSeconds: raw.app.wallSeconds,
+      codecStable: run.codecStable,
+      appCompleted: raw.app.completed,
+      sampledErrors: run.rows.some((row) => row.errors),
+      phases: ["grid", "minimized", "stopped"].map((phase) => {
+        const rows = run.rows.filter((row) => row.phase === phase);
+        const first = rows[0],
+          last = rows.at(-1);
+        return {
+          phase,
+          cycles: rows.map((row) =>
+            pick(row, [
+              "cycle",
+              "cpuCorePercent",
+              "privateMiB",
+              "workingSetMiB",
+              "threads",
+              "handles",
+              "decodedFramesPerSecond",
+              "textureUploadsPerSecond",
+              "activeWatches",
+              "errors",
+              "settledStoppedTail",
+            ]),
+          ),
+          lastMinusFirst: Object.fromEntries(
+            ["privateMiB", "workingSetMiB", "threads", "handles"].map((key) => [
+              key,
+              Number.isFinite(first?.[key]) && Number.isFinite(last?.[key])
+                ? last[key] - first[key]
+                : null,
+            ]),
+          ),
+        };
+      }),
+      limits:
+        "Seven Watch/Stop cycles, with Leave/Rejoin on cycles 2/4/6. Same-phase observations show bounded-session trends, not proof of leak freedom. Grid interiors can include reconnection settling; their frame rates are not steady-capacity estimates.",
+    });
+  }
 }
 const families = new Map();
 for (const run of result.wholeApp.runs.filter(
-  (r) => r.label.startsWith("v2-") && r.rounds === 1,
+  (r) => /^v[234]-/.test(r.label) && r.rounds === 1,
 )) {
   const match = /^(.*)-(before|after)(?:-\d+)?$/.exec(run.label);
   if (!match) continue;
@@ -155,6 +206,7 @@ result.selectedComparisons = [...families].map(([family, variants]) => ({
                 "decodedFramesPerSecond",
                 "convertedFramesPerSecond",
                 "textureUploadsPerSecond",
+                "encodedFramesPerSecond",
                 "textureBytesMedian",
                 "audioSamplesPerSecond",
                 "audioQueueMaxMs",
@@ -169,6 +221,23 @@ result.selectedComparisons = [...families].map(([family, variants]) => ({
   ),
 }));
 for (const directory of directories) {
+  const loadReport = `${directory}/contention.json`;
+  if (directory.startsWith("v4-") && existsSync(join(root, loadReport))) {
+    const load = read(loadReport);
+    if (load.completed === false) {
+      const appPath = `${directory}/app.json`;
+      result.failedAttempts.push({
+        directory,
+        fixture: "synthetic-contention",
+        report: load,
+        appCompleted: existsSync(join(root, appPath))
+          ? read(appPath).completed
+          : null,
+        interpretation:
+          "Invalid helper workload; excluded from whole-app comparisons.",
+      });
+    }
+  }
   const diagnostic = `${directory}/diagnostic.json`;
   if (directory.includes("cli-") && existsSync(join(root, diagnostic))) {
     const j = read(diagnostic);
@@ -274,6 +343,11 @@ for (const name of all("gpu-minimal", /-summary\.json$/)) {
     }),
   });
 }
+for (const name of all("gpu-flexible", /^result-.*\.json$/))
+  result.gpuLeases.push({
+    path: `gpu-flexible/${name}`,
+    report: read(`gpu-flexible/${name}`),
+  });
 for (const name of all("textures", /\.json$/))
   result.textures.push(
     pick(read(`textures/${name}`), [
@@ -313,6 +387,11 @@ for (const path of [
   "operations/process-events.json",
   "operations/process-events-status.json",
   "loaded-runtime.json",
+  "host.json",
+  "final-source-checks.json",
+  "final-v4-matrix-status.json",
+  "final-v4-tail-status.json",
+  "decoder/checks-bounded-fallback/result.json",
 ])
   if (existsSync(join(root, path)))
     (result.additional ??= []).push({ path, report: read(path) });

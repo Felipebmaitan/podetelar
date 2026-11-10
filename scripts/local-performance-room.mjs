@@ -231,7 +231,8 @@ async function executeWorkload() {
       ]);
       await delay(1500);
     }
-    let audioPath = null;
+    let audioPath = null,
+      audioSource = null;
     if (audioEnabled && count > 0) {
       audioPath = join(run, "SyntheticGameAudio.exe");
       copyFileSync(
@@ -249,7 +250,7 @@ async function executeWorkload() {
           seconds: 90,
         }),
       );
-      start(audioPath, [request, report], nativeEnv);
+      audioSource = start(audioPath, [request, report], nativeEnv);
       await delay(1000);
     }
     const publishers = [];
@@ -413,8 +414,42 @@ async function executeWorkload() {
         loadCode !== 0 ||
         !existsSync(loadReport) ||
         JSON.parse(readFileSync(loadReport)).deliveredBuffers < 100
-      )
+      ) {
+        writeFileSync(
+          join(run, "failure.json"),
+          JSON.stringify(
+            {
+              schema: 1,
+              stage: "synthetic-contention",
+              code: loadCode,
+              appReportExists: existsSync(appReport),
+              helperReportExists: existsSync(loadReport),
+            },
+            null,
+            2,
+          ),
+        );
         throw new Error("Synthetic contention workload did not run correctly.");
+      }
+    }
+    const audioSourceAliveAtAppExit = audioSource
+      ? audioSource.child.exitCode === null
+      : null;
+    if (audioSource && !audioSourceAliveAtAppExit) {
+      writeFileSync(
+        join(run, "failure.json"),
+        JSON.stringify(
+          {
+            schema: 1,
+            stage: "synthetic-audio",
+            code: audioSource.child.exitCode,
+            appReportExists: existsSync(appReport),
+          },
+          null,
+          2,
+        ),
+      );
+      throw new Error("Synthetic audio source ended before the workload.");
     }
     if (timedOut || code !== 0 || !existsSync(appReport)) {
       writeFileSync(
@@ -484,12 +519,16 @@ async function executeWorkload() {
       publishFixture,
       disconnected,
       audioEnabled,
+      audioSourceAliveAtAppExit,
       contention,
       rounds,
       steadySeconds,
       appStartedAt,
       appSha256: hash(uiExe),
       publisherSha256: hash(exe),
+      fixtureHelperSha256: hash(
+        resolve("target/release/examples/pipeline-resource.exe"),
+      ),
       experimentSettings: {
         imagePool: appEnv.FREEDOMSTREAM_IMAGE_POOL === "1",
         imagePoolLimit: Number(appEnv.FREEDOMSTREAM_IMAGE_POOL_LIMIT ?? 2),

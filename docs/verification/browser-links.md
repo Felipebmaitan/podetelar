@@ -16,7 +16,7 @@
   explicit Join. Saved-room autojoin is suppressed for browser launches. Capture
   and subscriptions remain explicit. Existing app windows keep their room.
 
-## Verified locally
+## Original verification on 6191237
 
 - Node 24.22.2 project check: formatting, TypeScript, 42 API/server tests,
   23 web unit tests, 4 configuration tests and production builds passed.
@@ -65,3 +65,31 @@ For the live Rust redemption test, create a local JSON fixture with `link` and
 `invitation`, set `FREEDOMSTREAM_APP_LINK_FIXTURE` to its path, and explicitly run
 `browser_links::tests::redeem_real_server_invitation` with `--ignored`. Remove the
 local fixture after use. Fixtures containing authority are never committed.
+
+
+## Integration with redesigned UI and performance work
+
+The branch now merges `origin/main` at `feefc2f` (PRs #22 and #19).
+The browser-link actions use the new styled room-options popup. Both translation
+catalogues are retained. The native test renderer's constructor now initializes
+handoff state, and the performance-experiment entry point calls the updated
+constructor with no browser activation. Startup still selects `Route::Auto` and
+retains the source picker, graceful shutdown and existing picture/render paths.
+These source changes do not establish runtime acceptance by themselves.
+
+On the renewed attempt, `@oai/sky` import succeeded but `list_apps()` failed with:
+`Computer Use native pipe is unavailable: failed to connect native pipe: The system cannot find the file specified. (os error 2)`.
+The same failure persisted after the documented retry and JavaScript-session reset.
+The supported unified CUA inventory independently returned no native apps and the
+same missing-pipe error; it also reported `The browser access host is unavailable`.
+T3 preview can open a blank browser tab, but this does not restore native app input.
+
+The actual native Load/Join/server-trust interaction, saved-room autojoin suppression
+and existing-window independence remain unverified, as does browser native
+external-app permission handling. These are hard merge gates, not waived by a
+headless browser, process launch, HTTP tests, synthetic UI rendering or compilation.
+
+Integration-specific Node/native/browser checks and fresh technical review are in
+progress. CPU-intensive builds and GPU/native launch checks are deferred during the
+performance thread's explicitly coordinated PR #23 benchmark window. The read-only
+GStreamer development SDK and performance checkout are not modified.

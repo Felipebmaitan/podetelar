@@ -1,6 +1,7 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 mod admission;
 mod audio;
+mod browser_links;
 mod connection;
 mod delivery;
 mod diagnostics;
@@ -246,10 +247,23 @@ fn run() -> Result<()> {
                 .build()?;
             runtime.block_on(publish_fixture(request))?;
         }
-        Some(_) => bail!(
+        Some(value) if value != "--browser-link" => bail!(
             "Unknown option. Use --probe, --sources, --audio-apps, --qualify, --qualify-audio or --publish-fixture / --watch-fixture."
         ),
-        None => {
+        _ => {
+            let browser_link = if std::env::args().nth(1).as_deref() == Some("--browser-link") {
+                ensure!(
+                    std::env::args_os().len() == 3,
+                    "Invalid browser invitation."
+                );
+                Some(
+                    std::env::args()
+                        .nth(2)
+                        .context("Invalid browser invitation.")?,
+                )
+            } else {
+                None
+            };
             let options = eframe::NativeOptions {
                 viewport: eframe::egui::ViewportBuilder::default()
                     .with_icon(eframe::egui::IconData {
@@ -266,9 +280,9 @@ fn run() -> Result<()> {
             eframe::run_native(
                 "FreedomStream",
                 options,
-                Box::new(|context| {
+                Box::new(move |context| {
                     ui::configure_theme(&context.egui_ctx);
-                    Ok(Box::new(ui::PublisherUi::new()))
+                    Ok(Box::new(ui::PublisherUi::with_browser_link(browser_link)))
                 }),
             )
             .map_err(|_| anyhow::anyhow!("Could not open the publisher window."))?;

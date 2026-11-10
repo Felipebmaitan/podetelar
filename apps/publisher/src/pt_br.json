@@ -187,5 +187,14 @@
   "Encoder bitrate changes": "Alterações de bitrate no codificador",
   "Exit full screen": "Sair da tela cheia",
   "Double-click video or press F11. Escape exits full screen.": "Clique duas vezes no vídeo ou pressione F11. Esc sai da tela cheia.",
-  "Received video · recent payload bitrate": "Vídeo recebido · taxa de bits recente"
+  "Received video · recent payload bitrate": "Vídeo recebido · taxa de bits recente",
+  "Enable browser links": "Ativar links do navegador",
+  "Disable browser links": "Desativar links do navegador",
+  "Invitation from your browser": "Convite do navegador",
+  "Load invitation": "Carregar convite",
+  "Dismiss browser invitation": "Ignorar convite do navegador",
+  "Loading browser invitation…": "Carregando convite do navegador…",
+  "Load this invitation only if you trust this server. Loading does not join a room or start sharing.": "Carregue este convite apenas se você confia no servidor. Carregar não entra na sala nem inicia transmissão.",
+  "Allow invitation pages to open this app for your Windows user. A launcher copy is kept in Local AppData.": "Permite abrir este aplicativo pelos convites no navegador para seu usuário do Windows. Uma cópia fica no AppData local.",
+  "Update browser links to this version": "Atualizar links do navegador para esta versão"
 }

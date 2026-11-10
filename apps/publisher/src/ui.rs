@@ -93,10 +93,13 @@ pub struct PublisherUi {
     remembered_volume: HashMap<String, u32>,
     advanced_open: bool,
     show_invitation: bool,
+    pending_link: Option<crate::browser_links::Link>,
+    link_result: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+    browser_links_enabled: bool,
     self_preview_revision: Option<(crate::preview::Latest, u64)>,
 }
 impl PublisherUi {
-    pub fn new() -> Self {
+    pub fn with_browser_link(browser_link: Option<String>) -> Self {
         crate::locale::load();
         let store = crate::settings::Store::open();
         let mut settings_error = String::new();
@@ -110,10 +113,25 @@ impl PublisherUi {
                 None
             }
         });
+        let is_browser_launch = browser_link.is_some();
+        let pending_link =
+            browser_link.and_then(|value| match crate::browser_links::Link::parse(&value) {
+                Ok(link) => Some(link),
+                Err(_) => {
+                    settings_error =
+                        "Invalid browser invitation. Open a fresh invitation from your browser."
+                            .into();
+                    None
+                }
+            });
+        let profile_invitation = if is_browser_launch {
+            None
+        } else {
+            profile.as_ref()
+        };
         let app = Self {
             controller: Controller::new(),
-            invitation: profile
-                .as_ref()
+            invitation: profile_invitation
                 .map(|p| p.invitation.clone())
                 .unwrap_or_default(),
             name: profile.as_ref().map(|p| p.name.clone()).unwrap_or_default(),
@@ -134,9 +152,13 @@ impl PublisherUi {
             remembered_volume: HashMap::new(),
             advanced_open: false,
             show_invitation: false,
+            pending_link,
+            link_result: None,
+            browser_links_enabled: std::env::var("FREEDOMSTREAM_BROWSER_LINKS").as_deref()
+                == Ok("1"),
             self_preview_revision: None,
         };
-        if let Some(profile) = profile {
+        if let Some(profile) = profile.filter(|_| !is_browser_launch) {
             app.controller.send(Command::Join {
                 invitation: profile.invitation,
                 name: profile.name,
@@ -237,6 +259,21 @@ impl PublisherUi {
                         ui.close();
                     }
                     ui.separator();
+                    let label = if self.browser_links_enabled { "Disable browser links" } else { "Enable browser links" };
+                    if ui.button(tr(label)).on_hover_text(tr("Allow invitation pages to open this app for your Windows user. A launcher copy is kept in Local AppData.")).clicked() {
+                        match crate::browser_links::set_enabled(!self.browser_links_enabled) {
+                            Ok(()) => { self.browser_links_enabled = !self.browser_links_enabled; self.settings_error.clear(); }
+                            Err(error) => self.settings_error = error.to_string(),
+                        }
+                        ui.close();
+                    }
+                    if self.browser_links_enabled && ui.button(tr("Update browser links to this version")).clicked() {
+                        match crate::browser_links::set_enabled(true) {
+                            Ok(()) => self.settings_error.clear(),
+                            Err(error) => self.settings_error = error.to_string(),
+                        }
+                        ui.close();
+                    }
                     open_licenses(ui);
                 });
                 if connected {
@@ -260,6 +297,34 @@ impl PublisherUi {
     }
 
     fn join_form(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+        if let Some(link) = &self.pending_link {
+            ui.heading(tr("Invitation from your browser"));
+            ui.label(link.origin.origin().ascii_serialization());
+            ui.label(tr("Load this invitation only if you trust this server. Loading does not join a room or start sharing."));
+            if ui.button(tr("Load invitation")).clicked() {
+                let link = self.pending_link.take().expect("Displayed browser link");
+                let (sender, receiver) = std::sync::mpsc::channel();
+                self.link_result = Some(receiver);
+                std::thread::spawn(move || {
+                    let result = tokio::runtime::Runtime::new()
+                        .map_err(|_| "Could not prepare app invitation.".to_owned())
+                        .and_then(|runtime| {
+                            runtime
+                                .block_on(link.redeem())
+                                .map_err(|error| error.to_string())
+                        });
+                    let _ = sender.send(result);
+                });
+            }
+            if ui.button(tr("Dismiss browser invitation")).clicked() {
+                self.pending_link = None;
+            }
+            return;
+        }
+        if self.link_result.is_some() {
+            ui.label(tr("Loading browser invitation…"));
+            return;
+        }
         ui.heading(tr("Join your room"));
         ui.label(
             egui::RichText::new(tr(
@@ -833,6 +898,20 @@ impl PublisherUi {
 
 impl eframe::App for PublisherUi {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if let Some(result) = self
+            .link_result
+            .as_ref()
+            .and_then(|receiver| receiver.try_recv().ok())
+        {
+            self.link_result = None;
+            match result {
+                Ok(invitation) => {
+                    self.invitation = invitation;
+                    self.settings_error.clear();
+                }
+                Err(error) => self.settings_error = error,
+            }
+        }
         let ctx = root.ctx().clone();
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             if self.advanced_open {

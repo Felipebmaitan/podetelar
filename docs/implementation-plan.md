@@ -69,6 +69,8 @@ the first real user trial; an internal-only fallback clipboard is insufficient.
 Replace the PowerShell installer ZIP with one portable EXE containing its media
 runtime and notices. First launch may extract a private runtime cache, but must
 not install shared runtimes, change system settings, or download dependencies.
+The optional browser-invitation feature is an explicit exception: after the user
+enables it, register only a per-user URL handler with a matching disable action.
 Qualify the shipped DLL/plugin set, matching source availability and licenses.
 Test offline startup, invocation from a fresh directory, actual capture/audio and
 room download behavior, then review and deploy the replacement artifact.
@@ -204,3 +206,26 @@ Accept with unauthenticated/participant/expired/revoked session denial, same-ori
 mutation checks, restart persistence and invitation admission, bounded pagination,
 Node 24 checks, desktop/mobile browser workflows and a fresh independent review.
 Simpler native onboarding (app links or short-lived pairing) remains a proposal.
+
+## Portable browser invitations — independent PR
+
+Add optional per-user `freedomstream://` registration from Room options. Save a
+content-addressed launcher copy in Local AppData so moving/deleting the downloaded
+EXE does not break the handler. Re-enabling in a newer release updates the handler;
+disabling removes only our registration and leaves cached files for safe running
+processes. This is the explicit opt-in exception to default no-settings-change
+portability; it needs no administrator privileges or shared runtime installation.
+
+Invitation pages prepare a one-use 60-second handoff ticket and offer Open in
+FreedomStream. Permanent invitations stay out of activation arguments and HTTP
+URLs. Ticket storage is bounded and memory-only; restart, expiry, consumption,
+invitation rotation or disabling invalidate handoff. The native app displays the
+server and asks before loading; it never automatically joins a saved room on a
+browser launch. Joining, sharing and watching remain explicit. A browser launch
+opens a separate app window so existing streams are undisturbed.
+
+Accept with ticket authorization/replay/expiry/revocation/resource tests, real
+per-user registry registration/removal and Windows launch handoff, malformed URL
+rejection, native GUI loading without automatic admission, Node 24 checks,
+native Clippy/tests, desktop/mobile browser workflows and independent review.
+Keep untested browser prompts and deployment/distribution gates explicit.

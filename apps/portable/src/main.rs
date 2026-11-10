@@ -15,6 +15,25 @@ fn run() -> Result<i32> {
         bundle.extract_new(&PathBuf::from(&args[1]))?;
         return Ok(0);
     }
+    #[cfg(windows)]
+    if args
+        .first()
+        .is_some_and(|arg| arg == "--enable-browser-links" || arg == "--disable-browser-links")
+    {
+        ensure!(args.len() == 1, "Invalid browser-link settings request.");
+        if args[0] == "--enable-browser-links" {
+            freedomstream_portable::browser_links::enable(&std::env::current_exe()?, &bundle.id)?;
+        } else {
+            freedomstream_portable::browser_links::disable()?;
+        }
+        return Ok(0);
+    }
+    if args.first().is_some_and(|arg| arg == "--browser-link") {
+        ensure!(
+            args.len() == 2 && args[1].to_string_lossy().len() <= 4096,
+            "Invalid browser invitation."
+        );
+    }
     let base =
         PathBuf::from(std::env::var_os("LOCALAPPDATA").context("Local AppData is unavailable.")?)
             .join("FreedomStreamPortable");
@@ -32,6 +51,16 @@ fn run() -> Result<i32> {
     }
     let bundled_probe = args.first().is_some_and(|arg| arg == "--bundled-probe");
     let mut command = freedomstream_portable::command(&directory)?;
+    command.env("FREEDOMSTREAM_PORTABLE_EXE", std::env::current_exe()?);
+    #[cfg(windows)]
+    command.env(
+        "FREEDOMSTREAM_BROWSER_LINKS",
+        if freedomstream_portable::browser_links::enabled() {
+            "1"
+        } else {
+            "0"
+        },
+    );
     if bundled_probe {
         ensure!(args.len() == 1, "Usage: FreedomStream.exe --bundled-probe");
         command.arg("--probe");

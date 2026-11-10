@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -111,6 +111,55 @@ const evidencePaths = [
     ),
   ),
 ];
+const packageAcceptancePath = join(pass, "pr19-package-acceptance.json");
+const packageAcceptance = existsSync(packageAcceptancePath)
+  ? read(packageAcceptancePath)
+  : null;
+if (packageAcceptance) {
+  evidencePaths.push(
+    "ui-pr22-pass/pr19-package-acceptance.json",
+    ...packageAcceptance.successes.map((entry) => entry.path),
+    `${packageAcceptance.initialAttempt.directory}/receiver-process.json`,
+  );
+}
+const idlePath = join(pass, "pr19-idle-summary.json");
+if (existsSync(idlePath)) {
+  execFileSync(
+    process.execPath,
+    [
+      join(root, "scripts/summarize-local-performance.mjs"),
+      idlePath,
+      "ui22-idle-",
+    ],
+    { windowsHide: true },
+  );
+}
+const idle = existsSync(idlePath) ? read(idlePath) : null;
+if (idle) {
+  assert.equal(
+    idle.runs.length,
+    2,
+    "Complete both stopped-tail controls before aggregation",
+  );
+  for (const run of idle.runs) {
+    assert.equal(run.audioEnabled, false);
+    assert.equal(run.codecStable, true);
+    assert.ok(
+      run.rows.find((row) => row.phase === "stopped").settledStoppedTail,
+    );
+    evidencePaths.push(
+      ...["result.json", "app.json", "process.json"].map(
+        (file) => `${run.directory}/${file}`,
+      ),
+    );
+  }
+}
+const probePath = join(pass, "pr19-bundled-probe.json");
+const bundledProbe = existsSync(probePath) ? read(probePath) : null;
+if (bundledProbe) {
+  assert.equal(bundledProbe.exitCode, 0);
+  evidencePaths.push("ui-pr22-pass/pr19-bundled-probe.json");
+}
 const evidence = evidencePaths.map((path) => ({
   path,
   sha256: createHash("sha256")
@@ -127,6 +176,9 @@ const result = {
   order: labels,
   phases,
   runs: summary.runs,
+  packageAcceptance,
+  bundledProbe,
+  stoppedTailControls: idle?.runs ?? [],
   evidence,
 };
 const output = join(

@@ -313,7 +313,23 @@ async function executeWorkload() {
       const code = await child.closed;
       clearTimeout(timer);
       await sampler.closed;
-      if (code !== 0) throw new Error("Native diagnostic receiver failed.");
+      if (code !== 0) {
+        writeFileSync(
+          join(run, "failure.json"),
+          JSON.stringify(
+            {
+              schema: 1,
+              stage: "native-diagnostic",
+              exitCode: code,
+              diagnostic: child.diagnostic,
+              receiverSha256: hash(receiver),
+            },
+            null,
+            2,
+          ),
+        );
+        throw new Error(`Native diagnostic receiver failed (exit ${code}).`);
+      }
       const report = JSON.parse(child.output().trim());
       if (!report.closed)
         throw new Error("Native diagnostic receiver did not close.");

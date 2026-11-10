@@ -90,7 +90,37 @@ resident 249.34 to 308.75 MiB, with substantial baseline variation. Stopped CPU
 is also higher (0.69% to 2.09% of one core). These short post-stop samples are
 recorded costs, not evidence of steady idle behavior or an unbounded leak.
 
-Final package validation, fresh source review and PR checks are pending.
+An additional silent run per variant used 20-second phases. In its final five
+seconds, at least 15 seconds after stopping, baseline/adapted commit was
+276.21/270.39 MiB and resident memory was 194.14/184.84 MiB. Stopped-phase CPU
+was 1.39/1.28% of one core. The earlier memory spike therefore did not persist
+in this longer control; one extra pair does not establish a general idle gain.
+
+## Portable acceptance and limitations
+
+The default, non-experimental portable package was built from `4e2c6f611b1b`.
+Its SHA-256 is
+`0eaa420c55150f4e39847dc514c32725dd8bf6f3cc9284daa070056dec1dc00f`;
+the inner publisher is
+`e23c48bf8c6091798a9c4bdcc9ffd075164ab77ba8ee61e12a25459784cd61ef`.
+Both PE subsystem values are Windows GUI (2); feature-only experiment markers
+are absent. Runtime file/source pins, DLL imports and dependency/font notices
+passed packaging checks. A forced bundled-runtime probe exited successfully.
+
+An initial receive attempt from a deeply nested isolated cache exited before
+producing native diagnostics. Its exact exit code was not retained by the old
+harness and its cause is not established. Subsequent H.264 and HEVC controls
+using a short, isolated Local AppData path each passed 30-second actual packaged
+hardware receive checks, including stop/rewatch, with 1920×1080 pictures and
+1,125/1,129 frames in their final watch generation. This is qualified acceptance;
+the failed cache-path attempt is not hidden. The harness now records bounded
+exit/failure classifications for future diagnostic failures. Launcher sampler
+values are not interpreted as the native child's CPU/memory measurements.
+
+These silent CLI controls do not establish packaged egui presentation or
+physical A/V acceptance. No full audible suite was rerun. Previous campaign
+limitations and external gates remain in force. Fresh review and CI approval of
+the integrated range are required before merging [PR19](https://github.com/Felipebmaitan/freedomstream/pull/19).
 
 ## PR23 adaptation
 

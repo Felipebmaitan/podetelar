@@ -31,7 +31,8 @@ public static class FreedomStreamIconCheck {
 }
 '@
 function Assert-AppResources([string]$Path) {
-    if ([FreedomStreamIconCheck]::ExtractIconExW($Path, -1, [IntPtr]::Zero, [IntPtr]::Zero, 0) -lt 1) {
+    $iconCount = [FreedomStreamIconCheck]::ExtractIconExW($Path, -1, [IntPtr]::Zero, [IntPtr]::Zero, 0)
+    if ($iconCount -lt 1 -or $iconCount -eq [uint32]::MaxValue) {
         throw 'A shipped executable has no embedded Windows icon.'
     }
     if ([Diagnostics.FileVersionInfo]::GetVersionInfo($Path).ProductName -ne 'FreedomStream') {
@@ -107,13 +108,20 @@ try {
     [void](Finish-Portable (Start-Portable '--probe') $false)
     $env:LOCALAPPDATA = $localData
     # Reject damage before attempting extraction; no UI dialog for CLI failures.
-    $stream = [IO.File]::Open($copy, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite)
+    # Resource inspection and Windows image loading can retain a handle to the
+    # original executable after its process exits. Damage an unused copy so
+    # those handles cannot race the write, while preserving the rejection test.
+    $damageCopy = Join-Path $working 'DamagedFreedomStream.exe'
+    $stream = [IO.File]::Open($damageCopy, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     try {
+        $source = [IO.File]::OpenRead($copy)
+        try { $source.CopyTo($stream) } finally { $source.Dispose() }
         [void]$stream.Seek(-57, [IO.SeekOrigin]::End)
         $value = $stream.ReadByte()
         [void]$stream.Seek(-1, [IO.SeekOrigin]::Current)
         $stream.WriteByte($value -bxor 1)
     } finally { $stream.Dispose() }
+    $copy = $damageCopy
     [void](Finish-Portable (Start-Portable '--probe') $false)
     Write-Host 'Portable qualification passed: isolated-path first launch, concurrent extraction, runtime probe, payload/source integrity, cache preservation, explicit extraction and damage rejection. This is not a fresh-PC or disconnected-network test.'
     Write-Host "Retained qualification evidence: $qualificationRoot"

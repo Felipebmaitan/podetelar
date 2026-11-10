@@ -65,10 +65,10 @@ pub fn qualify_planar_transitions(
         source_id: String::new(),
         encoder: String::new(),
         quality: Settings::default(),
-        route: Route::Auto,
         download_budget: None,
         textures: HashMap::new(),
         focused: None,
+        stream_menu: None,
         fullscreen: None,
         fullscreen_controls_until: Instant::now(),
         store: None,
@@ -78,9 +78,18 @@ pub fn qualify_planar_transitions(
         copied_until: None,
         remembered_volume: HashMap::new(),
         advanced_open: false,
+        diagnostics_open: false,
         show_invitation: false,
         self_preview_revision: None,
         planar: Default::default(),
+        picker: crate::source_picker::Preview::new(),
+        picker_hover: None,
+        picker_texture: None,
+        picker_failed: None,
+        picker_refreshed: None,
+        picker_keyboard: false,
+        closing_since: None,
+        force_close: false,
     };
     let tile = Tile {
         id: "qualification".into(),
@@ -481,6 +490,7 @@ impl BenchmarkUi {
 impl eframe::App for BenchmarkUi {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.drive(ctx);
+        self.inner.logic(ctx, _frame);
     }
     fn ui(&mut self, root: &mut egui::Ui, frame: &mut eframe::Frame) {
         let now = Instant::now();

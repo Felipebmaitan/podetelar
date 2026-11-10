@@ -18,8 +18,10 @@ mod quality;
 #[allow(dead_code)]
 mod resource_experiment;
 mod settings;
+mod source_picker;
 mod sources;
 mod ui;
+mod ui_style;
 mod video_image;
 #[cfg(windows)]
 mod win32;

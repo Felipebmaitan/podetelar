@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
+import { createHash } from "node:crypto";
 const root = resolve(import.meta.dirname, "../.local/experiments");
 const median = (values) => {
   const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
@@ -15,6 +16,7 @@ const phases = [
 ];
 const runs = [];
 for (const directory of readdirSync(root)) {
+  if (process.argv[3] && !directory.startsWith(process.argv[3])) continue;
   const file = join(root, directory, "result.json");
   if (!existsSync(file)) continue;
   const r = JSON.parse(readFileSync(file));
@@ -165,6 +167,7 @@ for (const directory of readdirSync(root)) {
   });
   runs.push({
     directory,
+    inputSha256: createHash("sha256").update(readFileSync(file)).digest("hex"),
     label: r.label,
     count: r.count,
     codec: r.codec,

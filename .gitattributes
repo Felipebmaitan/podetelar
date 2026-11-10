@@ -2,3 +2,5 @@
 *.png binary
 deploy/licenses/** -text
 deploy/production/*.sh text eol=lf
+# Unified diff context intentionally prefixes Go tabs and empty lines with a space.
+deploy/livekit-usage/stats.patch -whitespace

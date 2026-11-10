@@ -44,6 +44,13 @@ space to preserve readable labels. Speed is **Mb/s**; data is decimal **MB/GB**.
   invalidation, malformed queries, rate limiting, minute boundaries, new-session
   first counters, SFU generation changes, unknown gaps, independent same-name
   users, history persistence and SQLite online backup/restore.
+- A fresh GPT-6.1-Sol review at high reasoning approved the isolated PR after
+  the initial accounting/date-label/runbook findings were addressed.
+
+One cold-start repeat of the local media harness failed its signaling connection.
+A repeat after explicitly waiting for the SFU administrative RPC to become ready
+passed, including actual-data screenshots and the unsubscribe check. Metrics
+readiness alone is insufficient to establish readiness for a media join.
 
 ## Scope and deployment limits
 

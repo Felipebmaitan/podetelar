@@ -22,29 +22,33 @@ for (const directory of readdirSync(root)) {
     r.schema !== 1 ||
     r.app?.kind !== "actual-native-ui-room" ||
     !r.appStartedAt ||
-    !r.process?.startedAt ||
-    (r.rounds ?? 1) !== 1
+    !r.process?.startedAt
   )
     continue;
-  const ready = r.app.wallSeconds - r.phaseSeconds * 6;
+  const steady = r.steadySeconds ?? 0;
+  const rounds = r.rounds ?? 1;
+  const ready = r.app.wallSeconds - r.phaseSeconds * 6 * rounds - steady;
   const os = r.process.samples.map((s) => ({
     ...s,
     relativeSecond:
       s.second + (r.process.startedAt - r.appStartedAt) / 1000 - ready,
   }));
-  const rows = phases.map((phase, index) => {
+  const rows = Array.from({ length: rounds * phases.length }, (_, index) => {
+    const phase = phases[index % phases.length];
+    const start = index * r.phaseSeconds + (index ? steady : 0);
+    const end = (index + 1) * r.phaseSeconds + steady;
+    const interior = index === 0 && steady ? 60 : 1.5;
     const samples = os.filter(
       (s) =>
-        s.relativeSecond >= index * r.phaseSeconds + 1.5 &&
-        s.relativeSecond < (index + 1) * r.phaseSeconds - 0.5,
+        s.relativeSecond >= start + interior && s.relativeSecond < end - 0.5,
     );
     const first = samples[0],
       last = samples.at(-1);
     const app = r.app.samples.filter(
       (s) =>
         s.phase === phase &&
-        s.second >= index * r.phaseSeconds + 1.5 &&
-        s.second < (index + 1) * r.phaseSeconds - 0.5,
+        s.second >= start + interior &&
+        s.second < end - 0.5,
     );
     const a = app[0],
       b = app.at(-1);
@@ -57,6 +61,7 @@ for (const directory of readdirSync(root)) {
     const engines = Object.keys(samples[0]?.gpuEnginesPercent ?? {});
     return {
       phase,
+      cycle: Math.floor(index / phases.length),
       samples: samples.length,
       cpuCorePercent:
         first && last && first !== last
@@ -96,6 +101,10 @@ for (const directory of readdirSync(root)) {
           ? (b.subscriptionSetterCalls - a.subscriptionSetterCalls) /
             (b.second - a.second)
           : null,
+      nativeLogMessagesPerSecond:
+        a && b && a !== b && Number.isFinite(a.nativeLogMessages)
+          ? (b.nativeLogMessages - a.nativeLogMessages) / (b.second - a.second)
+          : null,
       uiIntervals:
         r.app.uiInvocationIntervals?.find((s) => s.phase === phase) ?? null,
       errors: app.some((s) => s.errorPresent || s.streamErrorCount > 0),
@@ -106,13 +115,17 @@ for (const directory of readdirSync(root)) {
     label: r.label,
     count: r.count,
     codec: r.codec,
+    codecStable: r.codecStable ?? null,
     phaseSeconds: r.phaseSeconds,
+    steadySeconds: steady,
+    rounds,
     fps: r.fps ?? null,
     resolution: r.resolution ?? null,
     publishFixture: r.publishFixture ?? false,
     disconnected: r.disconnected ?? false,
     audioEnabled: r.audioEnabled ?? false,
     contention: r.contention ?? false,
+    experimentSettings: r.experimentSettings ?? null,
     appSha256: r.appSha256,
     publisherSha256: r.publisherSha256,
     counterFailures: r.process.counterFailures,

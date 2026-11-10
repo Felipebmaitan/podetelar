@@ -161,6 +161,17 @@ struct Watch {
     video_sid: String,
 }
 
+impl Watch {
+    fn begin_video(&mut self) -> (Picture, Arc<Presentation>) {
+        // Cancellation cannot interrupt a synchronous conversion already in
+        // progress. A replacement pump owns a new mailbox so a late old result
+        // cannot overwrite the current source/reconnect generation.
+        self.picture = Arc::default();
+        self.presentation = Arc::default();
+        (self.picture.clone(), self.presentation.clone())
+    }
+}
+
 struct Pump(JoinHandle<()>);
 impl Drop for Pump {
     fn drop(&mut self) {
@@ -541,13 +552,15 @@ impl Playback {
                 let Some(track) = publication.track() else {
                     continue;
                 };
-                let watch = &self.watches[&id];
+                let watch = self
+                    .watches
+                    .get_mut(&id)
+                    .context("Missing playback request.")?;
                 let task = match track {
                     RemoteTrack::Video(track) => {
-                        let picture = watch.picture.clone();
+                        let (picture, presentation) = watch.begin_video();
                         let frames = watch.frames.clone();
                         let last_frame = watch.last_frame.clone();
-                        let presentation = watch.presentation.clone();
                         tokio::spawn(async move {
                             let mut image_pool = crate::video_image::ImagePool::default();
                             #[cfg(feature = "performance-experiments")]
@@ -555,6 +568,11 @@ impl Playback {
                                 .is_ok_and(|value| value == "1");
                             #[cfg(not(feature = "performance-experiments"))]
                             let pooled = true;
+                            #[cfg(feature = "performance-experiments")]
+                            let fallback = std::env::var("FREEDOMSTREAM_IMAGE_FALLBACK")
+                                .is_ok_and(|value| value == "1");
+                            #[cfg(not(feature = "performance-experiments"))]
+                            let fallback = true;
                             let mut stream = NativeVideoStream::with_options(
                                 track.rtc_track(),
                                 NativeVideoStreamOptions {
@@ -562,6 +580,10 @@ impl Playback {
                                 },
                             );
                             while let Some(frame) = stream.next().await {
+                                // Bound each poll to one frame even when the
+                                // latest-frame queue stays ready under load.
+                                // Abort/control/audio work must get a turn.
+                                tokio::task::yield_now().await;
                                 let width = frame.buffer.width();
                                 let height = frame.buffer.height();
                                 if width > 3840
@@ -591,6 +613,13 @@ impl Playback {
                                         }
                                         image = image_pool.convert(frame.buffer.as_ref());
                                     }
+                                    let image = image.or_else(|| {
+                                        if fallback {
+                                            image_pool.allocate_fallback(frame.buffer.as_ref())
+                                        } else {
+                                            None
+                                        }
+                                    });
                                     if let Some(image) = image {
                                         presentation.publish(&picture, image);
                                     } else if let Ok(mut latest) = picture.lock() {
@@ -850,6 +879,44 @@ pub fn requested_cap(room: &Room) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn replacement_video_keeps_late_old_results_out_of_the_current_mailbox() {
+        let mut watch = Watch {
+            picture: Arc::default(),
+            presentation: Arc::default(),
+            frames: Arc::new(AtomicU64::new(7)),
+            received_bps: Arc::default(),
+            volume: Arc::new(AtomicU32::new(80)),
+            since: Instant::now(),
+            last_frame: Arc::new(Mutex::new(Instant::now())),
+            audio: Arc::default(),
+            error: Arc::default(),
+            h264: true,
+            video_sid: "synthetic-track".into(),
+        };
+        let (old_picture, old_presentation) = watch.begin_video();
+        let (current_picture, current_presentation) = watch.begin_video();
+        current_presentation.publish(
+            &current_picture,
+            Arc::new(egui::ColorImage::filled([2, 2], egui::Color32::RED)),
+        );
+        old_presentation.publish(
+            &old_picture,
+            Arc::new(egui::ColorImage::filled([2, 2], egui::Color32::BLACK)),
+        );
+        assert!(Arc::ptr_eq(&watch.picture, &current_picture));
+        assert_eq!(
+            watch.picture.lock().unwrap().as_ref().unwrap().pixels[0],
+            egui::Color32::RED
+        );
+        assert_eq!(
+            old_picture.lock().unwrap().as_ref().unwrap().pixels[0],
+            egui::Color32::BLACK
+        );
+        assert_eq!(watch.frames.load(Ordering::Relaxed), 7);
+        assert_eq!(watch.volume.load(Ordering::Relaxed), 80);
+        assert!(watch.h264);
+    }
     #[test]
     fn received_bitrate_uses_actual_elapsed_time_and_handles_counter_reset() {
         let now = Instant::now();

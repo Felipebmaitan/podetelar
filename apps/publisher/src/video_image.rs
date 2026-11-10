@@ -32,6 +32,7 @@ fn write_color_image(buffer: &dyn VideoBuffer, image: &mut ColorImage) {
 pub struct ImagePool {
     images: Vec<Arc<ColorImage>>,
     limit: usize,
+    fallback: std::sync::Weak<ColorImage>,
 }
 impl Default for ImagePool {
     fn default() -> Self {
@@ -42,16 +43,26 @@ impl Default for ImagePool {
             .filter(|limit| (1..=2).contains(limit))
             .unwrap_or(2);
         #[cfg(not(feature = "performance-experiments"))]
-        let limit = 2;
+        let limit = 1;
         Self {
             images: Vec::new(),
             limit,
+            fallback: std::sync::Weak::new(),
         }
     }
 }
 impl ImagePool {
+    pub fn allocate_fallback(&mut self, buffer: &dyn VideoBuffer) -> Option<Arc<ColorImage>> {
+        if self.limit != 1 || self.fallback.strong_count() != 0 {
+            return None;
+        }
+        let image = Arc::new(to_color_image(buffer));
+        self.fallback = Arc::downgrade(&image);
+        Some(image)
+    }
     pub fn clear(&mut self) {
         self.images.clear();
+        self.fallback = std::sync::Weak::new();
     }
     pub fn convert(&mut self, buffer: &dyn VideoBuffer) -> Option<Arc<ColorImage>> {
         let size = [buffer.width() as usize, buffer.height() as usize];
@@ -87,6 +98,7 @@ mod tests {
         let mut pool = ImagePool {
             images: Vec::new(),
             limit: 1,
+            ..Default::default()
         };
         let held = pool.convert(buffer.as_ref()).unwrap();
         let address = held.pixels.as_ptr();
@@ -98,6 +110,33 @@ mod tests {
             pool.convert(buffer.as_ref()).unwrap().pixels.as_ptr(),
             address
         );
+    }
+
+    #[test]
+    fn temporary_fallback_keeps_the_cache_bounded_and_held_pixels_unchanged() {
+        let black = I420Buffer::new_black(17, 9);
+        let mut red = I420Buffer::new(17, 9);
+        let (y, u, v) = red.data_mut();
+        y.fill(82);
+        u.fill(90);
+        v.fill(240);
+        let mut pool = ImagePool {
+            images: Vec::new(),
+            limit: 1,
+            ..Default::default()
+        };
+        let held = pool.convert(black.as_ref()).unwrap();
+        let before = held.pixels.clone();
+        let image = pool
+            .convert(red.as_ref())
+            .or_else(|| pool.allocate_fallback(red.as_ref()))
+            .unwrap();
+        assert_eq!(held.pixels, before);
+        assert_eq!(image.pixels, to_color_image(red.as_ref()).pixels);
+        assert_eq!(pool.images.len(), 1);
+        assert!(pool.allocate_fallback(red.as_ref()).is_none());
+        drop(image);
+        assert!(pool.allocate_fallback(red.as_ref()).is_some());
     }
     #[test]
     fn bounded_pool_preserves_live_images_and_reuses_only_released_storage() {
@@ -111,7 +150,10 @@ mod tests {
         y.fill(82);
         u.fill(90);
         v.fill(240);
-        let mut pool = ImagePool::default();
+        let mut pool = ImagePool {
+            limit: 2,
+            ..Default::default()
+        };
         let first = pool.convert(black.as_ref()).unwrap();
         let expected = first.pixels.clone();
         let address = first.pixels.as_ptr();

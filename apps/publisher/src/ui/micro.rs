@@ -46,18 +46,20 @@ pub fn run(report: &Path) -> Result<()> {
     results.push(timed("unchanged-jpeg-revision-check", 10_000, || {
         black_box(black_box(&jpeg).sequence == 1);
     }));
-    let mut snapshot = crate::publisher::Snapshot::default();
-    snapshot.sources = (0..32)
-        .map(|i| crate::sources::SourceInfo {
-            id: format!("fixture-{i}"),
-            label: format!("Synthetic source {i}"),
-            width: 1920,
-            height: 1080,
-        })
-        .collect();
-    snapshot.participants = (0..32)
-        .map(|i| format!("Synthetic participant {i}"))
-        .collect();
+    let snapshot = crate::publisher::Snapshot {
+        sources: (0..32)
+            .map(|i| crate::sources::SourceInfo {
+                id: format!("fixture-{i}"),
+                label: format!("Synthetic source {i}"),
+                width: 1920,
+                height: 1080,
+            })
+            .collect(),
+        participants: (0..32)
+            .map(|i| format!("Synthetic participant {i}"))
+            .collect(),
+        ..Default::default()
+    };
     results.push(timed("snapshot-deep-clone-32-sources", 50_000, || {
         black_box(black_box(&snapshot).clone());
     }));
@@ -118,7 +120,7 @@ pub fn run(report: &Path) -> Result<()> {
             local_peak = local_peak.max(pair[0].unsigned_abs() as f64 / 32768.0);
         }
         local_frames += 480;
-        if local_frames % 4800 == 0 {
+        if local_frames.is_multiple_of(4800) {
             *scalar.lock().unwrap() = (local_frames, local_peak);
         }
         black_box(local_peak);

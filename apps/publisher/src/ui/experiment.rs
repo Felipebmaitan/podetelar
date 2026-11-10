@@ -6,7 +6,11 @@ use serde_json::json;
 use std::{collections::HashSet, path::PathBuf};
 #[path = "micro.rs"]
 mod microbench;
+// These entry points are consumed by the standalone experiment binary, while
+// the shared UI module is also compiled by the publisher and its test target.
+#[allow(unused_imports)]
 pub use microbench::run as micro;
+#[allow(unused_imports)]
 pub use microbench::sdk_soak;
 
 #[derive(Deserialize)]
@@ -25,6 +29,20 @@ pub struct Request {
     disconnected: bool,
     #[serde(default = "one_round")]
     rounds: u64,
+    #[serde(default)]
+    steady_seconds: u64,
+}
+impl Request {
+    fn total_seconds(&self) -> u64 {
+        self.phase_seconds * PHASES.len() as u64 * self.rounds + self.steady_seconds
+    }
+    fn step(&self, elapsed: u64) -> usize {
+        if elapsed < self.phase_seconds + self.steady_seconds {
+            0
+        } else {
+            (1 + (elapsed - self.phase_seconds - self.steady_seconds) / self.phase_seconds) as usize
+        }
+    }
 }
 fn one_round() -> u64 {
     1
@@ -37,7 +55,9 @@ pub fn run(request: Request) -> Result<()> {
     ensure!(
         request.expected_streams <= 4
             && (5..=20).contains(&request.phase_seconds)
-            && (1..=7).contains(&request.rounds),
+            && (1..=7).contains(&request.rounds)
+            && request.steady_seconds <= 360
+            && (request.steady_seconds == 0 || request.rounds == 1),
         "Invalid local benchmark workload."
     );
     ensure!(
@@ -149,18 +169,19 @@ impl BenchmarkUi {
                 },
             });
         }
-        if !self.stopped && !self.request.empty_room && state.connection == "connected" {
-            if let Some(tile) = state
+        if !self.stopped
+            && !self.request.empty_room
+            && state.connection == "connected"
+            && let Some(tile) = state
                 .tiles
                 .iter()
                 .find(|tile| !self.watched.contains(&tile.id))
-            {
-                self.inner.controller.send(Command::Watch {
-                    id: tile.id.clone(),
-                    enabled: true,
-                });
-                self.watched.insert(tile.id.clone());
-            }
+        {
+            self.inner.controller.send(Command::Watch {
+                id: tile.id.clone(),
+                enabled: true,
+            });
+            self.watched.insert(tile.id.clone());
         }
         let active = state
             .tiles
@@ -188,7 +209,7 @@ impl BenchmarkUi {
         let Some(elapsed) = Instant::now().checked_duration_since(ready) else {
             return;
         };
-        let step = (elapsed.as_secs() / self.request.phase_seconds) as usize;
+        let step = self.request.step(elapsed.as_secs());
         if step >= PHASES.len() * self.request.rounds as usize {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
@@ -208,7 +229,7 @@ impl BenchmarkUi {
                     if cycle > 0 {
                         self.stopped = false;
                         self.watched.clear();
-                        if cycle % 2 == 0 {
+                        if cycle.is_multiple_of(2) {
                             self.inner.controller.send(Command::Leave);
                             self.inner.controller.send(Command::Join {
                                 invitation: self.request.invitation_url.clone(),
@@ -281,18 +302,13 @@ impl eframe::App for BenchmarkUi {
             && self.ready.is_some_and(|ready| {
                 Instant::now()
                     .checked_duration_since(ready)
-                    .is_some_and(|elapsed| {
-                        elapsed.as_secs()
-                            >= self.request.phase_seconds
-                                * PHASES.len() as u64
-                                * self.request.rounds
-                    })
+                    .is_some_and(|elapsed| elapsed.as_secs() >= self.request.total_seconds())
             });
         let intervals:Vec<_>=self.frame_intervals.iter().enumerate().map(|(phase,values)|{
             let mut sorted=values.clone();sorted.sort_by(f64::total_cmp);let percentile=|p:f64|sorted.get(((sorted.len().saturating_sub(1))as f64*p)as usize).copied();
             json!({"phase":PHASES[phase],"count":values.len(),"p50Ms":percentile(0.5),"p95Ms":percentile(0.95),"p99Ms":percentile(0.99),"maxMs":sorted.last()})
         }).collect();
-        let report = json!({"schema":1,"kind":"actual-native-ui-room","completed":completed,"fault":self.fault,"expectedStreams":self.request.expected_streams,"phaseSeconds":self.request.phase_seconds,"rounds":self.request.rounds,"wallSeconds":self.started.elapsed().as_secs_f64(),"uiInvocationIntervals":intervals,"samples":self.samples});
+        let report = json!({"schema":1,"kind":"actual-native-ui-room","completed":completed,"fault":self.fault,"expectedStreams":self.request.expected_streams,"phaseSeconds":self.request.phase_seconds,"rounds":self.request.rounds,"steadySeconds":self.request.steady_seconds,"wallSeconds":self.started.elapsed().as_secs_f64(),"uiInvocationIntervals":intervals,"samples":self.samples});
         if let Some(parent) = self.request.report.parent() {
             let _ = std::fs::create_dir_all(parent);
         }

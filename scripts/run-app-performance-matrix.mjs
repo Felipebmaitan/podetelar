@@ -1,8 +1,13 @@
 // Sequential, isolated actual-app comparisons. Never benchmark two cases at once.
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 const suite = process.argv[2] ?? "receive";
+if (existsSync(".local/experiments/stop-before-next-suite")) {
+  console.log(`Stopped at the requested experiment boundary before ${suite}.`);
+  process.exit(20);
+}
 const baseline =
   process.env.FREEDOMSTREAM_BENCH_BASELINE ??
   ".local/experiments/baseline-shared/room-benchmark.exe";
@@ -38,8 +43,18 @@ const pool = {
     process.env.FREEDOMSTREAM_BENCH_POOL_LIMIT ?? "2",
 };
 const driven = { ...pool, FREEDOMSTREAM_FRAME_REPAINT: "1" };
+const selectedCache =
+  process.env.FREEDOMSTREAM_BENCH_CACHE_POLICY === "one"
+    ? {
+        ...pool,
+        FREEDOMSTREAM_IMAGE_POOL_LIMIT: "1",
+        FREEDOMSTREAM_IMAGE_FALLBACK: "1",
+      }
+    : pool;
 const accepted =
-  process.env.FREEDOMSTREAM_BENCH_REPAINT === "1" ? driven : pool;
+  process.env.FREEDOMSTREAM_BENCH_REPAINT === "1"
+    ? { ...selectedCache, FREEDOMSTREAM_FRAME_REPAINT: "1" }
+    : selectedCache;
 if (suite === "receive") {
   add("deferred-smoke", 4, "h265", candidate, {}, 5);
   pairs("deferred-pool", 4, "h265", candidate, candidate, {}, pool, 2);
@@ -68,6 +83,55 @@ if (suite === "receive") {
     candidate,
     accepted,
     accepted,
+  );
+} else if (suite === "fallback") {
+  const after = {
+    ...accepted,
+    FREEDOMSTREAM_IMAGE_POOL_LIMIT: "1",
+    FREEDOMSTREAM_IMAGE_FALLBACK: "1",
+  };
+  pairs(
+    "single-cache-fallback",
+    4,
+    "h265",
+    candidate,
+    candidate,
+    accepted,
+    after,
+  );
+  pairs(
+    "single-cache-fallback-4k",
+    4,
+    "h265",
+    candidate,
+    candidate,
+    { ...accepted, FREEDOMSTREAM_BENCH_RESOLUTION: "p2160" },
+    { ...after, FREEDOMSTREAM_BENCH_RESOLUTION: "p2160" },
+    1,
+  );
+} else if (suite === "final") {
+  pairs("final-four", 4, "h265", baseline, candidate, {}, accepted);
+  pairs("final-one", 1, "h265", baseline, candidate, {}, accepted);
+  for (const codec of ["h264", "av1", "av1-software"])
+    pairs(
+      `final-${codec}-four`,
+      4,
+      codec,
+      baseline,
+      candidate,
+      {},
+      accepted,
+      1,
+    );
+  pairs(
+    "final-4k-one",
+    1,
+    "h265",
+    baseline,
+    candidate,
+    { FREEDOMSTREAM_BENCH_RESOLUTION: "p2160" },
+    { ...accepted, FREEDOMSTREAM_BENCH_RESOLUTION: "p2160" },
+    2,
   );
 } else if (suite === "application") {
   pairs("accepted-four", 4, "h265", baseline, candidate, {}, accepted);
@@ -101,6 +165,11 @@ if (suite === "receive") {
     ["empty", 0, {}],
     ["publish", 0, { FREEDOMSTREAM_BENCH_PUBLISH: "1" }],
     ["combined", 4, { FREEDOMSTREAM_BENCH_PUBLISH: "1" }],
+    [
+      "combined-audio",
+      4,
+      { FREEDOMSTREAM_BENCH_PUBLISH: "1", FREEDOMSTREAM_BENCH_AUDIO: "1" },
+    ],
     ["audio-four", 4, { FREEDOMSTREAM_BENCH_AUDIO: "1" }],
     ["contention-four", 4, { FREEDOMSTREAM_BENCH_CONTENTION: "1" }],
   ])
@@ -114,6 +183,21 @@ if (suite === "receive") {
       { ...accepted, ...env },
       1,
     );
+} else if (suite === "last-sample") {
+  const control =
+    process.env.FREEDOMSTREAM_BENCH_CONTROL ??
+    ".local/experiments/fallback/room-benchmark.exe";
+  for (const count of [1, 4])
+    pairs(
+      `gpu-last-sample-${count}`,
+      count,
+      "h265",
+      control,
+      candidate,
+      accepted,
+      accepted,
+      1,
+    );
 } else if (suite === "tokio") {
   pairs("deferred-tokio", 4, "av1-software", candidate, candidate, accepted, {
     ...accepted,
@@ -125,7 +209,7 @@ for (const c of cases) {
   const env = { ...process.env };
   for (const key of Object.keys(env))
     if (
-      /^FREEDOMSTREAM_(BENCH_|IMAGE_POOL|FRAME_REPAINT|CONVERSION_WORKERS)/.test(
+      /^FREEDOMSTREAM_(BENCH_|IMAGE_POOL|IMAGE_FALLBACK|FRAME_REPAINT|CONVERSION_WORKERS)/.test(
         key,
       )
     )

@@ -1,5 +1,6 @@
 //! Offscreen conversion-stage benchmark; does not capture, connect or render.
 #[path = "../src/video_image.rs"]
+#[allow(dead_code)]
 mod video_image;
 
 use livekit::webrtc::video_frame::I420Buffer;

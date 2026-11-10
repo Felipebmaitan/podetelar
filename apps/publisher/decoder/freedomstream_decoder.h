@@ -24,10 +24,10 @@ class Decoder final : public webrtc::VideoDecoder {
     Stop();
     failed_generation_ = std::make_shared<std::atomic<bool>>(false);
     const char* pipeline = av1_
-      ? "appsrc name=input is-live=true format=time max-bytes=4194304 block=false caps=video/x-av1,stream-format=obu-stream,alignment=tu ! av1parse ! d3d11av1dec ! video/x-raw(memory:D3D11Memory),format=NV12 ! appsink name=output sync=false max-buffers=2 drop=true"
+      ? "appsrc name=input is-live=true format=time max-bytes=4194304 block=false caps=video/x-av1,stream-format=obu-stream,alignment=tu ! av1parse ! d3d11av1dec ! video/x-raw(memory:D3D11Memory),format=NV12 ! appsink name=output sync=false max-buffers=2 drop=true enable-last-sample=false"
       : hevc_
-      ? "appsrc name=input is-live=true format=time max-bytes=4194304 block=false caps=video/x-h265,stream-format=byte-stream,alignment=au ! h265parse ! d3d11h265dec ! video/x-raw(memory:D3D11Memory),format=NV12 ! appsink name=output sync=false max-buffers=2 drop=true"
-      : "appsrc name=input is-live=true format=time max-bytes=4194304 block=false caps=video/x-h264,stream-format=byte-stream,alignment=au ! h264parse ! d3d11h264dec ! video/x-raw(memory:D3D11Memory),format=NV12 ! appsink name=output sync=false max-buffers=2 drop=true";
+      ? "appsrc name=input is-live=true format=time max-bytes=4194304 block=false caps=video/x-h265,stream-format=byte-stream,alignment=au ! h265parse ! d3d11h265dec ! video/x-raw(memory:D3D11Memory),format=NV12 ! appsink name=output sync=false max-buffers=2 drop=true enable-last-sample=false"
+      : "appsrc name=input is-live=true format=time max-bytes=4194304 block=false caps=video/x-h264,stream-format=byte-stream,alignment=au ! h264parse ! d3d11h264dec ! video/x-raw(memory:D3D11Memory),format=NV12 ! appsink name=output sync=false max-buffers=2 drop=true enable-last-sample=false";
     GError* error = nullptr;
     pipeline_ = gst_parse_launch(pipeline, &error);
     if (error) { g_error_free(error); Stop(); return false; }

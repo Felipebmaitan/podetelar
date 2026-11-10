@@ -24,7 +24,7 @@ for($pair=1;$pair -le $Pairs;$pair++){
       if($p.ExitCode -ne 0 -or $r.rounds.Count -ne 20 -or $r.rounds[-1].tracksCreatedAndDropped -ne 10000){throw 'Actual SDK track churn failed.'}
       $rows.Add(@{pair=$pair;mode=$mode;exeSha256=(Get-FileHash $exe).Hash;result=$r;processSamples=$samples.ToArray()})
     } finally {if(-not $p.HasExited){$p.Kill();$p.WaitForExit()};$p.Dispose()}
-    Write-Output "Actual SDK churn pair $pair $mode: 10,000 tracks created and dropped."
+    Write-Output "Actual SDK churn pair $pair ${mode}: 10,000 tracks created and dropped."
   }
 }
 @{schema=1;runs=$rows.ToArray();limits='Actual SDK factory and 10,000 sequential track creations/drops per child. Decoder/image optimizations are inactive because no frames are submitted. No log text or process identities exported. This stress result does not describe normal per-frame savings or a frame/decoder leak.'}|ConvertTo-Json -Depth 10|Set-Content "$run/summary.json" -Encoding utf8

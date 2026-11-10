@@ -446,10 +446,10 @@ mod experiment {
                         if count.decoder_caps.is_none() {
                             count.decoder_caps = pad.current_caps().map(|caps| caps.to_string());
                         }
-                        if let Some(pts) = pts {
-                            if count.decoded_at.len() < 256 {
-                                count.decoded_at.insert(pts, now);
-                            }
+                        if let Some(pts) = pts
+                            && count.decoded_at.len() < 256
+                        {
+                            count.decoded_at.insert(pts, now);
                         }
                     }
                     Probe::Sink => {

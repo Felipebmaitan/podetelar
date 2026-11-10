@@ -27,6 +27,8 @@ pub struct Encoder {
 
 pub fn encoders() -> Vec<Encoder> {
     [
+        ("nvd3d11av1enc", "NVIDIA NVENC AV1", Codec::Av1),
+        ("amfav1enc", "AMD AMF AV1", Codec::Av1),
         ("nvd3d11h265enc", "NVIDIA NVENC HEVC", Codec::H265),
         ("amfh265enc", "AMD AMF HEVC", Codec::H265),
         ("nvd3d11h264enc", "NVIDIA NVENC H.264", Codec::H264),
@@ -117,9 +119,22 @@ impl Encoding {
                     && candidate.codec == encoder.codec),
             "The selected hardware encoder is unavailable."
         );
-        let (parser, media_type, profile) = match encoder.codec {
-            Codec::H265 => ("h265parse", "video/x-h265", "main"),
-            Codec::H264 => ("h264parse", "video/x-h264", "constrained-baseline"),
+        let (media_type, profile, framing) = match encoder.codec {
+            Codec::Av1 => (
+                "video/x-av1",
+                "main",
+                "av1parse ! video/x-av1,stream-format=obu-stream,alignment=tu",
+            ),
+            Codec::H265 => (
+                "video/x-h265",
+                "main",
+                "h265parse config-interval=-1 ! video/x-h265,stream-format=byte-stream,alignment=au",
+            ),
+            Codec::H264 => (
+                "video/x-h264",
+                "constrained-baseline",
+                "h264parse config-interval=-1 ! video/x-h264,stream-format=byte-stream,alignment=au",
+            ),
         };
         // Only allowlisted factory names and bounded numeric settings enter this pipeline.
         // WGC can stop delivering buffers while a window is unchanged. Retain the
@@ -131,7 +146,7 @@ impl Encoding {
             ""
         };
         let processing = format!(
-            "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! {cadence}videorate drop-only=true max-rate={} ! d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width={},height={},framerate={}/1 ! clocksync ! tee name=raw raw. ! queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! {} name=hardware bitrate={} gop-size={} ! {media_type},profile={profile} ! {parser} config-interval=-1 ! {media_type},stream-format=byte-stream,alignment=au ! appsink name=encoded max-buffers=2 sync=false raw. ! queue name=preview_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=NV12,width=960,height=540 ! d3d11download ! video/x-raw,format=NV12 ! videoconvert ! video/x-raw,format=I420 ! jpegenc quality=85 ! appsink name=preview max-buffers=1 drop=true sync=false async=false wait-on-eos=false",
+            "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! {cadence}videorate drop-only=true max-rate={} ! d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width={},height={},framerate={}/1 ! clocksync ! tee name=raw raw. ! queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! {} name=hardware bitrate={} gop-size={} ! {media_type},profile={profile} ! {framing} ! appsink name=encoded max-buffers=2 sync=false raw. ! queue name=preview_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=NV12,width=960,height=540 ! d3d11download ! video/x-raw,format=NV12 ! videoconvert ! video/x-raw,format=I420 ! jpegenc quality=85 ! appsink name=preview max-buffers=1 drop=true sync=false async=false wait-on-eos=false",
             mode.fps,
             mode.width,
             mode.height,
@@ -197,7 +212,14 @@ impl Encoding {
             hardware.set_property("bframes", 0_u32);
             hardware.set_property("zerolatency", true);
         } else {
-            hardware.set_property_from_str("usage", "ultra-low-latency");
+            hardware.set_property_from_str(
+                "usage",
+                if encoder.codec == Codec::Av1 {
+                    "low-latency"
+                } else {
+                    "ultra-low-latency"
+                },
+            );
             hardware.set_property_from_str("rate-control", "cbr");
         }
         let sink = pipeline
@@ -425,6 +447,7 @@ impl Encoding {
                 );
                 let accepted = source.capture_encoded_frame(&EncodedVideoFrame {
                     codec: match self.codec {
+                        Codec::Av1 => EncodedVideoCodec::AV1,
                         Codec::H265 => EncodedVideoCodec::H265,
                         Codec::H264 => EncodedVideoCodec::H264,
                     },

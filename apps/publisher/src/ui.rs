@@ -561,7 +561,7 @@ impl PublisherUi {
             if let Some(encoder) = state.encoders.iter().find(|e| e.factory == self.encoder) {
                 ui.small(encoder.codec.label());
             }
-            ui.small(tr("HEVC switches to H.264 when a watcher needs compatibility."));
+            ui.small(tr("AV1 / HEVC switch to H.264 when a watcher needs compatibility."));
             bitrate_controls(ui, &mut self.quality);
             ui.separator();
             let before = self.download_budget;

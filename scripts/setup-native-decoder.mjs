@@ -118,7 +118,8 @@ if (existsSync(destination)) {
             for lib in ["gstreamer-1.0", "gstapp-1.0", "gstvideo-1.0", "gobject-2.0", "glib-2.0"] {
                 println!("cargo:rustc-link-lib=dylib={lib}");
             }
-            println!("cargo:rerun-if-env-changed=GSTREAMER_1_0_ROOT_MSVC_X86_64");`,
+            println!("cargo:rerun-if-env-changed=GSTREAMER_1_0_ROOT_MSVC_X86_64");
+            println!("cargo:rerun-if-changed=src/freedomstream_decoder.h");`,
   );
   writeFileSync(join(source, "src/freedomstream_decoder.h"), patch);
   const actual = treeHash(source);

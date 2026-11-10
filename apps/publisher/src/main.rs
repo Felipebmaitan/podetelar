@@ -420,6 +420,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
             }
             previous_watching = watching;
             if elapsed >= next_sample {
+                let mut decoders = Vec::new();
                 for participant in room.remote_participants().values() {
                     for publication in participant.track_publications().values() {
                         if let Some(track) = publication.track() && received.len() < 64 { received.insert(publication.sid().to_string(), track); }
@@ -428,6 +429,12 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                 for (sid, track) in &received {
                     let stats = match track { RemoteTrack::Video(track) => track.get_stats().await, RemoteTrack::Audio(track) => track.get_stats().await };
                     if let Ok(stats) = stats {
+                        for stat in &stats {
+                            if let livekit::webrtc::stats::RtcStats::InboundRtp(stat) = stat
+                                && !stat.inbound.decoder_implementation.is_empty() {
+                                decoders.push(serde_json::json!({"implementation": stat.inbound.decoder_implementation, "hardware": stat.inbound.power_efficient_decoder}));
+                            }
+                        }
                         let counters: Vec<_> = stats.into_iter().filter_map(|stat| if let livekit::webrtc::stats::RtcStats::InboundRtp(stat) = stat { Some(stat.inbound.bytes_received) } else { None }).collect();
                         if !counters.is_empty() {
                             let bytes = counters.into_iter().sum::<u64>();
@@ -436,7 +443,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                         }
                     }
                 }
-                samples.push(serde_json::json!({"second": elapsed, "recoveries": recovery.load(Ordering::Acquire), "connected": room.connection_state() == ConnectionState::Connected, "phaseSecond": phase, "watching": watching,"receivedBytes":byte_totals.values().sum::<u64>(), "streams": tiles.iter().map(|tile| serde_json::json!({"codec":tile.codec,"frames":tile.frames.load(Ordering::Relaxed),"watching":tile.watching,"pictureSize":tile.picture.lock().ok().and_then(|p|p.as_ref().map(|image|image.size)),"audio":tile.audio.lock().map(|m|m.clone()).unwrap_or_default()})).collect::<Vec<_>>() }));
+                samples.push(serde_json::json!({"second": elapsed, "recoveries": recovery.load(Ordering::Acquire), "connected": room.connection_state() == ConnectionState::Connected, "phaseSecond": phase, "watching": watching,"receivedBytes":byte_totals.values().sum::<u64>(), "decoders":decoders, "streams": tiles.iter().map(|tile| serde_json::json!({"codec":tile.codec,"frames":tile.frames.load(Ordering::Relaxed),"watching":tile.watching,"pictureSize":tile.picture.lock().ok().and_then(|p|p.as_ref().map(|image|image.size)),"audio":tile.audio.lock().map(|m|m.clone()).unwrap_or_default()})).collect::<Vec<_>>() }));
                 if request.consume_pictures { for tile in &tiles { if let Ok(mut picture) = tile.picture.lock() { picture.take(); } } }
                 next_sample = elapsed + 1;
             }
@@ -613,7 +620,7 @@ async fn serve_fixture(
         if active.cancelled() {
             break;
         }
-        if active.encoder().codec == Codec::H265 && playback::needs_h264(room) {
+        if active.encoder().codec != Codec::H264 && playback::needs_h264(room) {
             let config = active.fallback_config()?;
             active = active
                 .fallback(room, admission.clone(), stop, config)

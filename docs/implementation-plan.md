@@ -156,6 +156,20 @@ and 25 Mbps. Remove proven unnecessary rendering/reconfiguration work, preserve
 explicit resolution/FPS/bitrate controls, and report AMD hardware qualification
 separately. Local NVIDIA tests cannot establish an RX 7600/Siege fix.
 
+## 14. Hardware AV1 publication and native decoding — PR
+
+Add runtime-probed NVIDIA NVENC and AMD AMF AV1 publication, SDR Main-profile
+8-bit framing and native Direct3D11 AV1 decoding. Retain the SDK dav1d CPU
+decoder on receivers without an AV1 GPU decoder. Keep one publication and honor
+H.264 compatibility requests, watch intent, explicit unsubscribe and preview cadence.
+Use HEVC automatic bitrate targets until AV1 quality has been measured.
+
+Accept with actual AV1 publication and native hardware/software decode through
+the SFU, stop/rewatch traffic checks, compatibility fallback and reconnect.
+Record NVIDIA and AMD hardware results independently; quantify CPU/game impact
+for multiple software-decoded streams before promising low CPU usage. Existing
+packaging, AMD, fresh-machine and 4K120 gates remain open.
+
 ## Administrator usage dashboard — independent PR
 
 Replace the public home page with a single-administrator login and the approved

@@ -2,6 +2,6 @@
   "version": "0.3.53",
   "url": "https://static.crates.io/crates/webrtc-sys/webrtc-sys-0.3.53.crate",
   "sha256": "dbfe2c11c98bfd4839242abf9a4b8ddb16a7ff3cbf87416f40928a06886eb5c7",
-  "adapterSha256": "b214900a59eb484cae432ba6d86ea92568b83ae477f5271c9e59eac88370c24b",
-  "treeSha256": "7f1bd864f3b1ec97de3363416283ffd04bde27a96d32a667dd5b6bb0e5059076"
+  "adapterSha256": "2fcdb41a77c70a4e1d471c31e586480855106ac7cbbe95f73fc4e63a9e5c22c3",
+  "treeSha256": "ecdcab3ea93cdb9e13df81f79774320183e1f8181c25f2715aa24ada69fa2960"
 }

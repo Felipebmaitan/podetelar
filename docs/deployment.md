@@ -32,6 +32,11 @@ its `publisher.json` into `shared/publisher`, then make the files read-only to t
 app user. Keep all state directories mode 700 and credential files mode 600.
 
 Write `APP_IMAGE=freedomstream/app:COMMIT` to `shared/release.env`, mode 600.
+The administrator dashboard also requires `LIVEKIT_USAGE_IMAGE` set to the
+immutable usage-enabled SFU image. Build and configure it using
+[the private collector runbook](../deploy/livekit-usage/README.md). Coordinate
+activation with any parallel friends-beta release; preserve existing secrets,
+invitations, network-test negotiation and proxy limits.
 Use the release's `deploy/production/compose.yaml` with **both** env files. Never
 print `docker compose config` or Docker environment inspection into shared logs.
 

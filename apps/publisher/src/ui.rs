@@ -695,7 +695,16 @@ impl PublisherUi {
         if ctx.input(|i| {
             i.pointer.delta() != egui::Vec2::ZERO
                 || i.pointer.any_pressed()
-                || !i.keys_down.is_empty()
+                || i.events.iter().any(|event| {
+                    matches!(
+                        event,
+                        egui::Event::Key {
+                            pressed: true,
+                            repeat: false,
+                            ..
+                        }
+                    )
+                })
         }) {
             self.fullscreen_controls_until = Instant::now() + Duration::from_secs(3);
         }
@@ -727,15 +736,15 @@ impl PublisherUi {
                 {
                     self.set_fullscreen(&ctx, None);
                 }
-                let hud = egui::Rect::from_min_size(
-                    rect.right_bottom() - egui::vec2(108.0, 30.0),
-                    egui::vec2(102.0, 24.0),
-                );
-                ui.painter()
-                    .rect_filled(hud, 4.0, egui::Color32::from_black_alpha(190));
-                Self::bitrate(ui, hud, tile);
                 if Instant::now() < self.fullscreen_controls_until {
-                    let overlay = egui::Area::new(egui::Id::unique("fullscreen-controls"))
+                    let hud = egui::Rect::from_min_size(
+                        rect.right_bottom() - egui::vec2(108.0, 30.0),
+                        egui::vec2(102.0, 24.0),
+                    );
+                    ui.painter()
+                        .rect_filled(hud, 4.0, egui::Color32::from_black_alpha(190));
+                    Self::bitrate(ui, hud, tile);
+                    egui::Area::new(egui::Id::unique("fullscreen-controls"))
                         .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(16.0, -16.0))
                         .order(egui::Order::Foreground)
                         .show(&ctx, |ui| {
@@ -775,9 +784,6 @@ impl PublisherUi {
                                     });
                                 });
                         });
-                    if overlay.response.contains_pointer() {
-                        self.fullscreen_controls_until = Instant::now() + Duration::from_secs(3);
-                    }
                 }
                 if !tile.status.is_empty() {
                     ui.painter().text(

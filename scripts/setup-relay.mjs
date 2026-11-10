@@ -44,6 +44,8 @@ export function relayConfiguration(env, secret) {
     );
   return {
     livekit: `port: 7880
+prometheus:
+  port: 6789
 bind_addresses: [0.0.0.0]
 rtc:
   tcp_port: 7881

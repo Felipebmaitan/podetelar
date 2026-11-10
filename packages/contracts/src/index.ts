@@ -73,3 +73,31 @@ export type MediaAccess = {
   expiresInSeconds: number;
 };
 export type ApiErrorBody = { error: string };
+
+export type UsagePoint = {
+  at: number;
+  durationMs: number;
+  uploadedBytes: number;
+  downloadedBytes: number;
+};
+export type UsageReport = {
+  from: number;
+  to: number;
+  bucketMs: number;
+  lastSampleAt: number | null;
+  available: boolean;
+  uploadedBytes: number;
+  downloadedBytes: number;
+  userCount: number;
+  page: number;
+  retentionDays: number;
+  points: UsagePoint[];
+  users: {
+    id: string;
+    roomId: string;
+    displayName: string;
+    uploadedBytes: number;
+    downloadedBytes: number;
+    points: UsagePoint[];
+  }[];
+};

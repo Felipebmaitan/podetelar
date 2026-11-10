@@ -141,6 +141,24 @@ device queues. Do not substitute an arbitrary delay or compilation for actual
 audio/video timing acceptance. Verify a synchronized audiovisual fixture and
 record any remaining device/network limitations before claiming the fix.
 
+## Administrator usage dashboard — independent PR
+
+Replace the public home page with a single-administrator login and the approved
+usage dashboard. Use the existing administrator credential to issue bounded,
+HttpOnly, same-site sessions. Persist measured SFU traffic by participant session,
+with server totals, per-user activity graphs, real-time/today/seven-day/calendar
+month/custom periods, MB/GB transfer volumes and Mb/s speeds. Keep missing data
+explicit and protect every analytics API. Retain the native admission API and
+private invitation/download paths.
+
+The standard SFU lacks participant byte counters. Build the separately licensed,
+pinned LiveKit runtime with the small private collector in `deploy/livekit-usage`;
+do not expose its metrics listener. Accept with real publication/subscription
+traffic, restart/history/authentication tests, desktop/mobile browser checks and
+independent GPT-6.1-Sol high-reasoning review. Coordinate the deployment base with
+the parallel friends-beta/fullscreen release before activation; do not overwrite
+its network-test/proxy changes or existing invitations.
+
 ## Later portability
 
 After the Windows experience meets the above gates, add macOS and Linux in separate PRs. Preserve the room, invitation, subscription and preview contracts; replace platform capture/audio/encoder adapters. No cross-platform promise until each backend is tested on its actual OS.

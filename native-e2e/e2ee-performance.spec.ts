@@ -36,7 +36,7 @@ type Sent = {
 type Received = {
   samples: { second: number; streams: { frames: number }[] }[];
 };
-test("measure invitation encryption on/off at 35 Mbps with one and four watchers", async ({
+test("measure invitation encryption on/off targeting 35 Mbps with one and four watchers", async ({
   request,
   baseURL,
 }, testInfo) => {

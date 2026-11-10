@@ -56,10 +56,51 @@ path limits. The GStreamer runtime is the existing verified local runtime.
   same-SID publication attachments while the first notification is blocked. It
   runs the pinned SDK's real track/publication implementation in a separate
   generated test workspace, without modifying the app manifest or lockfile.
-- CPU measurement: pending. The opt-in `e2ee-performance.spec.ts` uses two
-  alternating-order rounds with one/four independent watcher processes, a D3D11
-  snow fixture, 1080p60 and a 35 Mbps target. It records actual delivery separately.
-  This is not four streams decoded in one app or a gaming/latency measurement.
+- Opt-in real-media CPU measurement: **1 passed**, eight scenarios across two
+  alternating-order rounds. Its achieved bitrate falls short of the requested
+  35 Mbps; see the measurement below before interpreting the CPU results.
+
+## CPU measurement and its throughput limit
+
+The local debug build used a Ryzen 7 9800X3D (16 logical processors), RTX 5080,
+D3D11 snow fixture and H.264 1920x1080 at 60 fps. A publisher and one or four
+independent native watcher processes ran on the same machine. Each scenario
+excluded the first 20 seconds, then sampled process CPU time over approximately
+eight seconds while viewers remained subscribed. Eight one-second sender metrics
+were captured inside each CPU window. The receiver allowance was 200 Mbps.
+
+**The 35 Mbps encoder target was not achieved.** Actual window delivery averaged
+8.27–10.84 Mbps across scenarios, at about 60 fps. Consequently this does not
+qualify CPU overhead at 35 Mbps, or at 35 MB/s (280 Mbps). The earlier end-of-run
+delivery statistic is retained in the raw report for transparency but is not used
+to describe throughput during CPU sampling.
+
+The table shows means across two alternating-order rounds. CPU units are percent
+of one logical processor: 100 means one fully occupied logical processor, rather
+than 100% of the whole machine. Watcher values are per process.
+
+| Watchers | Publisher, legacy | Publisher, encrypted | Watcher, legacy | Watcher, encrypted |
+| -------- | ----------------: | -------------------: | --------------: | -----------------: |
+| 1        |              8.02 |                 9.29 |          112.21 |             115.05 |
+| 4        |              8.23 |                 9.61 |          126.69 |             119.57 |
+
+![Measured CPU with and without encryption](native-e2ee-cpu.png)
+
+The publisher increment was small in this fixture. Watcher differences changed
+direction with concurrency, so these short, noisy runs do not isolate an accurate
+decryption cost. They do not justify a claim that encryption is unnoticeable while
+gaming. Four watcher processes receiving one stream are not four streams decoded
+in one application. No latency, game-frame-time or release-build result is implied.
+Use the [raw measurements](native-e2ee-cpu.json) to inspect each round and its
+actual bitrate. Performance binary SHA-256:
+`4f9ba4ae61f0c62555a5f08923b78b03f5ab395957eb12aadcf398b85ef31e81`.
+It differs from the acceptance binary only by fixture rate diagnostics.
+
+Reproduce using Node 24, a configured local SFU and the native debug executable:
+set `FREEDOMSTREAM_NATIVE_EXE` to that executable, set
+`FREEDOMSTREAM_MEASURE_E2EE=1`, then run
+`node --env-file=.env scripts/native-room-smoke.mjs e2ee-performance.spec.ts`.
+Sustained 35 Mbps performance remains an explicit qualification gate.
 
 ## External and unverified gates
 

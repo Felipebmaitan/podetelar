@@ -1864,15 +1864,19 @@ impl eframe::App for PublisherUi {
                     ((ui.available_width() - width * columns as f32 - gap * (columns - 1) as f32)
                         / 2.0)
                         .max(0.0);
-                egui::ScrollArea::vertical()
+                let scroll = egui::ScrollArea::vertical()
                     .id_salt("streams-scroll")
                     .scroll_bar_visibility(if columns == 1 && tiles.len() > 1 {
                         egui::scroll_area::ScrollBarVisibility::AlwaysVisible
                     } else {
                         egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
                     })
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
+                    .auto_shrink([false, false]);
+                #[cfg(feature = "performance-experiments")]
+                let scroll = if let Some(offset) = ui.ctx().data(|data| data.get_temp::<f32>(egui::Id::unique("deep-scroll-offset"))) {
+                    scroll.vertical_scroll_offset(offset)
+                } else { scroll };
+                scroll.show(ui, |ui| {
                         ui.horizontal_top(|ui| {
                             ui.add_space(inset);
                             egui::Grid::new("stream-grid")

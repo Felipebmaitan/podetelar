@@ -184,7 +184,7 @@ pub fn qualify_planar_transitions(
 
 pub fn run(request: Request) -> Result<()> {
     ensure!(
-        request.expected_streams <= 5
+        request.expected_streams <= 7
             && (5..=20).contains(&request.phase_seconds)
             && (1..=7).contains(&request.rounds)
             && request.steady_seconds <= 360

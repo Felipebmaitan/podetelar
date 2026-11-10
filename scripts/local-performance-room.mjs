@@ -33,7 +33,7 @@ const steadySeconds = Number(process.env.FREEDOMSTREAM_BENCH_STEADY ?? 0);
 const durationSeconds = phaseSeconds * 6 * rounds + steadySeconds;
 if (
   !/^[a-z0-9-]{1,50}$/.test(label) ||
-  ![0, 1, 4, 5].includes(count) ||
+  ![0, 1, 4, 5, 7].includes(count) ||
   ![15, 30, 60].includes(fps) ||
   !["p1080", "p2160"].includes(resolution) ||
   !["h264", "h265", "av1", "av1-software"].includes(codec) ||

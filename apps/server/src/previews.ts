@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import {
   PREVIEW_MAX_BYTES,
+  PROTECTED_PREVIEW_MAX_BYTES,
+  PROTECTED_PREVIEW_TYPE,
   PREVIEW_TTL_MS,
   THUMBNAIL_INTERVAL_MS,
   previewAttribute,
@@ -15,11 +17,11 @@ import { jpegDimensions } from "./jpeg.js";
 import { MediaUnavailable, type MediaDirectory } from "./media.js";
 import type { Rooms } from "./rooms.js";
 
-const CAPACITY = 256; // At most 64 MiB of compressed images, shared across rooms.
+const CAPACITY = 256; // Bounded to 65 MiB including protected envelopes.
 const MAX_PENDING = 16;
 const ownerPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-type Entry = { preview: Preview; bytes: Buffer | null };
+type Entry = { preview: Preview; bytes: Buffer | null; contentType: string };
 type Job = { trackSid: string; cancelled: boolean };
 const keyOf = (room: string, owner: string, kind: PreviewKind) =>
   `${room}:${owner}:${kind}`;
@@ -80,12 +82,23 @@ export class Previews {
     trackSid: string,
     bytes: Buffer,
     admitted: () => boolean,
+    protectedContent = false,
   ): Promise<Preview> {
-    const dimensions = jpegDimensions(bytes);
+    // This service has no encryption keys. Envelope checks are structural only;
+    // protected clients authenticate, bound dimensions and decode after decryption.
+    const dimensions = protectedContent
+      ? bytes.length >= 32 &&
+        bytes.length <= PROTECTED_PREVIEW_MAX_BYTES &&
+        bytes.subarray(0, 4).equals(Buffer.from("FSP1"))
+        ? { width: 960, height: 540 }
+        : null
+      : jpegDimensions(bytes);
     if (!dimensions)
       throw new PreviewError(
         400,
-        "Use a baseline JPEG no larger than 960 × 540 and 256 KiB.",
+        protectedContent
+          ? "Use a bounded version 1 protected preview envelope."
+          : "Use a baseline JPEG no larger than 960 × 540 and 256 KiB.",
       );
     this.sweep();
     const key = keyOf(room, owner, kind);
@@ -136,7 +149,11 @@ export class Previews {
       // resurrect its bytes or let an old completion overwrite a new stream.
       if (job.cancelled || !admitted())
         throw new PreviewError(401, "Open your room invitation to join.");
-      this.entries.set(key, { preview, bytes });
+      this.entries.set(key, {
+        preview,
+        bytes,
+        contentType: protectedContent ? PROTECTED_PREVIEW_TYPE : "image/jpeg",
+      });
       return preview;
     } finally {
       if (this.pending.get(key) === job) this.pending.delete(key);
@@ -147,7 +164,7 @@ export class Previews {
     owner: string,
     kind: PreviewKind,
     revision: string,
-  ): Promise<{ preview: Preview; bytes: Buffer } | null> {
+  ): Promise<{ preview: Preview; bytes: Buffer; contentType: string } | null> {
     this.sweep();
     const key = keyOf(room, owner, kind);
     const entry = this.entries.get(key);
@@ -158,7 +175,11 @@ export class Previews {
     }
     this.sweep();
     return this.entries.get(key) === entry && entry.bytes
-      ? { preview: entry.preview, bytes: entry.bytes }
+      ? {
+          preview: entry.preview,
+          bytes: entry.bytes,
+          contentType: entry.contentType,
+        }
       : null;
   }
   async remove(
@@ -191,6 +212,11 @@ export async function previewRoutes(
     { parseAs: "buffer", bodyLimit: PREVIEW_MAX_BYTES },
     (_request, body, done) => done(null, body),
   );
+  app.addContentTypeParser(
+    PROTECTED_PREVIEW_TYPE,
+    { parseAs: "buffer", bodyLimit: PROTECTED_PREVIEW_MAX_BYTES },
+    (_request, body, done) => done(null, body),
+  );
   type Own = { roomId: string; kind: string };
   const session = (id: string, cookie: string | undefined) =>
     rooms.session(id, cookie);
@@ -202,7 +228,7 @@ export async function previewRoutes(
   };
   app.post<{ Params: Own }>(
     "/api/rooms/:roomId/previews/:kind",
-    { bodyLimit: PREVIEW_MAX_BYTES },
+    { bodyLimit: PROTECTED_PREVIEW_MAX_BYTES },
     async (request, reply) => {
       const { roomId } = request.params;
       const member = session(roomId, request.cookies.fs_session);
@@ -216,11 +242,22 @@ export async function previewRoutes(
         !kind.success ||
         !sid.success ||
         !Buffer.isBuffer(request.body) ||
-        request.headers["content-type"] !== "image/jpeg"
+        !["image/jpeg", PROTECTED_PREVIEW_TYPE].includes(
+          String(request.headers["content-type"]),
+        )
+      )
+        return reply.code(400).send({
+          error: "Choose a stream and send a supported preview format.",
+        });
+      const protectedContent =
+        request.headers["content-type"] === PROTECTED_PREVIEW_TYPE;
+      if (
+        request.body.length >
+        (protectedContent ? PROTECTED_PREVIEW_MAX_BYTES : PREVIEW_MAX_BYTES)
       )
         return reply
-          .code(400)
-          .send({ error: "Choose a stream and send its JPEG preview." });
+          .code(413)
+          .send({ error: "Preview exceeds its size limit." });
       try {
         return await previews.put(
           roomId,
@@ -229,6 +266,7 @@ export async function previewRoutes(
           sid.data,
           request.body,
           () => Boolean(session(roomId, request.cookies.fs_session)),
+          protectedContent,
         );
       } catch (error) {
         const failure = errorResponse(error);
@@ -283,7 +321,7 @@ export async function previewRoutes(
             .send({ error: "Open your room invitation to join." });
         if (!rooms.active(roomId, owner))
           return reply.code(404).send({ error: "Preview unavailable." });
-        return reply.type("image/jpeg").send(entry.bytes);
+        return reply.type(entry.contentType).send(entry.bytes);
       } catch (error) {
         const failure = errorResponse(error);
         return reply.code(failure.status).send({ error: failure.message });

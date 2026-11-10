@@ -60,6 +60,7 @@ type Cancellation = Arc<CaptureCancellation>;
 
 // Unlike queued commands, this signal can preempt a network join already being
 // awaited. A cancelled stage retains ownership until it can release its result.
+#[derive(Clone)]
 struct JoinCancellation(watch::Sender<u64>);
 impl JoinCancellation {
     fn new() -> Self {
@@ -148,6 +149,7 @@ pub struct SharingSelection {
 #[derive(Clone)]
 pub struct Snapshot {
     pub connection: &'static str,
+    pub protected: bool,
     pub room_name: String,
     pub error: String,
     pub busy: bool,
@@ -173,6 +175,7 @@ impl Default for Snapshot {
     fn default() -> Self {
         Self {
             connection: "disconnected",
+            protected: false,
             room_name: String::new(),
             error: String::new(),
             busy: false,
@@ -256,6 +259,8 @@ impl Controller {
         let cancellation = Arc::new(CaptureCancellation::default());
         let state = snapshot.clone();
         let cancel = cancellation.clone();
+        let join_cancellation = JoinCancellation::new();
+        let reconnect_cancellation = join_cancellation.clone();
         std::thread::Builder::new()
             .name("freedomstream-room".into())
             .spawn(move || {
@@ -263,7 +268,9 @@ impl Controller {
                     .enable_all()
                     .build();
                 match runtime {
-                    Ok(runtime) => runtime.block_on(worker(receiver, state, cancel)),
+                    Ok(runtime) => {
+                        runtime.block_on(worker(receiver, state, cancel, reconnect_cancellation))
+                    }
                     Err(_) => update(&state, |state| {
                         state.error = "Could not start the publisher worker.".into()
                     }),
@@ -274,7 +281,7 @@ impl Controller {
             commands,
             snapshot,
             cancellation,
-            join_cancellation: JoinCancellation::new(),
+            join_cancellation,
         }
     }
 
@@ -499,9 +506,14 @@ impl Stream {
         let metrics = Arc::new(Mutex::new(Metrics::default()));
         let counters = metrics.clone();
         let cancel = stop.clone();
-        // The pump owns capture before publication awaits the network. Stop and
-        // terminal-room events can release devices while that request is pending.
+        // Own capture before publication, but do not deliver a frame to RTC until
+        // the requested cryptor is installed and locally verified.
+        let ready = Arc::new(AtomicBool::new(false));
+        let publication_ready = ready.clone();
         let task = tokio::task::spawn_blocking(move || {
+            while !publication_ready.load(Ordering::Acquire) && !cancel.load(Ordering::Acquire) {
+                std::thread::sleep(Duration::from_millis(2));
+            }
             let result = encoding.run(Some(rtc_source), cancel.clone(), counters, None);
             outgoing.disable();
             cancel.store(true, Ordering::Release);
@@ -526,8 +538,13 @@ impl Stream {
                 .publish_track(LocalTrack::Video(track), options),
         )
         .await;
-        let _publication = match publication {
-            Ok(Ok(publication)) => publication,
+        let publication = match publication {
+            Ok(Ok(publication))
+                if crate::protection::Session::verify_local_publication(room, &publication)
+                    .is_ok() =>
+            {
+                publication
+            }
             other => {
                 stop.store(true, Ordering::Release);
                 let _ = task.await;
@@ -538,6 +555,8 @@ impl Stream {
                 bail!("Media publication failed. Join the room again to retry.");
             }
         };
+        let _ = publication;
+        ready.store(true, Ordering::Release);
         let delivery = Arc::new(Mutex::new(delivery::Metrics::default()));
         let delivery_task = tokio::spawn(delivery::monitor(
             video.clone(),
@@ -572,7 +591,13 @@ impl Stream {
             let outgoing = track.clone();
             let cancel = active.stop.flag.clone();
             let counters = active.audio_metrics.clone();
+            let ready = Arc::new(AtomicBool::new(false));
+            let publication_ready = ready.clone();
             let task = tokio::task::spawn_blocking(move || {
+                while !publication_ready.load(Ordering::Acquire) && !cancel.load(Ordering::Acquire)
+                {
+                    std::thread::sleep(Duration::from_millis(2));
+                }
                 let result = audio::run(
                     audio_choice,
                     exclusions,
@@ -601,7 +626,11 @@ impl Stream {
             )
             .await;
             match publication {
-                Ok(Ok(_publication)) => {
+                Ok(Ok(publication))
+                    if crate::protection::Session::verify_local_publication(room, &publication)
+                        .is_ok() =>
+                {
+                    ready.store(true, Ordering::Release);
                     active.audio = Some((task, track));
                 }
                 _ => {
@@ -796,7 +825,7 @@ impl Session {
         else {
             return Ok(None);
         };
-        let options = connection::options(route);
+        let options = admission.room_options(route);
         let Some((room, mut events)) = ticket
             .run(
                 async move {
@@ -816,6 +845,10 @@ impl Session {
         else {
             return Ok(None);
         };
+        if let Err(error) = admission.announce_protection(&room).await {
+            let _ = room.close().await;
+            return Err(error);
+        }
         let room = Arc::new(room);
         let media_room = room.clone();
         let expected_audio = Arc::new(AtomicBool::new(false));
@@ -908,6 +941,7 @@ async fn worker(
     mut commands: mpsc::Receiver<QueuedCommand>,
     snapshot: Arc<Mutex<Snapshot>>,
     cancellation: Cancellation,
+    reconnect_cancellation: JoinCancellation,
 ) {
     let mut sources = sources::enumerate();
     update(&snapshot, |state| {
@@ -927,11 +961,43 @@ async fn worker(
     let mut download_budget = None;
     let mut probe: Option<ConnectionProbe> = None;
     let mut capacity = crate::network::Capacity::default();
+    let mut secure_rejoin: Option<(String, String, connection::Route)> = None;
+    let mut rejoin_attempts = 0_u8;
+    let mut rejoin_after = std::time::Instant::now();
     let mut tick = tokio::time::interval(Duration::from_millis(500));
     loop {
         let queued = tokio::select! {
             command = commands.recv() => command.unwrap_or(QueuedCommand { command: Command::Shutdown, capture: None, join: None }),
             _ = tick.tick() => {
+                // A protected full RTC restart is closed by the patched SDK.
+                // Re-admit with fresh sender material, retaining explicit watch
+                // intent but never automatically restarting capture.
+                if secure_rejoin.is_some() && commands.is_empty() && rejoin_attempts < 3
+                    && std::time::Instant::now() >= rejoin_after
+                    && session.as_ref().is_none_or(|joined| joined.room.connection_state() == ConnectionState::Disconnected) {
+                    let (invitation, name, route) = secure_rejoin.as_ref().unwrap().clone();
+                    rejoin_attempts += 1;
+                    if let Some(job) = probe.take() { job.abort(); }
+                    if let (Some(active), Some(joined)) = (stream.take(), session.as_ref()) { let _ = active.stop(&joined.room).await; }
+                    if let Some(joined) = session.take() { joined.close().await; }
+                    playback.suspend();
+                    update(&snapshot, |state| { state.connection = "connecting"; state.busy = true; state.sharing = false; state.self_preview = Arc::default(); state.active_selection = None; state.tiles.clear(); });
+                    let ticket = reconnect_cancellation.ticket();
+                    match Session::join(&invitation, &name, route, snapshot.clone(), cancellation.clone(), playback.recovery_signal(), ticket).await {
+                        Ok(Some(joined)) => {
+                            update(&snapshot, |state| { state.connection = "connected"; state.busy = false; state.room_name = joined.admission.room_name.clone(); state.error = "Secure connection restored. Sharing is stopped; start it again when ready.".into(); });
+                            session = Some(joined);
+                        }
+                        Ok(None) => { secure_rejoin = None; update(&snapshot, |state| {state.connection="disconnected";state.busy=false;}); }
+                        Err(error) => {
+                            let denied = error.to_string().contains("access was denied");
+                            if denied { secure_rejoin = None; }
+                            rejoin_after = std::time::Instant::now() + Duration::from_secs(3);
+                            update(&snapshot, |state| {state.connection="disconnected";state.busy=false;state.error=if denied {"Room access ended. Open a current private invitation."} else if rejoin_attempts>=3 {"Secure reconnection failed. Join again to retry."} else {"Secure connection interrupted. Retrying with fresh encryption keys…"}.into();});
+                        }
+                    }
+                    continue;
+                }
                 if probe.as_ref().is_some_and(|job|job.is_finished()) && let Some(job)=probe.take() {
                         let mut result=job.finish().await.unwrap_or_else(|_|crate::network::Capacity{error:"Connection measurement unavailable. Try again in Advanced.".into(),..Default::default()});
                         result.download_bps=result.download_bps.or(capacity.download_bps);
@@ -997,6 +1063,8 @@ async fn worker(
                     name,
                     route,
                 } => {
+                    secure_rejoin = None;
+                    rejoin_attempts = 0;
                     if let Some(job) = probe.take() {
                         job.abort();
                     }
@@ -1031,6 +1099,9 @@ async fn worker(
                     )
                     .await?;
                     if let Some(joined) = joined {
+                        if joined.admission.protection.is_some() {
+                            secure_rejoin = Some((invitation.clone(), name.clone(), route));
+                        }
                         let admission = joined.admission.clone();
                         probe = Some(ConnectionProbe(tokio::spawn(async move {
                             admission.measure_connection().await
@@ -1038,6 +1109,7 @@ async fn worker(
                         update(&snapshot, |state| {
                             state.connection = "connected";
                             state.room_name = joined.admission.room_name.clone();
+                            state.protected = joined.admission.protection.is_some();
                             state.testing_connection = true;
                         });
                         session = Some(joined);
@@ -1141,6 +1213,7 @@ async fn worker(
                     update(&snapshot, |state| state.sharing = false);
                 }
                 Command::Leave | Command::Shutdown => {
+                    secure_rejoin = None;
                     if let Some(job) = probe.take() {
                         job.abort();
                     }

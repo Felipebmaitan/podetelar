@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, bail, ensure};
 use reqwest::{Client, Response, redirect::Policy};
 use serde::{Deserialize, de::DeserializeOwned};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use url::Url;
 
 // Credentials stay in this client's in-memory cookie jar. Never derive Debug
@@ -12,6 +12,7 @@ pub struct Admission {
     origin: Url,
     room_id: String,
     pub room_name: String,
+    pub protection: Option<Arc<crate::protection::Session>>,
 }
 struct ProbeLease {
     client: Client,
@@ -57,6 +58,12 @@ pub struct MediaAccess {
 #[derive(Deserialize)]
 struct Session {
     room: Room,
+    participant: Participant,
+}
+
+#[derive(Deserialize)]
+struct Participant {
+    id: String,
 }
 
 #[derive(Deserialize)]
@@ -68,12 +75,22 @@ struct Invitation {
     origin: Url,
     room_id: String,
     secret: String,
+    protection: Option<crate::protection::RoomSecret>,
 }
 
 impl Invitation {
     fn parse(input: &str) -> Result<Self> {
         ensure!(input.len() <= 2048, "Invitation link is too long.");
-        let mut url = Url::parse(input.trim()).context("Enter a valid invitation link.")?;
+        let (input, protection) = crate::protection::unwrap_invitation(input.trim())?;
+        Self::parse_legacy(&input, protection)
+    }
+
+    fn parse_legacy(
+        input: &str,
+        protection: Option<crate::protection::RoomSecret>,
+    ) -> Result<Self> {
+        let mut url = Url::parse(input.trim())
+            .map_err(|_| anyhow::anyhow!("Enter a valid invitation link."))?;
         let local = matches!(
             url.host_str(),
             Some("localhost" | "127.0.0.1" | "[::1]" | "::1")
@@ -106,6 +123,7 @@ impl Invitation {
             origin: url,
             room_id,
             secret,
+            protection,
         })
     }
 }
@@ -119,6 +137,14 @@ fn valid_token(value: &str, length: usize) -> bool {
 
 pub fn valid_invitation(input: &str) -> bool {
     Invitation::parse(input).is_ok()
+}
+
+pub fn invitation_context(input: &str) -> Result<(String, String)> {
+    let invitation = Invitation::parse_legacy(input, None)?;
+    Ok((
+        invitation.origin.origin().ascii_serialization(),
+        invitation.room_id,
+    ))
 }
 
 pub fn media_diagnostic(error: impl std::fmt::Display) -> String {
@@ -284,11 +310,18 @@ impl Admission {
             .await
             .map_err(|_| anyhow::anyhow!("Could not reach the room server."))?;
         let session: Session = read_response(response).await?;
+        let protection = invitation
+            .protection
+            .map(|secret| {
+                crate::protection::Session::new(secret, session.participant.id).map(Arc::new)
+            })
+            .transpose()?;
         Ok(Self {
             client,
             origin: invitation.origin,
             room_id: invitation.room_id,
             room_name: session.room.name,
+            protection,
         })
     }
 
@@ -334,7 +367,30 @@ impl Admission {
         let _ = self.post("leave").await;
     }
 
+    pub fn room_options(&self, route: crate::connection::Route) -> livekit::RoomOptions {
+        let mut options = crate::connection::options(route);
+        if let Some(protection) = &self.protection {
+            protection.configure(&mut options);
+        }
+        options
+    }
+
+    pub async fn announce_protection(&self, room: &livekit::Room) -> Result<()> {
+        if let Some(protection) = &self.protection {
+            protection.announce(room).await?;
+        }
+        Ok(())
+    }
+
     pub async fn send_preview(&self, sid: &str, bytes: Vec<u8>) -> PreviewDelivery {
+        let (bytes, content_type) = if let Some(protection) = &self.protection {
+            let Ok(bytes) = protection.seal_preview(sid, bytes) else {
+                return PreviewDelivery::Denied;
+            };
+            (bytes, crate::protection::PREVIEW_TYPE)
+        } else {
+            (bytes, "image/jpeg")
+        };
         let url = self
             .origin
             .join(&format!("api/rooms/{}/previews/screen", self.room_id))
@@ -343,7 +399,7 @@ impl Admission {
             .client
             .post(url)
             .header("Origin", self.origin.origin().ascii_serialization())
-            .header("Content-Type", "image/jpeg")
+            .header("Content-Type", content_type)
             .header("X-Track-Sid", sid)
             .timeout(Duration::from_secs(5))
             .body(bytes)
@@ -372,6 +428,7 @@ impl Admission {
         &self,
         owner: &str,
         revision: &str,
+        sid: &str,
     ) -> Result<eframe::egui::ColorImage> {
         ensure!(
             owner.len() == 36
@@ -391,14 +448,37 @@ impl Admission {
             .await
             .map_err(|_| anyhow::anyhow!("Preview is unavailable."))?;
         ensure!(response.status().is_success(), "Preview is unavailable.");
+        let expected_type = if self.protection.is_some() {
+            crate::protection::PREVIEW_TYPE
+        } else {
+            "image/jpeg"
+        };
+        ensure!(
+            response
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                == Some(expected_type),
+            "Unexpected preview protection."
+        );
         let mut bytes = Vec::new();
         while let Some(chunk) = response.chunk().await? {
             ensure!(
-                bytes.len() + chunk.len() <= 262_144,
+                bytes.len() + chunk.len()
+                    <= if self.protection.is_some() {
+                        crate::protection::MAX_PREVIEW
+                    } else {
+                        262_144
+                    },
                 "Preview exceeds its size limit."
             );
             bytes.extend_from_slice(&chunk);
         }
+        let bytes = if let Some(protection) = &self.protection {
+            protection.open_preview(owner, sid, bytes)?
+        } else {
+            bytes
+        };
         let dimensions =
             image::ImageReader::with_format(std::io::Cursor::new(&bytes), image::ImageFormat::Jpeg)
                 .into_dimensions()?;

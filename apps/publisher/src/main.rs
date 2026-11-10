@@ -9,6 +9,7 @@ mod locale;
 mod network;
 mod playback;
 mod preview;
+mod protection;
 mod publisher;
 mod quality;
 mod settings;
@@ -74,6 +75,25 @@ fn run() -> Result<()> {
     gstreamer::init()
         .context("GStreamer could not initialize. Check the native runtime installation.")?;
     match std::env::args().nth(1).as_deref() {
+        Some("--protect-invitation") => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Request {
+                invitation_url: String,
+            }
+            let mut input = String::new();
+            std::io::stdin().take(4097).read_to_string(&mut input)?;
+            ensure!(
+                input.len() <= 4096,
+                "Protected invitation input is too large."
+            );
+            let request: Request = serde_json::from_str(&input)
+                .map_err(|_| anyhow::anyhow!("Invalid protected invitation input."))?;
+            println!(
+                "{}",
+                serde_json::json!({"invitationUrl":protection::protect_invitation(&request.invitation_url)?})
+            );
+        }
         Some("--probe") => println!(
             "{}",
             serde_json::json!({"encoders": encoding::encoders(), "decoders": playback::decoder_codecs(), "sourceCount": sources::enumerate().len(), "runtime": gstreamer::version_string().to_string()})
@@ -356,7 +376,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     let (room, mut events) = Room::connect(
         &access.server_url,
         &access.token,
-        connection::options(connection::Route::Auto),
+        admission.room_options(connection::Route::Auto),
     )
     .await
     .map_err(|error| {
@@ -365,6 +385,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
             admission::media_diagnostic(error)
         )
     })?;
+    admission.announce_protection(&room).await?;
     let mut playback = playback::Playback::new();
     let recovery = playback.recovery_signal();
     let events_recovery = recovery.clone();
@@ -493,7 +514,7 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     let admission =
         admission::Admission::join(&request.invitation_url, &request.display_name).await?;
     let access = admission.media_access().await?;
-    let options = connection::options(request.route);
+    let options = admission.room_options(request.route);
     let (room, mut events) = tokio::time::timeout(
         Duration::from_secs(15),
         Room::connect(&access.server_url, &access.token, options),
@@ -506,6 +527,7 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             admission::media_diagnostic(error)
         )
     })?;
+    admission.announce_protection(&room).await?;
     let cancellation = Arc::new(publisher::CaptureCancellation::default());
     let stop = cancellation.register();
     let cancel = cancellation.clone();

@@ -3,6 +3,8 @@
   "url": "https://static.crates.io/crates/livekit/livekit-0.10.1.crate",
   "sha256": "9ae9e2c73d80a565c359ceb014552f84a588f7b14f6817103c1a1715c8cda00c",
   "originalSourceSha256": "d600f68dfb6456401d2f8a047413860fca8702b10885812e60ef80161b7424a7",
-  "patchedSourceSha256": "1b93356da1e3a701b53e9ee02acd84a7bf2e6bce3fd78af1b196b0ea4cefadde",
-  "treeSha256": "84033a355de4533f2e671bc0269a36f18dccd04163655331281752cfb6f97256"
+  "patchedSourceSha256": "5d65565c3c957fc9f1b1353daaa17bb861c26e9205ac64675c50f6191cb3d24a",
+  "treeSha256": "687bbd89d064893861e56f8f9f83b0c066c0f6c31f6a4ff2df252c5f86986ac1",
+  "roomOriginalSourceSha256": "c211cb8a866c9c3a49f0c1394622ed35cf24d2223428e7d3db41be3a1486b88b",
+  "roomPatchedSourceSha256": "c4bc91f68c59576df27930c102c6a3350bd0b6c8f9393c33b336aee449bea8bc"
 }

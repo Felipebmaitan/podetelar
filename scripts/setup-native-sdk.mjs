@@ -23,14 +23,42 @@ const base = join(repository, ".local/native-sdk");
 const destination = join(base, "livekit");
 const hash = (data) => createHash("sha256").update(data).digest("hex");
 
-// This is the complete compatibility patch. Keep it narrow and remove it when
-// the pinned SDK announces NativeAudioSource's stereo channels upstream.
+// Complete pinned compatibility/security patch. Never trust SFU encryption
+// negotiation to disable a client-requested frame cryptor.
 const marker = "            LocalTrack::Audio(_audio_track) => {\n";
 const addition = `                if let libwebrtc::audio_source::RtcAudioSource::Native(source) = _audio_track.rtc_source() {
                     if source.num_channels() == 2 {
                         req.audio_features.push(proto::AudioTrackFeature::TfStereo as i32);
                     }
                 }
+`;
+const encryptionMarker =
+  "        let track_info = self.inner.rtc_engine.add_track(req).await?;\n";
+const encryptionCheck = `        if EncryptionType::from(track_info.encryption()) != self.local.encryption_type {
+            track.disable();
+            return Err(RoomError::Internal("SFU changed requested track encryption".into()));
+        }
+`;
+const restartingMarker =
+  "    fn handle_restarting(self: &Arc<Self>, tx: oneshot::Sender<()>) {\n";
+const restartingCheck = `        // Full reconnect creates new RTP cryptors. Retained keys must never be
+        // reused with reset per-cryptor IV counters; require a fresh client Room.
+        if self.e2ee_manager.enabled() {
+            for publication in self.local_participant.track_publications().values() {
+                if let Some(track) = publication.track() { track.disable(); }
+            }
+            let session = self.clone();
+            tokio::spawn(async move { let _ = session.close(DisconnectReason::ClientInitiated).await; });
+            let _ = tx.send(());
+            return;
+        }
+`;
+const restartedMarker =
+  "    fn handle_restarted(self: &Arc<Self>, tx: oneshot::Sender<()>) {\n";
+const restartedCheck = `        if self.e2ee_manager.enabled() {
+            let _ = tx.send(());
+            return;
+        }
 `;
 
 function treeHash(root) {
@@ -59,7 +87,9 @@ if (existsSync(destination)) {
     throw new Error(
       "The generated native SDK differs from its pinned patched source. Inspect it before replacing it.",
     );
-  console.log("Kept the verified native SDK with the stereo publication fix.");
+  console.log(
+    "Kept the verified native SDK with stereo and strict encryption fixes.",
+  );
 } else {
   const downloads = join(repository, ".local/downloads");
   mkdirSync(downloads, { recursive: true });
@@ -127,10 +157,31 @@ if (existsSync(destination)) {
     throw new Error(
       "The native SDK patch no longer matches its pinned source.",
     );
-  const patched = original.replace(marker, marker + addition);
+  if (original.split(encryptionMarker).length !== 2)
+    throw new Error("Native SDK encryption patch marker mismatch.");
+  const patched = original
+    .replace(marker, marker + addition)
+    .replace(encryptionMarker, encryptionMarker + encryptionCheck);
   if (hash(patched) !== pin.patchedSourceSha256)
     throw new Error("The native SDK patch checksum did not match the pin.");
   writeFileSync(target, patched);
+  const roomTarget = join(source, "src/room/mod.rs");
+  const roomOriginal = readFileSync(roomTarget, "utf8").replaceAll(
+    "\r\n",
+    "\n",
+  );
+  if (
+    hash(roomOriginal) !== pin.roomOriginalSourceSha256 ||
+    roomOriginal.split(restartingMarker).length !== 2 ||
+    roomOriginal.split(restartedMarker).length !== 2
+  )
+    throw new Error("Native SDK protected reconnect patch marker mismatch.");
+  const roomPatched = roomOriginal
+    .replace(restartingMarker, restartingMarker + restartingCheck)
+    .replace(restartedMarker, restartedMarker + restartedCheck);
+  if (hash(roomPatched) !== pin.roomPatchedSourceSha256)
+    throw new Error("Native SDK protected reconnect patch checksum mismatch.");
+  writeFileSync(roomTarget, roomPatched);
   const actualTree = treeHash(source);
   if (actualTree !== pin.treeSha256)
     throw new Error(
@@ -149,6 +200,6 @@ if (existsSync(destination)) {
   renameSync(resolvedSource, destination);
   rmdirSync(stage); // Empty after moving the one pinned package; no recursive deletion.
   console.log(
-    "Prepared the verified native SDK with the stereo publication fix.",
+    "Prepared the verified native SDK with stereo and strict encryption fixes.",
   );
 }

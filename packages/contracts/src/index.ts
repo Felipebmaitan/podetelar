@@ -2,6 +2,10 @@ import { z } from "zod";
 
 export const THUMBNAIL_INTERVAL_MS = 60_000;
 export const PREVIEW_MAX_BYTES = 262_144;
+// Protected previews contain an authenticated envelope around the bounded JPEG.
+export const PROTECTED_PREVIEW_MAX_BYTES = PREVIEW_MAX_BYTES + 4096;
+export const PROTECTED_PREVIEW_TYPE =
+  "application/vnd.freedomstream.preview-v1";
 export const PREVIEW_MAX_WIDTH = 960;
 export const PREVIEW_MAX_HEIGHT = 540;
 export const PREVIEW_TTL_MS = 180_000;

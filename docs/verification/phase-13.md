@@ -86,7 +86,37 @@ Primary sources:
 [Fullscreen](images/phase-13/fullscreen.png) ·
 [Restored window](images/phase-13/restored.png)
 
-Full packaged/media and public deployment checks, independent review and any
-delivery identity are recorded as they complete. Physical wired A/V sync remains
+The follow-up idle capture holds an injected egui pointer at `(80, 1050)`, over
+the fullscreen controls, for four seconds. Both controls and the bitrate label
+disappear; native fullscreen remains true and two watch intents remain selected.
+This uses the native renderer's raw-input test hook, not desktop automation. The
+temporary hook is removed from production source.
+
+[Fullscreen after inactivity](images/phase-13/fullscreen-idle.png)
+
+## Additional checks
+
+- A real native request against the updated local server measured upload at
+  199.1 Mbps, above the old ceiling; download measured 44.2 Mbps while builds were
+  running. Capacity reflects that run's path/load, not an advertised line speed.
+- The existing `39aaffe48b53` portable client completed a transfer against the new
+  local server (upload 99.5 Mbps), verifying the legacy path with the actual EXE.
+- Two new native clients completed concurrent tests through the still-deployed
+  old 100 Mbps server. Their downloads were 56.2/100 Mbps and uploads 7.1/94.9 Mbps.
+  These were native QA binaries, not the final portable package. The lower results
+  are retained; no speed guarantee is inferred.
+- The `9a01268` portable package passed isolated/concurrent extraction, GUI
+  subsystem, runtime/payload/source integrity, fallback probe, cache preservation
+  and damage rejection. Its eight actual native media checks all passed in 3.4
+  minutes: HEVC/H.264, fallback, watch/stop/previews, stereo exclusion, reconnect
+  and aggregate allowance. The later fullscreen-only idle change is additionally
+  covered by the renderer capture above. Final portable identity is recorded below.
+- Independent GPT-6.1-Sol/high review approved `9447d0b..9a01268` with no actionable
+  findings and reran actual HTTP probe/configuration tests. The subsequent small UI
+  follow-up removes hover/held-key keepalive and hides the fullscreen bitrate label
+  on the same inactivity timer. It does not change capture, audio or admission.
+
+Public deployment checks and delivery identity are recorded as they complete.
+Physical wired A/V sync remains
 open from the previous beta. AMD game/frame-time acceptance, fresh-PC behavior,
 multi-GPU capture and 4K120 remain separate field gates.

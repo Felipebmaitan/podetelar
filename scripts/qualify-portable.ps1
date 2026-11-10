@@ -22,7 +22,25 @@ function Assert-GuiSubsystem([string]$Path) {
         throw 'A shipped executable does not use the Windows GUI subsystem.'
     }
 }
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class FreedomStreamIconCheck {
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    public static extern uint ExtractIconExW(string file, int index, IntPtr large, IntPtr small, uint count);
+}
+'@
+function Assert-AppResources([string]$Path) {
+    $iconCount = [FreedomStreamIconCheck]::ExtractIconExW($Path, -1, [IntPtr]::Zero, [IntPtr]::Zero, 0)
+    if ($iconCount -lt 1 -or $iconCount -eq [uint32]::MaxValue) {
+        throw 'A shipped executable has no embedded Windows icon.'
+    }
+    if ([Diagnostics.FileVersionInfo]::GetVersionInfo($Path).ProductName -ne 'FreedomStream') {
+        throw 'A shipped executable has no FreedomStream product metadata.'
+    }
+}
 Assert-GuiSubsystem $copy
+Assert-AppResources $copy
 
 function Start-Portable([string]$Arguments) {
     $info = [Diagnostics.ProcessStartInfo]::new()
@@ -65,6 +83,7 @@ try {
     if ($cache.Count -ne 1) { throw 'First launches did not converge on one cache.' }
     $runtime = $cache[0].FullName
     Assert-GuiSubsystem (Join-Path $runtime 'bin/freedomstream-publisher.exe')
+    Assert-AppResources (Join-Path $runtime 'bin/freedomstream-publisher.exe')
     $manifest = Get-Content -LiteralPath (Join-Path $runtime 'release.json') -Raw | ConvertFrom-Json
     foreach ($file in $manifest.files.PSObject.Properties) {
         $path = Join-Path $runtime $file.Name
@@ -89,13 +108,20 @@ try {
     [void](Finish-Portable (Start-Portable '--probe') $false)
     $env:LOCALAPPDATA = $localData
     # Reject damage before attempting extraction; no UI dialog for CLI failures.
-    $stream = [IO.File]::Open($copy, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite)
+    # Resource inspection and Windows image loading can retain a handle to the
+    # original executable after its process exits. Damage an unused copy so
+    # those handles cannot race the write, while preserving the rejection test.
+    $damageCopy = Join-Path $working 'DamagedFreedomStream.exe'
+    $stream = [IO.File]::Open($damageCopy, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     try {
+        $source = [IO.File]::OpenRead($copy)
+        try { $source.CopyTo($stream) } finally { $source.Dispose() }
         [void]$stream.Seek(-57, [IO.SeekOrigin]::End)
         $value = $stream.ReadByte()
         [void]$stream.Seek(-1, [IO.SeekOrigin]::Current)
         $stream.WriteByte($value -bxor 1)
     } finally { $stream.Dispose() }
+    $copy = $damageCopy
     [void](Finish-Portable (Start-Portable '--probe') $false)
     Write-Host 'Portable qualification passed: isolated-path first launch, concurrent extraction, runtime probe, payload/source integrity, cache preservation, explicit extraction and damage rejection. This is not a fresh-PC or disconnected-network test.'
     Write-Host "Retained qualification evidence: $qualificationRoot"

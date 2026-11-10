@@ -499,3 +499,54 @@
     font-size: 25px;
   }
 }
+
+.admin-nav {
+  display: flex;
+  gap: 12px;
+  padding: 20px 3.5% 0;
+}
+.admin-nav [aria-pressed="true"] {
+  background: #302b42;
+  border-color: #b4a0fa;
+}
+.admin-room-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.admin-room-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 20px 0;
+  border-bottom: 1px solid #363b47;
+  overflow-wrap: anywhere;
+}
+.admin-room-list h2 {
+  font-size: 18px;
+}
+.admin-room-list p {
+  margin-top: 6px;
+  color: #a8afbe;
+}
+.admin-room-create,
+.admin-room-created {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.admin-room-create .admin-primary {
+  align-self: flex-start;
+}
+.admin-invitation-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.admin-invitation-row input {
+  flex: 1;
+  width: 100%;
+}

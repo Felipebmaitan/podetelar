@@ -1,6 +1,6 @@
 use crate::preview::{self, Frame, Gate, Latest};
 pub use crate::quality::{Codec, Mode};
-use crate::quality::{EncoderBudget, RateControl};
+use crate::quality::{EncoderBudget, RateControl, ReinitializingBudget};
 use crate::sources::{self, Source, Target};
 use anyhow::{Context, Result, bail, ensure};
 use gstreamer::{self as gst, prelude::*};
@@ -52,6 +52,7 @@ pub struct Metrics {
     pub preview_frames: u64,
     pub requested_bitrate: u64,
     pub encoded_bps: u64,
+    pub encoder_bitrate_changes: u64,
 }
 
 // Owns the native pipeline. Every return/error path transitions it to NULL.
@@ -318,6 +319,12 @@ impl Encoding {
         let mut keyframe_count = 0;
         let mut feedback = None;
         let mut budget = EncoderBudget::new(counters.encoder_bitrate);
+        let reinitializing = self
+            .encoder
+            .factory()
+            .is_some_and(|f| f.name().starts_with("amf"));
+        let mut amf_budget =
+            ReinitializingBudget::new(counters.encoder_bitrate, self.rate.requested());
         let mut first_feedback = false;
         let mut last_rate_update = Instant::now();
         let mut reported_bytes = 0;
@@ -359,11 +366,17 @@ impl Encoding {
             {
                 // AMF can internally reconfigure on property changes. Coalesce
                 // periodic BWE updates; user edits and first feedback apply now.
-                let effective = budget.update(&self.rate, feedback) / 1000 * 1000;
+                let effective = if reinitializing {
+                    amf_budget.update(&self.rate, feedback, started.elapsed())
+                } else {
+                    budget.update(&self.rate, feedback)
+                } / 1000
+                    * 1000;
                 if effective != counters.encoder_bitrate {
                     self.encoder
                         .set_property("bitrate", (effective / 1000) as u32);
                     counters.encoder_bitrate = effective;
+                    counters.encoder_bitrate_changes += 1;
                 }
                 last_rate_update = Instant::now();
                 first_feedback = false;

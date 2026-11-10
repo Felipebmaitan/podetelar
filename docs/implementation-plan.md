@@ -141,6 +141,21 @@ device queues. Do not substitute an arbitrary delay or compilation for actual
 audio/video timing acceptance. Verify a synchronized audiovisual fixture and
 record any remaining device/network limitations before claiming the fix.
 
+## 13. Fullscreen viewing, bandwidth headroom and game performance — PR
+
+Build on the feedback beta in a separate dependent branch. Add native borderless
+fullscreen for a selected watched stream, explicit controls and Escape/F11 exit,
+without changing other subscriptions. Show measured received video bitrate at the
+bottom right of watched tiles and fullscreen views. Raise the negotiated test
+ceiling to 200 Mbps while retaining the 100 Mbps encoding ceiling and network
+headroom. Keep legacy 100 Mbps clients compatible, and bound transfer bytes,
+concurrency and proxy settings accordingly.
+
+Investigate the reported RX 7600 whole-monitor HEVC capture stutter at 1080p120
+and 25 Mbps. Remove proven unnecessary rendering/reconfiguration work, preserve
+explicit resolution/FPS/bitrate controls, and report AMD hardware qualification
+separately. Local NVIDIA tests cannot establish an RX 7600/Siege fix.
+
 ## Administrator usage dashboard — independent PR
 
 Replace the public home page with a single-administrator login and the approved

@@ -380,7 +380,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     ensure!(
         request
             .download_limit_mbps
-            .is_none_or(|mbps| (1..=100).contains(&mbps)),
+            .is_none_or(|mbps| (1..=200).contains(&mbps)),
         "Invalid download allowance."
     );
     playback.set_budget(request.download_limit_mbps.map(|mbps| mbps * 1_000_000));

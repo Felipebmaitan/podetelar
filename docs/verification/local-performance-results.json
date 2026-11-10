@@ -91302,6 +91302,637 @@
       }
     },
     {
+      "path": "packaged-pe-audit.json",
+      "report": {
+        "schema": 1,
+        "frozen": {
+          "path": ".local/experiments/final-selected-v4/freedomstream-publisher.exe",
+          "sha256": "fdf9527dab646261d9c6ec8019925dd9f4bc9135365026326e6f93e97c04fa2d",
+          "normalizedSha256": "c975e947f359a21719eff1bc407194a3016756088d67cd35bea111fe8426b634",
+          "removed": [
+            {
+              "kind": "COFF timestamp",
+              "offset": 296,
+              "size": 4
+            },
+            {
+              "kind": "optional-header checksum",
+              "offset": 376,
+              "size": 4
+            },
+            {
+              "kind": "debug-entry timestamp",
+              "offset": 35790116,
+              "size": 4
+            },
+            {
+              "kind": "CodeView/PDB",
+              "offset": 35815172,
+              "size": 52
+            },
+            {
+              "kind": "debug-entry timestamp",
+              "offset": 35790144,
+              "size": 4
+            },
+            {
+              "kind": "debug-entry timestamp",
+              "offset": 35790172,
+              "size": 4
+            }
+          ],
+          "sections": [
+            {
+              "name": ".text",
+              "size": 31405568,
+              "sha256": "f4567330094a371cdc324320e441622502256b0df158f028d567bcee66e52a5a"
+            },
+            {
+              "name": ".rodata",
+              "size": 4608,
+              "sha256": "70e3993d83b89cbf49508de2c83a64497772d9459417cc8d08194d533ba2b16c"
+            },
+            {
+              "name": "malloc_h",
+              "size": 512,
+              "sha256": "cc4d9a67a6caba716ebf3c1678b3ef416bb46d8c1e0779a0a0d7e17847653052"
+            },
+            {
+              "name": ".rdata",
+              "size": 6507520,
+              "sha256": "cbef1d884e32b18e8bb4319bcd329174b8aa7119779e36da369e33ac3fbaff86"
+            },
+            {
+              "name": ".data",
+              "size": 59904,
+              "sha256": "1b8c713adf1b3071fd766b78e6829a440c0781f72eb3bd25d12cc3151dffb5da"
+            },
+            {
+              "name": ".pdata",
+              "size": 765952,
+              "sha256": "264ce4b58cd1268340d8be1b783359f83e0cac7963fea8ff8d287ec123faaf98"
+            },
+            {
+              "name": ".fptable",
+              "size": 512,
+              "sha256": "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560"
+            },
+            {
+              "name": ".rsrc",
+              "size": 25600,
+              "sha256": "aedb52931abe85d4c3560f8cd40e7f3fb6f7f23f3f72cbd8e8c2e5bcb6106f5c"
+            },
+            {
+              "name": ".reloc",
+              "size": 99840,
+              "sha256": "8518e64ec5e51193150825b470f5a9c15208bdbd431e2fa0d81ea7241522815b"
+            }
+          ]
+        },
+        "packaged": {
+          "path": ".local/distribution/0.1.0-daca188dfc3c/bin/freedomstream-publisher.exe",
+          "sha256": "7bb3580618b11001b13b73d05a9c3ccc07d51c5bb7a9bdce0ca254542476e095",
+          "normalizedSha256": "c975e947f359a21719eff1bc407194a3016756088d67cd35bea111fe8426b634",
+          "removed": [
+            {
+              "kind": "COFF timestamp",
+              "offset": 296,
+              "size": 4
+            },
+            {
+              "kind": "optional-header checksum",
+              "offset": 376,
+              "size": 4
+            },
+            {
+              "kind": "debug-entry timestamp",
+              "offset": 35790116,
+              "size": 4
+            },
+            {
+              "kind": "CodeView/PDB",
+              "offset": 35815172,
+              "size": 52
+            },
+            {
+              "kind": "debug-entry timestamp",
+              "offset": 35790144,
+              "size": 4
+            },
+            {
+              "kind": "debug-entry timestamp",
+              "offset": 35790172,
+              "size": 4
+            }
+          ],
+          "sections": [
+            {
+              "name": ".text",
+              "size": 31405568,
+              "sha256": "f4567330094a371cdc324320e441622502256b0df158f028d567bcee66e52a5a"
+            },
+            {
+              "name": ".rodata",
+              "size": 4608,
+              "sha256": "70e3993d83b89cbf49508de2c83a64497772d9459417cc8d08194d533ba2b16c"
+            },
+            {
+              "name": "malloc_h",
+              "size": 512,
+              "sha256": "cc4d9a67a6caba716ebf3c1678b3ef416bb46d8c1e0779a0a0d7e17847653052"
+            },
+            {
+              "name": ".rdata",
+              "size": 6507520,
+              "sha256": "cf72a7ba9e20a593ed8edce54eef4dc109a7e489b5404edc84b2e0181ab29b62"
+            },
+            {
+              "name": ".data",
+              "size": 59904,
+              "sha256": "1b8c713adf1b3071fd766b78e6829a440c0781f72eb3bd25d12cc3151dffb5da"
+            },
+            {
+              "name": ".pdata",
+              "size": 765952,
+              "sha256": "264ce4b58cd1268340d8be1b783359f83e0cac7963fea8ff8d287ec123faaf98"
+            },
+            {
+              "name": ".fptable",
+              "size": 512,
+              "sha256": "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560"
+            },
+            {
+              "name": ".rsrc",
+              "size": 25600,
+              "sha256": "aedb52931abe85d4c3560f8cd40e7f3fb6f7f23f3f72cbd8e8c2e5bcb6106f5c"
+            },
+            {
+              "name": ".reloc",
+              "size": 99840,
+              "sha256": "8518e64ec5e51193150825b470f5a9c15208bdbd431e2fa0d81ea7241522815b"
+            }
+          ]
+        },
+        "changedBytes": 28,
+        "equalAfterRemovingOnlyRecognizedPeDebugMetadata": true,
+        "limits": "Normalization removes only COFF timestamp, optional-header checksum and recognized PE debug metadata. Original file hashes remain distinct; this is not byte-identical reproduction."
+      }
+    },
+    {
+      "path": "final-package-qualification.json",
+      "report": {
+        "schema": 1,
+        "sourceCommit": "daca188dfc3c6279777beb44746acb444e35f642",
+        "portable": {
+          "filename": "freedomstream-windows-x64-0.1.0-daca188dfc3c.exe",
+          "version": "0.1.0",
+          "commit": "daca188dfc3c6279777beb44746acb444e35f642",
+          "sha256": "b01b0dec293abf560ca8987c4be0ad304bfc9bffd64f926ed41cbd7d49a057f1",
+          "size": 81892127
+        },
+        "publisherSha256": "7bb3580618b11001b13b73d05a9c3ccc07d51c5bb7a9bdce0ca254542476e095",
+        "launcherSha256": "cdd5f15e8002017756b28ffd636b2b5fd75bcf67a2191ada6d7ef80413900439",
+        "packageDirectory": ".local/distribution/0.1.0-daca188dfc3c",
+        "decoderHeaders": [
+          "freedomstream_decoder.h",
+          "deferred_i420.h",
+          "bounded_readback.h"
+        ],
+        "isolatedPathQualification": {
+          "passed": true,
+          "logSha256": "b25e54fe8695216698905297fdabc0dd6bde25a507fff734d26c52165e353e13",
+          "limits": "First launch/concurrent extraction/probe/GUI resources/static launcher CRT/source integrity/cache preservation/damage rejection. Not fresh-PC or physically disconnected-network qualification."
+        },
+        "actualPortableNativeAcceptance": {
+          "passed": true,
+          "tests": 11,
+          "skipped": 0,
+          "exitCode": 0,
+          "minutesApproximate": 4.4,
+          "logSha256": "8016fcc2ebaa2fff7970aa8be0e900ccc89366b73002410c2666ca213b3cd163",
+          "execution": "Final portable launcher, normal LOCALAPPDATA cache, curated runtime and restricted PATH; explicit extracted tone helper for process-name audio fixtures.",
+          "hardware": "RTX 5080",
+          "limits": "Local API/SFU and synthetic media. No AMD, physical 4K120, game frame-time or physical A/V-offset qualification."
+        },
+        "peAudit": {
+          "schema": 1,
+          "frozen": {
+            "path": ".local/experiments/final-selected-v4/freedomstream-publisher.exe",
+            "sha256": "fdf9527dab646261d9c6ec8019925dd9f4bc9135365026326e6f93e97c04fa2d",
+            "normalizedSha256": "c975e947f359a21719eff1bc407194a3016756088d67cd35bea111fe8426b634",
+            "removed": [
+              {
+                "kind": "COFF timestamp",
+                "offset": 296,
+                "size": 4
+              },
+              {
+                "kind": "optional-header checksum",
+                "offset": 376,
+                "size": 4
+              },
+              {
+                "kind": "debug-entry timestamp",
+                "offset": 35790116,
+                "size": 4
+              },
+              {
+                "kind": "CodeView/PDB",
+                "offset": 35815172,
+                "size": 52
+              },
+              {
+                "kind": "debug-entry timestamp",
+                "offset": 35790144,
+                "size": 4
+              },
+              {
+                "kind": "debug-entry timestamp",
+                "offset": 35790172,
+                "size": 4
+              }
+            ],
+            "sections": [
+              {
+                "name": ".text",
+                "size": 31405568,
+                "sha256": "f4567330094a371cdc324320e441622502256b0df158f028d567bcee66e52a5a"
+              },
+              {
+                "name": ".rodata",
+                "size": 4608,
+                "sha256": "70e3993d83b89cbf49508de2c83a64497772d9459417cc8d08194d533ba2b16c"
+              },
+              {
+                "name": "malloc_h",
+                "size": 512,
+                "sha256": "cc4d9a67a6caba716ebf3c1678b3ef416bb46d8c1e0779a0a0d7e17847653052"
+              },
+              {
+                "name": ".rdata",
+                "size": 6507520,
+                "sha256": "cbef1d884e32b18e8bb4319bcd329174b8aa7119779e36da369e33ac3fbaff86"
+              },
+              {
+                "name": ".data",
+                "size": 59904,
+                "sha256": "1b8c713adf1b3071fd766b78e6829a440c0781f72eb3bd25d12cc3151dffb5da"
+              },
+              {
+                "name": ".pdata",
+                "size": 765952,
+                "sha256": "264ce4b58cd1268340d8be1b783359f83e0cac7963fea8ff8d287ec123faaf98"
+              },
+              {
+                "name": ".fptable",
+                "size": 512,
+                "sha256": "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560"
+              },
+              {
+                "name": ".rsrc",
+                "size": 25600,
+                "sha256": "aedb52931abe85d4c3560f8cd40e7f3fb6f7f23f3f72cbd8e8c2e5bcb6106f5c"
+              },
+              {
+                "name": ".reloc",
+                "size": 99840,
+                "sha256": "8518e64ec5e51193150825b470f5a9c15208bdbd431e2fa0d81ea7241522815b"
+              }
+            ]
+          },
+          "packaged": {
+            "path": ".local/distribution/0.1.0-daca188dfc3c/bin/freedomstream-publisher.exe",
+            "sha256": "7bb3580618b11001b13b73d05a9c3ccc07d51c5bb7a9bdce0ca254542476e095",
+            "normalizedSha256": "c975e947f359a21719eff1bc407194a3016756088d67cd35bea111fe8426b634",
+            "removed": [
+              {
+                "kind": "COFF timestamp",
+                "offset": 296,
+                "size": 4
+              },
+              {
+                "kind": "optional-header checksum",
+                "offset": 376,
+                "size": 4
+              },
+              {
+                "kind": "debug-entry timestamp",
+                "offset": 35790116,
+                "size": 4
+              },
+              {
+                "kind": "CodeView/PDB",
+                "offset": 35815172,
+                "size": 52
+              },
+              {
+                "kind": "debug-entry timestamp",
+                "offset": 35790144,
+                "size": 4
+              },
+              {
+                "kind": "debug-entry timestamp",
+                "offset": 35790172,
+                "size": 4
+              }
+            ],
+            "sections": [
+              {
+                "name": ".text",
+                "size": 31405568,
+                "sha256": "f4567330094a371cdc324320e441622502256b0df158f028d567bcee66e52a5a"
+              },
+              {
+                "name": ".rodata",
+                "size": 4608,
+                "sha256": "70e3993d83b89cbf49508de2c83a64497772d9459417cc8d08194d533ba2b16c"
+              },
+              {
+                "name": "malloc_h",
+                "size": 512,
+                "sha256": "cc4d9a67a6caba716ebf3c1678b3ef416bb46d8c1e0779a0a0d7e17847653052"
+              },
+              {
+                "name": ".rdata",
+                "size": 6507520,
+                "sha256": "cf72a7ba9e20a593ed8edce54eef4dc109a7e489b5404edc84b2e0181ab29b62"
+              },
+              {
+                "name": ".data",
+                "size": 59904,
+                "sha256": "1b8c713adf1b3071fd766b78e6829a440c0781f72eb3bd25d12cc3151dffb5da"
+              },
+              {
+                "name": ".pdata",
+                "size": 765952,
+                "sha256": "264ce4b58cd1268340d8be1b783359f83e0cac7963fea8ff8d287ec123faaf98"
+              },
+              {
+                "name": ".fptable",
+                "size": 512,
+                "sha256": "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560"
+              },
+              {
+                "name": ".rsrc",
+                "size": 25600,
+                "sha256": "aedb52931abe85d4c3560f8cd40e7f3fb6f7f23f3f72cbd8e8c2e5bcb6106f5c"
+              },
+              {
+                "name": ".reloc",
+                "size": 99840,
+                "sha256": "8518e64ec5e51193150825b470f5a9c15208bdbd431e2fa0d81ea7241522815b"
+              }
+            ]
+          },
+          "changedBytes": 28,
+          "equalAfterRemovingOnlyRecognizedPeDebugMetadata": true,
+          "limits": "Normalization removes only COFF timestamp, optional-header checksum and recognized PE debug metadata. Original file hashes remain distinct; this is not byte-identical reproduction."
+        }
+      }
+    },
+    {
+      "path": "packaged-path-compatibility.json",
+      "report": {
+        "schema": 1,
+        "scope": "Deeply nested qualification-cache media execution with third-party RTSS overlay injection",
+        "deepPluginPathCharacters": 245,
+        "shortPluginPathCharacters": 121,
+        "initialDeepSuite": {
+          "passed": 3,
+          "failed": 8,
+          "logSha256": "0ea7752c710ff17db7e3500621c07fb7b633116f837529283ec1870ad0c95234"
+        },
+        "baselineDeepRetry": {
+          "nativeExeSha256": "a81099095ccea4f8ec4b8733b146d7a66ee07cf569d8d453f045f13d7190ba8c",
+          "failed": true,
+          "nativeExitCode": 3221226505,
+          "logSha256": "f99b1a875b510036bc1ecd41834cee066bcd133196903ad885cfbd0f3b6a0ef2"
+        },
+        "rebuiltDevelopmentControl": {
+          "passed": true,
+          "logSha256": "c5cfc5d49762b04e3e31eab037acebca082af02afb79b5f445abffbe412a789a"
+        },
+        "shortCuratedControl": {
+          "passed": true,
+          "logSha256": "2755314635f0b2783870bfdc8c43274c7f96f30dde99d8d9d3c91ffd2d44d921"
+        },
+        "debug": {
+          "exceptionCode": 3221226505,
+          "fastFailSubcode": 5,
+          "stack": [
+            {
+              "module": "RTSSHooks64",
+              "offset": 1181496,
+              "symbol": "ValidateRuntimes"
+            },
+            {
+              "module": "RTSSHooks64",
+              "offset": 1181496,
+              "symbol": "ValidateRuntimes"
+            },
+            {
+              "module": "RTSSHooks64",
+              "offset": 1181390,
+              "symbol": "ValidateRuntimes"
+            },
+            {
+              "module": "RTSSHooks64",
+              "offset": 1015211,
+              "symbol": "ValidateRuntimes"
+            },
+            {
+              "module": "RTSSHooks64",
+              "offset": 248004,
+              "symbol": ""
+            },
+            {
+              "module": "RTSSHooks64",
+              "offset": 508140,
+              "symbol": ""
+            },
+            {
+              "module": "RTSSHooks64",
+              "offset": 507970,
+              "symbol": ""
+            },
+            {
+              "module": "gmodule-2.0-0",
+              "offset": 8130,
+              "symbol": "g_module_open_full"
+            },
+            {
+              "module": "gstreamer-1.0-0",
+              "offset": 498872,
+              "symbol": "gst_pipeline_use_clock"
+            },
+            {
+              "module": "gstreamer-1.0-0",
+              "offset": 513056,
+              "symbol": "gst_plugin_load_by_name"
+            },
+            {
+              "module": "gstreamer-1.0-0",
+              "offset": 520046,
+              "symbol": "gst_plugin_feature_load"
+            },
+            {
+              "module": "gstreamer-1.0-0",
+              "offset": 21654,
+              "symbol": "gst_uri_type_get_type"
+            },
+            {
+              "module": "gstreamer-1.0-0",
+              "offset": 38716,
+              "symbol": "gst_uri_type_get_type"
+            },
+            {
+              "module": "gstreamer-1.0-0",
+              "offset": 33092,
+              "symbol": "gst_uri_type_get_type"
+            },
+            {
+              "module": "gstreamer-1.0-0",
+              "offset": 881990,
+              "symbol": "gst_parse_launch"
+            },
+            {
+              "module": "freedomstream-publisher",
+              "offset": 30678972,
+              "symbol": "freedomstream::Decoder::Configure"
+            },
+            {
+              "module": "freedomstream-publisher",
+              "offset": 22024587,
+              "symbol": "webrtc::VCMGenericDecoder::Configure"
+            },
+            {
+              "module": "freedomstream-publisher",
+              "offset": 22030372,
+              "symbol": "webrtc::VCMDecoderDatabase::CreateAndInitDecoder"
+            },
+            {
+              "module": "freedomstream-publisher",
+              "offset": 22029857,
+              "symbol": "webrtc::VCMDecoderDatabase::GetDecoder"
+            },
+            {
+              "module": "freedomstream-publisher",
+              "offset": 18096580,
+              "symbol": "webrtc::VideoReceiver2::Decode"
+            },
+            {
+              "module": "freedomstream-publisher",
+              "offset": 15929549,
+              "symbol": "webrtc::internal::VideoReceiveStream2::DecodeAndMaybeDispatchEncodedFrame"
+            },
+            {
+              "module": "freedomstream-publisher",
+              "offset": 15929047,
+              "symbol": "webrtc::internal::VideoReceiveStream2::HandleEncodedFrameOnDecodeQueue"
+            },
+            {
+              "module": "freedomstream-publisher",
+              "offset": 15933787,
+              "symbol": "webrtc::CorruptionDetectionFrameSelectorSettings::high_overhead_upper_bound"
+            },
+            {
+              "module": "freedomstream-publisher",
+              "offset": 15364803,
+              "symbol": "webrtc::CreateTaskQueueWinFactory"
+            },
+            {
+              "module": "freedomstream-publisher",
+              "offset": 15390813,
+              "symbol": "webrtc::PlatformThread::QueueAPC"
+            },
+            {
+              "module": "KERNEL32",
+              "offset": 187815,
+              "symbol": "BaseThreadInitThunk"
+            },
+            {
+              "module": "ntdll",
+              "offset": 519756,
+              "symbol": "RtlUserThreadStart"
+            }
+          ]
+        },
+        "hostOverlaySettingsChanged": false,
+        "interpretation": "The failing stack begins inside injected RTSSHooks64 while GStreamer loads a plugin during Decoder::Configure. The baseline also fails in the deep cache; identical curated files pass from a shorter directory and all 11 final portable cases pass at the normal cache location. Exact RTSS internals and a path-length threshold are not established. No product DLL search/security relaxation or overlay-setting change was made. Debug runs are not performance comparisons."
+      }
+    },
+    {
+      "path": "final-completion-checks.json",
+      "report": {
+        "schema": 1,
+        "validatedNativeProductSource": "000129f9153a560a38030d77f06e8a1844dbed99",
+        "packageSourceCommit": "daca188dfc3c6279777beb44746acb444e35f642",
+        "node": {
+          "command": "npm run check",
+          "passed": true,
+          "serverTests": 40,
+          "webTests": 23,
+          "toolTests": 4,
+          "logSha256": "4f4d88a1b05a16f177ed866586c09e5aeed7a6e46e1ca3ed7d163fed08a1ed4d"
+        },
+        "finalFeatureAllTargetClippy": {
+          "passed": true,
+          "logSha256": "75390e404a0ca8d0ff8f18c92cab9f4b692ece75570bd7949bd81456a5ca2f5d"
+        },
+        "finalNativeHelper": {
+          "passed": true,
+          "resultSha256": "9f7648a9d6a80ce086ff9e5f3b38b497235093acf18ae231171c89eb1576795f",
+          "metadataSha256": "c5f980290daf0dfd88968c391bb8bd74c6f0bfe1d7beb1ebb358a05af1da5a54"
+        },
+        "checkedCodeSha256": {
+          "native-e2e/fixtures.ts": "857f2a29d4dc25d2dd2a95967df21909e39bcd9688e78dcbf2bb594fdd50bcb8",
+          "scripts/summarize-local-performance.mjs": "346df8fdb14b276e3a83aa322a553affc0f8d522c25279035b5edbed2412411f",
+          "scripts/summarize-performance-pass.mjs": "fed5238c09c9e21844e3efa6d99e137c17c5e00985fb110cd0436d1834b4192f"
+        },
+        "limits": "Final Node and Clippy checks ran on the final code working tree before the report/receipt commit. Product source stayed frozen; earlier locked default/feature Rust tests are recorded separately in final-source-checks.json. Receipts/data formatting can change afterward without a code change."
+      }
+    },
+    {
+      "path": "decoder/checks-final-product/result.json",
+      "report": {
+        "schema": 1,
+        "completed": true,
+        "valid": true,
+        "sdkI420Wrapper": true,
+        "oddPaddedPlanesChecked": true,
+        "concurrentPlaneReaders": 8,
+        "validFrameMaterializations": 1,
+        "bufferReleasedAfterMaterialization": true,
+        "failurePixelsInitialized": true,
+        "oldFailureGenerationIsolated": true,
+        "genericReadbackFallbackChecked": true,
+        "limits": "Actual pinned SDK wrapper with a custom I420 interface. Synthetic CPU NV12 layout and deliberate map failure; GPU retention across decoder shutdown is checked separately by real fixture runs. No microphone or room."
+      }
+    },
+    {
+      "path": "decoder/checks-final-product/source.json",
+      "report": {
+        "executableSha256": "8A6077A15CF117EECFF6485C3F03853C4BA3675BB09ACC236A7E85D037EBF172",
+        "decoderPin": {
+          "version": "0.3.53",
+          "url": "https://static.crates.io/crates/webrtc-sys/webrtc-sys-0.3.53.crate",
+          "sha256": "dbfe2c11c98bfd4839242abf9a4b8ddb16a7ff3cbf87416f40928a06886eb5c7",
+          "adapterSha256": "78083e8a925a9289526e7349ba29389d4e7b49d6b663df8168d93b0bd77ebca6",
+          "treeSha256": "bf2cf665ec3a3b38b1461a44c53dd7531826324956170ea9e8a2c62a62678df7",
+          "deferredI420Sha256": "6f9af0ee8b835a342a1d608b2fee6c04fa9d12713783457af95034123172bac2",
+          "readbackSha256": "8f10c0a2c123a3a2c683c66fc19740b7fef03f9aa49dfeb48ff908bd1b6bc55e"
+        },
+        "readbackVariant": "product",
+        "readbackHeaderSha256": "8F10C0A2C123A3A2C683C66FC19740B7FEF03F9AA49DFEB48FF908BD1B6BC55E",
+        "adapterSha256": "78083E8A925A9289526E7349BA29389D4E7B49D6B663DF8168D93B0BD77EBCA6",
+        "boundedReadback": true,
+        "generatedAdapterSha256": "C13ACE639E9F869686D53C93E13BDACFA73B2B61E8D63018D82ACC6BC2942F66",
+        "decoderClassSourceCommit": "93d6ee13d72898fa52b22305ff0f64e7ea05aea2",
+        "probeSha256": "B2639A99B1417A694EA4A7384168FCE238F7F8070DF257E86B2237D79DDD73CC",
+        "deferredHeaderSha256": "D4CC118A4E8774C3E55D9F7306675905272A12C3C811CA7EB46C9069757C1D78"
+      }
+    },
+    {
       "path": "final-source-checks.json",
       "report": {
         "schema": 1,
@@ -92543,6 +93174,30 @@
     {
       "path": "implementation-review.json",
       "sha256": "63d22ae5bcee3c5bf9e77d9ad4471a8037434d3b509ed34836b27d4e1dc703d4"
+    },
+    {
+      "path": "packaged-pe-audit.json",
+      "sha256": "3b715eee0c39ad11dc969fdcdd605e56c35a4a453214b2b5432166b797efb8c6"
+    },
+    {
+      "path": "final-package-qualification.json",
+      "sha256": "2a7b9e4b7d23f01416ee014d0413c6ca18bd2ced2c01bc339c0f66705ad96860"
+    },
+    {
+      "path": "packaged-path-compatibility.json",
+      "sha256": "09d24363a01b5ba625b0b967b3747801b0469a692bfbcc3f0d2f360694149fda"
+    },
+    {
+      "path": "final-completion-checks.json",
+      "sha256": "f2ed06892570471ef88085be47784e7d02aa5365c299827c64bb36a8db45c665"
+    },
+    {
+      "path": "decoder/checks-final-product/result.json",
+      "sha256": "9f7648a9d6a80ce086ff9e5f3b38b497235093acf18ae231171c89eb1576795f"
+    },
+    {
+      "path": "decoder/checks-final-product/source.json",
+      "sha256": "c5f980290daf0dfd88968c391bb8bd74c6f0bfe1d7beb1ebb358a05af1da5a54"
     },
     {
       "path": "final-source-checks.json",

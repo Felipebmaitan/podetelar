@@ -1,6 +1,12 @@
 # Local performance experiment ledger
 
-**Local experiment matrix completed. Final packaged acceptance and evidence recheck remain.**
+**Local experiments and normal-cache portable acceptance completed.**
+
+The selected changes reduced repeated four-stream 1080p HEVC CPU about 42% in
+grid and 82% minimized while retaining decoded throughput. Active resident RAM
+rose in several cases, and 4K still has memory/throughput limits. Those costs,
+unsuccessful attempts and useful higher-risk prototypes are recorded alongside
+the retained changes below.
 
 Felipe authorized this complete local pass on 2026-11-10, including local network
 permission prompts and benchmark setup. Work is isolated on `perf/local-experiments`
@@ -68,7 +74,7 @@ hardware acceptance to become a shipping change. Prototypes under the explicit
 | R06 | Unchanged JPEG/profile work and immutable snapshot collections                                                    | **Retain** revision/source checks before JPEG cloning and unchanged profile checks before parsing. Snapshot deep clones cost about 2 microseconds for a deliberately large 32-source fixture; **reject** a broad snapshot ownership rewrite on this evidence. Preview capture cadence remains unchanged.                                                                                                                                                                                                                                                                                            |
 | R07 | Fullscreen texture maintenance and unused appsink last-sample references                                          | Fullscreen cleanup already preceded the early return in the baseline; no new gain. **Retain unused last-sample disabling** on native decoder appsinks after three matched four-stream pairs and codec acceptance. CPU improved; working set did not uniformly fall. Removing a sample reference is not equivalent to freeing an entire surface.                                                                                                                                                                                                                                                     |
 | R08 | Apply subscription intent only when it changes                                                                    | **Retain.** Compare the SDK's desired state, including orphan audio. Four steady publications previously caused about eight setter calls/s; unchanged candidate setters measured zero. These are SDK calls, not counted network packets. Explicit Stop/rewatch, codec fallback and full reconnect passed actual native acceptance.                                                                                                                                                                                                                                                                  |
-| R09 | Stream portable verification/extraction from a bounded file range                                                 | **Retain candidate.** Five alternating cold/warm/concurrent pairs reduced wrapper startup peak commit from about 78.8–79.0 MiB to 1.3–1.5 MiB. Startup time/CPU did not consistently improve. Final packaged acceptance remains pending.                                                                                                                                                                                                                                                                                                                                                            |
+| R09 | Stream portable verification/extraction from a bounded file range                                                 | **Retain.** Five alternating cold/warm/concurrent pairs reduced wrapper startup peak commit about 78.8–79.0 to 1.3–1.5 MiB. Startup time/CPU did not consistently improve. Final first-launch/integrity qualification and all eleven actual portable native cases passed at the normal cache; the deep-cache RTSS limitation is documented separately.                                                                                                                                                                                                                                              |
 | R10 | Audio gain/control handles, owned PCM transfer, scalar telemetry and single-root bypass                           | **Retain** gain-on-change, cached bus and safe owned little-endian PCM storage. Full PCM byte equivalence passed. Publishing scalars every ten frames did not improve its operation timing; **reject** it. The single-root bypass had no consistent CPU gain and removes silence/restart behavior, so it is rejected.                                                                                                                                                                                                                                                                               |
 | R11 | Shared output/mixer and device-clock timing                                                                       | Four independent sinks versus shared output reduced threads from roughly 25 to 20 and about 0.4 MiB in the synthetic case, but CPU varied or worsened. Synchronization also added cost. **Reject the backend change:** independent gain/mute, stereo, hotplug, exclusion and physical A/V behavior would require additional qualification. No microphone-enabled SDK backend is introduced.                                                                                                                                                                                                         |
 | R12 | Software-AV1 thread budgets and explicit Tokio workers                                                            | Stock dav1d was tested at 1/2/4/8/16 requested cores with one/four 1080p and 4K contexts; all expected frames decoded. Lower counts can save substantial fixture CPU/threads, but varied-content/game deadlines and aggregate fairness remain unqualified: **reject a global decoder cap.** Three actual-app Tokio pairs reduced threads 121 to 110 but gave no meaningful private-memory/CPU win; retain the host default.                                                                                                                                                                         |
@@ -338,6 +344,12 @@ separate sustained grid comparison for throughput and CPU claims.
 
 ### Portable, audio, control and server
 
+The short disconnected/empty coverage used one pair each. Disconnected private
+memory was 151.83 to 152.96 MiB and working set 110.96 to 112.47 MiB; CPU was
+below 0.3% of one core in both samples. Connected-empty private memory was
+167.42 to 165.99 MiB, working set about 129.7 MiB in both, and CPU 0.46% to
+1.39%. These short low-CPU observations do not establish an idle speedup.
+
 The longer publish-only comparison used a 120-second extension and excluded
 the first 60 seconds of the initial grid. Baseline/candidate CPU was 8.20%/9.16%
 of one core, private memory 370.48/373.88 MiB, and encoded rate 60.21/59.81/s.
@@ -454,6 +466,44 @@ quality reduction, hidden unsubscribe or microphone acquisition is included.
 
 ## Reproduction and final acceptance
 
+The final portable build is `freedomstream-windows-x64-0.1.0-daca188dfc3c.exe`,
+81,892,127 bytes, packaged from clean commit
+`daca188dfc3c6279777beb44746acb444e35f642`. Its SHA-256 is
+`b01b0dec293abf560ca8987c4be0ad304bfc9bffd64f926ed41cbd7d49a057f1`.
+Later report/diagnostic changes do not alter product code.
+
+The benchmark harnesses are baseline
+`9f1180f939cfd5968c6a59270b7c02ec29ae177899744511c09537eb8614d7b4`
+and selected
+`6a0159c58d3aa1bf2f207cb3d9f9aa163231d8a6dd567f09487af30fe7bc9b1f`.
+The frozen default publisher is
+`fdf9527dab646261d9c6ec8019925dd9f4bc9135365026326e6f93e97c04fa2d`;
+the fresh packaged publisher is
+`7bb3580618b11001b13b73d05a9c3ccc07d51c5bb7a9bdce0ca254542476e095`.
+Only 28 recognized PE debug-metadata bytes changed. Normalizing that metadata
+makes the complete files identical, including machine code, resources and
+ordinary data; this is not a claim of byte-identical rebuilds. The audit and
+original hashes are preserved in the aggregate.
+
+Portable first-launch/concurrent-extraction/probe, GUI resources, static launcher
+CRT, source/payload integrity, cache preservation and damage rejection passed.
+The actual portable launcher then passed **all eleven** native API/SFU cases in
+4.4 minutes at its normal Local AppData cache, using the curated runtime and
+restricted search paths. The extracted publisher was used for synthetic tone
+fixtures so their process names continue to exercise audio exclusions.
+
+An important failed qualification attempt is preserved: hardware room cases
+crashed with exit `0xc0000409` in a deeply nested test cache (eight failed/three
+passed). A local debugger captured the failing stack inside injected
+`RTSSHooks64` while GStreamer loaded a plugin during `Decoder::Configure`.
+The original baseline also failed in that deep setup. The same packaged files
+passed HEVC from a shorter directory, then all eleven normal-cache portable
+cases passed. The compared plugin paths were 245 and 121 characters; the exact
+internal RTSS cause or threshold is not established. No overlay settings or
+product DLL-search/security rules were changed. This path-dependent external
+compatibility limitation remains documented; debug runs are not performance
+comparisons.
+
 The following checked-in runners reproduce individual families:
 
 - `prepare-performance-baseline.mjs` exports the original source and verifies the
@@ -473,6 +523,29 @@ The following checked-in runners reproduce individual families:
   `benchmark-server-http.mjs` cover the remaining measured paths.
 - `summarize-local-performance.mjs` and `summarize-performance-pass.mjs` produce
   phase summaries and compact sanitized evidence with hashes.
+
+For the preserved final artifacts, use Node 24 and the qualified local native
+runtime, then run the following suites sequentially from this checkout:
+
+```powershell
+$env:FREEDOMSTREAM_BENCH_BASELINE = '.local/experiments/baseline-steady/room-benchmark.exe'
+$env:FREEDOMSTREAM_BENCH_CANDIDATE = '.local/experiments/final-selected-v4/room-benchmark.exe'
+$env:FREEDOMSTREAM_BENCH_LABEL_PREFIX = 'v4-repro-'
+node scripts/run-app-performance-matrix.mjs final
+node scripts/run-app-performance-matrix.mjs recovery
+node scripts/run-app-performance-matrix.mjs tokio
+node scripts/run-app-performance-matrix.mjs endurance
+node scripts/summarize-local-performance.mjs
+node scripts/summarize-performance-pass.mjs
+```
+
+The runners generate private local room configuration files. Only their named
+sanitized measurement outputs enter the committed aggregate. It currently
+preserves 179 UI runs, including pilots and rejected variants; they are not all
+accepted comparisons. Phase counter decreases are marked as discontinuities
+and their rates are null. Codec-changing/failed/helper-invalid cases are
+separated from controlled comparisons. The [interactive comparison](local-performance-comparison.html)
+uses only the final three-pair four-stream HEVC results.
 
 The frozen candidate is native source `000129f9153a560a38030d77f06e8a1844dbed99`.
 The branch also includes `main` through `0d16ce8` (merge `18d1d29`). Completed:
@@ -495,5 +568,5 @@ reruns. No failed helper is counted as a successful contention workload.
 
 The required GPT-6.1-Sol high implementation review approved
 `0d16ce85a4408209a49975da1d36ddff6c652d14..ff5a3e3d473a286d30259d97d80cdfcacddc2c5b`
-with no blocking findings. Packaged qualification and the separate final-range
-evidence recheck remain before the final PR update.
+with no blocking findings. The separate final-range evidence review and PR
+status are tracked with [PR #19](https://github.com/Felipebmaitan/freedomstream/pull/19).

@@ -198,7 +198,9 @@ result.selectedComparisons = [...families].map(([family, variants]) => ({
           return {
             phase,
             counterDiscontinuities: [
-              ...new Set(rows.flatMap((row) => row.counterDiscontinuities)),
+              ...new Set(
+                rows.flatMap((row) => row.counterDiscontinuities ?? []),
+              ),
             ],
             ...Object.fromEntries(
               [
@@ -393,6 +395,12 @@ for (const path of [
   "loaded-runtime.json",
   "host.json",
   "implementation-review.json",
+  "packaged-pe-audit.json",
+  "final-package-qualification.json",
+  "packaged-path-compatibility.json",
+  "final-completion-checks.json",
+  "decoder/checks-final-product/result.json",
+  "decoder/checks-final-product/source.json",
   "final-source-checks.json",
   "final-v4-matrix-status.json",
   "final-v4-tail-status.json",

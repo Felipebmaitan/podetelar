@@ -44,6 +44,7 @@ export function nativeRequest(option: string, request: unknown) {
   });
   let output = "";
   let stage = "unknown";
+  const failureTags = new Set<string>();
   let reportReady!: (value: unknown) => void;
   let reportFailed!: (error: Error) => void;
   const reported = new Promise<unknown>((resolve, reject) => {
@@ -65,6 +66,16 @@ export function nativeRequest(option: string, request: unknown) {
   child.stderr.on("data", (data: Buffer) => {
     const message = data.toString();
     for (const [hint, label] of [
+      ["panicked at", "rust-panic"],
+      ["cannot unwind", "unwind-abort"],
+      ["Check failed", "native-check"],
+      ["Assertion failed", "native-assertion"],
+      ["terminate", "native-terminate"],
+      ["deadlock", "deadlock"],
+    ]) {
+      if (message.includes(hint!)) failureTags.add(label!);
+    }
+    for (const [hint, label] of [
       ["Audio transport stalled", "audio-transport"],
       ["Audio publication failed", "audio-publication"],
       ["Fixture media connection", "media-connection"],
@@ -84,11 +95,11 @@ export function nativeRequest(option: string, request: unknown) {
     child.once("error", () =>
       reject(new Error("Native fixture could not start.")),
     );
-    child.once("close", (code) => {
+    child.once("close", (code, signal) => {
       if (code !== 0) {
         reject(
           new Error(
-            `Native fixture failed at ${stage}; run its bounded local diagnostic separately.`,
+            `Native fixture failed at ${stage} (exit ${code ?? signal ?? "unknown"}; tags ${[...failureTags].join(",") || "none"}); run its bounded local diagnostic separately.`,
           ),
         );
         return;

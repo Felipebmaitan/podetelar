@@ -181,13 +181,18 @@ impl PublisherUi {
             ui.label(egui::RichText::new("FreedomStream").size(20.0).strong());
             ui.separator();
             ui.menu_button(
-                if state.room_name.is_empty() {
-                    tr("Your private room")
-                } else {
-                    &state.room_name
-                },
+                format!(
+                    "{} {}",
+                    if connected {
+                        state.participants.len() + 1
+                    } else {
+                        0
+                    },
+                    tr("in room")
+                ),
                 |ui| {
                     if connected {
+                        ui.label(egui::RichText::new(tr("People in this room")).strong());
                         ui.label(format!("{} ({})", self.name, tr("you")));
                         for name in &state.participants {
                             ui.label(name);
@@ -251,43 +256,6 @@ impl PublisherUi {
                     }
                 }
             });
-        });
-        ui.horizontal(|ui| {
-            let (label, color) = match state.connection {
-                "connected" => (tr("Connected"), ACCENT),
-                "connecting" => (tr("Joining room"), WARNING),
-                "reconnecting" => (tr("Reconnecting"), WARNING),
-                _ => (tr("Not in a room"), MUTED),
-            };
-            badge(ui, label, color);
-            if state.sharing {
-                badge(ui, tr("Sharing"), ACCENT);
-            }
-            if connected {
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(format!("{} {}", tr("Joined as"), self.name))
-                            .color(MUTED),
-                    )
-                    .truncate(),
-                );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.menu_button(
-                        format!("{} {}", state.participants.len() + 1, tr("in room")),
-                        |ui| {
-                            ui.label(egui::RichText::new(tr("People in this room")).strong());
-                            ui.label(format!("{} ({})", self.name, tr("you")));
-                            for name in &state.participants {
-                                ui.label(name);
-                            }
-                        },
-                    );
-                });
-            } else {
-                ui.small(tr(
-                    "Private by invitation. Sharing and watching are always your choice.",
-                ));
-            }
         });
     }
 
@@ -964,7 +932,7 @@ impl eframe::App for PublisherUi {
             self.focused = None;
         }
         egui::Panel::top("room-header")
-            .exact_size(88.0)
+            .exact_size(48.0)
             .show(root, |ui| self.room_header(ui, &state));
         if !state.error.is_empty()
             || !self.settings_error.is_empty()

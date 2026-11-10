@@ -54,8 +54,8 @@ const result = {
     frames:
       "Decoded/conversion/texture-upload counts are distinct; none establishes physical presented FPS.",
   },
-  artifacts: existsSync(join(root, "accepted/source.json"))
-    ? read("accepted/source.json")
+  artifacts: existsSync(join(root, "final-selected-v2/source.json"))
+    ? read("final-selected-v2/source.json")
     : null,
   artifactHistory: [],
   capacityDiagnostics: [],
@@ -86,6 +86,8 @@ for (const directory of [
   "fallback",
   "no-last",
   "final-selected",
+  "accepted",
+  "final-selected-v2",
 ])
   if (existsSync(join(root, directory, "source.json")))
     result.artifactHistory.push({
@@ -100,10 +102,74 @@ for (const run of result.wholeApp.runs) {
   run.codecs = [
     ...new Set(raw.app.samples.flatMap((s) => s.videoCodecs ?? [])),
   ];
+  if (raw.contentionPipeline) run.contentionPipeline = raw.contentionPipeline;
+  if (raw.contentionProcess)
+    run.contentionProcess = measureOs(raw.contentionProcess.samples);
 }
+const families = new Map();
+for (const run of result.wholeApp.runs.filter(
+  (r) => r.label.startsWith("v2-") && r.rounds === 1,
+)) {
+  const match = /^(.*)-(before|after)(?:-\d+)?$/.exec(run.label);
+  if (!match) continue;
+  const group = families.get(match[1]) ?? { before: [], after: [] };
+  group[match[2]].push(run);
+  families.set(match[1], group);
+}
+result.selectedComparisons = [...families].map(([family, variants]) => ({
+  family,
+  bothVariantsCompleted:
+    variants.before.length > 0 && variants.after.length > 0,
+  limits:
+    "Medians of per-run phase summaries, not confidence intervals. Short single-pair coverage and long steady cases are labelled by run count and duration. CPU reductions must be read alongside delivered work and memory.",
+  variants: Object.fromEntries(
+    Object.entries(variants).map(([mode, runs]) => [
+      mode,
+      {
+        runs: runs.length,
+        directories: runs.map((r) => r.directory),
+        appSha256: [...new Set(runs.map((r) => r.appSha256))],
+        codecStable:
+          runs.length > 0 && runs.every((r) => r.codecStable === true),
+        phases: [
+          "grid",
+          "focus",
+          "fullscreen",
+          "minimized",
+          "restore",
+          "stopped",
+        ].map((phase) => {
+          const rows = runs.flatMap((r) =>
+            r.rows.filter((row) => row.phase === phase),
+          );
+          return {
+            phase,
+            ...Object.fromEntries(
+              [
+                "cpuCorePercent",
+                "privateMiB",
+                "workingSetMiB",
+                "threads",
+                "handles",
+                "decodedFramesPerSecond",
+                "convertedFramesPerSecond",
+                "textureUploadsPerSecond",
+                "textureBytesMedian",
+                "audioSamplesPerSecond",
+                "audioQueueMaxMs",
+                "subscriptionSetterCallsPerSecond",
+              ].map((key) => [key, median(rows.map((row) => row[key]))]),
+            ),
+            errors: rows.some((row) => row.errors),
+          };
+        }),
+      },
+    ]),
+  ),
+}));
 for (const directory of directories) {
   const diagnostic = `${directory}/diagnostic.json`;
-  if (directory.startsWith("cli-") && existsSync(join(root, diagnostic))) {
+  if (directory.includes("cli-") && existsSync(join(root, diagnostic))) {
     const j = read(diagnostic);
     result.capacityDiagnostics.push({
       ...pick(j, [

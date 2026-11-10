@@ -1,7 +1,7 @@
 // Sequential, isolated actual-app comparisons. Never benchmark two cases at once.
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 const suite = process.argv[2] ?? "receive";
 if (existsSync(".local/experiments/stop-before-next-suite")) {
@@ -209,6 +209,13 @@ if (suite === "receive") {
       1,
     );
 } else if (suite === "endurance") {
+  add("steady-one-before", 1, "h265", baseline, {
+    FREEDOMSTREAM_BENCH_STEADY: "180",
+  });
+  add("steady-one-after", 1, "h265", candidate, {
+    ...accepted,
+    FREEDOMSTREAM_BENCH_STEADY: "180",
+  });
   add("steady-four-before", 4, "h265", baseline, {
     FREEDOMSTREAM_BENCH_STEADY: "360",
   });
@@ -240,6 +247,18 @@ if (suite === "receive") {
     { ...accepted, FREEDOMSTREAM_COUNT_SDK_LOGS: "1" },
     5,
   );
+  add("final-4k-four-capacity", 4, "h265", candidate, {
+    ...accepted,
+    FREEDOMSTREAM_BENCH_RESOLUTION: "p2160",
+  });
+  add(
+    "cli-final-4k-four",
+    4,
+    "h265",
+    resolve(dirname(candidate), "freedomstream-publisher.exe"),
+    { FREEDOMSTREAM_BENCH_RESOLUTION: "p2160", FREEDOMSTREAM_BENCH_CLI: "1" },
+    5,
+  );
 } else if (suite === "tokio") {
   pairs("deferred-tokio", 4, "av1-software", candidate, candidate, accepted, {
     ...accepted,
@@ -247,6 +266,7 @@ if (suite === "receive") {
   });
 } else throw new Error("Unknown comparison suite.");
 
+const failures = [];
 for (const c of cases) {
   const env = { ...process.env };
   for (const key of Object.keys(env))
@@ -273,6 +293,15 @@ for (const c of cases) {
     child.once("error", reject);
     child.once("close", done);
   });
-  if (code !== 0) throw new Error(`Comparison failed: ${c.label}`);
+  if (code === 20) throw new Error(`Stopped before comparison: ${c.label}`);
+  if (code !== 0) failures.push({ label: c.label, code });
 }
-console.log(JSON.stringify({ suite, completedCases: cases.length }));
+console.log(
+  JSON.stringify({
+    suite,
+    attemptedCases: cases.length,
+    completedCases: cases.length - failures.length,
+    failures,
+  }),
+);
+if (failures.length) process.exitCode = 1;

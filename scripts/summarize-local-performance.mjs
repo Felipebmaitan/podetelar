@@ -72,6 +72,9 @@ for (const directory of readdirSync(root)) {
       workingSetMiB: median(samples.map((s) => s.workingSetBytes / 2 ** 20)),
       threads: median(samples.map((s) => s.threads)),
       handles: median(samples.map((s) => s.handles)),
+      textureBytesMedian: median(app.map((s) => s.textureBytes)),
+      textureBytesMax: Math.max(0, ...app.map((s) => s.textureBytes ?? 0)),
+      texturesMedian: median(app.map((s) => s.textures)),
       gpuEnginesPercent: Object.fromEntries(
         engines.map((k) => [
           k,

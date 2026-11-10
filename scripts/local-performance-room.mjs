@@ -436,10 +436,28 @@ async function executeWorkload() {
       throw new Error("Native UI benchmark failed to finish.");
     }
     const appResult = JSON.parse(readFileSync(appReport));
-    if (!appResult.completed)
+    if (!appResult.completed) {
+      writeFileSync(
+        join(run, "failure.json"),
+        JSON.stringify(
+          {
+            schema: 1,
+            code,
+            timedOut,
+            appReportExists: true,
+            completed: false,
+            fault: appResult.fault,
+            appSha256: hash(uiExe),
+            publisherSha256: hash(exe),
+          },
+          null,
+          2,
+        ),
+      );
       throw new Error(
         `Native UI benchmark did not complete: ${appResult.fault ?? "incomplete"}`,
       );
+    }
     const observed = appResult.samples.filter(
       (s) => s.phase !== "stopped" && s.activeWatches > 0,
     );
@@ -493,6 +511,10 @@ async function executeWorkload() {
           ? JSON.parse(
               readFileSync(loadOsReport, "utf8").replace(/^\uFEFF/, ""),
             )
+          : null,
+      contentionPipeline:
+        contention && existsSync(loadReport)
+          ? JSON.parse(readFileSync(loadReport, "utf8").replace(/^\uFEFF/, ""))
           : null,
       limits:
         "Actual native UI/SDK/SFU decode, no microphone or personal screen publication. Publishers are separate synthetic processes. GPU engine/VRAM counters are per receiver; these are not game frame times.",

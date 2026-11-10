@@ -76,6 +76,19 @@ hardware acceptance to become a shipping change. Prototypes under the explicit
 
 ## Measured tradeoffs and rejected improvements
 
+### Positive results that are deliberately not shipped
+
+| Experiment                             | Local benefit                                                                                                                                     | Why it is not selected                                                                                                                                                                      |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native D3D11 presentation              | HEVC renderer 3D-engine median about 2.83% to 0.49% at 1080p; 9.73% to 0.49% at 4K                                                                | This isolates rendering. Import into the real deferred Glow UI, synchronization, adapter changes and device loss remain unqualified. R19 takes the smaller supported-interface improvement. |
+| Fewer software AV1 decoder threads     | Four 4K contexts: requested 1 versus 16 cores used about 4,969 versus 15,156 CPU ms and 11 versus 75 process threads; all expected frames decoded | These fixed fixtures do not establish an aggregate policy for varied content and competing games. A global cap can miss deadlines.                                                          |
+| Shared audio output                    | About five fewer threads and 0.4 MiB less private memory in the synthetic four-track case                                                         | CPU did not improve consistently; a new mixer/device clock adds gain, hotplug and timing risks.                                                                                             |
+| Process image cache                    | Twenty sweeps about 266 to 168 ms, with fresh process/access/session enumeration                                                                  | Incomplete rename/PID/protected-descendant equivalence risks capture exclusions for a modest steady CPU saving.                                                                             |
+| Narrow session-validity query          | 100,000 prepared full-session reads about 425 ms versus scalar join 170 ms                                                                        | The scalar does not return the required session snapshot. A second authority contract adds complexity for a small per-transfer saving.                                                      |
+| SFU request coalescing                 | Sixteen simultaneous requests used one RPC instead of sixteen                                                                                     | A controlled unpublish race returned a stale positive. The freshness failure rules it out despite lower latency.                                                                            |
+| Bounded I420 pool                      | Allocation/conversion CPU improved strongly in isolation                                                                                          | Whole-app CPU was nearly unchanged and private memory rose. Another retained pool is not worthwhile.                                                                                        |
+| One cached RGBA image plus a temporary | Initially about 41 MiB less private memory than two retained images                                                                               | The final combined configuration lost texture updates in repeated runs; the same-binary two-image control restored them.                                                                    |
+
 ### Rendering, allocation and receive path
 
 The native presenter removed the CPU round trip in an isolated renderer. In the
@@ -131,24 +144,53 @@ are not equivalent ordinary app RAM measurements. Whole-app memory is reported
 separately. One early raw summary’s phrase “inflate ... equally” is incorrect;
 this paragraph and the corrected runner specify the actual limitation.
 
-### Whole-app checkpoint, before final cache selection
+### Selected whole-app configuration
 
-Three alternating 1080p60 HEVC pairs, four watched publishers, source `4c77914`:
+Three alternating 1080p60 HEVC pairs, four watched publishers, native source
+`02c401d4fb19ecaf74c41dffc1a3cb6a6a78fef9`, labels `v2-final-four-*`.
+Values are medians of each run's phase interior. Longer and other-codec
+acceptance checks remain pending; this table does not substitute for them.
 
-| State     | Baseline CPU, one-core % | Two-image candidate CPU, one-core % | Baseline private MiB | Candidate private MiB |
-| --------- | -----------------------: | ----------------------------------: | -------------------: | --------------------: |
-| Grid      |                   138.75 |                               78.95 |               837.77 |                860.90 |
-| Minimized |                   106.69 |                               12.74 |               836.82 |                781.69 |
+| State      | Baseline CPU, one-core % | Selected CPU, one-core % | Baseline private MiB | Selected private MiB | Baseline working set MiB | Selected working set MiB |
+| ---------- | -----------------------: | -----------------------: | -------------------: | -------------------: | -----------------------: | -----------------------: |
+| Grid       |                   135.12 |                    75.90 |               837.16 |               865.57 |                   380.70 |                   468.61 |
+| Focus      |                   108.05 |                    31.11 |               835.55 |               817.70 |                   374.22 |                   421.46 |
+| Fullscreen |                   109.39 |                    34.19 |               831.97 |               801.71 |                   383.82 |                   415.28 |
+| Minimized  |                   103.83 |                    16.68 |               832.84 |               785.96 |                   386.86 |                   400.38 |
+| Restored   |                   131.03 |                    77.74 |               842.96 |               867.17 |                   386.63 |                   472.84 |
+| Stopped    |                     0.46 |                     0.69 |               261.70 |               267.76 |                   176.07 |                   184.19 |
 
-Both delivered about 240 decoded frames/s in aggregate. Grid texture updates
-were approximately 235 and 236/s; minimized uploads were zero. This checkpoint
-shows a substantial CPU benefit and a real active-memory tradeoff. It is not the
-final selected configuration or a claim that all RAM measures decreased.
+Grid decode rates were 239.89 and 240.11 frames/s; texture updates were
+235.30 and 236.83/s. Minimized decode continued at 239.26 and 239.97/s while
+uploads were zero. All six runs retained HEVC and reported no sampled UI/stream
+errors. Focus/fullscreen presented one picture while all four remained watched.
 
-The one-image variant that simply skipped work lost updates, around 208–215/s
-versus 237/s. It was rejected. One cached image with a bounded temporary image
-reduced memory in later comparisons with some extra CPU cost; final selection
-and long-run results remain pending.
+This is a CPU improvement with a visible memory tradeoff. Grid private memory
+rose about 28.4 MiB and working set about 87.9 MiB; minimized private memory fell
+about 46.9 MiB, but minimized working set still rose about 13.5 MiB. It would be
+incorrect to call every RAM measure lower. The two-image cache is retained for
+the CPU and update-rate result; the smaller-cache variants did not justify
+their output loss. Individual run variation remains in the committed aggregate.
+
+The default publisher EXE changed from 38,850,048 to 38,867,456 bytes, an increase
+of 17,408 bytes. This pass does not claim an EXE-size saving.
+
+### GPU counters in the real app
+
+The same three-pair four-stream 1080p comparisons recorded these separate GPU
+engine medians. These are receiver-process driver counters, not total-card
+percentages, game frame times or fixed-clock hardware work measurements.
+
+| State     | 3D engine before → after, % | Decode engine before → after, % | Dedicated GPU MiB before → after |
+| --------- | --------------------------: | ------------------------------: | -------------------------------: |
+| Grid      |               29.78 → 23.41 |                   11.73 → 12.98 |                  291.14 → 291.29 |
+| Focus     |                12.07 → 5.33 |                   15.94 → 18.62 |                  291.14 → 291.28 |
+| Minimized |                 6.48 → 0.00 |                   18.53 → 21.09 |                  313.59 → 313.72 |
+
+The copy-engine counter was zero in both variants. That does not prove that no
+copies occurred: driver work can be accounted to another engine. Rendering and
+readback-related 3D activity fell, while decode utilization rose and dedicated
+memory was nearly unchanged. No uniform total-GPU or VRAM saving is claimed.
 
 ### 4K capacity and failed attempts
 

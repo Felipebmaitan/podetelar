@@ -42,11 +42,17 @@ mod quality;
 #[path = "../src/settings.rs"]
 mod settings;
 #[cfg(feature = "performance-experiments")]
+#[path = "../src/source_picker.rs"]
+mod source_picker;
+#[cfg(feature = "performance-experiments")]
 #[path = "../src/sources.rs"]
 mod sources;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/ui.rs"]
 mod ui;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/ui_style.rs"]
+mod ui_style;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/video_image.rs"]
 mod video_image;

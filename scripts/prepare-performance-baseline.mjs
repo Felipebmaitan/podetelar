@@ -13,7 +13,9 @@ import {
 import { resolve, join } from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 const root = resolve(import.meta.dirname, "..");
-const base = "93d6ee13d72898fa52b22305ff0f64e7ea05aea2";
+const base = process.argv[2] ?? "93d6ee13d72898fa52b22305ff0f64e7ea05aea2";
+if (!/^[a-f0-9]{40}$/.test(base))
+  throw new Error("Choose an immutable baseline commit.");
 const output = join(
   root,
   ".local/experiments",
@@ -38,7 +40,7 @@ execute("git", [
   ".cargo/config.toml",
   "apps/publisher",
   "apps/portable",
-  "assets/windows",
+  "assets",
   "deploy/native-sdk.json",
   "deploy/native-decoder.json",
 ]);
@@ -200,10 +202,12 @@ edit("apps/publisher/src/ui.rs", (text) => {
   text =
     `#[cfg(feature="performance-experiments")]\n#[allow(dead_code)]\n#[path="ui/experiment.rs"]\npub mod experiment;\n` +
     text;
-  text = once(
-    text,
-    "                        picture,\n                        frames:",
-    "                        picture,\n                        presentation:std::sync::Arc::default(),\n                        frames:",
+  const pictureMarker = /^(\s*)picture,\n\s*frames:/gm;
+  if ([...text.matchAll(pictureMarker)].length !== 1)
+    throw new Error("Baseline self-preview structure changed.");
+  text = text.replace(
+    pictureMarker,
+    "$1picture,\n$1presentation:std::sync::Arc::default(),\n$1frames:",
   );
   return once(
     text,
@@ -228,11 +232,17 @@ let example = readFileSync(
   join(root, "apps/publisher/examples/room-benchmark.rs"),
   "utf8",
 ).replaceAll("\r\n", "\n");
+// The baseline uses its original converter; this candidate-only module is absent.
+example = example.replace(
+  '#[cfg(feature = "performance-experiments")]\n#[path = "../src/video_image.rs"]\nmod video_image;\n',
+  "",
+);
 const begin = example.indexOf("    if std::env::args().nth(1)");
 const end = example.indexOf("    let mut input = String::new();", begin);
 if (begin < 0 || end < 0)
   throw new Error("Shared example CLI structure changed.");
 example = example.slice(0, begin) + example.slice(end);
+mkdirSync(join(output, "apps/publisher/examples"), { recursive: true });
 writeFileSync(
   join(output, "apps/publisher/examples/room-benchmark.rs"),
   example,

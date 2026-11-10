@@ -1,0 +1,39 @@
+Built-in ImageGen; proposed UI mockups only.
+
+ADVANCED SETTINGS
+Use case: ui-mockup. Create ONE high-fidelity redesign mockup of the FreedomStream native desktop application's Advanced settings dialog. Input image 1 is the CURRENT crowded dialog, input image 2 is the current overall app's visual language. This is a proposed image for user approval, NOT an implementation.
+
+Output: a crisp portrait screenshot of JUST the redesigned dialog, approximately 1000x1150, tight framing with only a slim charcoal outer gutter, straight-on. No device, no marketing title outside the dialog, no annotations. Match the latest app's Inter regular and semibold type, charcoal #23272e and #171a1f surfaces, restrained mint #40dcb8 actions, quiet dividers and thin vector icons. Polished Discord-like design.
+
+Core goal: drastically improve readability by removing paragraphs and repeated labels, with generous 28px internal padding, 22-28px gaps between groups, 10px label-to-field gaps, body text about 15px with 22px line height, clear semibold section titles and generous control heights. Must feel calm and spacious, not a dense debug form. No scrollbar needed for this amount of content. A slightly wider dialog than the reference allows two video fields on one row.
+
+Exact content and hierarchy:
+- Title top left "Configurações avançadas", 25px semibold. A single small close X at top right.
+- Group 1 section title "Vídeo". Two equal-width dropdowns side-by-side below: label "Codificador" with selected "NVIDIA NVENC AV1"; label "Taxa de bits" with selected "Automático". Small neutral circled i help affordances aligned with each label. NO separate redundant AV1 text, NO explanatory paragraph about codecs or bitrate.
+- A subtle divider with ample breathing space.
+- Group 2 section title "Recepção". One full-width dropdown labeled "Limite para assistir" selected "Automático · 30 Mbps", small circled i beside label. One short subdued helper line under it: "Compartilhado entre as transmissões assistidas." NO other paragraph.
+- A subtle divider with ample breathing space.
+- Group 3 section title "Conexão". One spacious horizontal row: a small amber outlined status icon and compact text "Teste indisponível" on left; an understated outlined button "Testar novamente" on right. Under status, small subdued text "Até este VPS". No giant amber sentence and no technical 200 Mbps sentence.
+- Below this group a collapsed disclosure row with a subtle tools icon and text "Diagnóstico" with right-pointing chevron. This retains a place for troubleshooting/reconnect and details without displaying them all.
+- Footer separated with a fine divider and padding. A short, subdued line "Aplique as alterações ao iniciar ou atualizar a transmissão." then a mint "Concluir" button aligned bottom right. This is dismiss/review settings, don't imply automatic immediate application or add a Save flow.
+Nothing else. No microphone row, no "Sem microfone", no route selector. Do not add extra features, fake successful speed test, sliders or unsupported hardware claims. All exact UI text in natural Brazilian Portuguese, readable and correctly spelled. Rounded 10px outer dialog, 6px controls, subtle border and shadow. The screenshot itself should clearly demonstrate the increased white space and reduced copy.
+
+SOURCE PREVIEW
+Use case: ui-mockup. Create ONE polished native desktop UI screenshot mockup for FreedomStream showing a source-picker with a local preview popover to its RIGHT. Reference image 1 is the current application's visual style and main layout. Preserve its established Inter typography, charcoal surfaces, mint accents, compact sidebar, large four-stream 2x2 video grid and room header; refine gently. This is a proposal image for user approval, not implemented behavior.
+
+Output a single crisp wide 16:9 screenshot around 1920x1080, straight-on, edge to edge, no device frame, no marketing captions, no external annotations. Realistic native Windows desktop software styling, Discord-like polish. Sharp readable text, clean alignment, restrained thin line icons and 8px corners. Keep stream real estate large.
+
+Visible app:
+Header "FreedomStream", room "Sala dos amigos", "5 na sala", outlined "Convidar" action, room options ellipsis, "PT-BR".
+Left sidebar about 250px wide titled "TRANSMITIR"; source dropdown near the top, resolution 1920 × 1080, visible 60 FPS slider, quality preset, discreet "Avançado" link, small source-audio row "Áudio da fonte", mint "Iniciar transmissão" button, participant rows below. REMOVE the entire "Sem microfone" row and its icon and its empty space. Never show a microphone control or microphone messaging elsewhere.
+Right main area "Transmissões", "4 ao vivo · 3 assistindo", same large 2x2 stream grid as reference. Three watched live streams with compact name chips Bods, Lucas, Ana and one unwatched stream math with "Prévia" chip and centered "Assistir" CTA. No right-click volume menu open in this image. No permanently visible received codec/bitrate because mouse is on the source list.
+
+Main interaction focus:
+The source selector is OPEN, displaying a small refined dark dropdown just below the source field in the TOP LEFT. Field currently says "Monitor 1". Dropdown width about 248px and each source row is comfortable 40px high. Small source-kind icons. Three rows:
+"Monitor 1" (selected, small mint check)
+"Monitor 2"
+"Rainbow Six Siege" (hovered/highlighted row, arrow cursor over it).
+A small local-preview POPOVER opens immediately TO THE RIGHT of this source LIST, not below it and not inside the list, anchored visually to the hovered Rainbow Six Siege row. Leave only an 8px gap between list and popover. Popover about 370px wide, compact dark surface with a subtle border and soft shadow. A small header with screen/window icon, semibold source name "Rainbow Six Siege", secondary "1920 × 1080". A beautiful sharp 16:9 STILL screenshot of a tactical FPS game, representative of the chosen window, below the header. Small footer text "Prévia local · não transmitindo". No playback transport, no LIVE badge, no audio meter, no bitrate and no camera/microphone buttons in this source preview. No extra Select/Start button inside the popover: preview follows the hovered list row and clicking the list row chooses it. The app's existing Start sharing button is the only publishing action.
+Popover should obscure only a small upper-left portion of the first friend stream; don't dim the whole room. Its purpose is clearly to let the user inspect a window BEFORE choosing/sharing it. Existing watched streams remain visibly present behind it, other unwatched source thumbnail stays static.
+The selected Monitor 1 row and hovered game row must be visually distinct, so the image clearly shows previewing is not yet publishing.
+NO "Sem microfone" text anywhere. NO invitation secrets or account emails. No fake technical performance qualifications. Everything in Brazilian Portuguese. Prioritize an elegant readable source list and the small attached right-side preview, consistent with reference app.

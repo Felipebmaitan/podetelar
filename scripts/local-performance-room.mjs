@@ -52,6 +52,10 @@ if (disconnected && (count !== 0 || publishFixture || audioEnabled))
   throw new Error("Disconnected workload cannot publish or watch.");
 const root = resolve(import.meta.dirname, "..");
 process.chdir(root);
+if (existsSync(".local/experiments/stop-after-current-case")) {
+  console.log("Stopped at a completed local workload boundary.");
+  process.exit(20);
+}
 const run = join(
   root,
   ".local/experiments",

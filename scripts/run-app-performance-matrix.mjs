@@ -15,8 +15,18 @@ const candidate =
   process.env.FREEDOMSTREAM_BENCH_CANDIDATE ??
   ".local/experiments/deferred-app/room-benchmark.exe";
 const cases = [];
+const labelPrefix = process.env.FREEDOMSTREAM_BENCH_LABEL_PREFIX ?? "";
+if (!/^[a-z0-9-]{0,12}$/.test(labelPrefix))
+  throw new Error("Invalid comparison label prefix.");
 function add(label, count, codec, exe, env = {}, seconds = 10) {
-  cases.push({ label, count, codec, exe, env, seconds });
+  cases.push({
+    label: `${labelPrefix}${label}`,
+    count,
+    codec,
+    exe,
+    env,
+    seconds,
+  });
 }
 function pairs(
   name,
@@ -198,6 +208,38 @@ if (suite === "receive") {
       accepted,
       1,
     );
+} else if (suite === "endurance") {
+  add("steady-four-before", 4, "h265", baseline, {
+    FREEDOMSTREAM_BENCH_STEADY: "360",
+  });
+  add("steady-four-after", 4, "h265", candidate, {
+    ...accepted,
+    FREEDOMSTREAM_BENCH_STEADY: "360",
+  });
+  add(
+    "cycles-four-before",
+    4,
+    "h265",
+    baseline,
+    { FREEDOMSTREAM_BENCH_ROUNDS: "7" },
+    20,
+  );
+  add(
+    "cycles-four-after",
+    4,
+    "h265",
+    candidate,
+    { ...accepted, FREEDOMSTREAM_BENCH_ROUNDS: "7" },
+    20,
+  );
+  add(
+    "logging-rate-four",
+    4,
+    "h265",
+    candidate,
+    { ...accepted, FREEDOMSTREAM_COUNT_SDK_LOGS: "1" },
+    5,
+  );
 } else if (suite === "tokio") {
   pairs("deferred-tokio", 4, "av1-software", candidate, candidate, accepted, {
     ...accepted,

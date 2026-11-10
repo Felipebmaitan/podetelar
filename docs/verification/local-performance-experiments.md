@@ -99,18 +99,30 @@ stage was isolated instead. No framework speedup is claimed.
 
 RGBA pools must not mutate images retained by egui texture deltas. Reuse uses
 `Arc::get_mut`; live owners prevent it. Pools clear on hidden state and geometry
-changes, while old external owners keep their pixels. The selected temporary-image
+changes, while old external owners keep their pixels. The rejected temporary-image
 policy holds a weak reference to at most one extra live image, rather than
 retaining another full allocation. Three matched pairs reduced median private
 memory from 885.7 to 845.1 MiB and working set from 423.7 to 390.6 MiB versus
 two cached images, at a CPU cost of 88.3% to 91.6% of one core. Median texture
-updates changed 235.3 to 234.0/s, within the observed run variation. Final
-baseline-versus-selected application and lifecycle checks remain required.
+updates initially changed 235.3 to 234.0/s, within the observed run variation.
+However, two final-configuration runs reduced updates to 224.0 and 225.6/s.
+A two-image control using the exact same executable restored 236.9/s. The final
+default therefore keeps two reusable images; the temporary-image experiment
+remains feature-only. Lower RAM alone did not justify this update-rate loss.
 
 The I420 pool’s allocation/conversion operation test was much faster, but the
 actual four-stream app median changed only about 73.9% to 72.1% of one core and
 private memory rose from about 870.6 to 883.9 MiB. That does not justify adding
 another retained pool. The rejected prototype is preserved for inspection.
+
+Disabling unused `enable-last-sample` on the three native decoder appsinks
+passed three alternating four-stream application pairs with the same Rust
+harness and two-image policy. Median grid CPU fell from 102.7% to 72.8% of one
+core; texture updates were 236.2/s and 236.6/s. Private memory was 879.7 and
+865.4 MiB, but working set rose from 421.1 to 460.8 MiB. This is a repeatable
+CPU result, not evidence that removing the sample reference uniformly frees
+resident RAM. The selected final configuration combines this change with the
+two-image cache and must pass the final matrix and codec acceptance.
 
 R19’s standalone comparisons used six retained validation frames per context,
 hashed in full after CPU/wall timing. The baseline retains CPU images, whereas

@@ -571,8 +571,6 @@ impl Playback {
                             #[cfg(feature = "performance-experiments")]
                             let fallback = std::env::var("FREEDOMSTREAM_IMAGE_FALLBACK")
                                 .is_ok_and(|value| value == "1");
-                            #[cfg(not(feature = "performance-experiments"))]
-                            let fallback = true;
                             let mut stream = NativeVideoStream::with_options(
                                 track.rtc_track(),
                                 NativeVideoStreamOptions {
@@ -613,6 +611,7 @@ impl Playback {
                                         }
                                         image = image_pool.convert(frame.buffer.as_ref());
                                     }
+                                    #[cfg(feature = "performance-experiments")]
                                     let image = image.or_else(|| {
                                         if fallback {
                                             image_pool.allocate_fallback(frame.buffer.as_ref())

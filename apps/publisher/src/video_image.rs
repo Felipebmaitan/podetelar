@@ -32,6 +32,7 @@ fn write_color_image(buffer: &dyn VideoBuffer, image: &mut ColorImage) {
 pub struct ImagePool {
     images: Vec<Arc<ColorImage>>,
     limit: usize,
+    #[cfg(feature = "performance-experiments")]
     fallback: std::sync::Weak<ColorImage>,
 }
 impl Default for ImagePool {
@@ -43,15 +44,17 @@ impl Default for ImagePool {
             .filter(|limit| (1..=2).contains(limit))
             .unwrap_or(2);
         #[cfg(not(feature = "performance-experiments"))]
-        let limit = 1;
+        let limit = 2;
         Self {
             images: Vec::new(),
             limit,
+            #[cfg(feature = "performance-experiments")]
             fallback: std::sync::Weak::new(),
         }
     }
 }
 impl ImagePool {
+    #[cfg(feature = "performance-experiments")]
     pub fn allocate_fallback(&mut self, buffer: &dyn VideoBuffer) -> Option<Arc<ColorImage>> {
         if self.limit != 1 || self.fallback.strong_count() != 0 {
             return None;
@@ -62,7 +65,10 @@ impl ImagePool {
     }
     pub fn clear(&mut self) {
         self.images.clear();
-        self.fallback = std::sync::Weak::new();
+        #[cfg(feature = "performance-experiments")]
+        {
+            self.fallback = std::sync::Weak::new();
+        }
     }
     pub fn convert(&mut self, buffer: &dyn VideoBuffer) -> Option<Arc<ColorImage>> {
         let size = [buffer.width() as usize, buffer.height() as usize];
@@ -96,7 +102,6 @@ mod tests {
     fn one_image_pool_never_overwrites_a_held_image() {
         let buffer = I420Buffer::new_black(17, 9);
         let mut pool = ImagePool {
-            images: Vec::new(),
             limit: 1,
             ..Default::default()
         };
@@ -113,6 +118,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "performance-experiments")]
     fn temporary_fallback_keeps_the_cache_bounded_and_held_pixels_unchanged() {
         let black = I420Buffer::new_black(17, 9);
         let mut red = I420Buffer::new(17, 9);
@@ -121,7 +127,6 @@ mod tests {
         u.fill(90);
         v.fill(240);
         let mut pool = ImagePool {
-            images: Vec::new(),
             limit: 1,
             ..Default::default()
         };

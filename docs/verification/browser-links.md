@@ -66,7 +66,6 @@ For the live Rust redemption test, create a local JSON fixture with `link` and
 `browser_links::tests::redeem_real_server_invitation` with `--ignored`. Remove the
 local fixture after use. Fixtures containing authority are never committed.
 
-
 ## Integration with redesigned UI and performance work
 
 The branch now merges `origin/main` at `feefc2f` (PRs #22 and #19).
@@ -89,7 +88,9 @@ and existing-window independence remain unverified, as does browser native
 external-app permission handling. These are hard merge gates, not waived by a
 headless browser, process launch, HTTP tests, synthetic UI rendering or compilation.
 
-Integration-specific Node/native/browser checks and fresh technical review are in
-progress. CPU-intensive builds and GPU/native launch checks are deferred during the
+Fresh GPT-6.1-Sol high static review of runtime integration commit `d76dabe`
+found no actionable findings and gave technical approval conditional on the
+remaining acceptance checks. Integration-specific Node/native/browser checks
+remain in progress. CPU-intensive builds and GPU/native launch checks are deferred during the
 performance thread's explicitly coordinated PR #23 benchmark window. The read-only
 GStreamer development SDK and performance checkout are not modified.

@@ -88,7 +88,7 @@
   "Publishing settings apply with Start sharing or Apply changes.": "Use Iniciar transmissão ou Aplicar alterações para aplicar as configurações.",
   "Licenses and library sources": "Licenças e código-fonte das bibliotecas",
   "No supported encoder": "Nenhum codificador compatível",
-  "HEVC switches to H.264 when a watcher needs compatibility.": "O HEVC muda para H.264 quando um espectador precisa de compatibilidade.",
+  "AV1 / HEVC switch to H.264 when a watcher needs compatibility.": "AV1 / HEVC mudam para H.264 quando um espectador precisa de compatibilidade.",
   "Shared across everything you watch, with headroom. This is an allowance, not a speed test.": "Compartilhado entre as transmissões assistidas, com margem. Este limite não é um teste de velocidade.",
   "A slower watcher's limit can reduce the one shared stream for everyone watching it.": "O limite de um espectador mais lento pode reduzir a transmissão compartilhada para todos.",
   "Higher frame rates use more upload bandwidth.": "Taxas de quadros maiores usam mais banda de upload.",

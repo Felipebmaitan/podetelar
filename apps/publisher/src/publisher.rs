@@ -752,6 +752,7 @@ async fn settle_publications<R, C>(
 
 fn encoder_codec(encoding: &Encoding) -> VideoCodec {
     match encoding.codec() {
+        Codec::Av1 => VideoCodec::AV1,
         Codec::H265 => VideoCodec::H265,
         Codec::H264 => VideoCodec::H264,
     }
@@ -957,7 +958,7 @@ async fn worker(
                     }
                     let replacement_stop = cancellation.register();
                     if joined.room.connection_state() == ConnectionState::Connected
-                        && stream.as_ref().is_some_and(|s| s.config.encoder.codec == Codec::H265 && !s.cancelled())
+                        && stream.as_ref().is_some_and(|s| s.config.encoder.codec != Codec::H264 && !s.cancelled())
                         && crate::playback::needs_h264(&joined.room) {
                         match stream.as_ref().unwrap().fallback_config() {
                             Ok(config) => {
@@ -1073,7 +1074,7 @@ async fn worker(
                         .into_iter()
                         .find(|candidate| candidate.factory == encoder)
                         .context("Choose an available hardware encoder.")?;
-                    if encoder.codec == Codec::H265 && crate::playback::needs_h264(&joined.room) {
+                    if encoder.codec != Codec::H264 && crate::playback::needs_h264(&joined.room) {
                         encoder = crate::encoding::encoders()
                             .into_iter()
                             .find(|e| e.codec == Codec::H264)

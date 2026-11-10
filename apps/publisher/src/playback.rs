@@ -96,6 +96,7 @@ pub struct Playback {
     announce_dirty: bool,
     previews: HashMap<String, PreviewImage>,
     hevc: bool,
+    av1: bool,
     h264: bool,
     measure_audio: bool,
     budget: crate::network::ReceiveBudget,
@@ -131,6 +132,7 @@ impl Playback {
             received: HashMap::new(),
             recovery: Arc::default(),
             observed_recovery: 0,
+            av1: codecs.iter().any(|c| c == "video/av1"),
             hevc: codecs.iter().any(|c| c == "video/h265"),
             h264: codecs.iter().any(|c| c == "video/h264"),
         }
@@ -166,6 +168,7 @@ impl Playback {
     pub fn compatibility_only(&mut self, enabled: bool) {
         if enabled {
             self.hevc = false;
+            self.av1 = false;
         }
     }
 
@@ -175,7 +178,7 @@ impl Playback {
                 self.budget.set(self.budget_setting);
             }
             anyhow::ensure!(
-                self.h264 || self.hevc,
+                self.h264 || self.hevc || self.av1,
                 "No compatible native video decoder is available on this computer."
             );
             self.watches.entry(id).or_insert_with(|| Watch {
@@ -187,7 +190,7 @@ impl Playback {
                 last_frame: Arc::new(Mutex::new(Instant::now())),
                 audio: Arc::default(),
                 error: Arc::default(),
-                h264: !self.hevc,
+                h264: !self.hevc && !self.av1,
                 video_sid: String::new(),
             });
         } else {
@@ -331,6 +334,7 @@ impl Playback {
             };
             live.insert(id.clone());
             let hevc = video.mime_type().eq_ignore_ascii_case("video/h265");
+            let av1 = video.mime_type().eq_ignore_ascii_case("video/av1");
             if let Some(watch) = self.watches.get_mut(&id) {
                 if watch.video_sid != video.sid().as_str() {
                     watch.video_sid = video.sid().to_string();
@@ -339,7 +343,7 @@ impl Playback {
                         *last = Instant::now();
                     }
                 }
-                if hevc
+                if (hevc || av1)
                     && watch
                         .last_frame
                         .lock()
@@ -350,7 +354,14 @@ impl Playback {
                 if allowed.contains(&id) {
                     announce.insert(
                         format!("{WATCH_PREFIX}{id}"),
-                        if watch.h264 { "h264" } else { "hevc" }.to_owned(),
+                        if watch.h264 || (av1 && !self.av1) || (hevc && !self.hevc) {
+                            "h264"
+                        } else if av1 {
+                            "av1"
+                        } else {
+                            "hevc"
+                        }
+                        .to_owned(),
                     );
                     announce.insert(format!("{LIMIT_PREFIX}{id}"), cap.to_string());
                 }
@@ -400,7 +411,9 @@ impl Playback {
                 }
             }
             let watching = self.watches.contains_key(&id);
-            let compatible = self.watches.get(&id).is_some_and(|w| !hevc || !w.h264);
+            let compatible = self.watches.get(&id).is_some_and(|w| {
+                (!hevc && !av1) || (!w.h264 && (!av1 || self.av1) && (!hevc || self.hevc))
+            });
             let admitted = allowed.contains(&id);
             for publication in publications.values().filter(|p| {
                 matches!(
@@ -656,7 +669,7 @@ pub fn requested_cap(room: &Room) -> Option<u64> {
             let attributes = p.attributes();
             if !attributes
                 .get(&watch)
-                .is_some_and(|v| matches!(v.as_str(), "hevc" | "h264"))
+                .is_some_and(|v| matches!(v.as_str(), "hevc" | "h264" | "av1"))
             {
                 return None;
             }

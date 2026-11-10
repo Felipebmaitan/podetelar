@@ -15,12 +15,14 @@ const AUTO_CEILING: u64 = 35_000_000;
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Codec {
+    Av1,
     H265,
     H264,
 }
 impl Codec {
     pub fn label(self) -> &'static str {
         match self {
+            Self::Av1 => "AV1",
             Self::H265 => "H.265 / HEVC",
             Self::H264 => "H.264 compatibility",
         }
@@ -170,7 +172,8 @@ impl Settings {
                 // Lower-bandwidth starting targets, not a universal quality law.
                 // See docs/bitrate-guidance.md for sources and our policy choices.
                 let anchors = match codec {
-                    Codec::H265 => [
+                    // Use the HEVC targets until AV1 quality is measured locally.
+                    Codec::Av1 | Codec::H265 => [
                         (1280 * 720, 2.5, 4.0),
                         (1920 * 1080, 4.0, 6.0),
                         (2560 * 1440, 6.0, 10.0),

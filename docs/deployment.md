@@ -1,5 +1,54 @@
 # Production deployment
 
+## Automatic server updates
+
+`Deploy VPS` deploys successful `Checks` push runs on `main`. It checks that the
+commit is still the latest main before starting; old commits are skipped. Manual
+dispatch also requires successful main checks. Deployments serialize and never
+cancel an update in progress. Only a small Ubuntu SSH job runs on Actions; the
+VPS builds the app with one CPU/768 MiB and the usage SFU with one CPU/1536 MiB.
+The SFU image is reused by source hash until its collector/build files change.
+This workflow preserves the existing portable download; Windows application
+packaging/release remains a separate manual operation.
+
+Before transferring source or building, the workflow reads the active release's
+commit through the restricted SSH `current` command. It compares all changes from
+that deployed version to checked main. Only API, served website/dashboard, shared
+contracts, server build inputs, production/SFU/relay files and the CD workflow
+trigger deployment. Native publisher/portable, assets, Cargo and documentation-only
+changes skip source transfer, builds and container restart. Comparing to the active
+release also catches an earlier pending server update followed by a native-only
+merge. A short GitHub preflight job still evaluates this condition after Checks.
+
+The `production` environment holds `VPS_DEPLOY_KEY` and `VPS_KNOWN_HOSTS`; its
+variables are `VPS_HOST` and `VPS_USER`. Allow deployments only from main. The key
+is dedicated to this repository and has a forced SSH command with forwarding/PTY
+disabled. Install `cd-receive.py` at `/opt/freedomstream/cd/receive.py` and authorize
+its public key as `restrict,command="/usr/bin/python3 /opt/freedomstream/cd/receive.py"`.
+Use the previously verified server host keys, never an unverified keyscan in CI.
+
+The receiver accepts only `current` (the active SHA) or `deploy <40-character-SHA>` plus a bounded source
+archive. It rejects links/traversal/private state and stages immutable releases.
+The release script builds before activation, creates an integrity-checked SQLite
+online backup (including committed WAL pages), and preserves the original database
+inode, credentials and publisher manifest. It checks every saved traffic bucket
+and coverage row within the existing 400-day retention for deletion/reduction,
+and durable rooms/participants with retained traffic for loss. Expired users
+without retained traffic may undergo normal application cleanup.
+Traffic writes may increase totals across the update. First activation adds the
+private metrics listener and enables the usage SFU without regenerating secrets.
+If no traffic tables existed previously, they initialize without fabricating past
+traffic; the former stock SFU cannot reconstruct historical participant usage.
+
+Failures restore the previous code/config and restart its services. Rollback never
+restores a snapshot over the live database, so new traffic is retained. The verified
+backup and prior code/config remain under `shared/backups/cd-*` for operator recovery.
+No `compose down`, volume removal, database replacement or pruning runs during CD.
+The app's documented 400-day traffic retention remains a separate application policy.
+
+Run the backup/history regression tests with
+`python3 -m unittest discover -s deploy/production -p 'test_cd_*.py'`.
+
 This deployment owns `/opt/freedomstream`, its Compose project, two nginx snippets,
 two timers and explicitly named firewall rules. Existing sites on 80/443, databases
 and other Docker projects must be preserved. Commands below run as root unless

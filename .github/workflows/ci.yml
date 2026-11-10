@@ -28,6 +28,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - if: matrix.os == 'ubuntu-latest'
+        run: |
+          python3 -m unittest discover -s deploy/production -p 'test_cd_*.py'
+          bash -n deploy/production/cd.sh
   containers:
     runs-on: ubuntu-latest
     steps:

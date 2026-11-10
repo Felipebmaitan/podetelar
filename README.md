@@ -2,7 +2,16 @@
 
 Private screen and camera sharing for friends. Native Windows capture, server-forwarded media, a Discord-like room interface and selective watching are the intended product. Licensed under [MIT](LICENSE).
 
-**Current work: portable Windows distribution.** Phases 1–8 and the Windows clipboard repair are merged. Private rooms, selective watching, minute previews, native hardware HEVC/H.264, application audio isolation, independent quality controls and TLS relay are deployed for testing. The new single EXE bundles its runtime, notices and corresponding library sources without installation or first-launch downloads. See [distribution](docs/distribution.md), [deployment](docs/deployment.md), [native capture](docs/native-publisher.md), [quality](docs/quality.md), [access](docs/access.md) and [network recovery](docs/network.md). AMD, physical 4K120/game capture, a fresh PC and full group/evening qualification remain open; deployed behavior is not a substitute for those checks.
+**Current branch: native Windows rooms.** Sharing and watching move into the
+Windows app; the website keeps invitations, access management and downloads.
+Local NVIDIA synthetic checks pass native HEVC/H.264 decode, compatibility fallback,
+explicit A/V subscriptions, reconnects, higher-resolution previews and source-derived
+audio exclusion. The self-contained portable EXE launches without a terminal and
+can rejoin an encrypted saved room/name. This is draft PR #10, stacked on portable
+PR #9, and requires the matching server update. AMD, physical 4K120, fresh-PC/offline
+startup, native TURN, A/V latency and real-game/group qualification remain open.
+See [verification](docs/verification/phase-11.md), [distribution](docs/distribution.md)
+and [quality](docs/quality.md).
 
 See the [phase plan](docs/implementation-plan.md), [domain glossary](CONTEXT.md) and [research](docs/research/design-notes.md). Phase 1 is the initial commit; subsequent phases are separate PRs, each requiring acceptance checks and a GPT-6.1-Sol review at high reasoning before merge.
 
@@ -52,7 +61,13 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The smoke and browser checks create uniquely named rooms in the running database. The smoke check prints only pass/fail status. It does not output invitations, session cookies or media tokens. Automated API tests use isolated temporary databases and verify unauthorized access, room scoping, session expiry, persistence, CSRF, rate limiting and signed media grants. The browser media scenario uses synthetic capture with real LiveKit signaling, codecs and RTP: two publishers, an independent viewer, audio controls, measured stopped-video traffic, late joins, reconnect/reload and cleanup. It is not a GPU or real desktop-capture qualification. The Docker smoke check is not a streaming test.
+The smoke and browser checks create uniquely named rooms in the running database
+and report no invitation/session/media authority. API tests use isolated databases
+and exercise access, persistence, CSRF, revocation and grants. Browser checks cover
+the admission/download portal. `npm run native:room-smoke` exercises actual native
+HEVC/H.264 decode, fallback, subscriptions, preview/reconnect and audio against an
+isolated Windows SFU. These checks do not qualify real games, AMD, physical 4K120,
+A/V latency or large-group performance. Docker smoke is not a streaming test.
 
 ## Access model
 
@@ -60,9 +75,15 @@ The smoke and browser checks create uniquely named rooms in the running database
 - A room invitation contains 32 random bytes of authority after `#invite=`. The browser removes it from its address bar and keeps it in memory for the admission/copy flow; no token is stored in browser local storage.
 - SQLite holds hashes of invitations and session tokens, not their raw values. API responses are not cached and automatic request logging is disabled.
 - Admission creates an HttpOnly, SameSite=Strict cookie scoped to that room. HTTPS origins also use Secure cookies. Sessions last 24 hours; the pinned invitation remains valid across restarts and departures.
-- LiveKit tokens are room-scoped and expire after two minutes. A valid invitation holder can publish and subscribe. Invitation rotation, disablement and individual/all-session revocation enforce admission through the signaling gateway. Accounts and viewer-only roles are not implemented.
+- LiveKit tokens are room-scoped and expire after two minutes. The native route grants an admitted participant publishing/subscription authority; browser media grants deny both. Invitation rotation, disablement and individual/all-session revocation enforce admission through the signaling gateway. Accounts and viewer-only roles are not implemented.
 - Leaving deletes the current session, not the room or invitation. A member can rejoin with the invitation.
 
 The original code in this repository is MIT licensed. Dependencies and any future bundled native runtime retain their own licenses. See [configuration and interfaces](docs/development.md) for the current module contracts and deliberate limits.
 
 See [Windows distribution](docs/distribution.md), [production deployment and recovery](docs/deployment.md), and [Phase 8 qualification](docs/phase8-qualification.md) for release/install steps, private room downloads, HTTPS without a domain, backup/restore and remaining hardware/group checks.
+
+The native room work on `feat/native-rooms` moves sharing and watching into the
+Windows app. Browsers retain invitations, access management and downloads. See
+[the native acceptance workflow](docs/native-publisher.md), [quality controls](docs/quality.md)
+and [automatic source audio](docs/audio.md). This branch is not a qualified
+production release until its acceptance gates and independent review pass.

@@ -15,7 +15,7 @@ import { jpegDimensions } from "./jpeg.js";
 import { MediaUnavailable, type MediaDirectory } from "./media.js";
 import type { Rooms } from "./rooms.js";
 
-const CAPACITY = 256; // At most 16 MiB of compressed images, shared across rooms.
+const CAPACITY = 256; // At most 64 MiB of compressed images, shared across rooms.
 const MAX_PENDING = 16;
 const ownerPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -85,7 +85,7 @@ export class Previews {
     if (!dimensions)
       throw new PreviewError(
         400,
-        "Use a baseline JPEG no larger than 320 × 180 and 64 KiB.",
+        "Use a baseline JPEG no larger than 960 × 540 and 256 KiB.",
       );
     this.sweep();
     const key = keyOf(room, owner, kind);

@@ -2,7 +2,12 @@
 
 Each phase is an acceptance gate. Phase 1 is the initial commit on `main`; every later phase gets its own branch and PR. Felipe authorized autonomous implementation and merging: each PR must pass its acceptance checks and a new GPT-6.1-Sol review at high reasoning before merge. Address review findings before proceeding. Code can be MIT licensed while third-party runtimes retain their own licenses; qualify distribution licenses before bundling native media dependencies. Report external hardware/deployment verification separately and do not waive it merely to finish the sequence.
 
-**Current checkpoint:** Phases 1–8 and the clipboard repair (PR #8) are merged after checks and review approval. Felipe confirmed pasting an invitation from Firefox; copying it back out remains an unperformed manual check. The next PR replaces the script ZIP with a fully bundled portable EXE. Hardware, fresh-PC, real-game/group-call and higher-rate qualification remain separate external gates; see [Phase 8 qualification](phase8-qualification.md).
+**Current checkpoint:** Phases 1–8 and clipboard PR #8 are merged. Portable
+packaging PR #9 remains a separate phase. Native room PR #10 is stacked on it as
+a draft, with local native/media/DPAPI/portable checks and independent review
+recorded in [Phase 11 verification](verification/phase-11.md). Remaining physical
+hardware, deployment/network and real-game/group gates are not waived by those
+results.
 
 ## 1. Persistent private-room foundation — initial commit
 
@@ -67,6 +72,74 @@ not install shared runtimes, change system settings, or download dependencies.
 Qualify the shipped DLL/plugin set, matching source availability and licenses.
 Test offline startup, invocation from a fresh directory, actual capture/audio and
 room download behavior, then review and deploy the replacement artifact.
+
+## 11. Native room experience — PR
+
+Replace the external Chrome viewer with native video decoding/rendering and native
+audio playback in the Windows app. The website admits participants, manages access
+and distributes the app; publishing and watching belong in the app. Preserve room
+and explicit subscription contracts. Qualify the actual native SDK receive path
+before claiming that bundling a decoder provides playback.
+
+Use SDR only, source resolution bounded to 4K, and 60 FPS initially. Keep resolution
+and an FPS slider visible. Favor image quality in the presets; put bitrate and
+codec in Advanced. Automatically fall back from HEVC to H.264 for an incompatible
+watcher, switching the publication for all its watchers rather than double encoding.
+Preserve watch intent across that transition. Do not silently change resolution/FPS.
+
+Derive audio from the video source: application process-tree audio for a window,
+approved desktop application mix for a monitor. Always exclude Discord and our own
+playback; never acquire the microphone. Keep existing fail-closed process policies.
+Increase previews to 960×540 at improved JPEG quality with bounded upload/storage,
+preserving the initial capture and at-most-once-per-minute cadence.
+
+Use a 1280×720 initial native viewport, a left sharing menu with the FPS slider
+visible, and larger right-side 16:9 stream tiles with centered Watch buttons.
+Replace aggressive bitrate estimates with source-informed lower targets and a
+bounded aggregate receiver allowance. Receiver feedback may cap the one shared
+encoding; document its effects on other watchers and do not imply independent
+per-viewer quality or a speed test.
+
+Launch both portable wrapper and native app without a console. Keep test-server
+executable paths stable and helper processes hidden. Do not modify firewall rules
+to hide Windows prompts. Persist the last successful room/name with Windows
+per-user encryption, automatically rejoin on launch without starting capture or
+subscriptions, and provide an explicit Forget saved room action. Keep session and
+media tokens in memory only. Verify encrypted persistence and actual reopen/join.
+
+Refine the native app with repeated image-only Gemini 4 Argon UI/UX reviews,
+judging visual polish and UX inferred from native-renderer screenshots.
+Use a fresh review context after each implementation pass and the fixed rubric
+in [UI review criteria](ui-reviews/rubric.md). Address actionable findings and
+continue until an independent pass scores every category at least 9/10. Record
+unobserved interactions honestly; visual ratings never waive media,
+hardware, security or field gates.
+
+Accept with native HEVC and H.264 decode, audible synchronized stereo playback,
+explicit watch/stop traffic checks, fallback and reconnect recovery, preview access
+and cadence, source/audio switching and exclusion, portable/offline startup, and
+gaming while publishing and watching multiple friends. Run automated checks and a
+fresh GPT-6.1-Sol high-reasoning review. AMD, fresh-machine, real-game/Discord and
+4K120 qualification remain external until actually exercised. No embedded browser,
+server transcoding, HDR, or new platform promise.
+
+## 12. Friends feedback, measured bandwidth and localization — PR
+
+Build on the native-room beta in a separate dependent branch/PR. Add a bounded,
+authenticated VPS down/up measurement capped at 100 Mbps on connect and an Advanced
+rerun action. Report it as capacity to this VPS, not an ISP maximum. Derive an
+automatic aggregate watching allowance and upload recommendation with headroom;
+adapt the shared publication to actual subscribers as they arrive/leave, while
+preserving geometry and explicit manual settings. Bound transfer duration, bytes,
+concurrency and server load, and cancel stale tests on leave/rejoin.
+
+Expose room members from the room-name control, a local source-confirmation
+preview without increasing uploaded preview capture cadence, simpler room actions,
+visible bitrate/FPS and persistent PT-BR/English selection at the top right.
+Investigate and measure the reported audio lag across sender, RTP/playout and
+device queues. Do not substitute an arbitrary delay or compilation for actual
+audio/video timing acceptance. Verify a synchronized audiovisual fixture and
+record any remaining device/network limitations before claiming the fix.
 
 ## Later portability
 

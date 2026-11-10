@@ -91,6 +91,15 @@ impl Encoding {
         mode: Mode,
         stop: &AtomicBool,
     ) -> Result<Self> {
+        Self::start_controlled(source, encoder, mode, stop, RateControl::new(mode.bitrate))
+    }
+    pub fn start_controlled(
+        source: &Source,
+        encoder: &Encoder,
+        mode: Mode,
+        stop: &AtomicBool,
+        rate: RateControl,
+    ) -> Result<Self> {
         ensure!(!stop.load(Ordering::Acquire), "Capture was cancelled.");
         ensure!(
             encoder.supports(mode),
@@ -121,13 +130,13 @@ impl Encoding {
             ""
         };
         let processing = format!(
-            "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! {cadence}videorate drop-only=true max-rate={} ! d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width={},height={},framerate={}/1 ! clocksync ! tee name=raw raw. ! queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! {} name=hardware bitrate={} gop-size={} ! {media_type},profile={profile} ! {parser} config-interval=-1 ! {media_type},stream-format=byte-stream,alignment=au ! appsink name=encoded max-buffers=2 sync=false raw. ! queue name=preview_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=NV12,width=320,height=180 ! d3d11download ! video/x-raw,format=NV12 ! videoconvert ! video/x-raw,format=I420 ! jpegenc quality=60 ! appsink name=preview max-buffers=1 drop=true sync=false async=false wait-on-eos=false",
+            "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! {cadence}videorate drop-only=true max-rate={} ! d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width={},height={},framerate={}/1 ! clocksync ! tee name=raw raw. ! queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! {} name=hardware bitrate={} gop-size={} ! {media_type},profile={profile} ! {parser} config-interval=-1 ! {media_type},stream-format=byte-stream,alignment=au ! appsink name=encoded max-buffers=2 sync=false raw. ! queue name=preview_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=NV12,width=960,height=540 ! d3d11download ! video/x-raw,format=NV12 ! videoconvert ! video/x-raw,format=I420 ! jpegenc quality=85 ! appsink name=preview max-buffers=1 drop=true sync=false async=false wait-on-eos=false",
             mode.fps,
             mode.width,
             mode.height,
             mode.fps,
             encoder.factory,
-            mode.bitrate / 1000,
+            rate.effective(None) / 1000,
             mode.fps
         );
         let pipeline = gst::parse::launch(&processing)
@@ -227,7 +236,7 @@ impl Encoding {
             capture: source.clone(),
             preview_sink,
             previews: Arc::new(Mutex::new(None)),
-            rate: RateControl::new(mode.bitrate),
+            rate,
         };
         ensure!(!stop.load(Ordering::Acquire), "Capture was cancelled.");
         encoding
@@ -303,12 +312,12 @@ impl Encoding {
         let mut last_frame = Instant::now();
         let mut last_report = Instant::now();
         let mut counters = Metrics {
-            encoder_bitrate: self.mode.bitrate,
+            encoder_bitrate: self.encoder.property::<u32>("bitrate") as u64 * 1000,
             ..Default::default()
         };
         let mut keyframe_count = 0;
         let mut feedback = None;
-        let mut budget = EncoderBudget::new(self.mode.bitrate);
+        let mut budget = EncoderBudget::new(counters.encoder_bitrate);
         let mut first_feedback = false;
         let mut last_rate_update = Instant::now();
         let mut reported_bytes = 0;

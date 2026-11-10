@@ -14,6 +14,8 @@ if (-not (Test-Path -LiteralPath (Join-Path $gstRoot 'bin/gst-inspect-1.0.exe'))
 $env:PATH = "$(Join-Path $gstRoot 'bin');$env:PATH"
 $env:PKG_CONFIG_PATH = Join-Path $gstRoot 'lib/pkgconfig'
 $env:GSTREAMER_1_0_ROOT_MSVC_X86_64 = $gstRoot
+node (Join-Path $repository "scripts/setup-native-decoder.mjs")
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Push-Location $repository
 try {
     switch ($Action) {

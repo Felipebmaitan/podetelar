@@ -1,4 +1,5 @@
 mod policy;
+pub use policy::Identity as ProcessIdentity;
 #[cfg(windows)]
 mod windows;
 
@@ -22,6 +23,7 @@ pub enum Choice {
     Off,
     Desktop,
     Application(String),
+    Window(ProcessIdentity),
 }
 
 #[derive(Clone, Serialize)]
@@ -38,6 +40,13 @@ pub struct Metrics {
     pub channel_difference_peak: f64,
     pub tones: [f64; 3],
     pub windows: Vec<SpectralWindow>,
+    // Observed pipeline backlog only. These are not physical A/V offsets.
+    pub capture_age_ms: f64,
+    pub capture_age_max_ms: f64,
+    pub transport_wait_ms: f64,
+    pub playback_queue_ms: f64,
+    pub playback_queue_max_ms: f64,
+    pub playback_dropped_frames: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -243,6 +252,16 @@ pub fn run(
                 break;
             }
             let buffer = sample.buffer().context("Missing audio samples.")?;
+            if let Some(age) = pipeline
+                .pipeline
+                .current_running_time()
+                .zip(buffer.pts())
+                .and_then(|(now, pts)| now.checked_sub(pts))
+            {
+                counters.capture_age_ms = age.nseconds() as f64 / 1_000_000.0;
+                counters.capture_age_max_ms =
+                    counters.capture_age_max_ms.max(counters.capture_age_ms);
+            }
             let bytes = buffer
                 .map_readable()
                 .context("Could not read audio samples.")?;
@@ -284,12 +303,14 @@ pub fn run(
                     sample_rate: 48000,
                     num_channels: 2,
                 };
+                let transport_started = Instant::now();
                 tokio::runtime::Handle::current().block_on(async {
                     tokio::time::timeout(Duration::from_millis(250), source.capture_frame(&frame))
                         .await
                         .context("Audio transport stalled.")?
                         .map_err(|_| anyhow::anyhow!("Audio transport could not accept samples."))
                 })?;
+                counters.transport_wait_ms = transport_started.elapsed().as_secs_f64() * 1000.0;
             }
             if let Ok(mut state) = snapshot.lock() {
                 *state = counters.clone();
@@ -305,11 +326,11 @@ pub fn run(
 }
 
 #[derive(Default)]
-struct Meter {
+pub(crate) struct Meter {
     samples: Vec<f64>,
 }
 impl Meter {
-    fn push(&mut self, stereo: &[i16], levels: &mut [f64; 3]) {
+    pub(crate) fn push(&mut self, stereo: &[i16], levels: &mut [f64; 3]) {
         for frame in stereo.chunks_exact(2) {
             self.samples.push(frame[0] as f64 / 32768.0);
             if self.samples.len() == 4800 {
@@ -332,5 +353,35 @@ impl Meter {
                 self.samples.clear();
             }
         }
+    }
+}
+
+/// Source selection owns audio policy; callers cannot accidentally capture another app.
+pub fn for_source(source: &crate::sources::Source) -> Result<Choice> {
+    match source.target {
+        crate::sources::Target::Monitor(_) | crate::sources::Target::MonitorWgc(_) => {
+            Ok(Choice::Desktop)
+        }
+        crate::sources::Target::Window { pid, .. } => {
+            #[cfg(windows)]
+            {
+                let inventory = windows::inventory()?;
+                let process = inventory
+                    .processes
+                    .get(&pid)
+                    .context("The selected window application ended.")?;
+                ensure!(
+                    process.identity.created != 0,
+                    "Cannot safely identify this window's audio process."
+                );
+                Ok(Choice::Window(process.identity))
+            }
+            #[cfg(not(windows))]
+            {
+                let _ = pid;
+                bail!("Application audio requires Windows.")
+            }
+        }
+        crate::sources::Target::Pattern => Ok(Choice::Off),
     }
 }

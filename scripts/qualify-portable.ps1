@@ -15,6 +15,15 @@ $originalPath = $env:PATH
 $gstEnvironment = @{}
 Get-ChildItem Env: | Where-Object { $_.Name -match '^GST_|^GSTREAMER_' } | ForEach-Object { $gstEnvironment[$_.Name] = $_.Value }
 
+function Assert-GuiSubsystem([string]$Path) {
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    $pe = [BitConverter]::ToInt32($bytes, 0x3c)
+    if ($pe -lt 0 -or $pe + 94 -gt $bytes.Length -or [BitConverter]::ToUInt32($bytes, $pe) -ne 0x4550 -or [BitConverter]::ToUInt16($bytes, $pe + 24 + 68) -ne 2) {
+        throw 'A shipped executable does not use the Windows GUI subsystem.'
+    }
+}
+Assert-GuiSubsystem $copy
+
 function Start-Portable([string]$Arguments) {
     $info = [Diagnostics.ProcessStartInfo]::new()
     $info.FileName = $copy
@@ -55,6 +64,7 @@ try {
     $cache = @(Get-ChildItem -LiteralPath (Join-Path $localData 'FreedomStreamPortable') -Directory | Where-Object { $_.Name -match '^[a-f0-9]{64}$' })
     if ($cache.Count -ne 1) { throw 'First launches did not converge on one cache.' }
     $runtime = $cache[0].FullName
+    Assert-GuiSubsystem (Join-Path $runtime 'bin/freedomstream-publisher.exe')
     $manifest = Get-Content -LiteralPath (Join-Path $runtime 'release.json') -Raw | ConvertFrom-Json
     foreach ($file in $manifest.files.PSObject.Properties) {
         $path = Join-Path $runtime $file.Name

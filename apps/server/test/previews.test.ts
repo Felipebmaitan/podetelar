@@ -190,7 +190,7 @@ test("JPEG validation bounds dimensions and rejects multi-image, truncated, prog
   assert.deepEqual(jpegDimensions(jpeg), { width: 320, height: 180 });
   assert.equal(jpegDimensions(Buffer.concat([jpeg, jpeg])), null);
   assert.equal(jpegDimensions(jpeg.subarray(0, -2)), null);
-  assert.equal(jpegDimensions(Buffer.alloc(65_537)), null);
+  assert.equal(jpegDimensions(Buffer.alloc(262_145)), null);
   const sof = jpeg.indexOf(Buffer.from([0xff, 0xc0]));
   assert.ok(sof > 0);
   const huge = Buffer.from(jpeg);
@@ -320,7 +320,7 @@ test("invalid/oversized images and unavailable SFU do not announce a preview", a
     (await f.upload({}, Buffer.from("not an image"))).statusCode,
     400,
   );
-  assert.equal((await f.upload({}, Buffer.alloc(65_537))).statusCode, 413);
+  assert.equal((await f.upload({}, Buffer.alloc(262_145))).statusCode, 413);
   f.media.failure = true;
   assert.equal((await f.upload()).statusCode, 503);
   assert.equal(f.media.attributes.size, 0);

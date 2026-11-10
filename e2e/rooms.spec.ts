@@ -53,12 +53,15 @@ test("create, share, join, resume and leave a private room", async ({
       friend.getByRole("heading", { name, exact: true }),
     ).toBeVisible();
     await expect(friend.getByText("Friend", { exact: true })).toBeVisible();
-    await expect(friend.getByTestId("media-connection")).toHaveAttribute(
-      "data-state",
-      "connected",
-      { timeout: 20_000 },
-    );
-    await expect.poll(() => mediaTokens.length).toBeGreaterThan(0);
+    await expect(
+      friend.getByRole("heading", {
+        name: "Share and watch in the desktop app",
+      }),
+    ).toBeVisible();
+    expect(mediaTokens).toHaveLength(0);
+    await expect(
+      friend.getByRole("button", { name: /Share camera|Share screen/ }),
+    ).toHaveCount(0);
     const secret = new URL(invitation).hash.slice("#invite=".length);
     const stored = await friend.evaluate(() =>
       JSON.stringify({

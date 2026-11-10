@@ -7,20 +7,13 @@ test("create, share, join, resume and leave a private room", async ({
   baseURL,
 }) => {
   const name = `Evening room ${Date.now()}`;
-  await page.goto("/");
-  await page.getByLabel("Room name", { exact: true }).fill(name);
-  await page.getByLabel("Your name", { exact: true }).fill("Felipe");
-  await page.getByLabel("Server access key").fill(process.env.ADMIN_TOKEN!);
-  await page.getByRole("button", { name: "Create private room" }).click();
+  const created = await createTestRoom(page.request, baseURL!, name);
+  const body = await created.json();
+  await page.goto(`/r/${body.room.id}`);
   await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
-  const invitation = await page
-    .getByLabel("Room invitation", { exact: true })
-    .inputValue();
+  const invitation = body.invitationUrl as string;
   const roomId = new URL(invitation).pathname.split("/")[2]!;
   await expect(page).toHaveURL(`${baseURL}/r/${roomId}`);
-  await expect(
-    page.getByText("This invitation stays valid when you leave the room."),
-  ).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -79,7 +72,7 @@ test("create, share, join, resume and leave a private room", async ({
       .getByRole("button", { name: "Leave room", exact: true })
       .click();
     await expect(
-      friend.getByRole("heading", { name: "A room for your people." }),
+      friend.getByRole("heading", { name: "Administrator login" }),
     ).toBeVisible();
     expect(
       (

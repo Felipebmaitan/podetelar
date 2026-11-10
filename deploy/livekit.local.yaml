@@ -1,4 +1,6 @@
 port: 7880
+prometheus:
+  port: 6789
 bind_addresses:
   - 0.0.0.0
 rtc:

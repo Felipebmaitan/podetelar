@@ -15,6 +15,7 @@ export type Config = {
   webRoot: string;
   trustedProxy?: string;
   publisherDirectory?: string;
+  usageMetricsUrl?: string;
 };
 
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
@@ -85,6 +86,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       env.DATABASE_PATH ?? "data/freedomstream.db",
     ),
     adminToken: required("ADMIN_TOKEN", 32),
+    usageMetricsUrl:
+      env.USAGE_METRICS_URL ??
+      `${internalUrl.protocol}//${internalUrl.hostname}:6789/metrics`,
     livekitUrl: livekitUrl.toString().replace(/\/$/, ""),
     livekitInternalUrl: internalUrl.origin,
     livekitApiKey: required("LIVEKIT_API_KEY", 8),

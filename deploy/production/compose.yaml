@@ -43,7 +43,7 @@ services:
       driver: local
       options: { max-size: 5m, max-file: "2" }
   livekit:
-    image: livekit/livekit-server:v1.13.11
+    image: ${LIVEKIT_USAGE_IMAGE:?Set the immutable FreedomStream usage-enabled SFU image}
     user: "1000:1000"
     command: [--config, /etc/livekit.yaml]
     # Signaling has no published port. Only the admitted app gateway can reach it.

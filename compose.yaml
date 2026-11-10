@@ -29,7 +29,10 @@ services:
       timeout: 3s
       retries: 5
   livekit:
-    image: livekit/livekit-server:v1.13.11
+    build:
+      context: .
+      dockerfile: deploy/livekit-usage/Dockerfile
+    image: freedomstream/livekit-usage:1.13.11
     command: ["--config", "/etc/livekit.yaml"]
     environment:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?Run npm run setup first}: ${LIVEKIT_API_SECRET:?Run npm run setup first}"

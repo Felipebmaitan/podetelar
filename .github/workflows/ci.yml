@@ -34,6 +34,7 @@ jobs:
       - run: docker compose --env-file .env -f deploy/production/compose.yaml config --quiet
         env:
           APP_IMAGE: freedomstream/app:0000000000000000000000000000000000000000
+          LIVEKIT_USAGE_IMAGE: freedomstream/livekit-usage:1.13.11
           STATE_DIR: /tmp/freedomstream-production-config-check
           PUBLIC_URL: https://stream.example:8443
       - run: docker compose up --build -d --wait

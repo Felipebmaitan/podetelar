@@ -122,7 +122,9 @@ export async function adminRoutes(
         return reply
           .code(400)
           .send({ error: "Choose a valid period of up to 366 days." });
-      return usage.report(from, to, page);
+      return reply
+        .type("application/json; charset=utf-8")
+        .send(usage.reportJson(from, to, page));
     },
   );
 }

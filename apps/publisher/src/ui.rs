@@ -98,6 +98,8 @@ pub struct PublisherUi {
     advanced_open: bool,
     show_invitation: bool,
     self_preview_revision: Option<(crate::preview::Latest, u64)>,
+    #[cfg(feature = "performance-experiments")]
+    planar: crate::planar_experiment::Videos,
 }
 impl PublisherUi {
     pub fn new() -> Self {
@@ -139,6 +141,8 @@ impl PublisherUi {
             advanced_open: false,
             show_invitation: false,
             self_preview_revision: None,
+            #[cfg(feature = "performance-experiments")]
+            planar: Default::default(),
         };
         if let Some(profile) = profile {
             app.controller.send(Command::Join {
@@ -625,6 +629,14 @@ impl PublisherUi {
 
     fn update_picture(&mut self, ctx: &egui::Context, tile: &Tile) {
         tile.presentation.request_context(ctx);
+        #[cfg(feature = "performance-experiments")]
+        if let Ok(mut latest) = tile.presentation.planar.lock()
+            && let Some(picture) = latest.take()
+        {
+            self.planar.update(&tile.id, picture);
+            self.textures.remove(&tile.id);
+            tile.presentation.uploaded.fetch_add(1, Ordering::Relaxed);
+        }
         if let Ok(mut picture) = tile.picture.lock()
             && let Some(image) = picture.take()
         {
@@ -640,6 +652,12 @@ impl PublisherUi {
                         egui::TextureOptions::LINEAR,
                     ),
                 );
+            }
+            #[cfg(feature = "performance-experiments")]
+            if tile.watching
+                && let Some(texture) = self.textures.get(&tile.id)
+            {
+                crate::resource_experiment::tag_rgba_texture(texture.id());
             }
         }
     }
@@ -690,7 +708,11 @@ impl PublisherUi {
             .frame(egui::Frame::new().fill(egui::Color32::BLACK))
             .show(root, |ui| {
                 let rect = ui.max_rect();
-                if let Some(texture) = self.textures.get(&tile.id) {
+                #[cfg(feature = "performance-experiments")]
+                let planar = self.planar.paint(ui, &tile.id, rect);
+                #[cfg(not(feature = "performance-experiments"))]
+                let planar = false;
+                if !planar && let Some(texture) = self.textures.get(&tile.id) {
                     let aspect = texture.aspect_ratio();
                     let size = egui::vec2(
                         rect.width().min(rect.height() * aspect),
@@ -788,15 +810,29 @@ impl PublisherUi {
                     let text = if !tile.watching { tr("Preview") } else if active { tr("Live") } else { tr("Connecting") };
                     badge(ui,if tile.id=="__self_preview" {tr("Your stream")}else{text},if active { ACCENT } else { MUTED });
                 }).response.on_hover_text(if tile.id=="__self_preview" { tr("Source confirmation · updates once a minute") } else if tile.watching { tr("Live video and audio subscription") } else { tr("Still preview, updated at most once per minute. Watch starts live video and audio.") });
-                self.update_picture(ui.ctx(),tile);
                 let (rect,response) = ui.allocate_exact_size(egui::vec2(inner,inner*9.0/16.0),egui::Sense::click());
+                #[cfg(feature = "performance-experiments")]
+                let present = {
+                    use std::sync::OnceLock;
+                    static CLIP: OnceLock<bool> = OnceLock::new();
+                    let visible = ui.is_rect_visible(rect);
+                    tile.presentation.visible.store(visible, Ordering::Relaxed);
+                    !*CLIP.get_or_init(|| std::env::var("FREEDOMSTREAM_DEEP_CLIP").ok().is_none_or(|v| v != "0")) || visible
+                };
+                #[cfg(not(feature = "performance-experiments"))]
+                let present = ui.is_rect_visible(rect);
+                if present { self.update_picture(ui.ctx(),tile); }
                 if tile.watching && response.double_clicked(){self.set_fullscreen(ui.ctx(),Some(tile.id.clone()));}
                 ui.painter().rect_filled(rect,6.0,CANVAS);
-                if let Some(texture) = self.textures.get(&tile.id) {
+                #[cfg(feature = "performance-experiments")]
+                let planar = self.planar.paint(ui, &tile.id, rect);
+                #[cfg(not(feature = "performance-experiments"))]
+                let planar = false;
+                if !planar && let Some(texture) = self.textures.get(&tile.id) {
                     let aspect = texture.aspect_ratio();
                     let size = egui::vec2(rect.width().min(rect.height()*aspect),rect.height().min(rect.width()/aspect));
                     ui.painter().image(texture.id(),egui::Rect::from_center_size(rect.center(),size),egui::Rect::from_min_max(egui::pos2(0.0,0.0),egui::pos2(1.0,1.0)),egui::Color32::WHITE);
-                } else {
+                } else if !planar {
                     ui.painter().text(rect.center(),egui::Align2::CENTER_CENTER,if tile.watching { tr("Starting live playback…") } else { tr("Loading preview…") },egui::FontId::proportional(14.0),MUTED);
                 }
                 if !tile.watching && tile.id!="__self_preview" {
@@ -842,6 +878,10 @@ impl PublisherUi {
 }
 
 impl eframe::App for PublisherUi {
+    #[cfg(feature = "performance-experiments")]
+    fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
+        self.planar.destroy(gl);
+    }
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -854,6 +894,13 @@ impl eframe::App for PublisherUi {
             }
         }
         let state = self.controller.snapshot();
+        #[cfg(feature = "performance-experiments")]
+        self.planar.retain(_frame.gl(), |id| {
+            state
+                .tiles
+                .iter()
+                .any(|tile| tile.id == id && tile.watching)
+        });
         self.textures.retain(|id, _| {
             (state.sharing && id == "__self_preview") || state.tiles.iter().any(|t| &t.id == id)
         });
@@ -1168,15 +1215,19 @@ impl eframe::App for PublisherUi {
                     ((ui.available_width() - width * columns as f32 - gap * (columns - 1) as f32)
                         / 2.0)
                         .max(0.0);
-                egui::ScrollArea::vertical()
+                let stream_scroll = egui::ScrollArea::vertical()
                     .id_salt("streams-scroll")
                     .scroll_bar_visibility(if columns == 1 && tiles.len() > 1 {
                         egui::scroll_area::ScrollBarVisibility::AlwaysVisible
                     } else {
                         egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
                     })
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
+                    .auto_shrink([false, false]);
+                #[cfg(feature="performance-experiments")]
+                let stream_scroll=if let Some(offset)=ctx.data(|data|data.get_temp::<f32>(egui::Id::unique("deep-scroll-offset"))) {
+                    stream_scroll.vertical_scroll_offset(offset)
+                } else {stream_scroll};
+                stream_scroll.show(ui, |ui| {
                         ui.horizontal_top(|ui| {
                             ui.add_space(inset);
                             egui::Grid::new("stream-grid")

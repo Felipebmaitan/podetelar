@@ -11,6 +11,8 @@ using System.Runtime.InteropServices;
 public static class BenchmarkWindow {
  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr window);
  [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr window, int command);
+ [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+ [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
 }
 '@
 $outputPath=[IO.Path]::GetFullPath($Output)
@@ -46,7 +48,8 @@ while($clock.Elapsed.TotalSeconds -lt $Seconds){
             if($null -eq $minimizedAt){$minimizedAt=$clock.Elapsed.TotalSeconds}
             if($clock.Elapsed.TotalSeconds-$minimizedAt -ge $RestoreAfterSeconds){$null=[BenchmarkWindow]::ShowWindowAsync($window,9)}
         }else{$minimizedAt=$null}
-        $samples.Add(@{second=$clock.Elapsed.TotalSeconds;cpuMs=$target.TotalProcessorTime.TotalMilliseconds;privateBytes=$target.PrivateMemorySize64;workingSetBytes=$target.WorkingSet64;threads=$target.Threads.Count;handles=$target.HandleCount;gpuEnginesPercent=$engines;gpuMemoryBytes=$memory})
+        [uint32]$foregroundProcess=0; $null=[BenchmarkWindow]::GetWindowThreadProcessId([BenchmarkWindow]::GetForegroundWindow(),[ref]$foregroundProcess)
+        $samples.Add(@{windowFocused=($foregroundProcess -eq $ProcessId);windowMinimized=($window -ne [IntPtr]::Zero -and [BenchmarkWindow]::IsIconic($window));second=$clock.Elapsed.TotalSeconds;cpuMs=$target.TotalProcessorTime.TotalMilliseconds;privateBytes=$target.PrivateMemorySize64;workingSetBytes=$target.WorkingSet64;threads=$target.Threads.Count;handles=$target.HandleCount;gpuEnginesPercent=$engines;gpuMemoryBytes=$memory})
     }catch{break}
     $target.Dispose()
     [Threading.Thread]::Sleep(100)

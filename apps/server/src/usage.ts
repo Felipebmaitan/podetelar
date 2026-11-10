@@ -3,6 +3,8 @@ import type { UsageReport, UsagePoint } from "@freedomstream/contracts";
 
 const MINUTE = 60_000;
 const RETENTION = 400 * 86400000;
+const REPORT_CACHE_BYTES = 2 * 1024 * 1024;
+type CachedReport = { from: number; to: number; suffix: string; bytes: number };
 type Counter = {
   room: string;
   participant: string;
@@ -63,6 +65,8 @@ export class Usage {
   private generation: number | null = null;
   private prunedAt = 0;
   private observedSince = 0;
+  private reports = new Map<string, CachedReport>();
+  private reportBytes = 0;
   constructor(
     path: string,
     private url: string,
@@ -82,6 +86,7 @@ export class Usage {
     this.db
       .prepare("INSERT OR IGNORE INTO usage_users VALUES (?,?,?,?)")
       .run(participant, room, name, this.now());
+    this.clearReports();
   }
   start() {
     void this.sample();
@@ -125,6 +130,7 @@ export class Usage {
   /** Cumulative counters become deltas once. Gaps/resets establish a fresh baseline. */
   record(counters: Counter[], at: number, generation = 1) {
     const previous = this.lastSample;
+    const previousPrunedAt = this.prunedAt;
     const continuous =
       this.generation === generation &&
       previous !== null &&
@@ -191,8 +197,18 @@ export class Usage {
       }
       this.db.exec("COMMIT");
     } catch (error) {
+      this.clearReports();
       this.db.exec("ROLLBACK");
       throw error;
+    }
+    // A successful prune can change any historical range, including user names.
+    // Otherwise only minute buckets touched by this observation can change.
+    if (this.prunedAt !== previousPrunedAt) this.clearReports();
+    else if (previous !== null) {
+      const from = Math.floor(Math.min(previous, at) / MINUTE) * MINUTE;
+      const to = Math.ceil(Math.max(previous, at) / MINUTE) * MINUTE;
+      for (const [key, entry] of this.reports)
+        if (entry.from < to && entry.to > from) this.removeReport(key);
     }
     this.baseline = next;
     this.lastSample = at;
@@ -283,9 +299,59 @@ export class Usage {
       retentionDays: 400,
     };
   }
+  /** Cache closed history only; collector status and HTTP authorization stay live. */
+  reportJson(from: number, to: number, page = 0): string {
+    from = Math.floor(from / MINUTE) * MINUTE;
+    to = Math.ceil(to / MINUTE) * MINUTE;
+    if (to > Math.floor(this.now() / MINUTE) * MINUTE)
+      return JSON.stringify(this.report(from, to, page));
+    const key = `${from}/${to}/${page}`;
+    let entry = this.reports.get(key);
+    if (entry) {
+      this.reports.delete(key);
+      this.reports.set(key, entry);
+    } else {
+      const {
+        lastSampleAt: _last,
+        available: _available,
+        ...stable
+      } = this.report(from, to, page);
+      const suffix = JSON.stringify(stable).slice(1);
+      // Account conservatively for UTF-16 strings, keys and fixed entry data.
+      // This bounds retained content, not the JavaScript engine's total heap.
+      const bytes = (suffix.length + key.length) * 2 + 64;
+      entry = { from, to, suffix, bytes };
+      if (bytes <= REPORT_CACHE_BYTES) {
+        while (
+          this.reports.size >= 4 ||
+          this.reportBytes + bytes > REPORT_CACHE_BYTES
+        )
+          this.removeReport(this.reports.keys().next().value!);
+        this.reports.set(key, entry);
+        this.reportBytes += bytes;
+      }
+    }
+    const available =
+      this.available &&
+      this.lastSample !== null &&
+      this.now() - this.lastSample < 15000;
+    return `{"lastSampleAt":${this.lastSample},"available":${available},${entry.suffix}`;
+  }
+  private removeReport(key: string) {
+    const entry = this.reports.get(key);
+    if (entry) {
+      this.reportBytes -= entry.bytes;
+      this.reports.delete(key);
+    }
+  }
+  private clearReports() {
+    this.reports.clear();
+    this.reportBytes = 0;
+  }
   async close() {
     if (this.timer) clearInterval(this.timer);
     await this.work;
+    this.clearReports();
     this.db.close();
   }
 }

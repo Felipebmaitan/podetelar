@@ -27,6 +27,9 @@ mod locale;
 #[path = "../src/network.rs"]
 mod network;
 #[cfg(feature = "performance-experiments")]
+#[path = "../src/planar_experiment.rs"]
+mod planar_experiment;
+#[cfg(feature = "performance-experiments")]
 #[path = "../src/playback.rs"]
 mod playback;
 #[cfg(feature = "performance-experiments")]
@@ -38,6 +41,9 @@ mod publisher;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/quality.rs"]
 mod quality;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/resource_experiment.rs"]
+mod resource_experiment;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/settings.rs"]
 mod settings;
@@ -58,6 +64,14 @@ mod win32;
 fn main() -> anyhow::Result<()> {
     use std::io::Read;
     gstreamer::init().map_err(|_| anyhow::anyhow!("Runtime initialization failed."))?;
+    if std::env::args().nth(1).as_deref() == Some("--check-planar") {
+        return planar_experiment::check(
+            std::env::args()
+                .nth(2)
+                .ok_or_else(|| anyhow::anyhow!("Choose a report path"))?
+                .into(),
+        );
+    }
     if std::env::args().nth(1).as_deref() == Some("--sdk-soak") {
         return ui::experiment::sdk_soak(&std::path::PathBuf::from(
             std::env::args()

@@ -25,7 +25,102 @@ use tokio::task::JoinHandle;
 
 pub const LIMIT_PREFIX: &str = "freedomstream.limit.";
 pub const WATCH_PREFIX: &str = "freedomstream.watch.";
-pub type Picture = Arc<Mutex<Option<egui::ColorImage>>>;
+pub type Picture = Arc<Mutex<Option<Arc<egui::ColorImage>>>>;
+
+#[derive(Default)]
+pub struct Presentation {
+    requested: Mutex<Option<Instant>>,
+    pub converted: AtomicU64,
+    pub uploaded: AtomicU64,
+    #[cfg(feature = "performance-experiments")]
+    repaint: Mutex<Option<egui::Context>>,
+}
+impl Presentation {
+    pub fn request(&self) {
+        if let Ok(mut requested) = self.requested.lock() {
+            *requested = Some(Instant::now());
+        }
+    }
+    pub fn request_context(&self, ctx: &egui::Context) {
+        self.request();
+        #[cfg(feature = "performance-experiments")]
+        if frame_driven_repaint()
+            && let Ok(mut repaint) = self.repaint.lock()
+        {
+            *repaint = Some(ctx.clone());
+        }
+        #[cfg(not(feature = "performance-experiments"))]
+        let _ = ctx;
+    }
+    fn active(&self) -> bool {
+        self.requested.lock().is_ok_and(|requested| {
+            requested.is_some_and(|time| time.elapsed() < Duration::from_millis(250))
+        })
+    }
+    fn publish(&self, picture: &Picture, image: Arc<egui::ColorImage>) {
+        self.converted.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut latest) = picture.lock() {
+            *latest = Some(image);
+        }
+        #[cfg(feature = "performance-experiments")]
+        if frame_driven_repaint()
+            && let Ok(repaint) = self.repaint.lock()
+            && let Some(ctx) = repaint.as_ref()
+        {
+            let elapsed = self
+                .requested
+                .lock()
+                .ok()
+                .and_then(|request| request.map(|time| time.elapsed()))
+                .unwrap_or_default();
+            ctx.request_repaint_after(Duration::from_millis(16).saturating_sub(elapsed));
+        }
+    }
+}
+
+#[cfg(feature = "performance-experiments")]
+pub fn count_sdk_logs() -> Result<()> {
+    struct Counter;
+    impl log::Log for Counter {
+        fn enabled(&self, _: &log::Metadata<'_>) -> bool {
+            true
+        }
+        fn log(&self, record: &log::Record<'_>) {
+            if record.target() == "libwebrtc" {
+                SDK_MESSAGES.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        fn flush(&self) {}
+    }
+    static COUNTER: Counter = Counter;
+    log::set_logger(&COUNTER)
+        .map_err(|_| anyhow::anyhow!("Cannot enable local message counter."))?;
+    log::set_max_level(log::LevelFilter::Debug);
+    Ok(())
+}
+#[cfg(feature = "performance-experiments")]
+pub static SDK_MESSAGES: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(feature = "performance-experiments")]
+pub fn frame_driven_repaint() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("FREEDOMSTREAM_FRAME_REPAINT").is_ok_and(|value| value == "1")
+    })
+}
+#[cfg(feature = "performance-experiments")]
+fn conversion_jobs() -> Option<&'static Arc<tokio::sync::Semaphore>> {
+    static JOBS: std::sync::OnceLock<Option<Arc<tokio::sync::Semaphore>>> =
+        std::sync::OnceLock::new();
+    JOBS.get_or_init(|| {
+        std::env::var("FREEDOMSTREAM_CONVERSION_WORKERS")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|workers| (1..=4).contains(workers))
+            .map(|workers| Arc::new(tokio::sync::Semaphore::new(workers)))
+    })
+    .as_ref()
+}
 
 #[derive(Clone)]
 pub struct Tile {
@@ -34,6 +129,7 @@ pub struct Tile {
     pub codec: String,
     pub watching: bool,
     pub picture: Picture,
+    pub presentation: Arc<Presentation>,
     pub frames: Arc<AtomicU64>,
     pub received_bps: Arc<AtomicU64>,
     pub volume: Arc<AtomicU32>,
@@ -43,6 +139,7 @@ pub struct Tile {
 
 struct Watch {
     picture: Picture,
+    presentation: Arc<Presentation>,
     frames: Arc<AtomicU64>,
     received_bps: Arc<AtomicU64>,
     volume: Arc<AtomicU32>,
@@ -182,6 +279,7 @@ impl Playback {
             );
             self.watches.entry(id).or_insert_with(|| Watch {
                 picture: Arc::default(),
+                presentation: Arc::default(),
                 frames: Arc::default(),
                 received_bps: Arc::default(),
                 volume: Arc::new(AtomicU32::new(100)),
@@ -393,7 +491,7 @@ impl Playback {
                         if let Ok(image) = admission.get_preview(&owner, &requested).await
                             && let Ok(mut slot) = latest.lock()
                         {
-                            *slot = Some(image);
+                            *slot = Some(Arc::new(image));
                             complete.store(true, Ordering::Release);
                         }
                     });
@@ -421,7 +519,9 @@ impl Playback {
                 )
             }) {
                 let enabled = watching && compatible && admitted;
-                publication.set_subscribed(enabled);
+                if publication.is_desired() != enabled {
+                    publication.set_subscribed(enabled);
+                }
                 let sid = publication.sid().to_string();
                 if !enabled {
                     continue;
@@ -439,7 +539,13 @@ impl Playback {
                         let picture = watch.picture.clone();
                         let frames = watch.frames.clone();
                         let last_frame = watch.last_frame.clone();
+                        let presentation = watch.presentation.clone();
                         tokio::spawn(async move {
+                            #[cfg(feature = "performance-experiments")]
+                            let mut image_pool = crate::video_image::ImagePool::default();
+                            #[cfg(feature = "performance-experiments")]
+                            let pooled = std::env::var("FREEDOMSTREAM_IMAGE_POOL")
+                                .is_ok_and(|value| value == "1");
                             let mut stream = NativeVideoStream::with_options(
                                 track.rtc_track(),
                                 NativeVideoStreamOptions {
@@ -455,15 +561,48 @@ impl Playback {
                                 {
                                     break;
                                 }
-                                let image =
-                                    crate::video_image::to_color_image(frame.buffer.as_ref());
-                                if let Ok(mut latest) = picture.lock() {
-                                    *latest = Some(image);
-                                }
                                 frames.fetch_add(1, Ordering::Relaxed);
                                 if let Ok(mut last) = last_frame.lock() {
                                     *last = Instant::now();
                                 }
+                                if !presentation.active() {
+                                    if let Ok(mut latest) = picture.lock() {
+                                        *latest = None;
+                                    }
+                                    #[cfg(feature = "performance-experiments")]
+                                    image_pool.clear();
+                                    continue;
+                                }
+                                #[cfg(feature = "performance-experiments")]
+                                if pooled {
+                                    if let Some(image) = image_pool.convert(frame.buffer.as_ref()) {
+                                        presentation.publish(&picture, image);
+                                    } else if let Ok(mut latest) = picture.lock() {
+                                        *latest = None;
+                                    }
+                                    continue;
+                                }
+                                #[cfg(feature = "performance-experiments")]
+                                let image = if let Some(jobs) = conversion_jobs() {
+                                    let Ok(permit) = jobs.clone().acquire_owned().await else {
+                                        break;
+                                    };
+                                    let Ok(image) = tokio::task::spawn_blocking(move || {
+                                        let _permit = permit;
+                                        crate::video_image::to_color_image(frame.buffer.as_ref())
+                                    })
+                                    .await
+                                    else {
+                                        break;
+                                    };
+                                    image
+                                } else {
+                                    crate::video_image::to_color_image(frame.buffer.as_ref())
+                                };
+                                #[cfg(not(feature = "performance-experiments"))]
+                                let image =
+                                    crate::video_image::to_color_image(frame.buffer.as_ref());
+                                presentation.publish(&picture, Arc::new(image));
                             }
                         })
                     }
@@ -493,6 +632,7 @@ impl Playback {
                     .map(|w| w.picture.clone())
                     .or_else(|| self.previews.get(&id).map(|preview| preview.picture.clone()))
                     .unwrap_or_default(),
+                presentation: watch.map(|w| w.presentation.clone()).unwrap_or_default(),
                 frames: watch.map(|w| w.frames.clone()).unwrap_or_default(),
                 received_bps: watch.map(|w|w.received_bps.clone()).unwrap_or_default(),
                 audio: watch.map(|w| w.audio.clone()).unwrap_or_default(),
@@ -570,6 +710,8 @@ async fn audio(
         .by_name("backlog")
         .context("Missing playback queue.")?;
     pipeline.0.set_state(gst::State::Playing)?;
+    let bus = pipeline.0.bus();
+    let mut applied_volume = None;
     let mut stream = NativeAudioStream::with_options(
         track.rtc_track(),
         48000,
@@ -580,9 +722,8 @@ async fn audio(
     );
     let mut meter = crate::audio::Meter::default();
     while let Some(frame) = stream.next().await {
-        if let Some(message) = pipeline
-            .0
-            .bus()
+        if let Some(message) = bus
+            .as_ref()
             .and_then(|bus| bus.pop_filtered(&[gst::MessageType::Error]))
         {
             let _ = message;
@@ -610,18 +751,37 @@ async fn audio(
                 meter.push(&frame.data, &mut metrics.tones);
             }
         }
-        level.set_property("volume", volume.load(Ordering::Relaxed) as f64 / 100.0);
+        let requested_volume = volume.load(Ordering::Relaxed);
+        if applied_volume != Some(requested_volume) {
+            level.set_property("volume", requested_volume as f64 / 100.0);
+            applied_volume = Some(requested_volume);
+        }
         if input.current_level_bytes() > 38400 {
             continue;
         }
-        let bytes: Vec<u8> = frame
-            .data
-            .iter()
-            .flat_map(|sample| sample.to_le_bytes())
-            .collect();
-        input.push_buffer(gst::Buffer::from_mut_slice(bytes))?;
+        input.push_buffer(audio_buffer(frame.data.into_owned()))?;
     }
     Ok(())
+}
+
+pub(crate) fn audio_buffer(samples: Vec<i16>) -> gst::Buffer {
+    #[cfg(target_endian = "little")]
+    {
+        struct Samples(Vec<i16>);
+        impl AsMut<[u8]> for Samples {
+            fn as_mut(&mut self) -> &mut [u8] {
+                bytemuck::cast_slice_mut(&mut self.0)
+            }
+        }
+        gst::Buffer::from_mut_slice(Samples(samples))
+    }
+    #[cfg(not(target_endian = "little"))]
+    gst::Buffer::from_mut_slice(
+        samples
+            .into_iter()
+            .flat_map(i16::to_le_bytes)
+            .collect::<Vec<_>>(),
+    )
 }
 
 /// Only a participant actively requesting this publication can trigger fallback.

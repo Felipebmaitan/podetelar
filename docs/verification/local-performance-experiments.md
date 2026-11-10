@@ -89,3 +89,83 @@ presenter will be tested without requiring a UI rewrite.
 Pending execution. This section must list the final applied patch set, independent
 review/acceptance, measurable returns, negative results and beneficial experiments
 left disabled because their risks or missing acceptance outweigh the return.
+
+## Interim observations — work remains in progress
+
+These are executed experiments, not final acceptance or a completed checklist.
+Raw files below live in the ignored `.local/experiments/` directory. Final compact
+results, source identities and retention decisions will be committed after the
+remaining comparisons and review.
+
+- **R02/R03:** actual native UI, pinned SDK, isolated API/SFU and four separate
+  synthetic 1080p60 HEVC publishers completed grid/focus/fullscreen/minimize/
+  restore/Stop states. All four subscriptions continued to decode roughly
+  240 frames/s in aggregate while focus/fullscreen/minimize changed; Stop reached
+  zero watches. No UI/stream errors in the sampled states. The demand patch
+  expires an invisible picture's conversion lease after 250 ms, while continuing
+  decoded-frame health updates, receipt and audio. Early repeated runs show
+  substantially less CPU in focus/fullscreen/minimize. See `ui-summary.json` and
+  `baseline-repeat-4-h265-*`, `demand-4-h265-*`, `demand-repeat-4-h265-*`.
+  CPU percentages in that summary use one CPU core = 100%; 110% means 1.1 cores.
+  This is not presented FPS or a game-performance result.
+- **R04:** a two-worker blocking conversion prototype preserved receive rate but
+  showed higher stopped-state CPU/private memory during its short settling
+  window. It remains disabled. Frame-driven repaint was also exercised at an
+  explicit 15 FPS source rate; initial visible CPU improved, but matched repeats,
+  60 FPS behavior and lifecycle checks are still required. Both choices currently
+  exist only under the nondefault `performance-experiments` feature.
+- **R01:** three matched pairs each of 1080p HEVC/H.264 and 4K HEVC/H.264 native
+  D3D11 presentation versus readback/I420/RGBA/upload have passed all 300 rendered
+  frames and zero drops. Initial 4K runs were correctly rejected when sink QoS
+  caused decoder drops. The corrected probe disables adaptive QoS in both modes
+  and still enforces frame counts, timestamps and wall pacing. AV1 elementary
+  file presentation has failed negotiation and remains unresolved; actual app
+  AV1 is a separate path. A C++/Rust native-surface lease proof exercised retained
+  GstBuffer ownership, lazy I420 fallback and the pinned SDK's native-buffer
+  wrapper; it is not an integrated egui/SFU GPU receiver. Unsafe resource reuse,
+  deferred GL painting, surface synchronization, device loss and pinned SDK
+  enum/null-fallback issues prevent treating this isolated win as shippable yet.
+- **R05:** 24 actual eframe/Glow runs (one/four textures, 1080p/4K, three
+  alternating pairs) verified synthetic texels and all requested frames.
+  `glTexSubImage2D` did not consistently improve upload or frame tails over
+  `glTexImage2D`; no partial-texture change is retained on this evidence.
+- **R06/R10/R16/R17:** five operation-level runs in `operations/run-{1..5}.json`
+  compare unchanged profile/JPEG checks, snapshot deep/Arc clones, gain setters,
+  bus lookup, owned PCM transfer, upload chunk reuse, actual audio inventories
+  and capability factory lifetime. Full PCM byte equality passed. These are
+  operation timings, not whole-app CPU reductions. Snapshot cloning is cheap
+  enough in this measured workload that a broad state-ownership rewrite is not
+  justified by this microbenchmark alone.
+- **R09:** `portable-061278769d1544829ddd263416e6e57a/result.json` contains five
+  alternating cold/warm/concurrent pairs using the same actual qualified payload
+  and real child held at stdin. Median wrapper peak commit fell from about
+  78.8–79.0 MiB to 1.3–1.5 MiB. Waiting memory was already small in the baseline;
+  this is an additional **startup-peak** improvement, not another steady-state
+  77 MiB saving. Launch CPU/time did not consistently improve. Every supervised
+  child was cleaned up. The bounded ZIP reader retains full digest verification,
+  footer/path/count/expansion/cache checks and an open Windows handle that denies
+  writers/deletion between verification and extraction. New range/mutation tests
+  accompany the existing extraction/cache tests; final packaged qualification
+  is still required.
+- **R12/R14:** `decoder/run-6c311658b20149a4a699d8c137649ae5/summary.json` records
+  36 serial runs against the actual pinned decoder: three alternating stall
+  pairs plus one/four dav1d contexts at 1/2/4/8/16 requested cores. Every AV1 run
+  decoded all expected 300/1,200 frames without a codec error. Under a controlled
+  750 ms output stall the current hardware decoder accumulated about 44
+  outstanding frames. An eight-frame reset/fresh-keyframe prototype lowered
+  tail age but discarded many pictures and sometimes reset twice. That is a
+  concrete reason to leave this recovery prototype out of the app pending a
+  better recovery policy, rather than claiming a CPU win from decoding less.
+- **R17:** `server/queries.json` contains five alternating pairs of 100,000 calls
+  to the actual `Rooms.session` implementation. Reusing three prepared statements
+  reduced query CPU/wall time substantially. Every pair checked room separation,
+  immediate revocation and current expiry. No authentication result was cached;
+  every chunk still performs fresh authority checks. HTTP/event-loop and SFU
+  single-flight comparisons are still pending.
+
+Harness caveats: the first UI attempt was discarded after an overbroad GPU
+counter query consumed too much sampler CPU and minimized-window restoration did
+not finish. The corrected sampler selects only the owned PID's GPU counters,
+reports its own CPU and restores the owned benchmark window after the specified
+minimize interval. Completed runs normally have one terminal PDH failure when
+the process exits; unsupported/missing counters are not replaced with zeros.

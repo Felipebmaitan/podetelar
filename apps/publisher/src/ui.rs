@@ -1,4 +1,8 @@
 use crate::locale::tr;
+#[cfg(feature = "performance-experiments")]
+#[allow(dead_code)]
+#[path = "ui/experiment.rs"]
+pub mod experiment;
 use crate::{
     connection::Route,
     playback::Tile,
@@ -620,15 +624,21 @@ impl PublisherUi {
     }
 
     fn update_picture(&mut self, ctx: &egui::Context, tile: &Tile) {
+        tile.presentation.request_context(ctx);
         if let Ok(mut picture) = tile.picture.lock()
             && let Some(image) = picture.take()
         {
+            tile.presentation.uploaded.fetch_add(1, Ordering::Relaxed);
             if let Some(texture) = self.textures.get_mut(&tile.id) {
-                texture.set(image, egui::TextureOptions::LINEAR);
+                texture.set(egui::ImageData::Color(image), egui::TextureOptions::LINEAR);
             } else {
                 self.textures.insert(
                     tile.id.clone(),
-                    ctx.load_texture(&tile.id, image, egui::TextureOptions::LINEAR),
+                    ctx.load_texture(
+                        &tile.id,
+                        egui::ImageData::Color(image),
+                        egui::TextureOptions::LINEAR,
+                    ),
                 );
             }
         }
@@ -851,9 +861,13 @@ impl eframe::App for PublisherUi {
             self.self_preview_revision = None;
         }
         let hidden = ctx.input(|i| i.viewport().visible() == Some(false));
+        #[cfg(feature = "performance-experiments")]
+        let frame_driven = crate::playback::frame_driven_repaint();
+        #[cfg(not(feature = "performance-experiments"))]
+        let frame_driven = false;
         ctx.request_repaint_after(Duration::from_millis(if hidden {
             250
-        } else if state.tiles.iter().any(|t| t.watching) {
+        } else if !frame_driven && state.tiles.iter().any(|t| t.watching) {
             16
         } else if state.busy || state.connection == "connecting" {
             50
@@ -897,6 +911,9 @@ impl eframe::App for PublisherUi {
         }
         if state.connection == "connected"
             && !self.forgetting
+            && self.attempted_profile.as_ref().is_none_or(|profile| {
+                profile.invitation != self.invitation.trim() || profile.name != self.name.trim()
+            })
             && let Ok(profile) = crate::settings::Profile::new(&self.invitation, &self.name)
             && self.attempted_profile.as_ref() != Some(&profile)
         {
@@ -1075,7 +1092,7 @@ impl eframe::App for PublisherUi {
                         .self_preview
                         .lock()
                         .ok()
-                        .and_then(|frame| frame.clone());
+                        .and_then(|frame| frame.as_ref().filter(|frame| self.self_preview_revision.as_ref().is_none_or(|(cache,sequence)|!std::sync::Arc::ptr_eq(cache,&state.self_preview)||*sequence!=frame.sequence)||!self.textures.contains_key("__self_preview")).cloned());
                     let picture: crate::playback::Picture = std::sync::Arc::default();
                     if let Some(frame) = frame
                         && (self.self_preview_revision.as_ref().is_none_or(|(cache,sequence)|!std::sync::Arc::ptr_eq(cache,&state.self_preview)||*sequence!=frame.sequence)||!self.textures.contains_key("__self_preview"))
@@ -1085,10 +1102,10 @@ impl eframe::App for PublisherUi {
                         ) {
                             let rgba = image.into_rgba8();
                             if let Ok(mut slot) = picture.lock() {
-                                *slot = Some(egui::ColorImage::from_rgba_unmultiplied(
+                                *slot = Some(std::sync::Arc::new(egui::ColorImage::from_rgba_unmultiplied(
                                     [rgba.width() as usize, rgba.height() as usize],
                                     rgba.as_raw(),
-                                ));
+                                )));
                             }
                             self.self_preview_revision = Some((state.self_preview.clone(), frame.sequence));
                     }
@@ -1098,6 +1115,7 @@ impl eframe::App for PublisherUi {
                         codec: String::new(),
                         watching: false,
                         picture,
+                        presentation: std::sync::Arc::default(),
                         frames: std::sync::Arc::default(),
                         received_bps: std::sync::Arc::default(),
                         volume: std::sync::Arc::default(),

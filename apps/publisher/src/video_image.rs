@@ -1,11 +1,21 @@
 //! CPU presentation conversion shared with the standalone release benchmark.
 use eframe::egui::{Color32, ColorImage};
 use livekit::webrtc::video_frame::{VideoBuffer, VideoFormatType};
+#[cfg(any(test, feature = "performance-experiments"))]
+use std::sync::Arc;
 
 pub fn to_color_image(buffer: &dyn VideoBuffer) -> ColorImage {
     let width = buffer.width();
     let height = buffer.height();
     let mut image = ColorImage::filled([width as usize, height as usize], Color32::TRANSPARENT);
+    write_color_image(buffer, &mut image);
+    image
+}
+
+fn write_color_image(buffer: &dyn VideoBuffer, image: &mut ColorImage) {
+    let width = buffer.width();
+    let height = buffer.height();
+    assert_eq!(image.size, [width as usize, height as usize]);
     // The pinned SDK converts our decoded I420/NV12 pictures to opaque RGBA
     // bytes in ABGR mode. With alpha=255 these already satisfy Color32's
     // premultiplied layout: write once into the exclusively owned final pixels.
@@ -16,13 +26,82 @@ pub fn to_color_image(buffer: &dyn VideoBuffer) -> ColorImage {
         width as i32,
         height as i32,
     );
-    image
+}
+
+/// Exclusive mutation comes from Arc::get_mut, including while egui retains an
+/// image for deferred upload. No buffer is recycled while another owner reads it.
+#[cfg(any(test, feature = "performance-experiments"))]
+#[derive(Default)]
+pub struct ImagePool {
+    images: Vec<Arc<ColorImage>>,
+}
+#[cfg(any(test, feature = "performance-experiments"))]
+impl ImagePool {
+    pub fn clear(&mut self) {
+        self.images.clear();
+    }
+    pub fn convert(&mut self, buffer: &dyn VideoBuffer) -> Option<Arc<ColorImage>> {
+        let size = [buffer.width() as usize, buffer.height() as usize];
+        if self.images.first().is_some_and(|image| image.size != size) {
+            self.clear();
+        }
+        let free = self
+            .images
+            .iter()
+            .position(|image| Arc::strong_count(image) == 1 && Arc::weak_count(image) == 0);
+        let index = if let Some(index) = free {
+            index
+        } else {
+            if self.images.len() >= 3 {
+                return None;
+            }
+            self.images
+                .push(Arc::new(ColorImage::filled(size, Color32::TRANSPARENT)));
+            self.images.len() - 1
+        };
+        write_color_image(buffer, Arc::get_mut(&mut self.images[index])?);
+        Some(self.images[index].clone())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use livekit::webrtc::video_frame::I420Buffer;
+    #[test]
+    fn bounded_pool_preserves_live_images_and_reuses_only_released_storage() {
+        let mut black = I420Buffer::new(17, 9);
+        let (y, u, v) = black.data_mut();
+        y.fill(16);
+        u.fill(128);
+        v.fill(128);
+        let mut red = I420Buffer::new(17, 9);
+        let (y, u, v) = red.data_mut();
+        y.fill(82);
+        u.fill(90);
+        v.fill(240);
+        let mut pool = ImagePool::default();
+        let first = pool.convert(black.as_ref()).unwrap();
+        let expected = first.pixels.clone();
+        let address = first.pixels.as_ptr();
+        let second = pool.convert(red.as_ref()).unwrap();
+        let third = pool.convert(red.as_ref()).unwrap();
+        assert_eq!(first.pixels, expected);
+        assert!(pool.convert(red.as_ref()).is_none());
+        assert_eq!(pool.images.len(), 3);
+        drop(first);
+        let reused = pool.convert(red.as_ref()).unwrap();
+        assert_eq!(reused.pixels.as_ptr(), address);
+        assert_eq!(reused.pixels, second.pixels);
+        let changed = I420Buffer::new_black(2, 2);
+        let resized = pool.convert(changed.as_ref()).unwrap();
+        assert_eq!(resized.size, [2, 2]);
+        assert_eq!(third.size, [17, 9]);
+        assert_eq!(third.pixels, second.pixels);
+        pool.clear();
+        assert!(pool.images.is_empty());
+        assert_eq!(reused.pixels, second.pixels);
+    }
 
     #[test]
     fn padded_odd_frames_match_the_existing_color_and_alpha_contract() {

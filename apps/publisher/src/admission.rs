@@ -219,8 +219,12 @@ impl Admission {
                 ((bytes as f64 * 8.0 / began.elapsed().as_secs_f64().max(0.001)) as u64).min(cap),
             );
             let stream = futures_util::stream::unfold(
-                (0usize, std::time::Instant::now()),
-                move |(sent, start)| async move {
+                (
+                    0usize,
+                    std::time::Instant::now(),
+                    bytes::Bytes::from(vec![0x5a; 65_536]),
+                ),
+                move |(sent, start, chunk)| async move {
                     if sent >= byte_limit || start.elapsed() >= Duration::from_secs(2) {
                         return None;
                     }
@@ -230,8 +234,8 @@ impl Admission {
                     }
                     let size = (byte_limit - sent).min(65_536);
                     Some((
-                        Ok::<_, std::io::Error>(vec![0x5a; size]),
-                        (sent + size, start),
+                        Ok::<_, std::io::Error>(chunk.slice(..size)),
+                        (sent + size, start, chunk),
                     ))
                 },
             );

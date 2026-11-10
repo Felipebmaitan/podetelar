@@ -348,14 +348,23 @@ test("server-tampered sender descriptor cannot grant a protected subscription", 
   });
   await sender.reported;
   const admin = mediaAdmin();
-  const participants = await admin.listParticipants(
-    `freedomstream_${room.room.id}`,
-  );
-  const publisher = participants.find(
-    (p) =>
-      Boolean(p.attributes["freedomstream.e2ee.v1"]) && p.tracks.length > 0,
-  );
-  expect(Boolean(publisher)).toBe(true);
+  let publisher:
+    Awaited<ReturnType<typeof admin.listParticipants>>[number] | undefined;
+  await expect
+    .poll(
+      async () => {
+        publisher = (
+          await admin.listParticipants(`freedomstream_${room.room.id}`)
+        ).find(
+          (p) =>
+            Boolean(p.attributes["freedomstream.e2ee.v1"]) &&
+            p.tracks.length > 0,
+        );
+        return Boolean(publisher);
+      },
+      { timeout: 8000 },
+    )
+    .toBe(true);
   await admin.updateParticipant(
     `freedomstream_${room.room.id}`,
     publisher!.identity,

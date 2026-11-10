@@ -85,6 +85,7 @@ jobs:
       - run: npm run native:setup
       - run: npm run native:check
       - run: npm run native:test
+      - run: node scripts/test-sdk-receiver.mjs
       - run: npm run native:package
       - name: Qualify bundled portable application
         shell: powershell

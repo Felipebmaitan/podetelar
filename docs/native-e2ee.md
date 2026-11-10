@@ -50,6 +50,12 @@ any pump, so changing a publication label cannot turn plaintext into protected
 content. The native client clears server-provided injected-frame bypass material
 before subscriptions.
 
+Receiver attachments for one publication are serialized in the pinned SDK. The
+subscription callback installs encryption before a replacement becomes visible
+through the publication. Playback uses one captured track for readiness and pump
+creation. This avoids treating a cryptor for an overlapping same-SID receiver as
+readiness for a different receiver.
+
 Previews use separate authenticated encryption. The native sender encrypts its
 bounded JPEG before uploading. The server stores only an opaque bounded `FSP1`
 envelope under `application/vnd.freedomstream.preview-v1`; it cannot authenticate

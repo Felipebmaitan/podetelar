@@ -25,7 +25,7 @@ reconnect without republishing under retained keys; native recovery must create
 fresh admission and sender-session material. Source/codec replacement retains the
 protection requirement. Source inspection is not packet-level nonce telemetry.
 
-`deploy/native-sdk.json` pins upstream archive, both patched source files and the
+`deploy/native-sdk.json` pins upstream archive, all four patched source files and the
 whole generated SDK tree. The original checkout's generated decoder differed
 from this branch's pins, so this worktree generated its own SDK from the verified
 archives. Builds use a short target path to avoid Windows dependency-extraction
@@ -33,13 +33,16 @@ path limits. The GStreamer runtime is the existing verified local runtime.
 
 ## Automated checks
 
-- Node 24.11.1 `npm run check`: passed before final native integration. Includes
+- Node 24.11.1 `npm run check`: passed (42 server/API, 23 web and 4 configuration
+  tests, plus formatting, types and builds). Includes
   protected envelope API admission, publication proof, exact MIME, bounds,
   cadence across format changes, stopped-stream cleanup and unchanged legacy JPEG
-  rejection behavior. Re-run after final edits is required.
+  rejection behavior.
 - `node --test scripts/native-tools.test.mjs`: 3 passed, including tampered
   archive/generated source rejection.
-- Native formatting, Clippy, tests and exact binary hash: pending final recording.
+- Native formatting, Clippy and 41 publisher + 7 portable tests passed, including
+  Windows DPAPI protected invitation save/restore, root absence, tampering and
+  Forget. Re-run after the final SDK attachment-order change remains required.
 - Real SFU `native-e2e/e2ee.spec.ts`: pending final recording. These tests must
   verify actual native decode/audio/preview and denial paths, not only requested
   encryption settings.
@@ -55,14 +58,33 @@ multiple independent friends publishing into one receiving app, network/device
 audio timing, fresh-PC/offline distribution and 4K120 are not established by this
 phase's local tests. No new portable release or deployment is implied.
 
-A malicious-server signaling downgrade test needs a real fault-injected response;
-ordinary successful encrypted publication alone cannot establish it. Full
+The two `e2ee-faults.spec.ts` real-SFU tests passed: fault-injected outgoing
+GCM-to-None negotiation was refused; a backend-minted identity and replayed public
+descriptor plus forced plaintext subscription and None-to-GCM metadata delivered
+RTP bytes but zero decoded video, audio or pictures. Full
 packet-level key/nonce collision instrumentation and complete replay/liveness
 protection are not claimed. Record which reconnect paths were actually exercised.
 
 ## Independent implementation review
 
-Pending a new review context after implementation and acceptance checks. Findings
-and fixes must be recorded here before the PR is presented as reviewed. Review
-approval is evidence about the stated scope, not a guarantee that all software
-vulnerabilities have been eliminated.
+The first independent implementation review requested changes to `a77ddb0` for a
+plaintext receiver bypass: mutable None-to-GCM signaling could label a receiver
+protected without attaching its cryptor. `6997147` added mandatory SDK receiver
+cryptors and an actual-readiness gate; real malicious-signaling tests passed.
+
+Re-review found a two-read receiver race. `c1e8621` captures the receiver once and
+also refuses remote descriptors targeting the local sender key slot. A subsequent
+focused review traced overlapping same-SID SDK callbacks which could still
+associate readiness with another receiver. The final SDK patch serializes each
+publication's attachments and exposes its receiver only after the synchronous
+subscription/encryption callback completes. A dedicated regression test overlaps
+two attachments while the first callback is blocked. Final re-review is pending.
+
+Optional upstream hardening remains separate: the C++ cryptor's malformed short
+frame parsing has unchecked indexing/subtraction in the supplied source. Review
+established a crash/large-allocation concern, not content or key disclosure. This
+is not a claim of a comprehensive upstream runtime audit. Operator denial of
+service is outside the stated confidentiality model.
+
+Review approval is evidence about the stated scope, not a guarantee that all
+software vulnerabilities have been eliminated.

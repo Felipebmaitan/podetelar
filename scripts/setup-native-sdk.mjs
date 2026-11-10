@@ -67,6 +67,49 @@ const receiverCheck = `        // A protected client requires a receiver cryptor
         // already-attached plaintext decoder into an apparently protected track.
         if !self.initialized() {
 `;
+const publicationChanges = [
+  [
+    "struct RemoteInner {\n",
+    "struct RemoteInner {\n    track_update: Mutex<()>,\n",
+  ],
+  [
+    "                events: Default::default(),\n",
+    "                events: Default::default(),\n                track_update: Mutex::new(()),\n",
+  ],
+  [
+    "    pub(crate) fn set_track(&self, track: Option<RemoteTrack>) {\n",
+    "    pub(crate) fn set_track(&self, track: Option<RemoteTrack>) {\n        let _update = self.remote.track_update.lock();\n",
+  ],
+  [
+    `        super::set_track(
+            &self.inner,
+            &TrackPublication::Remote(self.clone()),
+            track.clone().map(Into::into),
+        );
+
+        if let Some(track) = track {
+            if let Some(subscribed) = self.remote.events.subscribed.lock().as_ref() {
+                subscribed(self.clone(), track);
+            }
+        }
+`,
+    `        // Keep a replacement private until its synchronous subscription
+        // callback has installed/enabled mandatory receiver encryption. Serialize
+        // attachments so same-SID callbacks cannot publish another receiver's key.
+        super::set_track(&self.inner, &TrackPublication::Remote(self.clone()), None);
+        if let Some(track) = track.as_ref() {
+            if let Some(subscribed) = self.remote.events.subscribed.lock().as_ref() {
+                subscribed(self.clone(), track.clone());
+            }
+        }
+        super::set_track(
+            &self.inner,
+            &TrackPublication::Remote(self.clone()),
+            track.map(Into::into),
+        );
+`,
+  ],
+];
 
 function treeHash(root) {
   const digest = createHash("sha256");
@@ -208,6 +251,29 @@ if (existsSync(destination)) {
       "Native SDK mandatory receiver cryptor patch checksum mismatch.",
     );
   writeFileSync(managerTarget, managerPatched);
+  const publicationTarget = join(source, "src/room/publication/remote.rs");
+  const publicationOriginal = readFileSync(
+    publicationTarget,
+    "utf8",
+  ).replaceAll("\r\n", "\n");
+  if (hash(publicationOriginal) !== pin.publicationOriginalSourceSha256)
+    throw new Error("Native SDK receiver publication source mismatch.");
+  let publicationPatched = publicationOriginal;
+  for (const [marker, replacement] of publicationChanges) {
+    if (publicationPatched.split(marker).length !== 2)
+      throw new Error("Native SDK receiver publication patch marker mismatch.");
+    publicationPatched = publicationPatched.replace(marker, replacement);
+  }
+  const publicationTests = readFileSync(
+    join(repository, "apps/publisher/sdk/receiver-publication-tests.rs"),
+    "utf8",
+  ).replaceAll("\r\n", "\n");
+  if (hash(publicationTests) !== pin.publicationTestsSha256)
+    throw new Error("Native SDK receiver regression test checksum mismatch.");
+  publicationPatched += "\n" + publicationTests;
+  if (hash(publicationPatched) !== pin.publicationPatchedSourceSha256)
+    throw new Error("Native SDK receiver publication patch checksum mismatch.");
+  writeFileSync(publicationTarget, publicationPatched);
   const actualTree = treeHash(source);
   if (actualTree !== pin.treeSha256)
     throw new Error(

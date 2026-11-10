@@ -472,9 +472,15 @@ impl Playback {
                 if !enabled {
                     continue;
                 }
+                // Use this exact receiver snapshot for both readiness and pump
+                // creation. Re-reading after a None/old snapshot would permit a
+                // newly exposed receiver to race its cryptor attachment.
+                let Some(track) = publication.track() else {
+                    continue;
+                };
                 // Signaling metadata is mutable. Require the actual receiver
                 // transform before starting or retaining any protected pump.
-                if admission.protection.is_some() && publication.track().is_some() {
+                if admission.protection.is_some() {
                     let key = (participant.identity(), publication.sid());
                     if !room.e2ee_manager().enabled()
                         || !room
@@ -492,9 +498,6 @@ impl Playback {
                 if self.pumps.contains_key(&sid) {
                     continue;
                 }
-                let Some(track) = publication.track() else {
-                    continue;
-                };
                 let watch = &self.watches[&id];
                 let task = match track {
                     RemoteTrack::Video(track) => {

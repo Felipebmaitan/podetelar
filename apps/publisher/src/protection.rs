@@ -73,6 +73,7 @@ mod tests {
         let publisher = Session::new(secret(&invite), A.into()).unwrap();
         let receiver = Session::new(secret(&invite), B.into()).unwrap();
         let raw = descriptor(&publisher);
+        assert!(!publisher.authorize(A, Some(&raw)));
         assert!(receiver.authorize(A, Some(&raw)));
         assert!(!receiver.authorize(B, Some(&raw)));
         assert!(!receiver.authorize(A, None));
@@ -426,6 +427,10 @@ impl Session {
     }
 
     pub fn authorize(&self, identity: &str, raw: Option<&String>) -> bool {
+        // Remote metadata must never replace this connection's own sender slot.
+        if identity == self.local.identity {
+            return false;
+        }
         let result = (|| -> Result<()> {
             let raw = raw.ok_or_else(|| anyhow::anyhow!("Missing protected sender."))?;
             ensure!(raw.len() <= 1024, "Protected descriptor is too large.");

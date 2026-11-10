@@ -116,7 +116,36 @@ temporary hook is removed from production source.
   follow-up removes hover/held-key keepalive and hides the fullscreen bitrate label
   on the same inactivity timer. It does not change capture, audio or admission.
 
-Public deployment checks and delivery identity are recorded as they complete.
-Physical wired A/V sync remains
-open from the previous beta. AMD game/frame-time acceptance, fresh-PC behavior,
-multi-GPU capture and 4K120 remain separate field gates.
+## Friends-beta delivery
+
+Deployed source/build: `424a2ec61a586bdee7e3ffb6543665ab608025d3`.
+Artifact: `freedomstream-windows-x64-0.1.0-424a2ec61a58.exe`, 81,827,513 bytes.
+SHA-256: `cc2e58034b880b82c9d65bfde1a88a8287f054479147af75ceda42860f912ea8`.
+Later documentation/formatting commits do not change this executable's identity.
+
+- The final portable package passed the same extraction/integrity/GUI suite. A
+  first run reached the damage check but encountered a temporary sharing lock on
+  its test copy; an unchanged rerun passed. No antivirus settings were changed.
+- Node 24 `npm run check` and the final clean native formatting/Clippy check passed.
+- The VPS app and dedicated upload limit were updated with a verified database
+  backup and rollback files. Activation required the expected old `39aaffe` release.
+  Local/public health passed; credentials, SFU/relay containers and unrelated sites
+  were checked unchanged. The upload route is now 48 MiB; preview limits remain
+  256 KiB. This is a friends beta, not completion of the external acceptance gates.
+- The existing Friends invitation joined successfully. Native publish/subscribe
+  grants worked; browser media stayed denied. The full authenticated HTTPS download
+  matched the artifact size/hash, while anonymous download returned 401. Preview
+  requests verified both API admission and the existing proxy size limit.
+- Two simultaneous packaged-native tests through the public VPS completed in
+  15.7 seconds: downloads 115.2/102.8 Mbps, uploads 123.5/111.0 Mbps, no reported
+  errors. Their watching allowances were 92.2/82.3 Mbps, preserving headroom rather
+  than forcing a 100 Mbps stream onto a slower measured connection.
+- A final packaged HEVC synthetic publication through the VPS requested
+  1920×1080, 120 FPS and 25 Mbps. NVIDIA encoder metrics reported about 120.0 FPS;
+  the native watcher decoded 2,431 frames during its bounded run, and both publisher
+  capture and watching closed cleanly. This is not sustained 120 FPS receive or an
+  RX 7600/game-frame-time qualification.
+
+Physical wired A/V sync remains open from the previous beta. AMD game/frame-time
+acceptance, hands-on desktop input, fresh-PC behavior, multi-GPU capture and 4K120
+remain separate field gates. PR #14 remains draft and unmerged.

@@ -227,6 +227,7 @@ pub enum Command {
     Stop,
     Leave,
     Refresh,
+    RefreshSources,
     Shutdown,
 }
 
@@ -235,6 +236,21 @@ pub struct Controller {
     snapshot: Arc<Mutex<Snapshot>>,
     cancellation: Cancellation,
     join_cancellation: JoinCancellation,
+    shutdown: Arc<Shutdown>,
+}
+
+#[derive(Default)]
+struct Shutdown {
+    requested: AtomicBool,
+    finished: AtomicBool,
+    wake: tokio::sync::Notify,
+}
+
+struct WorkerCompletion(Arc<Shutdown>);
+impl Drop for WorkerCompletion {
+    fn drop(&mut self) {
+        self.0.finished.store(true, Ordering::Release);
+    }
 }
 
 struct QueuedCommand {
@@ -256,14 +272,17 @@ impl Controller {
         let cancellation = Arc::new(CaptureCancellation::default());
         let state = snapshot.clone();
         let cancel = cancellation.clone();
+        let shutdown = Arc::new(Shutdown::default());
+        let closing = shutdown.clone();
         std::thread::Builder::new()
             .name("freedomstream-room".into())
             .spawn(move || {
+                let _completion = WorkerCompletion(closing.clone());
                 let runtime = tokio::runtime::Builder::new_multi_thread()
                     .enable_all()
                     .build();
                 match runtime {
-                    Ok(runtime) => runtime.block_on(worker(receiver, state, cancel)),
+                    Ok(runtime) => runtime.block_on(worker(receiver, state, cancel, closing)),
                     Err(_) => update(&state, |state| {
                         state.error = "Could not start the publisher worker.".into()
                     }),
@@ -275,6 +294,7 @@ impl Controller {
             snapshot,
             cancellation,
             join_cancellation: JoinCancellation::new(),
+            shutdown,
         }
     }
 
@@ -286,6 +306,23 @@ impl Controller {
     }
 
     pub fn send(&self, command: Command) {
+        if matches!(command, Command::Shutdown) {
+            self.begin_shutdown();
+            return;
+        }
+        if self.shutdown.requested.load(Ordering::Acquire) {
+            return;
+        }
+        if matches!(command, Command::RefreshSources) {
+            // Metadata refresh is best-effort and must not disable/close the picker,
+            // overwrite operation feedback, or allocate capture authority.
+            let _ = self.commands.try_send(QueuedCommand {
+                command,
+                capture: None,
+                join: None,
+            });
+            return;
+        }
         if matches!(
             command,
             Command::Join { .. } | Command::Leave | Command::Shutdown
@@ -300,7 +337,7 @@ impl Controller {
             Command::Stop => "Stopping your stream…",
             Command::Leave => "Leaving the room…",
             Command::Shutdown => "Closing…",
-            Command::Refresh => "Refreshing available sources…",
+            Command::Refresh | Command::RefreshSources => "Refreshing available sources…",
             Command::DownloadBudget { .. } => "Updating your watching allowance…",
             Command::MeasureConnection => "Measuring your connection…",
             Command::Watch { enabled: true, .. } => "Starting playback…",
@@ -338,17 +375,40 @@ impl Controller {
     fn cancel_capture(&self) {
         self.cancellation.cancel();
     }
+
+    pub fn begin_shutdown(&self) {
+        self.join_cancellation.cancel();
+        self.cancel_capture();
+        if !self.shutdown.requested.swap(true, Ordering::AcqRel) {
+            self.shutdown.wake.notify_one();
+        }
+    }
+
+    pub fn shutdown_finished(&self) -> bool {
+        self.shutdown.finished.load(Ordering::Acquire)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_shutdown_for_test() -> (Self, impl Fn()) {
+        let (commands, _) = mpsc::channel(8);
+        let shutdown = Arc::new(Shutdown::default());
+        let completed = shutdown.clone();
+        (
+            Self {
+                commands,
+                snapshot: Arc::default(),
+                cancellation: Arc::default(),
+                join_cancellation: JoinCancellation::new(),
+                shutdown,
+            },
+            move || completed.finished.store(true, Ordering::Release),
+        )
+    }
 }
 
 impl Drop for Controller {
     fn drop(&mut self) {
-        self.join_cancellation.cancel();
-        self.cancel_capture();
-        let _ = self.commands.try_send(QueuedCommand {
-            command: Command::Shutdown,
-            capture: None,
-            join: None,
-        });
+        self.begin_shutdown();
     }
 }
 
@@ -908,6 +968,7 @@ async fn worker(
     mut commands: mpsc::Receiver<QueuedCommand>,
     snapshot: Arc<Mutex<Snapshot>>,
     cancellation: Cancellation,
+    shutdown: Arc<Shutdown>,
 ) {
     let mut sources = sources::enumerate();
     update(&snapshot, |state| {
@@ -930,6 +991,8 @@ async fn worker(
     let mut tick = tokio::time::interval(Duration::from_millis(500));
     loop {
         let queued = tokio::select! {
+            biased;
+            _ = shutdown.wake.notified() => QueuedCommand { command: Command::Shutdown, capture: None, join: None },
             command = commands.recv() => command.unwrap_or(QueuedCommand { command: Command::Shutdown, capture: None, join: None }),
             _ = tick.tick() => {
                 if probe.as_ref().is_some_and(|job|job.is_finished()) && let Some(job)=probe.take() {
@@ -989,6 +1052,13 @@ async fn worker(
             }
         };
         let command = queued.command;
+        if matches!(command, Command::RefreshSources) {
+            sources = sources::enumerate();
+            update(&snapshot, |state| {
+                state.sources = sources.iter().map(|source| source.info.clone()).collect()
+            });
+            continue;
+        }
         let shutdown = matches!(command, Command::Shutdown);
         let result: Result<()> = async {
             match command {
@@ -1166,7 +1236,7 @@ async fn worker(
                         state.participants.clear();
                     });
                 }
-                Command::Refresh => {
+                Command::Refresh | Command::RefreshSources => {
                     sources = sources::enumerate();
                     update(&snapshot, |state| {
                         state.sources = sources.iter().map(|source| source.info.clone()).collect();
@@ -1230,6 +1300,80 @@ async fn worker(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn shutdown_bypasses_a_full_queue_and_rejects_new_work() {
+        gstreamer::init().unwrap();
+        let (sender, receiver) = mpsc::channel(8);
+        let controller = Controller {
+            commands: sender,
+            snapshot: Arc::default(),
+            cancellation: Arc::default(),
+            join_cancellation: JoinCancellation::new(),
+            shutdown: Arc::default(),
+        };
+        for _ in 0..8 {
+            controller.send(Command::DownloadBudget { bps: Some(0) });
+        }
+        assert_eq!(controller.commands.capacity(), 0);
+        let capture = controller.cancellation.register();
+        controller.begin_shutdown();
+        controller.begin_shutdown();
+        assert!(capture.load(Ordering::Acquire));
+        assert!(!controller.shutdown_finished());
+        controller.send(Command::DownloadBudget { bps: Some(0) });
+        let completion = WorkerCompletion(controller.shutdown.clone());
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            worker(
+                receiver,
+                controller.snapshot.clone(),
+                controller.cancellation.clone(),
+                controller.shutdown.clone(),
+            ),
+        )
+        .await
+        .expect("Shutdown must bypass queued actions");
+        drop(completion);
+        assert!(controller.shutdown_finished());
+        assert!(
+            !controller
+                .snapshot()
+                .error
+                .contains("Choose a watching budget")
+        );
+        assert!(!controller.snapshot().sharing);
+        assert_eq!(controller.snapshot().connection, "disconnected");
+    }
+
+    #[test]
+    fn source_catalog_refresh_is_quiet_and_has_no_capture_authority() {
+        let (sender, mut receiver) = mpsc::channel(8);
+        let snapshot = Arc::new(Mutex::new(Snapshot {
+            busy: true,
+            operation: "Applying stream settings…",
+            error: "Preserve operation feedback".into(),
+            capture_pending: true,
+            sharing: true,
+            ..Default::default()
+        }));
+        let controller = Controller {
+            commands: sender,
+            snapshot: snapshot.clone(),
+            cancellation: Arc::default(),
+            join_cancellation: JoinCancellation::new(),
+            shutdown: Arc::default(),
+        };
+        controller.send(Command::RefreshSources);
+        let command = receiver.try_recv().expect("Quiet source update");
+        assert!(matches!(command.command, Command::RefreshSources));
+        assert!(command.capture.is_none());
+        assert!(command.join.is_none());
+        let state = snapshot.lock().unwrap();
+        assert!(state.busy && state.sharing && state.capture_pending);
+        assert_eq!(state.operation, "Applying stream settings…");
+        assert_eq!(state.error, "Preserve operation feedback");
+    }
 
     #[tokio::test]
     async fn cancelling_join_returns_promptly_and_releases_late_results() -> Result<()> {

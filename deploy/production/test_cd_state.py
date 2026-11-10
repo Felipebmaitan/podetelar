@@ -32,7 +32,7 @@ class HistoryProtection(unittest.TestCase):
                 state.backup(live, saved)
             db.execute('UPDATE usage_minutes SET uploaded=uploaded+100')
             db.commit()
-            self.assertTrue(state.verify(saved, live))
+            self.assertTrue(state.verify(saved, live, now_ms=60000))
             for statement in (
                 'DELETE FROM usage_minutes',
                 'UPDATE usage_minutes SET uploaded=0',
@@ -44,7 +44,7 @@ class HistoryProtection(unittest.TestCase):
                 db.execute(statement)
                 db.execute('RELEASE damage')
                 with self.assertRaises(RuntimeError):
-                    state.verify(saved, live)
+                    state.verify(saved, live, now_ms=60000)
                 # Restore the fixture through SQLite, including its WAL.
                 with closing(state.connect(saved)) as source:
                     source.backup(db)
@@ -59,6 +59,24 @@ class HistoryProtection(unittest.TestCase):
                 db.commit()
             state.backup(live, saved)
             self.assertTrue(state.verify(saved, live))
+
+    def test_normal_expiry_of_unused_users_and_old_buckets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            live = Path(directory) / 'live.db'
+            saved = Path(directory) / 'saved.db'
+            with closing(sqlite3.connect(live)) as db:
+                db.executescript('''
+                    CREATE TABLE rooms(id TEXT PRIMARY KEY);
+                    CREATE TABLE usage_users(id TEXT PRIMARY KEY);
+                    CREATE TABLE usage_minutes(minute INTEGER,user TEXT,uploaded REAL,downloaded REAL);
+                    CREATE TABLE usage_coverage(minute INTEGER,milliseconds INTEGER);
+                    INSERT INTO usage_users VALUES ('expired-without-traffic'),('expired-old-traffic');
+                    INSERT INTO usage_minutes VALUES (0,'expired-old-traffic',100,200);
+                    INSERT INTO usage_coverage VALUES (0,5000);
+                ''')
+                state.backup(live, saved)
+                db.executescript('DELETE FROM usage_minutes; DELETE FROM usage_coverage; DELETE FROM usage_users;')
+            self.assertTrue(state.verify(saved, live, now_ms=401 * 86400000))
 
 
 if __name__ == '__main__':

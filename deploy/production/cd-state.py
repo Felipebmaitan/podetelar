@@ -28,18 +28,23 @@ def backup(source, destination):
             raise RuntimeError('Database backup integrity failed')
 
 
-def verify(before, after):
+def verify(before, after, now_ms=None):
+    # Match the application's existing retention; expiry is not a deploy reset.
+    cutoff = (time.time() * 1000 if now_ms is None else now_ms) - 400 * 86400000
     with closing(connect(before)) as old, closing(connect(after)) as live:
         old_tables = {r[0] for r in old.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         # Existing durable room and participant-history identities must survive.
-        for table in ('rooms', 'usage_users'):
+        for table in ('rooms',):
             if table in old_tables:
                 for (identity,) in old.execute('SELECT id FROM ' + table):
                     if not live.execute('SELECT 1 FROM ' + table + ' WHERE id=?', (identity,)).fetchone():
                         raise RuntimeError('Deployment removed durable history')
         if 'usage_minutes' in old_tables:
+            for (identity,) in old.execute('SELECT DISTINCT user FROM usage_minutes WHERE minute>=?', (cutoff,)):
+                if not live.execute('SELECT 1 FROM usage_users WHERE id=?', (identity,)).fetchone():
+                    raise RuntimeError('Deployment removed a traffic-history participant')
             for minute, user, uploaded, downloaded in old.execute(
-                'SELECT minute,user,uploaded,downloaded FROM usage_minutes'
+                'SELECT minute,user,uploaded,downloaded FROM usage_minutes WHERE minute>=?', (cutoff,)
             ):
                 row = live.execute(
                     'SELECT uploaded,downloaded FROM usage_minutes WHERE minute=? AND user=?',
@@ -48,7 +53,7 @@ def verify(before, after):
                 if row is None or row[0] < uploaded or row[1] < downloaded:
                     raise RuntimeError('Deployment removed or reduced traffic history')
         if 'usage_coverage' in old_tables:
-            for minute, milliseconds in old.execute('SELECT minute,milliseconds FROM usage_coverage'):
+            for minute, milliseconds in old.execute('SELECT minute,milliseconds FROM usage_coverage WHERE minute>=?', (cutoff,)):
                 row = live.execute('SELECT milliseconds FROM usage_coverage WHERE minute=?', (minute,)).fetchone()
                 if row is None or row[0] < milliseconds:
                     raise RuntimeError('Deployment removed traffic coverage')

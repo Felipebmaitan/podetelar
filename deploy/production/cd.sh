@@ -32,7 +32,7 @@ sudo -n docker ps --format '{{.Names}} {{.ID}}' | grep -v '^freedomstream-produc
 atomic_copy() { local temp; temp=$(mktemp "$2.XXXXXX"); cp -p "$1" "$temp"; mv -Tf "$temp" "$2"; }
 activate_link() { local temp; temp=$root/current.cd-$RANDOM; ln -s "$1" "$temp"; mv -Tf "$temp" "$root/current"; }
 rollback() {
-  trap - ERR
+  trap - ERR HUP TERM
   set +e
   failed=0
   atomic_copy "$backup/release.env" "$state/release.env" || failed=1
@@ -48,7 +48,7 @@ rollback() {
   fi
   exit 1
 }
-trap rollback ERR
+trap rollback ERR HUP TERM
 # Preserve existing SFU settings/secrets; add only its private metrics listener.
 if ! grep -q '^prometheus_port:' "$state/livekit.yaml"; then
   cp -p "$state/livekit.yaml" "$backup/livekit-next.yaml"
@@ -62,9 +62,18 @@ activate_link "$release"
 compose up -d --no-deps --wait --wait-timeout 90 livekit app
 compose exec -T app node --input-type=module - <<'JS'
 import { RoomServiceClient } from 'livekit-server-sdk';
-await new RoomServiceClient(process.env.LIVEKIT_INTERNAL_URL, process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET).listRooms();
-const response = await fetch('http://livekit:6789/metrics', {signal: AbortSignal.timeout(5000)});
-if (!response.ok || !/^freedomstream_usage_enabled 1\s*$/m.test(await response.text())) throw new Error('Private usage collector is not ready');
+const client = new RoomServiceClient(process.env.LIVEKIT_INTERNAL_URL, process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET);
+let ready = false;
+for (let attempt = 0; attempt < 15; attempt++) {
+  try {
+    await client.listRooms();
+    const response = await fetch('http://livekit:6789/metrics', {signal: AbortSignal.timeout(3000)});
+    ready = response.ok && /^freedomstream_usage_enabled 1\s*$/m.test(await response.text());
+    if (ready) break;
+  } catch { /* Bounded first-start readiness, without logging media authority. */ }
+  await new Promise(resolve => setTimeout(resolve, 2000));
+}
+if (!ready) throw new Error('SFU/usage collector readiness failed');
 console.log('SFU API and private traffic collector ready');
 JS
 curl -fsS --retry 5 --retry-delay 2 --max-time 10 -o /dev/null http://127.0.0.1:18080/api/health
@@ -79,5 +88,5 @@ sudo -n docker ps --format '{{.Names}} {{.ID}}' | grep -v '^freedomstream-produc
 cmp "$backup/other-containers.before" "$backup/other-containers.after"
 [[ $(sudo -n docker inspect --format '{{.Config.Image}}' freedomstream-production-app-1) == "$app" ]]
 printf '%s\n' "$commit" > "$state/deployed-commit"
-trap - ERR
+trap - ERR HUP TERM
 echo "Deployed $commit; existing database/traffic, credentials, portable download and unrelated services retained. Backup: $backup"

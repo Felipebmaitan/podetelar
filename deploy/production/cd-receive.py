@@ -14,7 +14,7 @@ match = re.fullmatch(r'deploy ([0-9a-f]{40})', os.environ.get('SSH_ORIGINAL_COMM
 if not match:
     raise SystemExit('Only deploy COMMIT is supported')
 os.umask(0o077)
-with (ROOT / 'cd/deploy.lock').open('a') as lock:
+with (ROOT / 'cd/work/deploy.lock').open('a') as lock:
     # Serialize deployments; never interrupt an activation for a newer commit.
     fcntl.flock(lock, fcntl.LOCK_EX)
     sha = match[1]
@@ -33,7 +33,7 @@ with (ROOT / 'cd/deploy.lock').open('a') as lock:
             if (release / '.cd-archive.sha256').read_text() != digest.hexdigest():
                 raise SystemExit('Immutable release already exists with different source')
         else:
-            stage = Path(tempfile.mkdtemp(prefix='source-', dir=ROOT / 'cd'))
+            stage = Path(tempfile.mkdtemp(prefix='source-', dir=ROOT / 'cd/work'))
             with tarfile.open(fileobj=archive, mode='r:gz') as source:
                 members = source.getmembers()
                 if sum(m.size for m in members) > 256 * 1024 * 1024 or len(members) > 10000:

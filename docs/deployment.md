@@ -23,7 +23,9 @@ archive. It rejects links/traversal/private state and stages immutable releases.
 The release script builds before activation, creates an integrity-checked SQLite
 online backup (including committed WAL pages), and preserves the original database
 inode, credentials and publisher manifest. It checks every saved traffic bucket
-and coverage row for deletion/reduction, and durable room/user identities for loss.
+and coverage row within the existing 400-day retention for deletion/reduction,
+and durable rooms/participants with retained traffic for loss. Expired users
+without retained traffic may undergo normal application cleanup.
 Traffic writes may increase totals across the update. First activation adds the
 private metrics listener and enables the usage SFU without regenerating secrets.
 If no traffic tables existed previously, they initialize without fabricating past

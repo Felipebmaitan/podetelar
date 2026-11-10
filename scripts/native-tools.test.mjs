@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   mkdirSync,
   realpathSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -66,6 +67,60 @@ for (const state of ["archive", "source"]) {
       );
     } finally {
       assert.ok(root.startsWith(join(tmpdir(), "FreedomStream native SDK ")));
+      removeFixture(root);
+    }
+  });
+}
+
+const decoderHeaders = [
+  "freedomstream_decoder.h",
+  "deferred_i420.h",
+  "bounded_readback.h",
+];
+for (const tampered of decoderHeaders) {
+  test(`Native decoder setup rejects changed ${tampered} before SDK reuse`, () => {
+    const root = mkdtempSync(join(tmpdir(), "FreedomStream native decoder "));
+    try {
+      mkdirSync(join(root, "scripts"));
+      mkdirSync(join(root, "deploy"));
+      mkdirSync(join(root, "apps/publisher/decoder"), { recursive: true });
+      mkdirSync(join(root, ".local/native-sdk/webrtc-sys"), {
+        recursive: true,
+      });
+      copyFileSync(
+        new URL("./setup-native-decoder.mjs", import.meta.url),
+        join(root, "scripts/setup-native-decoder.mjs"),
+      );
+      copyFileSync(
+        new URL("../deploy/native-decoder.json", import.meta.url),
+        join(root, "deploy/native-decoder.json"),
+      );
+      for (const name of decoderHeaders) {
+        const bytes = readFileSync(
+          new URL(`../apps/publisher/decoder/${name}`, import.meta.url),
+          "utf8",
+        );
+        writeFileSync(
+          join(root, "apps/publisher/decoder", name),
+          bytes + (name === tampered ? "\n// changed\n" : ""),
+        );
+      }
+      const result = spawnSync(
+        process.execPath,
+        [join(root, "scripts/setup-native-decoder.mjs")],
+        { encoding: "utf8", windowsHide: true, timeout: 15_000 },
+      );
+      assert.ifError(result.error);
+      assert.notEqual(result.status, 0);
+      assert.match(
+        result.stderr,
+        tampered === "freedomstream_decoder.h"
+          ? /Decoder adapter differs from its pin/
+          : tampered === "deferred_i420.h"
+            ? /Deferred I420 buffer differs from its pin/
+            : /Bounded readback differs from its pin/,
+      );
+    } finally {
       removeFixture(root);
     }
   });

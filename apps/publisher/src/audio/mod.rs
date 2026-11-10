@@ -2,6 +2,8 @@ mod policy;
 pub use policy::Identity as ProcessIdentity;
 #[cfg(windows)]
 mod windows;
+#[cfg(all(windows, feature = "performance-experiments"))]
+pub(crate) use windows::inventory_benchmark;
 
 use anyhow::{Context, Result, bail, ensure};
 use gstreamer::{self as gst, prelude::*};

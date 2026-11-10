@@ -6,9 +6,14 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+performance-experiments = []
+
 [dependencies]
 image = { version = "=0.25.10", default-features = false, features = ["jpeg"] }
 anyhow = "1.0"
+bytemuck = "=1.25.2"
+bytes = "=1.12.1"
 eframe = { version = "=0.37.0", default-features = false, features = ["clipboard", "default_fonts", "glow", "x11", "wayland"] }
 gstreamer = { version = "=0.25.4", features = ["v1_28"] }
 gstreamer-app = { version = "=0.25.2", features = ["v1_28"] }

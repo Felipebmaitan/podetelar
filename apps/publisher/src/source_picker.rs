@@ -433,22 +433,62 @@ mod tests {
         );
         #[cfg(windows)]
         {
-            let window = sources::enumerate()
-                .into_iter()
-                .filter(|source| {
-                    if let Target::Window { handle, .. } = source.target {
-                        !unsafe {
-                            windows::Win32::UI::WindowsAndMessaging::IsIconic(
-                                windows::Win32::Foundation::HWND(handle as usize as *mut _),
-                            )
-                        }
-                        .as_bool()
-                    } else {
-                        false
+            use windows::{
+                Win32::{
+                    Foundation::HWND,
+                    Graphics::Gdi::UpdateWindow,
+                    UI::WindowsAndMessaging::{
+                        CreateWindowExW, DestroyWindow, SW_SHOWNOACTIVATE, ShowWindow,
+                        WS_EX_APPWINDOW, WS_OVERLAPPEDWINDOW,
+                    },
+                },
+                core::w,
+            };
+            struct Fixture(HWND);
+            impl Drop for Fixture {
+                fn drop(&mut self) {
+                    unsafe {
+                        let _ = DestroyWindow(self.0);
                     }
-                })
-                .max_by_key(|source| u64::from(source.info.width) * u64::from(source.info.height))
-                .expect("Local visible window");
+                }
+            }
+            // A user's largest window can be protected, disappear or change
+            // while the test runs. Capture an owned, non-activating fixture.
+            let fixture = Fixture(
+                unsafe {
+                    CreateWindowExW(
+                        WS_EX_APPWINDOW,
+                        w!("STATIC"),
+                        w!("FreedomStream silent capture fixture"),
+                        WS_OVERLAPPEDWINDOW,
+                        40,
+                        40,
+                        320,
+                        240,
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                }
+                .expect("Create capture fixture"),
+            );
+            unsafe {
+                let _ = ShowWindow(fixture.0, SW_SHOWNOACTIVATE);
+                let _ = UpdateWindow(fixture.0);
+            }
+            let window = Source {
+                info: crate::sources::SourceInfo {
+                    id: "capture-fixture".into(),
+                    label: "Capture fixture".into(),
+                    width: 320,
+                    height: 240,
+                },
+                target: Target::Window {
+                    handle: fixture.0.0 as usize as u64,
+                    pid: std::process::id(),
+                },
+            };
             let image = capture(&window, &|| false).expect("Real WGC window still capture");
             assert_eq!(image.size, [480, 270]);
             assert!(

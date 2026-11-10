@@ -16,6 +16,7 @@ mod source_picker;
 mod sources;
 mod ui;
 mod ui_style;
+mod video_image;
 #[cfg(windows)]
 mod win32;
 
@@ -417,6 +418,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
             let phase = watch_after.filter(|after| elapsed >= *after).map(|after| elapsed - after);
             let watching = !request.preview_only && phase.is_some_and(|phase| !(5..8).contains(&phase));
             for tile in &tiles {
+                if tile.watching { tile.presentation.request(); }
                 if watching != previous_watching || (watching && !known.contains(&tile.id)) { playback.watch(tile.id.clone(), watching)?; }
                 known.insert(tile.id.clone());
             }

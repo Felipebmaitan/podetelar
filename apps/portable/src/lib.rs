@@ -5,8 +5,9 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::HashSet,
     fs::{self, File, OpenOptions},
-    io::{Cursor, Read, Seek, SeekFrom, Write},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 pub const MAGIC: &[u8; 16] = b"FREEDOMSTREAM01!";
@@ -17,13 +18,57 @@ const MAX_ARCHIVE: u64 = 512 * 1024 * 1024;
 const MAX_EXTRACTED: u64 = 1024 * 1024 * 1024;
 
 pub struct Bundle {
-    bytes: Vec<u8>,
+    payload: Mutex<Payload>,
     pub id: String,
+}
+
+// ZIP offsets are relative to this bounded range, never the executable prefix.
+struct Payload {
+    file: File,
+    start: u64,
+    length: u64,
+    position: u64,
+}
+impl Read for Payload {
+    fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+        let count = output.len().min((self.length - self.position) as usize);
+        let read = self.file.read(&mut output[..count])?;
+        self.position += read as u64;
+        Ok(read)
+    }
+}
+impl Seek for Payload {
+    fn seek(&mut self, from: SeekFrom) -> std::io::Result<u64> {
+        let position = match from {
+            SeekFrom::Start(value) => i128::from(value),
+            SeekFrom::End(value) => i128::from(self.length) + i128::from(value),
+            SeekFrom::Current(value) => i128::from(self.position) + i128::from(value),
+        };
+        if !(0..=i128::from(self.length)).contains(&position) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Seek outside portable payload.",
+            ));
+        }
+        self.file
+            .seek(SeekFrom::Start(self.start + position as u64))?;
+        self.position = position as u64;
+        Ok(self.position)
+    }
 }
 
 impl Bundle {
     pub fn read(executable: &Path) -> Result<Self> {
-        let mut file = File::open(executable)?;
+        let mut options = OpenOptions::new();
+        options.read(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            // Verification and extraction must see the same bytes. Keep this
+            // handle open and refuse writers/deletion for the entire lifetime.
+            options.share_mode(1); // FILE_SHARE_READ
+        }
+        let mut file = options.open(executable)?;
         let length = file.metadata()?.len();
         ensure!(length > FOOTER_SIZE, "Portable payload is missing.");
         file.seek(SeekFrom::End(-(FOOTER_SIZE as i64)))?;
@@ -35,13 +80,35 @@ impl Bundle {
             size > 0 && size <= MAX_ARCHIVE && size <= length - FOOTER_SIZE,
             "Portable payload has an invalid size."
         );
-        file.seek(SeekFrom::Start(length - FOOTER_SIZE - size))?;
-        let mut bytes = vec![0; size as usize];
-        file.read_exact(&mut bytes)?;
-        let digest = Sha256::digest(&bytes);
+        let start = length - FOOTER_SIZE - size;
+        file.seek(SeekFrom::Start(start))?;
+        let mut hasher = Sha256::new();
+        // Windows sharing modes enforce an immutable source handle. On Unix,
+        // ordinary file locks are advisory: keep the verified bytes in a
+        // private anonymous snapshot instead of trusting later source reads.
+        #[cfg(not(windows))]
+        let mut snapshot = tempfile::tempfile()?;
+        let mut remaining = size;
+        let mut chunk = [0u8; 64 * 1024];
+        while remaining > 0 {
+            let count = remaining.min(chunk.len() as u64) as usize;
+            file.read_exact(&mut chunk[..count])?;
+            hasher.update(&chunk[..count]);
+            #[cfg(not(windows))]
+            snapshot.write_all(&chunk[..count])?;
+            remaining -= count as u64;
+        }
+        let digest = hasher.finalize();
         ensure!(digest[..] == footer[8..40], "Portable payload is damaged.");
+        #[cfg(not(windows))]
+        let (file, start) = (snapshot, 0);
         Ok(Self {
-            bytes,
+            payload: Mutex::new(Payload {
+                file,
+                start,
+                length: size,
+                position: size,
+            }),
             id: format!("{digest:x}"),
         })
     }
@@ -126,7 +193,12 @@ impl Bundle {
     }
 
     fn extract(&self, root: &Path) -> Result<()> {
-        let mut zip = zip::ZipArchive::new(Cursor::new(&self.bytes))?;
+        let mut payload = self
+            .payload
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Portable payload lock failed."))?;
+        payload.seek(SeekFrom::Start(0))?;
+        let mut zip = zip::ZipArchive::new(&mut *payload)?;
         ensure!(zip.len() <= 20_000, "Portable payload has too many files.");
         let mut seen = HashSet::new();
         let mut total = 0u64;
@@ -311,6 +383,7 @@ pub fn run_publisher(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
     use zip::write::SimpleFileOptions;
 
     fn executable(files: &[(&str, &[u8])]) -> (tempfile::TempDir, PathBuf) {
@@ -340,6 +413,43 @@ mod tests {
         assert!(Bundle::read(&path).is_err());
         fs::write(&path, b"MZ").unwrap();
         assert!(Bundle::read(&path).is_err());
+    }
+
+    #[test]
+    fn payload_seek_cannot_reach_launcher_or_footer() {
+        let (_temp, path) = executable(&[("a", b"hello")]);
+        let bundle = Bundle::read(&path).unwrap();
+        let mut payload = bundle.payload.lock().unwrap();
+        assert!(payload.seek(SeekFrom::Current(1)).is_err());
+        assert!(payload.seek(SeekFrom::End(1)).is_err());
+        assert!(payload.seek(SeekFrom::Start(u64::MAX)).is_err());
+        let length = payload.length;
+        assert!(payload.seek(SeekFrom::End(-(length as i64) - 1)).is_err());
+        let end = payload.seek(SeekFrom::End(0)).unwrap();
+        assert_eq!(end, payload.length);
+        assert_eq!(payload.read(&mut [0; 8]).unwrap(), 0);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn verified_source_refuses_mutation_until_bundle_is_dropped() {
+        let (_temp, path) = executable(&[("a", b"hello")]);
+        let bundle = Bundle::read(&path).unwrap();
+        assert!(OpenOptions::new().write(true).open(&path).is_err());
+        assert!(fs::remove_file(&path).is_err());
+        drop(bundle);
+        assert!(OpenOptions::new().write(true).open(&path).is_ok());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn verified_snapshot_is_independent_of_later_source_writes() {
+        let (_temp, path) = executable(&[("a", b"original")]);
+        let bundle = Bundle::read(&path).unwrap();
+        fs::write(&path, b"source was replaced").unwrap();
+        let destination = tempfile::tempdir().unwrap();
+        bundle.extract(destination.path()).unwrap();
+        assert_eq!(fs::read(destination.path().join("a")).unwrap(), b"original");
     }
 
     #[test]

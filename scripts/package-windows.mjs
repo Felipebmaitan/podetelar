@@ -66,6 +66,8 @@ const decoderPatch = join(notices, "source-patches", "native-decoder");
 mkdirSync(decoderPatch, { recursive: true });
 for (const file of [
   "apps/publisher/decoder/freedomstream_decoder.h",
+  "apps/publisher/decoder/deferred_i420.h",
+  "apps/publisher/decoder/bounded_readback.h",
   "scripts/setup-native-decoder.mjs",
   "deploy/native-decoder.json",
 ]) {
@@ -73,7 +75,7 @@ for (const file of [
 }
 writeFileSync(
   join(decoderPatch, "README.txt"),
-  "FreedomStream modifies webrtc-sys 0.3.53 (Apache-2.0) to use native Direct3D11 decoders through the dynamically linked GStreamer runtime. The adapter is MIT licensed. The included setup script and checksum pin reproduce the change from the original crate. No browser runtime is included.\n",
+  "FreedomStream modifies webrtc-sys 0.3.53 (Apache-2.0) to use native Direct3D11 decoders through the dynamically linked GStreamer runtime and prune expired weak track entries. The adapter, deferred I420 and bounded readback helpers are MIT licensed. All three headers, the setup script and checksum pin reproduce the change from the original crate. No browser runtime is included.\n",
 );
 const { dumpbin } = await preparePortableRuntime(root, output, notices);
 const sha256 = (path) =>
@@ -123,6 +125,10 @@ if (
     "The launcher must resolve its Windows imports from System32.",
   );
 copyFileSync(join(root, "LICENSE"), join(notices, "FreedomStream-MIT.txt"));
+copyFileSync(
+  join(root, "assets/fonts/OFL-Inter.txt"),
+  join(notices, "Inter-OFL.txt"),
+);
 const metadata = JSON.parse(
   execFileSync(
     "cargo",
@@ -140,6 +146,8 @@ const index = [
   "# Windows publisher dependency notices",
   "",
   "FreedomStream is MIT licensed. Each dependency retains its own license. The curated runtime, complete corresponding library sources and build recipes accompany this executable. See RUNTIME.md and sources/README.md. No codec patent license or hardware qualification is implied.",
+  "",
+  "Inter Regular and SemiBold fonts: SIL Open Font License 1.1. Copyright 2020 The Inter Project Authors. See Inter-OFL.txt.",
   "",
 ];
 for (const pkg of metadata.packages

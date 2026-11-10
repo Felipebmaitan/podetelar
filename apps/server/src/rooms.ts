@@ -6,7 +6,7 @@ import {
 } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type StatementSync } from "node:sqlite";
 import type {
   CreateRoomInput,
   ManagedRoom,
@@ -37,6 +37,9 @@ type IssuedSession = { snapshot: RoomSession; token: string };
 /** Owns room admission and persistence. Raw invitation/session secrets never enter SQLite. */
 export class Rooms {
   private readonly db: DatabaseSync;
+  private readonly findStatement: StatementSync;
+  private readonly sessionStatement: StatementSync;
+  private readonly activeStatement: StatementSync;
   constructor(
     path: string,
     private readonly now: () => number = Date.now,
@@ -90,6 +93,15 @@ export class Rooms {
       this.db.close();
       throw error;
     }
+    this.findStatement = this.db.prepare(
+      "SELECT id, name, invitation_hash, invitation_enabled, created_at FROM rooms WHERE id = ?",
+    );
+    this.sessionStatement = this.db.prepare(
+      "SELECT participant_id, display_name, expires_at FROM sessions WHERE token_hash = ? AND room_id = ? AND expires_at > ?",
+    );
+    this.activeStatement = this.db.prepare(
+      "SELECT 1 FROM sessions WHERE room_id = ? AND participant_id = ? AND expires_at > ?",
+    );
   }
 
   private insertRoom(name: string) {
@@ -183,11 +195,8 @@ export class Rooms {
   session(id: string, token: string | undefined): RoomSession | null {
     if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
     const room = this.find(id);
-    const session = this.db
-      .prepare(
-        "SELECT participant_id, display_name, expires_at FROM sessions WHERE token_hash = ? AND room_id = ? AND expires_at > ?",
-      )
-      .get(digest(token), id, this.now()) as SessionRow | undefined;
+    const session = this.sessionStatement.get(digest(token), id, this.now()) as
+      SessionRow | undefined;
     return room && session ? this.snapshot(room, session) : null;
   }
 
@@ -197,13 +206,7 @@ export class Rooms {
   }
 
   active(id: string, identity: string): boolean {
-    return Boolean(
-      this.db
-        .prepare(
-          "SELECT 1 FROM sessions WHERE room_id = ? AND participant_id = ? AND expires_at > ?",
-        )
-        .get(id, identity, this.now()),
-    );
+    return Boolean(this.activeStatement.get(id, identity, this.now()));
   }
   access(id: string) {
     const room = this.find(id);
@@ -321,11 +324,7 @@ export class Rooms {
   }
 
   private find(id: string): RoomRow | undefined {
-    return this.db
-      .prepare(
-        "SELECT id, name, invitation_hash, invitation_enabled, created_at FROM rooms WHERE id = ?",
-      )
-      .get(id) as RoomRow | undefined;
+    return this.findStatement.get(id) as RoomRow | undefined;
   }
 
   private issue(room: RoomRow, displayName: string): IssuedSession {

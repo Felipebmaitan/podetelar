@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FreedomStream local performance comparison</title>
+    <style>
+      body {
+        margin: 0;
+        color: var(--foreground);
+        font-family: var(--font-sans);
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 12px 0 18px;
+      }
+      button {
+        font: inherit;
+        color: var(--foreground);
+        background: var(--secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 7px 12px;
+        cursor: pointer;
+      }
+      button[aria-pressed="true"] {
+        color: var(--primary-foreground);
+        background: var(--primary);
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+        font-size: 13px;
+        color: var(--muted-foreground);
+      }
+      .dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        margin-right: 5px;
+        border-radius: 2px;
+      }
+      .before {
+        background: var(--chart-2);
+      }
+      .after {
+        background: var(--chart-1);
+      }
+      #chart {
+        height: 390px;
+        margin: 15px 0;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 95px minmax(0, 1fr);
+        gap: 10px;
+        min-height: 65px;
+      }
+      .state {
+        padding-top: 7px;
+        font-size: 13px;
+      }
+      .pair {
+        display: grid;
+        gap: 4px;
+        align-content: start;
+      }
+      .barline {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        height: 22px;
+      }
+      .track {
+        width: 70%;
+      }
+      .bar {
+        height: 10px;
+        min-width: 1px;
+        border-radius: 2px;
+      }
+      .number {
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      p {
+        line-height: 1.5;
+      }
+      .note {
+        color: var(--muted-foreground);
+        font-size: 12px;
+      }
+      #meaning {
+        min-height: 46px;
+        font-size: 13px;
+      }
+      @media (max-width: 440px) {
+        .row {
+          grid-template-columns: 72px minmax(0, 1fr);
+        }
+        .track {
+          width: 62%;
+        }
+        button {
+          padding: 6px 8px;
+          font-size: 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <p>Four 1080p60 HEVC streams · three alternating before/after pairs</p>
+    <div class="controls" role="group" aria-label="Measurement">
+      <button data-metric="cpu" aria-pressed="true">CPU</button>
+      <button data-metric="private" aria-pressed="false">Private memory</button>
+      <button data-metric="resident" aria-pressed="false">
+        Resident memory
+      </button>
+    </div>
+    <div class="legend">
+      <span><i class="dot before"></i>Baseline</span
+      ><span><i class="dot after"></i>Selected patches</span
+      ><span id="unit"></span>
+    </div>
+    <div
+      id="chart"
+      role="img"
+      aria-label="Resource comparison by presentation state"
+    ></div>
+    <p id="meaning" aria-live="polite"></p>
+    <p class="note">
+      Grid: about 240 decoded frames/s both ways; 233.9 → 236.0 texture
+      updates/s. Minimized video remains subscribed. Frame counters do not
+      establish physical presented FPS.
+    </p>
+    <p class="note">
+      Windows · Ryzen 7 9800X3D · RTX 5080. Per-state medians. Baseline 93d6ee1;
+      native candidate 000129f. Private memory is process commit; resident
+      memory is the working set, including shared pages. Neither is EXE size.
+    </p>
+    <script>
+      const states = [
+        "Grid",
+        "Focus",
+        "Fullscreen",
+        "Minimized",
+        "Restored",
+        "Stopped",
+      ];
+      const metrics = {
+        cpu: {
+          unit: "% of one CPU core",
+          before: [129.4803, 111.8306, 104.19, 103.6687, 134.1499, 0.6939],
+          after: [75.1977, 37.86, 31.0421, 18.4572, 78.8203, 0.9268],
+          meaning:
+            "Grid CPU fell about 42%; minimized CPU fell about 82%. One full CPU core equals 100%.",
+        },
+        private: {
+          unit: "MiB of process commit",
+          before: [839.8594, 842.7578, 832.4609, 835.8633, 838.4453, 265.8555],
+          after: [806.8125, 757.1133, 742.5742, 726.918, 810.3125, 266.7617],
+          meaning:
+            "Grid private memory fell about 33 MiB; minimized private memory fell about 109 MiB. These are process-memory measurements, not EXE size.",
+        },
+        resident: {
+          unit: "MiB of working set",
+          before: [376.3945, 379.4297, 382.4805, 384.2266, 378.5078, 180.1523],
+          after: [410.4805, 360.4336, 354.3477, 339.9102, 412.5547, 185.3086],
+          meaning:
+            "Grid resident memory rose about 34 MiB; minimized resident memory fell about 44 MiB. Not every RAM measure decreased.",
+        },
+      };
+      function draw(key) {
+        const metric = metrics[key],
+          max = Math.max(...metric.before, ...metric.after) * 1.03;
+        document.getElementById("unit").textContent = metric.unit;
+        document.getElementById("meaning").textContent = metric.meaning;
+        document
+          .getElementById("chart")
+          .setAttribute(
+            "aria-label",
+            `${metric.unit}. ${states.map((state, i) => `${state}: baseline ${metric.before[i]}, selected ${metric.after[i]}`).join(". ")}`,
+          );
+        document.getElementById("chart").innerHTML = states
+          .map(
+            (state, i) =>
+              `<div class="row"><div class="state">${state}</div><div class="pair">${["before", "after"].map((mode) => `<div class="barline"><div class="track"><div class="bar ${mode}" style="width:${(metric[mode][i] / max) * 100}%"></div></div><span class="number">${metric[mode][i].toFixed(1)}</span></div>`).join("")}</div></div>`,
+          )
+          .join("");
+        document
+          .querySelectorAll("button")
+          .forEach((button) =>
+            button.setAttribute(
+              "aria-pressed",
+              String(button.dataset.metric === key),
+            ),
+          );
+      }
+      document
+        .querySelectorAll("button")
+        .forEach((button) =>
+          button.addEventListener("click", () => draw(button.dataset.metric)),
+        );
+      draw("cpu");
+    </script>
+  </body>
+</html>

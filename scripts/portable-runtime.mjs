@@ -21,8 +21,11 @@ export async function preparePortableRuntime(root, output, notices) {
   const manifest = JSON.parse(
     readFileSync(join(root, "deploy/portable-runtime.json")),
   );
-  const runtime = process.env.FREEDOMSTREAM_GSTREAMER
-    ? resolve(process.env.FREEDOMSTREAM_GSTREAMER)
+  const runtimeOverride =
+    process.env.FREEDOMSTREAM_PORTABLE_RUNTIME ??
+    process.env.FREEDOMSTREAM_GSTREAMER;
+  const runtime = runtimeOverride
+    ? resolve(runtimeOverride)
     : join(root, ".local/gstreamer");
   mkdirSync(join(output, "bin"), { recursive: true });
   copyFileSync(

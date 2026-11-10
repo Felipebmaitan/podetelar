@@ -7,6 +7,10 @@ PR19 is being integrated with native UI PR22 at immutable head
 subsequent change. Neither performance PR may merge until PR22 is confirmed
 merged and its commit is present in `origin/main`.
 
+That prerequisite is now satisfied: PR22 merged as
+`f5c738f2a4f78eab8ed8a5f229b93ee29fbdcfc0`, and that actual `main` was merged
+into PR19 before acceptance.
+
 The earlier [performance campaign](local-performance-experiments.md) measured
 the previous UI. Its measurements remain historical evidence, **not measured
 gains on the redesigned UI**. New silent measurements and acceptance results
@@ -46,12 +50,47 @@ test now creates and destroys its own non-activating Windows fixture rather than
 depending on a potentially protected or disappearing user window. Both hardware
 tests pass with that isolation. No product capture logic was changed for it.
 
-Silent application measurements, final source review and PR checks are pending.
 Runtime recovery uses a separate local SDK directory; no missing runtime
 directory in the original checkout is modified. The installer matches the
 existing SHA-256 pin. The recovered SDK is a build prerequisite, not a newly
 qualified redistributable runtime. Execution uses a clean copy of the 44 preserved
 runtime files, each verified against the existing distribution manifest.
+
+## Redesigned UI: PR22 versus PR19
+
+[Sanitized results and input hashes](native-ui-performance-results.json) record
+four real local SFU/native UI runs in A/B/B/A order: two copies of PR22 with only
+measurement counters/the common driver, and two adapted PR19 runs. The CPU,
+memory and frame-rate summary is reproducible with
+`node scripts/summarize-ui-performance.mjs`. The machine is Ryzen 7 9800X3D,
+16 logical CPUs, RTX 5080, driver 621.14. All publishers explicitly used audio
+off. Every active phase retained four watches and approximately 240 decoded
+frames/s; stopping watches brought both decoded frames and image handoffs to zero.
+
+| View          | CPU before, one core = 100% | CPU after | CPU reduction |
+| ------------- | --------------------------: | --------: | ------------: |
+| Grid          |                     213.62% |    87.23% |        59.17% |
+| Focus         |                     213.96% |    35.36% |        83.47% |
+| Fullscreen    |                     252.75% |    34.59% |        86.31% |
+| Minimized     |                     197.29% |    12.76% |        93.53% |
+| Restored grid |                     254.72% |    96.29% |        62.20% |
+
+These are two-run medians over short interiors of eight-second phases, not
+sustained/game/latency qualification. Both matched pairs separately reduced CPU
+by at least 10% in every active view. Focus/fullscreen convert approximately one
+stream, minimization converts none, and restoration resumes four-stream
+conversion. Grid egui handoffs remain approximately 220/s. Handoffs and decoded
+frames do not establish physical displayed frame rates or actual GL upload counts.
+
+Memory is a tradeoff, not a universal reduction. Grid private commit falls 3.49%,
+but resident memory rises 7.42% (411.20 to 441.69 MiB). Focus, fullscreen and
+minimization reduce both commit and resident memory in this sample. The short
+stopped phase has **higher** memory: median commit 402.55 to 529.52 MiB and
+resident 249.34 to 308.75 MiB, with substantial baseline variation. Stopped CPU
+is also higher (0.69% to 2.09% of one core). These short post-stop samples are
+recorded costs, not evidence of steady idle behavior or an unbounded leak.
+
+Final package validation, fresh source review and PR checks are pending.
 
 ## PR23 adaptation
 

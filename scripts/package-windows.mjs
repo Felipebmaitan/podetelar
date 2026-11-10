@@ -75,6 +75,30 @@ writeFileSync(
   join(decoderPatch, "README.txt"),
   "FreedomStream modifies webrtc-sys 0.3.53 (Apache-2.0) to use native Direct3D11 decoders through the dynamically linked GStreamer runtime. The adapter is MIT licensed. The included setup script and checksum pin reproduce the change from the original crate. No browser runtime is included.\n",
 );
+const sdkPatch = join(notices, "source-patches", "livekit");
+copyFileSync(
+  join(root, ".local/native-sdk/webrtc-sys/src/frame_cryptor.cpp"),
+  join(decoderPatch, "frame_cryptor.cpp"),
+);
+mkdirSync(sdkPatch, { recursive: true });
+for (const file of ["scripts/setup-native-sdk.mjs", "deploy/native-sdk.json"]) {
+  copyFileSync(join(root, file), join(sdkPatch, basename(file)));
+}
+for (const file of [
+  "src/room/participant/local_participant.rs",
+  "src/room/participant/remote_participant.rs",
+  "src/room/mod.rs",
+  "src/room/e2ee/manager.rs",
+  "src/room/publication/remote.rs",
+]) {
+  const destination = join(sdkPatch, file);
+  mkdirSync(resolve(destination, ".."), { recursive: true });
+  copyFileSync(join(root, ".local/native-sdk/livekit", file), destination);
+}
+writeFileSync(
+  join(sdkPatch, "README.txt"),
+  "FreedomStream modifies LiveKit 0.10.1 (Apache-2.0) for stereo publication and mandatory media encryption boundaries. These are all changed source files, the reproducible setup script and checksum pins. Upstream copyright and license notices are retained.\n",
+);
 const { dumpbin } = await preparePortableRuntime(root, output, notices);
 const sha256 = (path) =>
   createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -196,7 +220,7 @@ for (const pkg of metadata.packages
     }
     if (pkg.name === "livekit")
       index.push(
-        "Local SDK change: advertise TF_STEREO for two-channel AddTrackRequest. See scripts/setup-native-sdk.mjs and deploy/native-sdk.json for the pinned original and patch.",
+        "Local SDK changes: advertise TF_STEREO for two-channel AddTrackRequest; reject SFU track encryption downgrades before sender activation; require receiver cryptors independently of mutable signaling labels; close protected full reconnects before RTP cryptor state can reset under retained keys. See scripts/setup-native-sdk.mjs and deploy/native-sdk.json for pinned originals and patches.",
         "",
       );
     continue;

@@ -23,8 +23,8 @@ const base = join(repository, ".local/native-sdk");
 const destination = join(base, "livekit");
 const hash = (data) => createHash("sha256").update(data).digest("hex");
 
-// This is the complete compatibility patch. Keep it narrow and remove it when
-// the pinned SDK announces NativeAudioSource's stereo channels upstream.
+// Complete pinned compatibility/security patch. Never trust SFU encryption
+// negotiation to disable a client-requested frame cryptor.
 const marker = "            LocalTrack::Audio(_audio_track) => {\n";
 const addition = `                if let libwebrtc::audio_source::RtcAudioSource::Native(source) = _audio_track.rtc_source() {
                     if source.num_channels() == 2 {
@@ -32,6 +32,142 @@ const addition = `                if let libwebrtc::audio_source::RtcAudioSource
                     }
                 }
 `;
+const encryptionMarker =
+  "        let track_info = self.inner.rtc_engine.add_track(req).await?;\n";
+const encryptionCheck = `        if EncryptionType::from(track_info.encryption()) != self.local.encryption_type {
+            track.disable();
+            return Err(RoomError::Internal("SFU changed requested track encryption".into()));
+        }
+`;
+const restartingMarker =
+  "    fn handle_restarting(self: &Arc<Self>, tx: oneshot::Sender<()>) {\n";
+const restartingCheck = `        // Full reconnect creates new RTP cryptors. Retained keys must never be
+        // reused with reset per-cryptor IV counters; require a fresh client Room.
+        if self.e2ee_manager.enabled() {
+            for publication in self.local_participant.track_publications().values() {
+                if let Some(track) = publication.track() { track.disable(); }
+            }
+            let session = self.clone();
+            tokio::spawn(async move { let _ = session.close(DisconnectReason::ClientInitiated).await; });
+            let _ = tx.send(());
+            return;
+        }
+`;
+const restartedMarker =
+  "    fn handle_restarted(self: &Arc<Self>, tx: oneshot::Sender<()>) {\n";
+const restartedCheck = `        if self.e2ee_manager.enabled() {
+            let _ = tx.send(());
+            return;
+        }
+`;
+const receiverMarker =
+  "        if !self.initialized() || publication.encryption_type() == EncryptionType::None {\n";
+const receiverCheck = `        // A protected client requires a receiver cryptor even when signaling
+        // labels a track plaintext. Later metadata updates must never turn an
+        // already-attached plaintext decoder into an apparently protected track.
+        if !self.initialized() {
+`;
+const protectedTrailerChanges = [
+  [
+    "            if needs_video_sender_transformer(&options, has_timing_subscribers) {\n",
+    "            if self.local.encryption_type == EncryptionType::None && needs_video_sender_transformer(&options, has_timing_subscribers) {\n",
+  ],
+  [
+    "        let mut encodings = Vec::default();\n",
+    "        if self.local.encryption_type != EncryptionType::None { req.packet_trailer_features.clear(); }\n        let mut encodings = Vec::default();\n",
+  ],
+];
+const protectedReceiverTrailerChanges = [
+  [
+    "        let needs_packet_trailer_handler = needs_video_receiver_packet_trailer_handler(\n",
+    "        let needs_packet_trailer_handler = !self.initialized() && needs_video_receiver_packet_trailer_handler(\n",
+  ],
+];
+const roomReceiverChanges = [
+  [
+    `        if let Some(remote_participant) = remote_participant {
+            tokio::spawn(async move {
+                remote_participant.add_subscribed_media_track(track_id, track, transceiver).await;
+`,
+    `        if let Some(remote_participant) = remote_participant {
+            let receiver_encryption = self.e2ee_manager.clone();
+            tokio::spawn(async move {
+                remote_participant.add_subscribed_media_track(track_id, track, transceiver, receiver_encryption).await;
+`,
+  ],
+  [
+    `        participant.on_track_subscribed({
+            let dispatcher = self.dispatcher.clone();
+            let e2ee_manager = self.e2ee_manager.clone();
+`,
+    `        participant.on_track_subscribed({
+            let dispatcher = self.dispatcher.clone();
+`,
+  ],
+  [
+    "                e2ee_manager.on_track_subscribed(track, publication, participant);\n",
+    "",
+  ],
+];
+const participantReceiverChanges = [
+  [
+    "        transceiver: RtpTransceiver,\n    ) {\n",
+    "        transceiver: RtpTransceiver,\n        receiver_encryption: crate::room::e2ee::manager::E2eeManager,\n    ) {\n",
+  ],
+  [
+    "            self.add_publication(TrackPublication::Remote(remote_publication.clone()));\n            track.enable();\n",
+    `            // Security preparation is mandatory, not a removable notification
+            // callback. Even a retired publication's late attachment must keep
+            // its actual receiver encrypted before enabling/exposing the track.
+            receiver_encryption.on_track_subscribed(track.clone(), remote_publication.clone(), self.clone());
+            self.add_publication(TrackPublication::Remote(remote_publication.clone()));
+            track.enable();
+`,
+  ],
+];
+const publicationChanges = [
+  [
+    "struct RemoteInner {\n",
+    "struct RemoteInner {\n    track_update: Mutex<()>,\n",
+  ],
+  [
+    "                events: Default::default(),\n",
+    "                events: Default::default(),\n                track_update: Mutex::new(()),\n",
+  ],
+  [
+    "    pub(crate) fn set_track(&self, track: Option<RemoteTrack>) {\n",
+    "    pub(crate) fn set_track(&self, track: Option<RemoteTrack>) {\n        let _update = self.remote.track_update.lock();\n",
+  ],
+  [
+    `        super::set_track(
+            &self.inner,
+            &TrackPublication::Remote(self.clone()),
+            track.clone().map(Into::into),
+        );
+
+        if let Some(track) = track {
+            if let Some(subscribed) = self.remote.events.subscribed.lock().as_ref() {
+                subscribed(self.clone(), track);
+            }
+        }
+`,
+    `        // Encryption is installed directly by the receiver attachment path.
+        // Serialize notifications and expose each replacement only when its
+        // synchronous subscription callback has completed.
+        super::set_track(&self.inner, &TrackPublication::Remote(self.clone()), None);
+        if let Some(track) = track.as_ref() {
+            if let Some(subscribed) = self.remote.events.subscribed.lock().as_ref() {
+                subscribed(self.clone(), track.clone());
+            }
+        }
+        super::set_track(
+            &self.inner,
+            &TrackPublication::Remote(self.clone()),
+            track.map(Into::into),
+        );
+`,
+  ],
+];
 
 function treeHash(root) {
   const digest = createHash("sha256");
@@ -59,7 +195,9 @@ if (existsSync(destination)) {
     throw new Error(
       "The generated native SDK differs from its pinned patched source. Inspect it before replacing it.",
     );
-  console.log("Kept the verified native SDK with the stereo publication fix.");
+  console.log(
+    "Kept the verified native SDK with stereo and strict encryption fixes.",
+  );
 } else {
   const downloads = join(repository, ".local/downloads");
   mkdirSync(downloads, { recursive: true });
@@ -127,10 +265,107 @@ if (existsSync(destination)) {
     throw new Error(
       "The native SDK patch no longer matches its pinned source.",
     );
-  const patched = original.replace(marker, marker + addition);
+  if (original.split(encryptionMarker).length !== 2)
+    throw new Error("Native SDK encryption patch marker mismatch.");
+  let patched = original
+    .replace(marker, marker + addition)
+    .replace(encryptionMarker, encryptionMarker + encryptionCheck);
+  for (const [marker, replacement] of protectedTrailerChanges) {
+    if (patched.split(marker).length !== 2)
+      throw new Error("Native SDK protected sender trailer marker mismatch.");
+    patched = patched.replace(marker, replacement);
+  }
   if (hash(patched) !== pin.patchedSourceSha256)
     throw new Error("The native SDK patch checksum did not match the pin.");
   writeFileSync(target, patched);
+  const roomTarget = join(source, "src/room/mod.rs");
+  const roomOriginal = readFileSync(roomTarget, "utf8").replaceAll(
+    "\r\n",
+    "\n",
+  );
+  if (
+    hash(roomOriginal) !== pin.roomOriginalSourceSha256 ||
+    roomOriginal.split(restartingMarker).length !== 2 ||
+    roomOriginal.split(restartedMarker).length !== 2
+  )
+    throw new Error("Native SDK protected reconnect patch marker mismatch.");
+  let roomPatched = roomOriginal
+    .replace(restartingMarker, restartingMarker + restartingCheck)
+    .replace(restartedMarker, restartedMarker + restartedCheck);
+  for (const [marker, replacement] of roomReceiverChanges) {
+    if (roomPatched.split(marker).length !== 2)
+      throw new Error("Native SDK direct receiver encryption marker mismatch.");
+    roomPatched = roomPatched.replace(marker, replacement);
+  }
+  if (hash(roomPatched) !== pin.roomPatchedSourceSha256)
+    throw new Error("Native SDK protected reconnect patch checksum mismatch.");
+  writeFileSync(roomTarget, roomPatched);
+  const participantTarget = join(
+    source,
+    "src/room/participant/remote_participant.rs",
+  );
+  const participantOriginal = readFileSync(
+    participantTarget,
+    "utf8",
+  ).replaceAll("\r\n", "\n");
+  if (hash(participantOriginal) !== pin.participantOriginalSourceSha256)
+    throw new Error("Native SDK receiver participant source mismatch.");
+  let participantPatched = participantOriginal;
+  for (const [marker, replacement] of participantReceiverChanges) {
+    if (participantPatched.split(marker).length !== 2)
+      throw new Error("Native SDK receiver participant patch marker mismatch.");
+    participantPatched = participantPatched.replace(marker, replacement);
+  }
+  if (hash(participantPatched) !== pin.participantPatchedSourceSha256)
+    throw new Error("Native SDK receiver participant patch checksum mismatch.");
+  writeFileSync(participantTarget, participantPatched);
+  const managerTarget = join(source, "src/room/e2ee/manager.rs");
+  const managerOriginal = readFileSync(managerTarget, "utf8").replaceAll(
+    "\r\n",
+    "\n",
+  );
+  if (
+    hash(managerOriginal) !== pin.managerOriginalSourceSha256 ||
+    managerOriginal.split(receiverMarker).length !== 3
+  )
+    throw new Error(
+      "Native SDK mandatory receiver cryptor patch marker mismatch.",
+    );
+  // Replace the first occurrence (remote receiver), retaining the local check.
+  let managerPatched = managerOriginal.replace(receiverMarker, receiverCheck);
+  for (const [marker, replacement] of protectedReceiverTrailerChanges) {
+    if (managerPatched.split(marker).length !== 2)
+      throw new Error("Native SDK protected receiver trailer marker mismatch.");
+    managerPatched = managerPatched.replace(marker, replacement);
+  }
+  if (hash(managerPatched) !== pin.managerPatchedSourceSha256)
+    throw new Error(
+      "Native SDK mandatory receiver cryptor patch checksum mismatch.",
+    );
+  writeFileSync(managerTarget, managerPatched);
+  const publicationTarget = join(source, "src/room/publication/remote.rs");
+  const publicationOriginal = readFileSync(
+    publicationTarget,
+    "utf8",
+  ).replaceAll("\r\n", "\n");
+  if (hash(publicationOriginal) !== pin.publicationOriginalSourceSha256)
+    throw new Error("Native SDK receiver publication source mismatch.");
+  let publicationPatched = publicationOriginal;
+  for (const [marker, replacement] of publicationChanges) {
+    if (publicationPatched.split(marker).length !== 2)
+      throw new Error("Native SDK receiver publication patch marker mismatch.");
+    publicationPatched = publicationPatched.replace(marker, replacement);
+  }
+  const publicationTests = readFileSync(
+    join(repository, "apps/publisher/sdk/receiver-publication-tests.rs"),
+    "utf8",
+  ).replaceAll("\r\n", "\n");
+  if (hash(publicationTests) !== pin.publicationTestsSha256)
+    throw new Error("Native SDK receiver regression test checksum mismatch.");
+  publicationPatched += "\n" + publicationTests;
+  if (hash(publicationPatched) !== pin.publicationPatchedSourceSha256)
+    throw new Error("Native SDK receiver publication patch checksum mismatch.");
+  writeFileSync(publicationTarget, publicationPatched);
   const actualTree = treeHash(source);
   if (actualTree !== pin.treeSha256)
     throw new Error(
@@ -149,6 +384,6 @@ if (existsSync(destination)) {
   renameSync(resolvedSource, destination);
   rmdirSync(stage); // Empty after moving the one pinned package; no recursive deletion.
   console.log(
-    "Prepared the verified native SDK with the stereo publication fix.",
+    "Prepared the verified native SDK with stereo and strict encryption fixes.",
   );
 }

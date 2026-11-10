@@ -1156,6 +1156,7 @@ name = "freedomstream-publisher"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "eframe",
  "futures-util",
  "gstreamer",
@@ -1166,6 +1167,7 @@ dependencies = [
  "log",
  "regex",
  "reqwest",
+ "ring",
  "serde",
  "serde_json",
  "tempfile",
@@ -1173,6 +1175,7 @@ dependencies = [
  "url",
  "windows",
  "winresource",
+ "zeroize",
 ]
 
 [[package]]

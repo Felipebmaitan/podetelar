@@ -187,5 +187,15 @@
   "Encoder bitrate changes": "Alterações de bitrate no codificador",
   "Exit full screen": "Sair da tela cheia",
   "Double-click video or press F11. Escape exits full screen.": "Clique duas vezes no vídeo ou pressione F11. Esc sai da tela cheia.",
-  "Received video · recent payload bitrate": "Vídeo recebido · taxa de bits recente"
+  "Received video · recent payload bitrate": "Vídeo recebido · taxa de bits recente",
+  "Invitation-encrypted": "Criptografia por convite",
+  "Transport encryption only": "Somente criptografia de transporte",
+  "Create a new private invitation in this app. Share it with your friends; old invitations remain unprotected.": "Crie um novo convite privado neste aplicativo. Compartilhe com seus amigos; os convites antigos continuam sem proteção de ponta a ponta.",
+  "Protect room / Create private invitation": "Proteger sala / Criar convite privado",
+  "Only private invitation holders can decrypt streams. Names are not verified. Replacing the invitation requires every friend to use the new one; old holders still control the old encrypted group.": "Somente quem tem o convite privado pode decifrar as transmissões. Os nomes não são verificados. Ao substituir o convite, todos os amigos precisam usar o novo; quem tem o antigo ainda controla o grupo criptografado antigo.",
+  "Replace private invitation": "Substituir convite privado",
+  "Private invitation created. Rejoining with encryption; copy and share the new invitation with your friends.": "Convite privado criado. Reconectando com criptografia; copie e compartilhe o novo convite com seus amigos.",
+  "Could not create a private invitation. Rejoin the room and try again.": "Não foi possível criar o convite privado. Entre novamente na sala e tente outra vez.",
+  "Private invitation replaced. Copy and share the new invitation with remaining trusted friends.": "Convite privado substituído. Copie e compartilhe o novo convite com os amigos em quem você confia.",
+  "Could not replace the private invitation. Try again.": "Não foi possível substituir o convite privado. Tente novamente."
 }

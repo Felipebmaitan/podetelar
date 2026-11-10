@@ -200,6 +200,17 @@ mod tests {
         assert!(store.load()?.as_ref() == Some(&profile));
         let text = std::fs::read_to_string(&store.path)?;
         assert!(!text.contains(&profile.invitation) && !text.contains(&profile.name));
+        profile.invitation = crate::protection::protect_invitation(&profile.invitation)?;
+        store.save(&profile)?;
+        assert!(store.load()?.as_ref() == Some(&profile));
+        let text = std::fs::read_to_string(&store.path)?;
+        assert!(!text.contains("FSPRIVATE1") && !text.contains(&profile.invitation));
+        // The decoded invitation's root must not be visible in the DPAPI envelope.
+        use base64::Engine;
+        let opaque = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(&profile.invitation[crate::protection::PREFIX.len()..])?;
+        let private: serde_json::Value = serde_json::from_slice(&opaque)?;
+        assert!(!text.contains(private["root"].as_str().unwrap()));
         profile.name = "Replacement user".into();
         store.save(&profile)?;
         assert!(store.load()?.as_ref() == Some(&profile));

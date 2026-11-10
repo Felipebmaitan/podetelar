@@ -162,6 +162,14 @@ impl Encoding {
         let input = match source.target {
             Target::Pattern => gst::ElementFactory::make("d3d11testsrc")
                 .property("is-live", true)
+                .property_from_str(
+                    "pattern",
+                    if std::env::var("FREEDOMSTREAM_FIXTURE_NOISE").as_deref() == Ok("1") {
+                        "snow"
+                    } else {
+                        "smpte"
+                    },
+                )
                 .build()
                 .context("GPU test source is unavailable.")?,
             Target::Monitor(handle) => gst::ElementFactory::make("d3d11screencapturesrc")

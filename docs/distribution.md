@@ -161,7 +161,11 @@ The [GStreamer licensing advisory](https://gstreamer.freedesktop.org/documentati
 explains its plugin license boundary. Hardware codec support is not a codec patent license.
 
 Cargo notices include the pinned upstream license overrides in
-`deploy/license-overrides.json` and the Apache-licensed LiveKit stereo patch.
+`deploy/license-overrides.json` and the Apache-licensed LiveKit stereo and strict
+encryption patches, including mandatory receiver cryptors. Their full modified source is included with the corresponding
+source bundle; `deploy/native-sdk.json` pins all five changed source files and the
+complete generated source tree. See [native encryption](native-e2ee.md) for the
+protection boundary and runtime acceptance requirements.
 
 ## Qualification limits
 

@@ -180,6 +180,9 @@ impl PublisherUi {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("FreedomStream").size(20.0).strong());
             ui.separator();
+            if connected {
+                ui.label(egui::RichText::new(tr(if state.protected { "Invitation-encrypted" } else { "Transport encryption only" })).small().color(if state.protected { ACCENT } else { WARNING }));
+            }
             ui.menu_button(
                 format!(
                     "{} {}",
@@ -222,6 +225,38 @@ impl PublisherUi {
                     self.textures.clear();
                 }
                 ui.menu_button(tr("Room options"), |ui| {
+                    if connected && !state.protected {
+                        ui.label(tr("Create a new private invitation in this app. Share it with your friends; old invitations remain unprotected."));
+                        if ui.add_enabled(!state.busy, egui::Button::new(tr("Protect room / Create private invitation"))).clicked() {
+                            match crate::protection::protect_invitation(&self.invitation) {
+                                Ok(invitation) => {
+                                    self.invitation = invitation;
+                                    self.join();
+                                    self.textures.clear();
+                                    self.settings_error = "Private invitation created. Rejoining with encryption; copy and share the new invitation with your friends.".into();
+                                }
+                                Err(_) => self.settings_error = "Could not create a private invitation. Rejoin the room and try again.".into(),
+                            }
+                            ui.close();
+                        }
+                        ui.separator();
+                    }
+                    if connected && state.protected {
+                        ui.label(tr("Only private invitation holders can decrypt streams. Names are not verified. Replacing the invitation requires every friend to use the new one; old holders still control the old encrypted group."));
+                        if ui.add_enabled(!state.busy, egui::Button::new(tr("Replace private invitation"))).clicked() {
+                            match crate::protection::replace_invitation(&self.invitation) {
+                                Ok(invitation) => {
+                                    self.invitation = invitation;
+                                    self.join();
+                                    self.textures.clear();
+                                    self.settings_error = "Private invitation replaced. Copy and share the new invitation with remaining trusted friends.".into();
+                                }
+                                Err(_) => self.settings_error = "Could not replace the private invitation. Try again.".into(),
+                            }
+                            ui.close();
+                        }
+                        ui.separator();
+                    }
                     if ui.button(tr("Advanced settings")).clicked() {
                         self.advanced_open = true;
                         ui.close();

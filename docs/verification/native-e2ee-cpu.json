@@ -1,0 +1,326 @@
+{
+  "cpu": "AMD Ryzen 7 9800X3D 8-Core Processor",
+  "logicalProcessors": 16,
+  "requestedBps": 35000000,
+  "geometry": "1920x1080@60",
+  "source": "D3D11 snow fixture",
+  "build": "debug",
+  "limitations": "Two alternating-order rounds; separate native watcher processes, not a real game or four streams decoded in one app. No latency measurement. Inspect actual delivered bitrate; encoder target alone is not achieved throughput.",
+  "samples": [
+    {
+      "round": 0,
+      "watchers": 1,
+      "encrypted": false,
+      "seconds": 8.258041100000002,
+      "processes": [
+        {
+          "role": "publisher",
+          "oneCorePercent": 7.37917131461116
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 111.06598876094233
+        }
+      ],
+      "machinePercent": 7.402822504722093,
+      "delivery": {
+        "available": true,
+        "bitrate_bps": 19883096,
+        "loss_fraction": 0,
+        "retransmit_bps": 0,
+        "route": "UDP",
+        "rtt_ms": 1,
+        "sent_fps": 59.65892989777443
+      },
+      "encodedBps": 23238256,
+      "measurementWindow": {
+        "samples": 8,
+        "deliveryBps": 8750604.75,
+        "encodedBps": 11030489.25,
+        "sentFps": 60.16855924788497
+      }
+    },
+    {
+      "round": 0,
+      "watchers": 1,
+      "encrypted": true,
+      "seconds": 8.245694399999993,
+      "processes": [
+        {
+          "role": "publisher",
+          "oneCorePercent": 9.285148865085283
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 111.80077204898605
+        }
+      ],
+      "machinePercent": 7.567870057129458,
+      "delivery": {
+        "available": true,
+        "bitrate_bps": 20570084,
+        "loss_fraction": 0,
+        "retransmit_bps": 0,
+        "route": "UDP",
+        "rtt_ms": 1,
+        "sent_fps": 60.407720423563084
+      },
+      "encodedBps": 25598082,
+      "measurementWindow": {
+        "samples": 8,
+        "deliveryBps": 9195591.5,
+        "encodedBps": 12718965.5,
+        "sentFps": 59.99644156245398
+      }
+    },
+    {
+      "round": 0,
+      "watchers": 4,
+      "encrypted": false,
+      "seconds": 8.323730200000005,
+      "processes": [
+        {
+          "role": "publisher",
+          "oneCorePercent": 8.44723439017761
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 127.27166481200932
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 128.96111169004485
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 127.64709745157278
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 128.96111169004485
+        }
+      ],
+      "machinePercent": 32.580513752115586,
+      "delivery": {
+        "available": true,
+        "bitrate_bps": 21520584,
+        "loss_fraction": 0,
+        "retransmit_bps": 0,
+        "route": "UDP",
+        "rtt_ms": 2.258,
+        "sent_fps": 60.044340284466465
+      },
+      "encodedBps": 27049358,
+      "measurementWindow": {
+        "samples": 8,
+        "deliveryBps": 9193564.625,
+        "encodedBps": 8493486.5,
+        "sentFps": 60.041671684986305
+      }
+    },
+    {
+      "round": 0,
+      "watchers": 4,
+      "encrypted": true,
+      "seconds": 8.285056600000011,
+      "processes": [
+        {
+          "role": "publisher",
+          "oneCorePercent": 10.18399801879445
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 117.68175488384698
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 118.62471766336499
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 117.49316232794338
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 118.05893999565419
+        }
+      ],
+      "machinePercent": 30.12766080560025,
+      "delivery": {
+        "available": true,
+        "bitrate_bps": 17651786,
+        "loss_fraction": 0,
+        "retransmit_bps": 0,
+        "route": "UDP",
+        "rtt_ms": 1,
+        "sent_fps": 60.11557959302738
+      },
+      "encodedBps": 23135566,
+      "measurementWindow": {
+        "samples": 8,
+        "deliveryBps": 8274536.25,
+        "encodedBps": 10647603.625,
+        "sentFps": 60.05682092307995
+      }
+    },
+    {
+      "round": 1,
+      "watchers": 1,
+      "encrypted": true,
+      "seconds": 8.242327699999993,
+      "processes": [
+        {
+          "role": "publisher",
+          "oneCorePercent": 9.288941520730857
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 118.2918267129807
+        }
+      ],
+      "machinePercent": 7.973798014606972,
+      "delivery": {
+        "available": true,
+        "bitrate_bps": 17501760,
+        "loss_fraction": 0,
+        "retransmit_bps": 0,
+        "route": "UDP",
+        "rtt_ms": 1.2049999999999998,
+        "sent_fps": 59.62471014937779
+      },
+      "encodedBps": 17657679,
+      "measurementWindow": {
+        "samples": 8,
+        "deliveryBps": 9512164.875,
+        "encodedBps": 14602875.5,
+        "sentFps": 60.08714157581679
+      }
+    },
+    {
+      "round": 1,
+      "watchers": 1,
+      "encrypted": false,
+      "seconds": 8.298038799999981,
+      "processes": [
+        {
+          "role": "publisher",
+          "oneCorePercent": 8.66168521651166
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 113.3550978334787
+        }
+      ],
+      "machinePercent": 7.626048940624397,
+      "delivery": {
+        "available": true,
+        "bitrate_bps": 22657826,
+        "loss_fraction": 0,
+        "retransmit_bps": 0,
+        "route": "UDP",
+        "rtt_ms": 1,
+        "sent_fps": 59.57961813039555
+      },
+      "encodedBps": 25942893,
+      "measurementWindow": {
+        "samples": 8,
+        "deliveryBps": 10840022.625,
+        "encodedBps": 14209207.875,
+        "sentFps": 60.05468756653835
+      }
+    },
+    {
+      "round": 1,
+      "watchers": 4,
+      "encrypted": true,
+      "seconds": 8.464899199999985,
+      "processes": [
+        {
+          "role": "publisher",
+          "oneCorePercent": 9.04470309581479
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 119.42699802024833
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 118.87324068785152
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 125.14915712168218
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 121.27285579490442
+        }
+      ],
+      "machinePercent": 30.86043467003133,
+      "delivery": {
+        "available": true,
+        "bitrate_bps": 22928710,
+        "loss_fraction": 0,
+        "retransmit_bps": 0,
+        "route": "UDP",
+        "rtt_ms": 1,
+        "sent_fps": 60.45001368548671
+      },
+      "encodedBps": 29731924,
+      "measurementWindow": {
+        "samples": 8,
+        "deliveryBps": 8978495.875,
+        "encodedBps": 6081730.375,
+        "sentFps": 59.98410924666977
+      }
+    },
+    {
+      "round": 1,
+      "watchers": 4,
+      "encrypted": false,
+      "seconds": 8.376130399999965,
+      "processes": [
+        {
+          "role": "publisher",
+          "oneCorePercent": 8.021305398970421
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 122.93116878887227
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 127.4081764534139
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 125.72929857921079
+        },
+        {
+          "role": "watcher",
+          "oneCorePercent": 124.61004666307538
+        }
+      ],
+      "machinePercent": 31.79374974272142,
+      "delivery": {
+        "available": true,
+        "bitrate_bps": 20402470,
+        "loss_fraction": 0,
+        "retransmit_bps": 0,
+        "route": "UDP",
+        "rtt_ms": 1.053,
+        "sent_fps": 59.65529974700188
+      },
+      "encodedBps": 17763426,
+      "measurementWindow": {
+        "samples": 8,
+        "deliveryBps": 9063653.125,
+        "encodedBps": 8941559.375,
+        "sentFps": 60.09449854933375
+      }
+    }
+  ],
+  "gpu": "NVIDIA GeForce RTX 5080",
+  "binarySha256": "4f9ba4ae61f0c62555a5f08923b78b03f5ab395957eb12aadcf398b85ef31e81",
+  "outcome": "Passed; CPU at sustained 35 Mbps remains unverified. Measurement-window delivery was 8.27-10.84 Mbps."
+}

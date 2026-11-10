@@ -9,6 +9,7 @@ mod locale;
 mod network;
 mod playback;
 mod preview;
+mod protection;
 mod publisher;
 mod quality;
 mod settings;
@@ -74,6 +75,25 @@ fn run() -> Result<()> {
     gstreamer::init()
         .context("GStreamer could not initialize. Check the native runtime installation.")?;
     match std::env::args().nth(1).as_deref() {
+        Some("--protect-invitation") => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Request {
+                invitation_url: String,
+            }
+            let mut input = String::new();
+            std::io::stdin().take(4097).read_to_string(&mut input)?;
+            ensure!(
+                input.len() <= 4096,
+                "Protected invitation input is too large."
+            );
+            let request: Request = serde_json::from_str(&input)
+                .map_err(|_| anyhow::anyhow!("Invalid protected invitation input."))?;
+            println!(
+                "{}",
+                serde_json::json!({"invitationUrl":protection::protect_invitation(&request.invitation_url)?})
+            );
+        }
         Some("--probe") => println!(
             "{}",
             serde_json::json!({"encoders": encoding::encoders(), "decoders": playback::decoder_codecs(), "sourceCount": sources::enumerate().len(), "runtime": gstreamer::version_string().to_string()})
@@ -281,6 +301,12 @@ fn run() -> Result<()> {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FixtureRequest {
     #[serde(default)]
+    exercise_encryption_disable: bool,
+    #[serde(default)]
+    media_server_url: Option<String>,
+    #[serde(default)]
+    media_token: Option<String>,
+    #[serde(default)]
     sample_rates: bool,
     #[serde(default)]
     upload_limit_bps: Option<u64>,
@@ -329,7 +355,11 @@ struct AudioRequest {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct WatchRequest {
+    #[serde(default)]
+    exercise_encryption_disable: bool,
     invitation_url: String,
+    #[serde(default)]
+    media_server_url: Option<String>,
     seconds: u64,
     #[serde(default)]
     h264_only: bool,
@@ -345,6 +375,58 @@ struct WatchRequest {
     reconnect_after_seconds: Option<u64>,
 }
 
+/// Local-only signaling fault injection for native fixtures. Product admission,
+/// room options and UI never call this helper or accept these override fields.
+fn fixture_media_access(
+    invitation: &str,
+    mut access: admission::MediaAccess,
+    server_url: Option<&str>,
+    token: Option<&str>,
+) -> Result<admission::MediaAccess> {
+    if server_url.is_none() && token.is_none() {
+        return Ok(access);
+    }
+    let (legacy, _) = protection::unwrap_invitation(invitation)?;
+    let (origin, _) = admission::invitation_context(&legacy)?;
+    let origin =
+        url::Url::parse(&origin).map_err(|_| anyhow::anyhow!("Invalid local fixture origin."))?;
+    let loopback =
+        |host: Option<&str>| matches!(host, Some("localhost" | "127.0.0.1" | "::1" | "[::1]"));
+    ensure!(
+        origin.scheme() == "http" && loopback(origin.host_str()),
+        "Signaling overrides require a localhost HTTP fixture room."
+    );
+    let server_url = server_url
+        .ok_or_else(|| anyhow::anyhow!("A token override requires a local signaling proxy."))?;
+    ensure!(server_url.len() <= 256, "Invalid local signaling proxy.");
+    let proxy = url::Url::parse(server_url)
+        .map_err(|_| anyhow::anyhow!("Invalid local signaling proxy."))?;
+    ensure!(
+        proxy.scheme() == "ws"
+            && loopback(proxy.host_str())
+            && proxy.port().is_some_and(|port| port >= 1024)
+            && proxy.username().is_empty()
+            && proxy.password().is_none()
+            && matches!(proxy.path(), "" | "/")
+            && proxy.query().is_none()
+            && proxy.fragment().is_none(),
+        "Signaling overrides require a localhost WebSocket proxy."
+    );
+    access.server_url = proxy.to_string();
+    if let Some(token) = token {
+        ensure!(
+            !token.is_empty()
+                && token.len() <= 4096
+                && token
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.')),
+            "Invalid local fixture media token."
+        );
+        access.token = token.to_owned();
+    }
+    Ok(access)
+}
+
 async fn watch_fixture(request: WatchRequest) -> Result<()> {
     ensure!(
         (10..=120).contains(&request.seconds),
@@ -352,19 +434,28 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     );
     let admission =
         admission::Admission::join(&request.invitation_url, "Native playback check").await?;
-    let access = admission.media_access().await?;
+    let access = fixture_media_access(
+        &request.invitation_url,
+        admission.media_access().await?,
+        request.media_server_url.as_deref(),
+        None,
+    )?;
     let (room, mut events) = Room::connect(
         &access.server_url,
         &access.token,
-        connection::options(connection::Route::Auto),
+        admission.room_options(connection::Route::Auto),
     )
     .await
     .map_err(|error| {
+        if request.media_server_url.is_some() {
+            return anyhow::anyhow!("Local signaling fixture connection failed.");
+        }
         anyhow::anyhow!(
             "Native watcher connection failed: {}",
             admission::media_diagnostic(error)
         )
     })?;
+    admission.announce_protection(&room).await?;
     let mut playback = playback::Playback::new();
     let recovery = playback.recovery_signal();
     let events_recovery = recovery.clone();
@@ -394,6 +485,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     };
     let mut preview_before_watching = false;
     let mut reconnected = false;
+    let mut disable_exercised = false;
     let mut received = std::collections::HashMap::<String, RemoteTrack>::new();
     let mut byte_totals = std::collections::HashMap::<String, u64>::new();
     let mut previous_bytes = std::collections::HashMap::<String, u64>::new();
@@ -408,6 +500,15 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                     .map_err(|_| anyhow::anyhow!("Could not exercise watcher recovery."))?;
             }
             let tiles = playback.reconcile(&room, &admission).await?;
+            if request.exercise_encryption_disable && !disable_exercised {
+                ensure!(admission.protection.is_some(), "Protected fixture required.");
+                let cryptors = room.e2ee_manager().frame_cryptors();
+                if !cryptors.is_empty() {
+                    for cryptor in cryptors.values() { cryptor.set_enabled(false); }
+                    ensure!(cryptors.values().all(|c| c.enabled()), "Receiver encryption could be disabled.");
+                    disable_exercised = true;
+                }
+            }
             if watch_after.is_none() {
                 let preview_ready = tiles.iter().any(|tile| !tile.watching && tile.picture.lock().is_ok_and(|picture| picture.is_some()));
                 if preview_ready || elapsed >= 8 { watch_after = Some(elapsed); preview_before_watching = preview_ready; }
@@ -459,7 +560,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     result?;
     println!(
         "{}",
-        serde_json::json!({"samples":samples,"closed":true,"previewBeforeWatching":preview_before_watching})
+        serde_json::json!({"samples":samples,"closed":true,"previewBeforeWatching":preview_before_watching,"cryptorDisableRejected":disable_exercised})
     );
     Ok(())
 }
@@ -492,8 +593,13 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     );
     let admission =
         admission::Admission::join(&request.invitation_url, &request.display_name).await?;
-    let access = admission.media_access().await?;
-    let options = connection::options(request.route);
+    let access = fixture_media_access(
+        &request.invitation_url,
+        admission.media_access().await?,
+        request.media_server_url.as_deref(),
+        request.media_token.as_deref(),
+    )?;
+    let options = admission.room_options(request.route);
     let (room, mut events) = tokio::time::timeout(
         Duration::from_secs(15),
         Room::connect(&access.server_url, &access.token, options),
@@ -501,11 +607,15 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     .await
     .context("Fixture media connection timed out.")?
     .map_err(|error| {
+        if request.media_server_url.is_some() {
+            return anyhow::anyhow!("Local signaling fixture connection failed.");
+        }
         anyhow::anyhow!(
             "Fixture media connection failed: {}",
             admission::media_diagnostic(error)
         )
     })?;
+    admission.announce_protection(&room).await?;
     let cancellation = Arc::new(publisher::CaptureCancellation::default());
     let stop = cancellation.register();
     let cancel = cancellation.clone();
@@ -549,6 +659,13 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             publisher::Stream::start(&room, config.clone(), stop).await?
         };
         let initial_sid=active.sid();
+        if request.exercise_encryption_disable {
+            ensure!(admission.protection.is_some(), "Protected fixture required.");
+            let cryptors = room.e2ee_manager().frame_cryptors();
+            ensure!(!cryptors.is_empty(), "Protected sender cryptor missing.");
+            for cryptor in cryptors.values() { cryptor.set_enabled(false); }
+            ensure!(cryptors.values().all(|c| c.enabled()), "Sender encryption could be disabled.");
+        }
         println!("{}", serde_json::json!({"published":true}));
         active.start_previews(admission.clone());
 
@@ -610,9 +727,14 @@ async fn serve_fixture(
         let second = started.elapsed().as_secs();
         if sample_rates && second >= next_sample {
             let metrics = active.metrics.lock().map(|m| m.clone()).unwrap_or_default();
+            let delivered = active
+                .delivery
+                .lock()
+                .map(|m| m.clone())
+                .unwrap_or_default();
             println!(
                 "{}",
-                serde_json::json!({"rateSample":true,"second":second,"encoderBps":metrics.encoder_bitrate,"fps":metrics.fps,"watcherCap":playback::requested_cap(room)})
+                serde_json::json!({"rateSample":true,"second":second,"encoderBps":metrics.encoder_bitrate,"encodedBps":metrics.encoded_bps,"deliveryBps":delivered.bitrate_bps,"sentFps":delivered.sent_fps,"fps":metrics.fps,"watcherCap":playback::requested_cap(room)})
             );
             next_sample = second + 1;
         }
@@ -629,4 +751,69 @@ async fn serve_fixture(
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
     Ok(active)
+}
+
+#[cfg(test)]
+mod signaling_fixture_tests {
+    use super::*;
+
+    fn access() -> admission::MediaAccess {
+        admission::MediaAccess {
+            server_url: "ws://127.0.0.1:17880/".into(),
+            token: "fixture.token.value".into(),
+        }
+    }
+    fn invitation(origin: &str) -> String {
+        format!("{origin}/r/{}#invite={}", "a".repeat(22), "b".repeat(43))
+    }
+
+    #[test]
+    fn fault_injection_is_bound_to_local_http_admission_and_loopback_ws_proxy() {
+        let local = invitation("http://localhost:3010");
+        let private = protection::protect_invitation(&local).unwrap();
+        for link in [&local, &private] {
+            let overridden = fixture_media_access(
+                link,
+                access(),
+                Some("ws://127.0.0.1:49153/"),
+                Some("other.fixture.token"),
+            )
+            .unwrap();
+            assert_eq!(overridden.server_url, "ws://127.0.0.1:49153/");
+            assert_eq!(overridden.token, "other.fixture.token");
+        }
+        for origin in ["https://example.test", "https://localhost:3010"] {
+            assert!(
+                fixture_media_access(
+                    &invitation(origin),
+                    access(),
+                    Some("ws://localhost:49153"),
+                    None
+                )
+                .is_err()
+            );
+        }
+        for proxy in [
+            "ws://example.test:49153",
+            "wss://localhost:49153",
+            "ws://localhost:80",
+            "ws://localhost",
+            "ws://user:password@localhost:49153",
+            "ws://localhost:49153/rtc",
+            "ws://localhost:49153/?token=value",
+            "ws://localhost:49153/#secret",
+        ] {
+            assert!(fixture_media_access(&local, access(), Some(proxy), None).is_err());
+        }
+        assert!(fixture_media_access(&local, access(), None, Some("other.fixture.token")).is_err());
+        assert!(
+            fixture_media_access(
+                &local,
+                access(),
+                Some("ws://localhost:49153"),
+                Some("token with spaces")
+            )
+            .is_err()
+        );
+    }
 }

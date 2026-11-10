@@ -204,3 +204,22 @@ Accept with unauthenticated/participant/expired/revoked session denial, same-ori
 mutation checks, restart persistence and invitation admission, bounded pagination,
 Node 24 checks, desktop/mobile browser workflows and a fresh independent review.
 Simpler native onboarding (app links or short-lived pairing) remains a proposal.
+
+## Native room end-to-end encryption — independent PR, do not merge
+
+Implement the conditionally approved [native private invitation design](native-e2ee.md)
+on `feat/native-room-e2ee`. An explicit native organizer action generates private
+invitation material locally; guests keep paste/join. Separate admission from the
+private root, derive authenticated per-session participant keys, reject plaintext
+and downgrade, encrypt previews before HTTP and persist private invitations with
+DPAPI. Browser handoff remains legacy-only. Preserve subscriptions and preview
+cadence. Legacy invitations remain explicitly unprotected.
+
+This phase protects against an operator without the private invitation. It does
+not claim human identity, forward secrecy, post-compromise security, complete
+replay protection or cryptographic member revocation against a malicious server.
+Document new-root redistribution after a leak. Run real encrypted media and
+adversarial acceptance checks plus Node 24 and native checks; request a fresh
+GPT-6.1-Sol high-reasoning implementation security review and address findings.
+Record performance and hardware limitations honestly. Felipe explicitly requires
+the PR to remain open and unmerged; do not deploy it or enable auto-merge.

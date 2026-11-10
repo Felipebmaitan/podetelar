@@ -26,6 +26,18 @@ use tokio::task::JoinHandle;
 
 pub const LIMIT_PREFIX: &str = "freedomstream.limit.";
 pub const WATCH_PREFIX: &str = "freedomstream.watch.";
+
+fn accepts_encryption(
+    protected: bool,
+    tracks: impl IntoIterator<Item = livekit::e2ee::EncryptionType>,
+) -> bool {
+    let expected = if protected {
+        livekit::e2ee::EncryptionType::Gcm
+    } else {
+        livekit::e2ee::EncryptionType::None
+    };
+    tracks.into_iter().all(|actual| actual == expected)
+}
 pub type Picture = Arc<Mutex<Option<egui::ColorImage>>>;
 
 #[derive(Clone)]
@@ -316,6 +328,38 @@ impl Playback {
         for participant in participants.values() {
             let id = participant.identity().to_string();
             let publications = participant.track_publications();
+            let protected_authorized =
+                accepts_encryption(
+                    admission.protection.is_some(),
+                    publications
+                        .values()
+                        .filter(|p| {
+                            matches!(
+                                p.source(),
+                                TrackSource::Screenshare | TrackSource::ScreenshareAudio
+                            )
+                        })
+                        .map(|p| p.encryption_type()),
+                ) && admission.protection.as_ref().is_none_or(|protection| {
+                    protection.authorize(
+                        &id,
+                        participant.attributes().get(crate::protection::ATTRIBUTE),
+                    )
+                });
+            if !protected_authorized {
+                for publication in publications.values() {
+                    publication.set_subscribed(false);
+                }
+                self.previews.remove(&id);
+                // Pumps from a previously valid descriptor must stop on any downgrade.
+                for publication in publications.values() {
+                    self.pumps.remove(publication.sid().as_str());
+                }
+                if self.watches.contains_key(&id) {
+                    live.insert(id.clone());
+                }
+                continue;
+            }
             let Some(video) = publications
                 .values()
                 .find(|p| p.source() == TrackSource::Screenshare)
@@ -390,8 +434,9 @@ impl Playback {
                     let owner = id.clone();
                     let revision = revision.to_owned();
                     let requested = revision.clone();
+                    let sid = video.sid().to_string();
                     let job = tokio::spawn(async move {
-                        if let Ok(image) = admission.get_preview(&owner, &requested).await
+                        if let Ok(image) = admission.get_preview(&owner, &requested, &sid).await
                             && let Ok(mut slot) = latest.lock()
                         {
                             *slot = Some(image);
@@ -427,13 +472,32 @@ impl Playback {
                 if !enabled {
                     continue;
                 }
+                // Use this exact receiver snapshot for both readiness and pump
+                // creation. Re-reading after a None/old snapshot would permit a
+                // newly exposed receiver to race its cryptor attachment.
+                let Some(track) = publication.track() else {
+                    continue;
+                };
+                // Signaling metadata is mutable. Require the actual receiver
+                // transform before starting or retaining any protected pump.
+                if admission.protection.is_some() {
+                    let key = (participant.identity(), publication.sid());
+                    if !room.e2ee_manager().enabled()
+                        || !room
+                            .e2ee_manager()
+                            .frame_cryptors()
+                            .get(&key)
+                            .is_some_and(|cryptor| cryptor.enabled())
+                    {
+                        publication.set_subscribed(false);
+                        self.pumps.remove(&sid);
+                        continue;
+                    }
+                }
                 pumps.insert(sid.clone());
                 if self.pumps.contains_key(&sid) {
                     continue;
                 }
-                let Some(track) = publication.track() else {
-                    continue;
-                };
                 let watch = &self.watches[&id];
                 let task = match track {
                     RemoteTrack::Video(track) => {
@@ -685,6 +749,19 @@ pub fn requested_cap(room: &Room) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn receiver_never_feeds_unexpected_ciphertext_or_plaintext_to_decoders() {
+        use livekit::e2ee::EncryptionType::{Gcm, None};
+        assert!(accepts_encryption(false, [None, None]));
+        assert!(accepts_encryption(true, [Gcm, Gcm]));
+        for protected in [false, true] {
+            assert!(!accepts_encryption(protected, [None, Gcm]));
+            assert!(!accepts_encryption(protected, [Gcm, None]));
+        }
+        assert!(!accepts_encryption(false, [Gcm]));
+        assert!(!accepts_encryption(true, [None]));
+    }
     #[test]
     fn received_bitrate_uses_actual_elapsed_time_and_handles_counter_reset() {
         let now = Instant::now();

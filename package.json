@@ -36,6 +36,7 @@
     "native:e2e": "node --env-file=.env node_modules/@playwright/test/cli.js test -c playwright.native.config.ts"
   },
   "devDependencies": {
+    "@livekit/protocol": "1.51.0",
     "@playwright/test": "1.65.0",
     "@types/node": "24.10.0",
     "concurrently": "10.0.7",

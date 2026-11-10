@@ -6,6 +6,8 @@ import { basename, dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import {
   PREVIEW_TTL_MS,
+  PROTECTED_PREVIEW_MAX_BYTES,
+  PROTECTED_PREVIEW_TYPE,
   THUMBNAIL_INTERVAL_MS,
   type Preview,
 } from "@freedomstream/contracts";
@@ -201,6 +203,77 @@ test("JPEG validation bounds dimensions and rejects multi-image, truncated, prog
   assert.equal(jpegDimensions(progressive), null);
   for (let size = 0; size < jpeg.length; size += 7)
     assert.equal(jpegDimensions(jpeg.subarray(0, size)), null);
+});
+
+test("protected previews remain opaque with admission, publication proof and exact MIME", async (t) => {
+  const f = await fixture(t);
+  // Structural envelope fixture only: the server cannot authenticate ciphertext.
+  const envelope = Buffer.concat([Buffer.from("FSP1"), Buffer.alloc(48, 0xa5)]);
+  const headers = { "content-type": PROTECTED_PREVIEW_TYPE };
+  assert.equal(
+    (await f.upload({ ...headers, cookie: "" }, envelope)).statusCode,
+    401,
+  );
+  assert.equal(
+    (await f.upload({ ...headers, "x-track-sid": "TR_other" }, envelope))
+      .statusCode,
+    404,
+  );
+  assert.equal((await f.upload(headers, jpeg)).statusCode, 400);
+  assert.equal((await f.upload(headers, Buffer.from("FSP1"))).statusCode, 400);
+  assert.equal(
+    (await f.upload(headers, Buffer.alloc(PROTECTED_PREVIEW_MAX_BYTES + 1)))
+      .statusCode,
+    413,
+  );
+  assert.equal((await f.upload({}, envelope)).statusCode, 400);
+  const uploaded = await f.upload(headers, envelope);
+  assert.equal(uploaded.statusCode, 200, uploaded.body);
+  const url = f.imageUrl(uploaded.json());
+  assert.equal((await f.app.inject(url)).statusCode, 401);
+  const downloaded = await f.app.inject({
+    url,
+    headers: { cookie: f.owner.cookie },
+  });
+  assert.equal(downloaded.statusCode, 200);
+  assert.equal(downloaded.headers["content-type"], PROTECTED_PREVIEW_TYPE);
+  assert.equal(downloaded.headers["cache-control"], "no-store");
+  assert.deepEqual(downloaded.rawPayload, envelope);
+  assert.equal((await f.upload()).statusCode, 429);
+  f.advance(THUMBNAIL_INTERVAL_MS);
+  assert.equal((await f.upload()).statusCode, 200);
+  assert.equal((await f.upload(headers, envelope)).statusCode, 429);
+});
+
+test("protected envelopes retain byte limits, expiry and stopped-stream cleanup", async (t) => {
+  const f = await fixture(t);
+  const envelope = Buffer.alloc(PROTECTED_PREVIEW_MAX_BYTES, 0xa5);
+  envelope.write("FSP1");
+  const uploaded = await f.upload(
+    { "content-type": PROTECTED_PREVIEW_TYPE },
+    envelope,
+  );
+  assert.equal(uploaded.statusCode, 200, uploaded.body);
+  const url = f.imageUrl(uploaded.json());
+  const read = () => f.app.inject({ url, headers: { cookie: f.owner.cookie } });
+  assert.equal((await read()).rawPayload.length, PROTECTED_PREVIEW_MAX_BYTES);
+  await f.app.inject({
+    method: "DELETE",
+    url: `/api/rooms/${f.owner.room}/previews/screen`,
+    headers: f.headers,
+  });
+  assert.equal((await read()).statusCode, 404);
+  assert.equal(
+    (await f.upload({ "content-type": PROTECTED_PREVIEW_TYPE }, envelope))
+      .statusCode,
+    429,
+  );
+  f.advance(PREVIEW_TTL_MS);
+  assert.equal(
+    (await f.upload({ "content-type": PROTECTED_PREVIEW_TYPE }, envelope))
+      .statusCode,
+    200,
+  );
 });
 
 test("private previews require admission, same origin, and the publisher's live unmuted track", async (t) => {

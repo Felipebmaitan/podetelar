@@ -1,0 +1,19 @@
+--- a/pkg/telemetry/stats.go
++++ b/pkg/telemetry/stats.go
+@@ -66,7 +66,7 @@
+ 	return s.streamType
+ }
+ 
+-func (t *telemetryService) TrackStats(roomID livekit.RoomID, _roomName livekit.RoomName, key StatsKey, stat *livekit.AnalyticsStat) {
++func (t *telemetryService) TrackStats(roomID livekit.RoomID, roomName livekit.RoomName, key StatsKey, stat *livekit.AnalyticsStat) {
+ 	t.enqueue(func() {
+ 		direction := prometheus.Incoming
+ 		if key.streamType == livekit.StreamType_DOWNSTREAM {
+@@ -112,6 +112,7 @@
+ 		}
+ 
+ 		if worker, ok := t.getWorker(roomID, key.participantID); ok {
++			recordParticipantUsage(string(roomName), string(worker.participantIdentity), string(direction), bytes+retransmitBytes)
+ 			worker.OnTrackStat(key.trackID, key.streamType, stat)
+ 		}
+ 	})

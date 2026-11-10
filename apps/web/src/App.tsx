@@ -5,6 +5,7 @@ import type { CreatedRoom, RoomSession } from "@freedomstream/contracts";
 import { ApiError, request } from "./api";
 import { RoomAccess } from "./RoomAccess";
 import { PublisherDownload } from "./PublisherDownload";
+import { Admin } from "./Admin";
 
 const managedRoomId = /^\/manage\/([A-Za-z0-9_-]{22})$/.exec(
   window.location.pathname,
@@ -41,6 +42,10 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export function App() {
+  return window.location.pathname === "/" ? <Admin /> : <RoomApp />;
+}
+
+function RoomApp() {
   const [session, setSession] = useState<RoomSession | null>(null);
   const [loading, setLoading] = useState(Boolean(entryRoomId));
   const [error, setError] = useState("");

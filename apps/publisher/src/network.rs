@@ -1,8 +1,8 @@
 //! A measured path capacity informs the allowance. Keep headroom, share it across actual
 //! subscriptions, reduce on receiver evidence and recover slowly within that cap.
 pub const DEFAULT_DOWNLOAD_BPS: u64 = 12_000_000;
-pub const PROBE_CAP_BPS: u64 = 100_000_000;
-pub const PROBE_BYTES: usize = 24 * 1024 * 1024;
+pub const PROBE_CAP_BPS: u64 = 200_000_000;
+pub const PROBE_BYTES: usize = 48 * 1024 * 1024;
 #[derive(Clone, Default)]
 pub struct Capacity {
     pub download_bps: Option<u64>,
@@ -86,6 +86,23 @@ impl ReceiveBudget {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn two_hundred_mbps_probe_leaves_room_for_a_hundred_mbps_video() {
+        let capacity = Capacity {
+            download_bps: Some(PROBE_CAP_BPS),
+            upload_bps: Some(PROBE_CAP_BPS),
+            error: String::new(),
+        };
+        let mut budget = ReceiveBudget::default();
+        budget.set(capacity.watching_allowance());
+        assert_eq!(budget.per_stream(1), 100_000_000);
+        assert!(100_000_000 + 256_000 <= budget.payload);
+        assert!(capacity.upload_video_cap().unwrap() > 100_000_000);
+        let rate = crate::quality::RateControl::new(100_000_000);
+        rate.set_upload_cap(capacity.upload_video_cap());
+        assert_eq!(rate.effective(None), 100_000_000);
+    }
 
     #[test]
     fn measured_slow_links_do_not_get_inflated_into_a_watchable_budget() {

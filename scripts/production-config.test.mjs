@@ -32,7 +32,7 @@ test("production config preserves the admission gateway and isolated certificate
     .split('network-test/upload$" {')[1]
     ?.split("\n  }")[0];
   assert.ok(upload);
-  assert.match(upload, /client_max_body_size 24m/);
+  assert.match(upload, /client_max_body_size 48m/);
   assert.match(upload, /proxy_request_buffering off/);
   assert.match(upload, /X-Forwarded-For \$realip_remote_addr/);
   assert.match(config.coturn, /cert=\/run\/tls\/current\/fullchain.pem/);

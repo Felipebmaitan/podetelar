@@ -4,9 +4,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { FastifyInstance } from "fastify";
 import type { Rooms } from "./rooms.js";
 
-// One shared lease: simultaneous joins cannot each consume 100 Mbps.
-export const PROBE_BPS = 100_000_000;
-export const PROBE_BYTES = 24 * 1024 * 1024;
+// One shared lease: simultaneous joins cannot each consume 200 Mbps.
+export const PROBE_BPS = 200_000_000;
+export const PROBE_BYTES = 48 * 1024 * 1024;
 const DURATION_MS = 2_000;
 type Own = { roomId: string };
 type Lease = {
@@ -16,6 +16,8 @@ type Lease = {
   phase: string;
   until: number;
   cookie: string;
+  cap: number;
+  byteLimit: number;
 };
 export async function networkTestRoutes(app: FastifyInstance, rooms: Rooms) {
   let lease: Lease | undefined;
@@ -68,11 +70,19 @@ export async function networkTestRoutes(app: FastifyInstance, rooms: Rooms) {
           phase: "download",
           until: now + 12_000,
           cookie: request.cookies.fs_session!,
+          cap:
+            request.headers["x-network-test-max-bps"] === String(PROBE_BPS)
+              ? PROBE_BPS
+              : 100_000_000,
+          byteLimit:
+            request.headers["x-network-test-max-bps"] === String(PROBE_BPS)
+              ? PROBE_BYTES
+              : 24 * 1024 * 1024,
         };
         return {
           probe: lease.token,
-          payloadCapBps: PROBE_BPS,
-          byteLimit: PROBE_BYTES,
+          payloadCapBps: lease.cap,
+          byteLimit: lease.byteLimit,
         };
       },
     );
@@ -102,6 +112,8 @@ export async function networkTestRoutes(app: FastifyInstance, rooms: Rooms) {
         if (!current)
           return reply.code(409).send({ error: "Connection test expired." });
         current.phase = "sending";
+        const cap = current.cap,
+          byteLimit = current.byteLimit;
         const block = randomBytes(64 * 1024);
         reply
           .type("application/octet-stream")
@@ -115,7 +127,7 @@ export async function networkTestRoutes(app: FastifyInstance, rooms: Rooms) {
             finished = false;
           try {
             while (
-              sent < PROBE_BYTES &&
+              sent < byteLimit &&
               performance.now() - start < DURATION_MS
             ) {
               if (
@@ -124,10 +136,7 @@ export async function networkTestRoutes(app: FastifyInstance, rooms: Rooms) {
               )
                 return;
               await delay(
-                Math.max(
-                  0,
-                  (sent * 8_000) / PROBE_BPS - (performance.now() - start),
-                ),
+                Math.max(0, (sent * 8_000) / cap - (performance.now() - start)),
               );
               yield block;
               sent += block.length;
@@ -167,7 +176,7 @@ export async function networkTestRoutes(app: FastifyInstance, rooms: Rooms) {
         try {
           for await (const chunk of request.body as Readable) {
             bytes += Buffer.byteLength(chunk);
-            if (bytes > PROBE_BYTES || performance.now() - start > 4_000)
+            if (bytes > current.byteLimit || performance.now() - start > 4_000)
               return reply
                 .code(413)
                 .send({ error: "Connection test limit exceeded." });
@@ -182,7 +191,7 @@ export async function networkTestRoutes(app: FastifyInstance, rooms: Rooms) {
             bytes,
             seconds,
             bps: Math.min(
-              PROBE_BPS,
+              current.cap,
               Math.floor((bytes * 8) / Math.max(seconds, 0.001)),
             ),
           };

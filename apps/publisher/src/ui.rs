@@ -83,6 +83,8 @@ pub struct PublisherUi {
     download_budget: Option<u64>,
     textures: HashMap<String, egui::TextureHandle>,
     focused: Option<String>,
+    fullscreen: Option<String>,
+    fullscreen_controls_until: Instant,
     store: Option<crate::settings::Store>,
     attempted_profile: Option<crate::settings::Profile>,
     settings_error: String,
@@ -122,6 +124,8 @@ impl PublisherUi {
             download_budget: None,
             textures: HashMap::new(),
             focused: None,
+            fullscreen: None,
+            fullscreen_controls_until: Instant::now(),
             store,
             attempted_profile: profile.clone(),
             settings_error,
@@ -505,7 +509,7 @@ impl PublisherUi {
 
     fn advanced(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
         ui.label(tr("Connection measurement"));
-        ui.small(tr("Capacity to this VPS · payload capped at 100 Mbps"));
+        ui.small(tr("Capacity to this VPS · payload capped at 200 Mbps"));
         if state.testing_connection {
             ui.horizontal(|ui| {
                 ui.spinner();
@@ -566,7 +570,7 @@ impl PublisherUi {
                 .selected_text(self.download_budget.map(|bps| format!("{} Mbps",bps/1_000_000)).unwrap_or_else(|| format!("{} · {:.1} Mbps",tr("Automatic"),state.capacity.watching_allowance().unwrap_or(crate::network::DEFAULT_DOWNLOAD_BPS) as f64/1_000_000.0)))
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut self.download_budget,None,tr("Automatic"));
-                    for mbps in [1,3,5,10,25,50,100] { ui.selectable_value(&mut self.download_budget,Some(mbps*1_000_000),format!("{mbps} Mbps")); }
+                    for mbps in [1,3,5,10,25,50,100,200] { ui.selectable_value(&mut self.download_budget,Some(mbps*1_000_000),format!("{mbps} Mbps")); }
                 }).response.labelled_by(label.id);
             if before != self.download_budget { self.controller.send(Command::DownloadBudget { bps: self.download_budget }); }
             ui.small(tr("Automatic uses measured download capacity with headroom. Shared across everything you watch."));
@@ -591,6 +595,11 @@ impl PublisherUi {
                 "{}: {:.1} Mbps",
                 tr("Effective encoder target"),
                 state.metrics.encoder_bitrate as f64 / 1_000_000.0
+            ));
+            ui.small(format!(
+                "{}: {}",
+                tr("Encoder bitrate changes"),
+                state.metrics.encoder_bitrate_changes
             ));
             ui.small(format!(
                 "{}: {:.1} FPS · {:.1} Mbps",
@@ -633,22 +642,171 @@ impl PublisherUi {
         });
     }
 
+    fn set_fullscreen(&mut self, ctx: &egui::Context, id: Option<String>) {
+        if id.is_some() {
+            self.advanced_open = false;
+        }
+        self.fullscreen = id;
+        self.fullscreen_controls_until = Instant::now() + Duration::from_secs(3);
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.fullscreen.is_some()));
+    }
+
+    fn update_picture(&mut self, ctx: &egui::Context, tile: &Tile) {
+        if let Ok(mut picture) = tile.picture.lock()
+            && let Some(image) = picture.take()
+        {
+            if let Some(texture) = self.textures.get_mut(&tile.id) {
+                texture.set(image, egui::TextureOptions::LINEAR);
+            } else {
+                self.textures.insert(
+                    tile.id.clone(),
+                    ctx.load_texture(&tile.id, image, egui::TextureOptions::LINEAR),
+                );
+            }
+        }
+    }
+
+    fn bitrate(ui: &mut egui::Ui, rect: egui::Rect, tile: &Tile) {
+        let text = format!(
+            "{:.1} Mbps",
+            tile.received_bps.load(Ordering::Relaxed) as f64 / 1_000_000.0
+        );
+        ui.painter().text(
+            rect.right_bottom() - egui::vec2(6.0, 2.0),
+            egui::Align2::RIGHT_BOTTOM,
+            text,
+            egui::FontId::proportional(12.0),
+            MUTED,
+        );
+        ui.interact(
+            egui::Rect::from_min_max(
+                rect.right_bottom() - egui::vec2(94.0, 20.0),
+                rect.right_bottom(),
+            ),
+            ui.scope_id().with("received-bitrate"),
+            egui::Sense::hover(),
+        )
+        .on_hover_text(tr("Received video · recent payload bitrate"));
+    }
+
+    fn fullscreen_view(&mut self, root: &mut egui::Ui, tile: &Tile) {
+        let ctx = root.ctx().clone();
+        self.update_picture(&ctx, tile);
+        if ctx.input(|i| {
+            i.pointer.delta() != egui::Vec2::ZERO
+                || i.pointer.any_pressed()
+                || !i.keys_down.is_empty()
+        }) {
+            self.fullscreen_controls_until = Instant::now() + Duration::from_secs(3);
+        }
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(egui::Color32::BLACK))
+            .show(root, |ui| {
+                let rect = ui.max_rect();
+                if let Some(texture) = self.textures.get(&tile.id) {
+                    let aspect = texture.aspect_ratio();
+                    let size = egui::vec2(
+                        rect.width().min(rect.height() * aspect),
+                        rect.height().min(rect.width() / aspect),
+                    );
+                    let target = egui::Rect::from_center_size(rect.center(), size);
+                    ui.painter().image(
+                        texture.id(),
+                        target,
+                        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                        egui::Color32::WHITE,
+                    );
+                }
+                if ui
+                    .interact(
+                        rect,
+                        ui.scope_id().with("fullscreen-video"),
+                        egui::Sense::click(),
+                    )
+                    .double_clicked()
+                {
+                    self.set_fullscreen(&ctx, None);
+                }
+                let hud = egui::Rect::from_min_size(
+                    rect.right_bottom() - egui::vec2(108.0, 30.0),
+                    egui::vec2(102.0, 24.0),
+                );
+                ui.painter()
+                    .rect_filled(hud, 4.0, egui::Color32::from_black_alpha(190));
+                Self::bitrate(ui, hud, tile);
+                if Instant::now() < self.fullscreen_controls_until {
+                    let overlay = egui::Area::new(egui::Id::unique("fullscreen-controls"))
+                        .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(16.0, -16.0))
+                        .order(egui::Order::Foreground)
+                        .show(&ctx, |ui| {
+                            egui::Frame::new()
+                                .fill(CARD)
+                                .inner_margin(8)
+                                .corner_radius(6)
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.add_sized(
+                                            [180.0, 32.0],
+                                            egui::Label::new(&tile.name).truncate(),
+                                        )
+                                        .on_hover_text(&tile.name);
+                                        if ui.button(tr("Exit full screen")).clicked() {
+                                            self.set_fullscreen(&ctx, None);
+                                        }
+                                        if ui.button(tr("Stop")).clicked() {
+                                            self.controller.send(Command::Watch {
+                                                id: tile.id.clone(),
+                                                enabled: false,
+                                            });
+                                            self.textures.remove(&tile.id);
+                                            self.set_fullscreen(&ctx, None);
+                                        }
+                                        let mut volume = tile.volume.load(Ordering::Relaxed);
+                                        ui.spacing_mut().slider_width = 120.0;
+                                        if ui
+                                            .add(
+                                                egui::Slider::new(&mut volume, 0..=100).suffix("%"),
+                                            )
+                                            .on_hover_text(tr("This stream's volume"))
+                                            .changed()
+                                        {
+                                            tile.volume.store(volume, Ordering::Relaxed);
+                                        }
+                                    });
+                                });
+                        });
+                    if overlay.response.contains_pointer() {
+                        self.fullscreen_controls_until = Instant::now() + Duration::from_secs(3);
+                    }
+                }
+                if !tile.status.is_empty() {
+                    ui.painter().text(
+                        rect.center_top() + egui::vec2(0.0, 24.0),
+                        egui::Align2::CENTER_TOP,
+                        tr(&tile.status),
+                        egui::FontId::proportional(16.0),
+                        WARNING,
+                    );
+                }
+            });
+    }
+
     fn stream_tile(&mut self, ui: &mut egui::Ui, tile: &Tile, width: f32) {
         egui::Frame::new().fill(CARD).stroke(egui::Stroke::new(1.0,BORDER)).corner_radius(10).inner_margin(10)
             .show(ui, |ui| { ui.push_id(&tile.id, |ui| { ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y=6.0;
                 let inner = (width-22.0).max(180.0);
                 ui.set_width(inner);
                 ui.horizontal(|ui| {
-                    ui.add_sized([inner-100.0,26.0],egui::Label::new(egui::RichText::new(&tile.name).strong()).truncate());
+                    ui.add_sized([inner-if tile.watching {198.0}else{100.0},26.0],egui::Label::new(egui::RichText::new(&tile.name).strong()).truncate()).on_hover_text(&tile.name);
+                    if tile.watching && ui.button(tr("Full screen")).on_hover_text(tr("Double-click video or press F11. Escape exits full screen.")).clicked(){self.set_fullscreen(ui.ctx(),Some(tile.id.clone()));}
                     let active = tile.watching && tile.frames.load(Ordering::Relaxed) > 0;
                     let text = if !tile.watching { tr("Preview") } else if active { tr("Live") } else { tr("Connecting") };
                     badge(ui,if tile.id=="__self_preview" {tr("Your stream")}else{text},if active { ACCENT } else { MUTED });
                 }).response.on_hover_text(if tile.id=="__self_preview" { tr("Source confirmation · updates once a minute") } else if tile.watching { tr("Live video and audio subscription") } else { tr("Still preview, updated at most once per minute. Watch starts live video and audio.") });
-                if let Ok(mut picture) = tile.picture.lock() && let Some(image) = picture.take() {
-                    if let Some(texture) = self.textures.get_mut(&tile.id) { texture.set(image,egui::TextureOptions::LINEAR); }
-                    else { self.textures.insert(tile.id.clone(),ui.ctx().load_texture(&tile.id,image,egui::TextureOptions::LINEAR)); }
-                }
-                let (rect,_) = ui.allocate_exact_size(egui::vec2(inner,inner*9.0/16.0),egui::Sense::hover());
+                self.update_picture(ui.ctx(),tile);
+                let (rect,response) = ui.allocate_exact_size(egui::vec2(inner,inner*9.0/16.0),egui::Sense::click());
+                if tile.watching && response.double_clicked(){self.set_fullscreen(ui.ctx(),Some(tile.id.clone()));}
                 ui.painter().rect_filled(rect,6.0,CANVAS);
                 if let Some(texture) = self.textures.get(&tile.id) {
                     let aspect = texture.aspect_ratio();
@@ -662,8 +820,10 @@ impl PublisherUi {
                     if ui.put(target,primary(tr("Watch"),124.0)).on_hover_text(tr("Start receiving this stream's live video and audio")).clicked() { self.controller.send(Command::Watch { id:tile.id.clone(),enabled:true }); }
                     ui.advance_cursor_after_rect(rect);
                 } else if tile.watching {
-                    let (controls,_) = ui.allocate_exact_size(egui::vec2(inner,40.0),egui::Sense::hover());
-                    let mut row=ui.new_child(egui::UiBuilder::new().id_salt("playback-controls").max_rect(controls.shrink(4.0)).layout(egui::Layout::left_to_right(egui::Align::Center)));
+                    let (controls,_) = ui.allocate_exact_size(egui::vec2(inner,56.0),egui::Sense::hover());
+                    Self::bitrate(ui,controls,tile);
+                    let row_rect=egui::Rect::from_min_size(controls.min+egui::vec2(4.0,4.0),egui::vec2(controls.width()-8.0,32.0));
+                    let mut row=ui.new_child(egui::UiBuilder::new().id_salt("playback-controls").max_rect(row_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
                     row.set_height(32.0);
                     row.style_mut().text_styles.insert(egui::TextStyle::Button,egui::FontId::proportional(12.0));
                     row.spacing_mut().button_padding.x=4.0;
@@ -700,15 +860,67 @@ impl PublisherUi {
 impl eframe::App for PublisherUi {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
-        ctx.request_repaint_after(Duration::from_millis(16));
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             if self.advanced_open {
                 self.advanced_open = false;
+            } else if self.fullscreen.is_some() {
+                self.set_fullscreen(&ctx, None);
             } else {
                 self.focused = None;
             }
         }
         let state = self.controller.snapshot();
+        self.textures.retain(|id, _| {
+            (state.sharing && id == "__self_preview") || state.tiles.iter().any(|t| &t.id == id)
+        });
+        if !state.sharing {
+            self.self_preview_revision = None;
+        }
+        let hidden = ctx.input(|i| i.viewport().visible() == Some(false));
+        ctx.request_repaint_after(Duration::from_millis(if hidden {
+            250
+        } else if state.tiles.iter().any(|t| t.watching) {
+            16
+        } else if state.busy || state.connection == "connecting" {
+            50
+        } else {
+            250
+        }));
+        if ctx.input(|i| {
+            i.events.iter().any(|event| {
+                matches!(
+                    event,
+                    egui::Event::Key {
+                        key: egui::Key::F11,
+                        pressed: true,
+                        repeat: false,
+                        ..
+                    }
+                )
+            })
+        }) {
+            if self.fullscreen.is_some() {
+                self.set_fullscreen(&ctx, None);
+            } else if let Some(tile) = state
+                .tiles
+                .iter()
+                .find(|t| t.watching && self.focused.as_ref() == Some(&t.id))
+                .or_else(|| state.tiles.iter().find(|t| t.watching))
+            {
+                self.set_fullscreen(&ctx, Some(tile.id.clone()));
+            }
+        }
+        if let Some(id) = self.fullscreen.clone() {
+            if let Some(tile) = state
+                .tiles
+                .iter()
+                .find(|tile| tile.id == id && tile.watching)
+            {
+                self.fullscreen_view(root, tile);
+                return;
+            }
+            self.set_fullscreen(&ctx, None);
+        }
         if state.connection == "connected"
             && !self.forgetting
             && let Ok(profile) = crate::settings::Profile::new(&self.invitation, &self.name)
@@ -735,12 +947,6 @@ impl eframe::App for PublisherUi {
                 .first()
                 .map(|e| e.factory.clone())
                 .unwrap_or_default();
-        }
-        self.textures.retain(|id, _| {
-            (state.sharing && id == "__self_preview") || state.tiles.iter().any(|t| &t.id == id)
-        });
-        if !state.sharing {
-            self.self_preview_revision = None;
         }
         self.remembered_volume
             .retain(|id, _| state.tiles.iter().any(|t| &t.id == id));
@@ -919,6 +1125,7 @@ impl eframe::App for PublisherUi {
                         watching: false,
                         picture,
                         frames: std::sync::Arc::default(),
+                        received_bps: std::sync::Arc::default(),
                         volume: std::sync::Arc::default(),
                         audio: std::sync::Arc::default(),
                         status: String::new(),
@@ -960,7 +1167,7 @@ impl eframe::App for PublisherUi {
                     max_width
                 } else {
                     max_width
-                        .min((row_height - 114.0).max(90.0) * 16.0 / 9.0 + 22.0)
+                        .min((row_height - if tiles.iter().any(|t|t.watching){136.0}else{114.0}).max(90.0) * 16.0 / 9.0 + 22.0)
                         // Keep Stop/Focus/Unmute and the volume editor inside the card.
                         // Short windows scroll instead of squeezing playback controls.
                         .max(302.0)

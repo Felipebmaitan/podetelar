@@ -1177,8 +1177,10 @@ async fn worker(
                 }
                 Command::DownloadBudget { bps } => {
                     anyhow::ensure!(
-                        bps.is_none_or(|bps| (1_000_000..=100_000_000).contains(&bps)),
-                        "Choose a watching budget from 1 to 100 Mbps."
+                        bps.is_none_or(
+                            |bps| (1_000_000..=crate::network::PROBE_CAP_BPS).contains(&bps)
+                        ),
+                        "Choose a watching budget from 1 to 200 Mbps."
                     );
                     download_budget = bps;
                     playback.set_budget(bps.or_else(|| capacity.watching_allowance()));

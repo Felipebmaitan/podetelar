@@ -5,6 +5,7 @@ import { createTestRoom } from "../scripts/test-room.js";
 import { nativeRequest, toneFixtures } from "./fixtures.js";
 
 type Watched = {
+  cryptorDisableRejected?: boolean;
   closed: boolean;
   previewBeforeWatching: boolean;
   samples: {
@@ -173,12 +174,14 @@ for (const codec of ["h264", "h265", "av1"] as const) {
       codec,
       seconds: 28,
       quality,
+      exerciseEncryptionDisable: codec === "h264",
     });
     await sender.reported;
     const receiver = nativeRequest("--watch-fixture", {
       invitationUrl,
       seconds: 25,
       waitForPreview: true,
+      exerciseEncryptionDisable: codec === "h264",
     });
     try {
       if (codec === "h264") {
@@ -222,6 +225,7 @@ for (const codec of ["h264", "h265", "av1"] as const) {
       expect(sent.captureStopped).toBe(true);
       expect(sent.previewUploads).toBe(1);
       expect(watched.previewBeforeWatching).toBe(true);
+      if (codec === "h264") expect(watched.cryptorDisableRejected).toBe(true);
       expect(hasVideo(watched)).toBe(true);
       expect(
         watched.samples.some(

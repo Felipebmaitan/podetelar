@@ -67,6 +67,22 @@ const receiverCheck = `        // A protected client requires a receiver cryptor
         // already-attached plaintext decoder into an apparently protected track.
         if !self.initialized() {
 `;
+const protectedTrailerChanges = [
+  [
+    "            if needs_video_sender_transformer(&options, has_timing_subscribers) {\n",
+    "            if self.local.encryption_type == EncryptionType::None && needs_video_sender_transformer(&options, has_timing_subscribers) {\n",
+  ],
+  [
+    "        let mut encodings = Vec::default();\n",
+    "        if self.local.encryption_type != EncryptionType::None { req.packet_trailer_features.clear(); }\n        let mut encodings = Vec::default();\n",
+  ],
+];
+const protectedReceiverTrailerChanges = [
+  [
+    "        let needs_packet_trailer_handler = needs_video_receiver_packet_trailer_handler(\n",
+    "        let needs_packet_trailer_handler = !self.initialized() && needs_video_receiver_packet_trailer_handler(\n",
+  ],
+];
 const roomReceiverChanges = [
   [
     `        if let Some(remote_participant) = remote_participant {
@@ -251,9 +267,14 @@ if (existsSync(destination)) {
     );
   if (original.split(encryptionMarker).length !== 2)
     throw new Error("Native SDK encryption patch marker mismatch.");
-  const patched = original
+  let patched = original
     .replace(marker, marker + addition)
     .replace(encryptionMarker, encryptionMarker + encryptionCheck);
+  for (const [marker, replacement] of protectedTrailerChanges) {
+    if (patched.split(marker).length !== 2)
+      throw new Error("Native SDK protected sender trailer marker mismatch.");
+    patched = patched.replace(marker, replacement);
+  }
   if (hash(patched) !== pin.patchedSourceSha256)
     throw new Error("The native SDK patch checksum did not match the pin.");
   writeFileSync(target, patched);
@@ -311,7 +332,12 @@ if (existsSync(destination)) {
       "Native SDK mandatory receiver cryptor patch marker mismatch.",
     );
   // Replace the first occurrence (remote receiver), retaining the local check.
-  const managerPatched = managerOriginal.replace(receiverMarker, receiverCheck);
+  let managerPatched = managerOriginal.replace(receiverMarker, receiverCheck);
+  for (const [marker, replacement] of protectedReceiverTrailerChanges) {
+    if (managerPatched.split(marker).length !== 2)
+      throw new Error("Native SDK protected receiver trailer marker mismatch.");
+    managerPatched = managerPatched.replace(marker, replacement);
+  }
   if (hash(managerPatched) !== pin.managerPatchedSourceSha256)
     throw new Error(
       "Native SDK mandatory receiver cryptor patch checksum mismatch.",

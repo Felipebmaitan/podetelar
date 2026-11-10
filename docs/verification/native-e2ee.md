@@ -87,7 +87,16 @@ directly in `RemoteParticipant::add_subscribed_media_track`, before enabling the
 receiver or adding/exposing its publication. The Room notification callback no
 longer owns encryption setup. Thus a removed callback or stale publication cannot
 produce an untransformed receiver. The exact retirement/RTP race is source
-reviewed rather than deterministically reproduced. Final re-review is pending.
+reviewed rather than deterministically reproduced.
+
+Reattachment of an already playing actual receiver exposed another temporary
+pass-through: packet-timing setup installed a standalone transformer, then a new
+cryptor was initially disabled. The C++ wrapper now enables cryptors before
+attachment and refuses disable requests for their lifetime, including cleanup.
+Protected SDK paths suppress standalone timing transforms and their advertised
+trailers. The H.264 media fixture actively requests sender/receiver cryptor
+disablement and requires it to remain enabled while encrypted playback succeeds.
+Final re-review is pending.
 
 Optional upstream hardening remains separate: the C++ cryptor's malformed short
 frame parsing has unchecked indexing/subtraction in the supplied source. Review

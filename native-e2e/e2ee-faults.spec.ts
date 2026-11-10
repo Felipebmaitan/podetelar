@@ -170,7 +170,10 @@ test("replayed descriptor and None-to-GCM metadata cannot authorize plaintext pl
     );
     await delay(2500);
     const forged = ParticipantInfo.fromBinary(sender.toBinary());
-    for (const track of forged.tracks) track.encryption = Encryption_Type.GCM;
+    for (const track of forged.tracks) {
+      track.encryption = Encryption_Type.GCM;
+      track.packetTrailerFeatures = [1];
+    }
     proxy.participant(forged);
     const watched = (await receiver.result) as Received;
     expect(

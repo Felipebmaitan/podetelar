@@ -15,6 +15,20 @@ const root = resolve(import.meta.dirname, "..");
 const base = join(root, ".local/native-sdk");
 const pin = JSON.parse(readFileSync(join(root, "deploy/native-decoder.json")));
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
+const frameCryptorChanges = [
+  [
+    "  sender->SetEncoderToPacketizerFrameTransformer(e2ee_transformer_);\n  e2ee_transformer_->SetEnabled(false);\n",
+    "  e2ee_transformer_->SetEnabled(true);\n  sender->SetEncoderToPacketizerFrameTransformer(e2ee_transformer_);\n",
+  ],
+  [
+    "  receiver->SetDepacketizerToDecoderFrameTransformer(e2ee_transformer_);\n  e2ee_transformer_->SetEnabled(false);\n",
+    "  e2ee_transformer_->SetEnabled(true);\n  receiver->SetDepacketizerToDecoderFrameTransformer(e2ee_transformer_);\n",
+  ],
+  [
+    "  e2ee_transformer_->SetEnabled(enabled);\n",
+    "  // Once attached, native protected media must never become plaintext,\n  // including during cleanup or reattachment to an already pumped receiver.\n  static_cast<void>(enabled);\n  e2ee_transformer_->SetEnabled(true);\n",
+  ],
+];
 const treeHash = (directory) => {
   const digest = createHash("sha256");
   const visit = (path) => {
@@ -121,6 +135,19 @@ if (existsSync(destination)) {
             println!("cargo:rerun-if-env-changed=GSTREAMER_1_0_ROOT_MSVC_X86_64");
             println!("cargo:rerun-if-changed=src/freedomstream_decoder.h");`,
   );
+  const frameCryptor = join(source, "src/frame_cryptor.cpp");
+  if (
+    hash(readFileSync(frameCryptor, "utf8").replaceAll("\r\n", "\n")) !==
+    pin.frameCryptorOriginalSha256
+  )
+    throw new Error("Frame cryptor original source mismatch.");
+  for (const [marker, replacement] of frameCryptorChanges)
+    modify("src/frame_cryptor.cpp", marker, replacement);
+  if (
+    hash(readFileSync(frameCryptor, "utf8").replaceAll("\r\n", "\n")) !==
+    pin.frameCryptorPatchedSha256
+  )
+    throw new Error("Frame cryptor protected source mismatch.");
   writeFileSync(join(source, "src/freedomstream_decoder.h"), patch);
   const actual = treeHash(source);
   if (actual !== pin.treeSha256)

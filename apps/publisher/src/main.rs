@@ -301,6 +301,8 @@ fn run() -> Result<()> {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FixtureRequest {
     #[serde(default)]
+    exercise_encryption_disable: bool,
+    #[serde(default)]
     media_server_url: Option<String>,
     #[serde(default)]
     media_token: Option<String>,
@@ -353,6 +355,8 @@ struct AudioRequest {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct WatchRequest {
+    #[serde(default)]
+    exercise_encryption_disable: bool,
     invitation_url: String,
     #[serde(default)]
     media_server_url: Option<String>,
@@ -481,6 +485,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     };
     let mut preview_before_watching = false;
     let mut reconnected = false;
+    let mut disable_exercised = false;
     let mut received = std::collections::HashMap::<String, RemoteTrack>::new();
     let mut byte_totals = std::collections::HashMap::<String, u64>::new();
     let mut previous_bytes = std::collections::HashMap::<String, u64>::new();
@@ -495,6 +500,15 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                     .map_err(|_| anyhow::anyhow!("Could not exercise watcher recovery."))?;
             }
             let tiles = playback.reconcile(&room, &admission).await?;
+            if request.exercise_encryption_disable && !disable_exercised {
+                ensure!(admission.protection.is_some(), "Protected fixture required.");
+                let cryptors = room.e2ee_manager().frame_cryptors();
+                if !cryptors.is_empty() {
+                    for cryptor in cryptors.values() { cryptor.set_enabled(false); }
+                    ensure!(cryptors.values().all(|c| c.enabled()), "Receiver encryption could be disabled.");
+                    disable_exercised = true;
+                }
+            }
             if watch_after.is_none() {
                 let preview_ready = tiles.iter().any(|tile| !tile.watching && tile.picture.lock().is_ok_and(|picture| picture.is_some()));
                 if preview_ready || elapsed >= 8 { watch_after = Some(elapsed); preview_before_watching = preview_ready; }
@@ -546,7 +560,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     result?;
     println!(
         "{}",
-        serde_json::json!({"samples":samples,"closed":true,"previewBeforeWatching":preview_before_watching})
+        serde_json::json!({"samples":samples,"closed":true,"previewBeforeWatching":preview_before_watching,"cryptorDisableRejected":disable_exercised})
     );
     Ok(())
 }
@@ -645,6 +659,13 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             publisher::Stream::start(&room, config.clone(), stop).await?
         };
         let initial_sid=active.sid();
+        if request.exercise_encryption_disable {
+            ensure!(admission.protection.is_some(), "Protected fixture required.");
+            let cryptors = room.e2ee_manager().frame_cryptors();
+            ensure!(!cryptors.is_empty(), "Protected sender cryptor missing.");
+            for cryptor in cryptors.values() { cryptor.set_enabled(false); }
+            ensure!(cryptors.values().all(|c| c.enabled()), "Sender encryption could be disabled.");
+        }
         println!("{}", serde_json::json!({"published":true}));
         active.start_previews(admission.clone());
 

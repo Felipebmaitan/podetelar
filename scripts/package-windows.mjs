@@ -76,6 +76,10 @@ writeFileSync(
   "FreedomStream modifies webrtc-sys 0.3.53 (Apache-2.0) to use native Direct3D11 decoders through the dynamically linked GStreamer runtime. The adapter is MIT licensed. The included setup script and checksum pin reproduce the change from the original crate. No browser runtime is included.\n",
 );
 const sdkPatch = join(notices, "source-patches", "livekit");
+copyFileSync(
+  join(root, ".local/native-sdk/webrtc-sys/src/frame_cryptor.cpp"),
+  join(decoderPatch, "frame_cryptor.cpp"),
+);
 mkdirSync(sdkPatch, { recursive: true });
 for (const file of ["scripts/setup-native-sdk.mjs", "deploy/native-sdk.json"]) {
   copyFileSync(join(root, file), join(sdkPatch, basename(file)));

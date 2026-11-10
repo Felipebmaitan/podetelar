@@ -57,6 +57,14 @@ Attachments for one publication are also serialized. Playback uses one captured
 track for readiness and pump creation. A stale map entry for another same-SID
 receiver cannot turn an untransformed receiver into protected content.
 
+The native C++ wrapper enables cryptors before attaching them and keeps attached
+cryptors enabled even when SDK cleanup requests disablement. Encryption cannot be
+toggled off on an existing protected transport; leaving closes that connection.
+This prevents plaintext windows during reattachment and cleanup. Protected
+streams do not install the optional standalone packet-timing transformer or
+advertise its trailers. Legacy transports do not create frame cryptors and retain
+their existing behavior.
+
 Previews use separate authenticated encryption. The native sender encrypts its
 bounded JPEG before uploading. The server stores only an opaque bounded `FSP1`
 envelope under `application/vnd.freedomstream.preview-v1`; it cannot authenticate

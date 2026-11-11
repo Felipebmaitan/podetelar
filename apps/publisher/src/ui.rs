@@ -1371,6 +1371,7 @@ impl PublisherUi {
         }) {
             self.fullscreen_controls_until = Instant::now() + Duration::from_secs(3);
         }
+        let controls_visible = Instant::now() < self.fullscreen_controls_until;
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(egui::Color32::BLACK))
             .show(root, |ui| {
@@ -1403,7 +1404,7 @@ impl PublisherUi {
                 {
                     self.set_fullscreen(&ctx, None);
                 }
-                if Instant::now() < self.fullscreen_controls_until {
+                if controls_visible {
                     if ui.input(|i| i.pointer.hover_pos().is_some_and(|pos| rect.contains(pos))) {
                         Self::stream_metrics(ui, rect, tile);
                     }
@@ -1453,6 +1454,9 @@ impl PublisherUi {
                     );
                 }
             });
+        if !controls_visible && self.fullscreen.is_some() {
+            ctx.set_cursor_icon(egui::CursorIcon::None);
+        }
     }
 
     fn stream_tile(&mut self, ui: &mut egui::Ui, tile: &Tile, width: f32) {

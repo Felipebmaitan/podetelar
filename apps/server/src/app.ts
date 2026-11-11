@@ -28,6 +28,7 @@ import { loadPublisher, publisherRoutes } from "./distribution.js";
 import { networkTestRoutes } from "./network-test.js";
 import { adminRoutes } from "./admin.js";
 import { Usage } from "./usage.js";
+import { streamDiagnosticsRoutes } from "./stream-diagnostics.js";
 import { appLinkRoutes } from "./app-links.js";
 
 const COOKIE = "fs_session";
@@ -136,6 +137,7 @@ export async function buildApp(
   app.get("/api/health", async () => ({ status: "ok", phase: 8 }));
   await adminRoutes(app, config, usage, rooms, options.now);
   appLinkRoutes(app, config, rooms, directory, options.now);
+  streamDiagnosticsRoutes(app, rooms, directory, options.now);
   app.get("/api/diagnostics", async (request, reply) => {
     if (!administrator(request, config))
       return reply.code(401).send({ error: "Server access key required." });

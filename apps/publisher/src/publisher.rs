@@ -483,6 +483,7 @@ pub struct Stream {
     pub preview_uploads: Arc<AtomicU64>,
     pub delivery: Arc<Mutex<delivery::Metrics>>,
     delivery_task: JoinHandle<()>,
+    diagnostic_task: Option<JoinHandle<()>>,
     config: StreamConfig,
     rate: RateControl,
     pub mode: Mode,
@@ -627,6 +628,7 @@ impl Stream {
             preview_uploads: Arc::new(AtomicU64::new(0)),
             delivery,
             delivery_task,
+            diagnostic_task: None,
             config,
             rate,
             mode,
@@ -711,6 +713,18 @@ impl Stream {
     }
 
     pub fn start_previews(&mut self, admission: Admission) {
+        if self.diagnostic_task.is_none() {
+            self.diagnostic_task = Some(tokio::spawn(crate::stream_diagnostics::sender(
+                admission.clone(),
+                self.video.clone(),
+                self.stop.flag.clone(),
+                self.metrics.clone(),
+                self.delivery.clone(),
+                self.rate.clone(),
+                self.config.clone(),
+                self.mode,
+            )));
+        }
         if self.preview_task.is_none() {
             self.preview_task = Some(tokio::spawn(preview::upload(
                 admission,
@@ -744,6 +758,9 @@ impl Stream {
 
     pub async fn stop(self, room: &Room) -> Result<Metrics> {
         self.stop.cancel();
+        if let Some(task) = self.diagnostic_task {
+            task.abort();
+        }
         self.delivery_task.abort();
         let _ = self.delivery_task.await;
         let captured = self

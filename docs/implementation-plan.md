@@ -9,6 +9,14 @@ recorded in [Phase 11 verification](verification/phase-11.md). Remaining physica
 hardware, deployment/network and real-game/group gates are not waived by those
 results.
 
+## Current test scope
+
+The participant experience is native Windows. Mobile and participant browser-room
+tests are retired; browser automation covers desktop administrator and access-management
+workflows. API admission, session, signaling, preview and download authorization remain
+required by the native app. See [test scope and commands](testing.md). Earlier phase
+browser acceptance records below describe historical verification.
+
 ## 1. Persistent private-room foundation — initial commit
 
 Deliver a runnable TypeScript workspace, MIT license, configuration generation, persistent private rooms, hashed invitations, room-scoped browser sessions, authenticated LiveKit token issuance, a responsive room interface, local-only Docker Compose, and CI.

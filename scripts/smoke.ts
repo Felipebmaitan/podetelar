@@ -71,7 +71,6 @@ assert.deepEqual(
   ((await resumed.json()) as RoomSession).participant,
   room.participant,
 );
-assert.equal((await fetch(`${origin}/r/${room.room.id}`)).status, 200);
 const media = new RoomServiceClient(
   process.env.SMOKE_LIVEKIT_URL ?? "http://localhost:7880",
   process.env.LIVEKIT_API_KEY,
@@ -92,5 +91,5 @@ assert.equal(
   401,
 );
 console.log(
-  "PASS: built UI, private-room admission, scoped sessions, persistence, logout and authenticated LiveKit access.",
+  "PASS: built web assets, room API admission, scoped sessions, persistence, logout and authenticated LiveKit access.",
 );

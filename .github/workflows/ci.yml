@@ -53,7 +53,8 @@ jobs:
       - run: docker compose up --build -d --wait
       - run: npm run smoke -- --restart-app
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - name: Check desktop administrator UI
+        run: npm run test:admin
       - if: always()
         run: docker compose down
   native-windows:

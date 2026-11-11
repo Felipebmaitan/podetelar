@@ -350,3 +350,19 @@ Windows activation qualification exposed shell URL canonicalization: accept both
 empty and root-slash `join` paths while rejecting other paths. Rebuild the
 portable EXE and update the cached registered launcher; verify native Load/Join
 and live member appearance before marking this correction deployed.
+
+## On-demand stream diagnostics — independent PR (#26)
+
+Add watched-stream Advanced information in both viewing menus, EN/PT-BR. Combine
+sender aggregates relayed by authenticated room APIs with local receive/decode/UI
+submission measurements. Default off; use three-second aggregates, ten-second
+viewer demand leases, one shared publisher worker, bounded memory-only latest
+samples and live track generations. Preserve subscriptions, preview cadence,
+quality controls and compatibility. Expose unavailable/stale facts honestly,
+including physical presentation and end-to-end latency. Keep performance fixes
+separate. See [measurement semantics and verification](verification/stream-diagnostics.md).
+
+Accept with authorization, multi-viewer demand, expiry/revocation/replacement,
+resource/retention bounds, real publisher/API/native-viewer checks, native UI
+interaction and fresh independent review. Compilation and synthetic frames do
+not qualify actual screen refresh, hardware load or network degradation.

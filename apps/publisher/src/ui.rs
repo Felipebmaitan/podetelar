@@ -1349,6 +1349,13 @@ impl PublisherUi {
             self.set_fullscreen(ui.ctx(), Some(tile.id.clone()));
             ui.close();
         }
+        if skin::menu_row(ui, tr("Advanced information"), None, "", false).clicked() {
+            tile.presentation
+                .diagnostics
+                .open
+                .store(true, Ordering::Relaxed);
+            ui.close();
+        }
         skin::menu_separator(ui);
         if skin::menu_row(ui, tr("Stop watching"), Some(Icon::Stop), "", true).clicked() {
             self.controller.send(Command::Watch {
@@ -1371,6 +1378,7 @@ impl PublisherUi {
         }) {
             self.fullscreen_controls_until = Instant::now() + Duration::from_secs(3);
         }
+        let controls_visible = Instant::now() < self.fullscreen_controls_until;
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(egui::Color32::BLACK))
             .show(root, |ui| {
@@ -1386,6 +1394,10 @@ impl PublisherUi {
                         rect.height().min(rect.width() / aspect),
                     );
                     let target = egui::Rect::from_center_size(rect.center(), size);
+                    if let Ok(mut viewport) = tile.presentation.viewport.lock() {
+                        let ppp = ui.ctx().pixels_per_point();
+                        *viewport = Some((size.x * ppp, size.y * ppp));
+                    }
                     ui.painter().image(
                         texture.id(),
                         target,
@@ -1403,7 +1415,7 @@ impl PublisherUi {
                 {
                     self.set_fullscreen(&ctx, None);
                 }
-                if Instant::now() < self.fullscreen_controls_until {
+                if controls_visible {
                     if ui.input(|i| i.pointer.hover_pos().is_some_and(|pos| rect.contains(pos))) {
                         Self::stream_metrics(ui, rect, tile);
                     }
@@ -1453,6 +1465,9 @@ impl PublisherUi {
                     );
                 }
             });
+        if !controls_visible && self.fullscreen.is_some() {
+            ctx.set_cursor_icon(egui::CursorIcon::None);
+        }
     }
 
     fn stream_tile(&mut self, ui: &mut egui::Ui, tile: &Tile, width: f32) {
@@ -1482,6 +1497,11 @@ impl PublisherUi {
             #[cfg(not(feature = "performance-experiments"))]
             let planar = false;
             if !planar && let Some(texture) = self.textures.get(&tile.id) {
+                if let Ok(mut viewport) = tile.presentation.viewport.lock() {
+                    let target = fit_picture(rect, texture.aspect_ratio());
+                    let ppp = ui.ctx().pixels_per_point();
+                    *viewport = Some((target.width() * ppp, target.height() * ppp));
+                }
                 egui::Image::new((texture.id(), texture.size_vec2()))
                     .corner_radius(8)
                     .paint_at(ui, fit_picture(rect, texture.aspect_ratio()));
@@ -1720,6 +1740,9 @@ impl eframe::App for PublisherUi {
             }
         }
         let state = self.controller.snapshot();
+        for tile in &state.tiles {
+            crate::stream_diagnostics::panel(&ctx, tile);
+        }
         #[cfg(feature = "performance-experiments")]
         self.planar.retain(_frame.gl(), |id| {
             state

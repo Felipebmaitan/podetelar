@@ -29,6 +29,11 @@ pub type Picture = Arc<Mutex<Option<Arc<egui::ColorImage>>>>;
 
 #[derive(Default)]
 pub struct Presentation {
+    pub diagnostics: Arc<crate::stream_diagnostics::Panel>,
+    pub overwritten: AtomicU64,
+    pub viewport: Mutex<Option<(f32, f32)>>,
+    pub width: AtomicU32,
+    pub height: AtomicU32,
     requested: Mutex<Option<Instant>>,
     pub converted: AtomicU64,
     pub uploaded: AtomicU64,
@@ -64,6 +69,9 @@ impl Presentation {
     fn publish(&self, picture: &Picture, image: Arc<egui::ColorImage>) {
         self.converted.fetch_add(1, Ordering::Relaxed);
         if let Ok(mut latest) = picture.lock() {
+            if latest.is_some() {
+                self.overwritten.fetch_add(1, Ordering::Relaxed);
+            }
             *latest = Some(image);
         }
         #[cfg(feature = "performance-experiments")]
@@ -161,6 +169,7 @@ struct Watch {
     last_frame: Arc<Mutex<Instant>>,
     audio: Arc<Mutex<crate::audio::Metrics>>,
     error: Arc<Mutex<String>>,
+    diagnostic_task: Option<Pump>,
     h264: bool,
     video_sid: String,
 }
@@ -265,6 +274,12 @@ impl Playback {
         self.received.clear();
         self.announce_dirty = true;
         for watch in self.watches.values_mut() {
+            watch.diagnostic_task = None;
+            watch
+                .presentation
+                .diagnostics
+                .open
+                .store(false, Ordering::Relaxed);
             watch.since = Instant::now();
             if let Ok(mut last) = watch.last_frame.lock() {
                 *last = Instant::now();
@@ -312,6 +327,7 @@ impl Playback {
                 last_frame: Arc::new(Mutex::new(Instant::now())),
                 audio: Arc::default(),
                 error: Arc::default(),
+                diagnostic_task: None,
                 h264: !self.hevc && !self.av1,
                 video_sid: String::new(),
             });
@@ -442,6 +458,14 @@ impl Playback {
                 .values()
                 .find(|p| p.source() == TrackSource::Screenshare)
             else {
+                if let Some(watch) = self.watches.get_mut(&id) {
+                    watch.diagnostic_task = None;
+                    watch
+                        .presentation
+                        .diagnostics
+                        .open
+                        .store(false, Ordering::Relaxed);
+                }
                 for publication in publications
                     .values()
                     .filter(|p| p.source() == TrackSource::ScreenshareAudio)
@@ -563,6 +587,16 @@ impl Playback {
                 let task = match track {
                     RemoteTrack::Video(track) => {
                         let (picture, presentation) = watch.begin_video();
+                        watch.diagnostic_task =
+                            Some(Pump(tokio::spawn(crate::stream_diagnostics::viewer(
+                                admission.clone(),
+                                id.clone(),
+                                sid.clone(),
+                                presentation.clone(),
+                                watch.frames.clone(),
+                                watch.received_bps.clone(),
+                                track.clone(),
+                            ))));
                         let frames = watch.frames.clone();
                         let last_frame = watch.last_frame.clone();
                         #[cfg(feature = "performance-experiments")]
@@ -598,6 +632,8 @@ impl Playback {
                                 {
                                     break;
                                 }
+                                presentation.width.store(width, Ordering::Relaxed);
+                                presentation.height.store(height, Ordering::Relaxed);
                                 frames.fetch_add(1, Ordering::Relaxed);
                                 if let Ok(mut last) = last_frame.lock() {
                                     *last = Instant::now();
@@ -739,6 +775,16 @@ impl Playback {
         self.watches.retain(|id, _| live.contains(id));
         self.pumps
             .retain(|sid, pump| pumps.contains(sid) && !pump.0.is_finished());
+        for watch in self.watches.values_mut() {
+            if !self.pumps.contains_key(&watch.video_sid) {
+                watch.diagnostic_task = None;
+                watch
+                    .presentation
+                    .diagnostics
+                    .open
+                    .store(false, Ordering::Relaxed);
+            }
+        }
         if announce != self.announced || self.announce_dirty {
             let mut changes = announce.clone();
             for key in self.announced.keys() {
@@ -930,6 +976,7 @@ mod tests {
             last_frame: Arc::new(Mutex::new(Instant::now())),
             audio: Arc::default(),
             error: Arc::default(),
+            diagnostic_task: None,
             h264: true,
             video_sid: "synthetic-track".into(),
         };

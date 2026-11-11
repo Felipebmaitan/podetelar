@@ -8,6 +8,8 @@ type Report = {
     watching: boolean;
     streams: {
       frames: number;
+      diagnosticAttempts: number;
+      diagnosticSuccesses: number;
       diagnosticSender?: {
         generation: string;
         stale: boolean;
@@ -73,7 +75,20 @@ test("on-demand AV1 120 FPS publisher -> authenticated server -> two native view
         ),
       );
     expect(values(a).length).toBeGreaterThan(0);
-    expect(values(b).length).toBeGreaterThan(0);
+    expect(
+      values(b).length,
+      JSON.stringify(
+        b.samples.map((s) => ({
+          second: s.second,
+          watching: s.watching,
+          diagnostics: s.streams.map((t) => ({
+            attempts: t.diagnosticAttempts,
+            successes: t.diagnosticSuccesses,
+            stale: t.diagnosticSender?.stale,
+          })),
+        })),
+      ),
+    ).toBeGreaterThan(0);
     expect(
       values(a).some(
         (s) =>

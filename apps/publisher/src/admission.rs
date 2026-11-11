@@ -165,7 +165,33 @@ impl Admission {
         if let Some(body) = body {
             request = request.json(body);
         }
-        let response = request.send().await?;
+        // A bounded retry avoids phase-locking several three-second samplers
+        // against the server's per-publication exclusion. Never delay media work.
+        let response = tokio::time::timeout(Duration::from_secs(2), async {
+            let mut response = request
+                .try_clone()
+                .context("Diagnostic request unavailable.")?
+                .send()
+                .await?;
+            for _ in 0..2 {
+                if response.status() != reqwest::StatusCode::TOO_MANY_REQUESTS {
+                    break;
+                }
+                let jitter = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .subsec_nanos() as u64
+                    % 250;
+                tokio::time::sleep(Duration::from_millis(100 + jitter)).await;
+                response = request
+                    .try_clone()
+                    .context("Diagnostic request unavailable.")?
+                    .send()
+                    .await?;
+            }
+            Ok::<_, anyhow::Error>(response)
+        })
+        .await??;
         ensure!(response.status().is_success(), "Diagnostics unavailable.");
         if response.status() == reqwest::StatusCode::NO_CONTENT {
             return Ok(serde_json::Value::Null);

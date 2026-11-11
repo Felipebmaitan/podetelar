@@ -20,6 +20,8 @@ use std::{
 #[derive(Default)]
 pub struct Panel {
     pub open: AtomicBool,
+    pub attempts: std::sync::atomic::AtomicU64,
+    pub successes: std::sync::atomic::AtomicU64,
     pub sender: Mutex<Option<(Instant, Value)>>,
     pub local: Mutex<Option<(Instant, u64, u64, u64)>>,
     pub rates: Mutex<Option<(f64, f64, f64)>>,
@@ -284,11 +286,13 @@ pub async fn viewer(
                 }
                 *previous = Some((now, decoded, uploaded, overwritten));
             }
+            panel.attempts.fetch_add(1, Ordering::Relaxed);
             if let Ok(value) = admission
                 .stream_diagnostic(Method::POST, &owner, &sid, None)
                 .await
                 && let Ok(mut state) = panel.sender.lock()
             {
+                panel.successes.fetch_add(1, Ordering::Relaxed);
                 *state = Some((Instant::now(), value));
             }
             demanded = true;
@@ -361,6 +365,12 @@ pub fn panel(ctx: &eframe::egui::Context, tile: &crate::playback::Tile) {
                     ui.label(format!("{}: {metric}", tr(label)));
                 }
                 ui.label(format!("{}: {} × {}; {}: {} × {}",tr("Source"),sample["metrics"]["source_width"],sample["metrics"]["source_height"],tr("Encoder input dimensions"),sample["metrics"]["encoded_width"],sample["metrics"]["encoded_height"]));
+                let requested = sample["metrics"]["requested_bps"].as_f64();
+                for (key,label) in [("watcher_cap_bps","Watcher cap"),("upload_cap_bps","Upload cap"),("congestion_bps","Congestion estimate")] {
+                    if let (Some(requested),Some(cap)) = (requested,sample["metrics"][key].as_f64()) && cap < requested {
+                        ui.label(format!("{}: {}",tr("Limiting input"),tr(label)));
+                    }
+                }
                 ui.label(tr("Caps explain configured limits; congestion and encoder ramp may also lower the target."));
             }
         } else { ui.label(tr("Sender statistics unavailable or stale")); }

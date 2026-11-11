@@ -86,7 +86,8 @@ sink. This review does not claim inspection/deployment of the running VPS config
   portable results in the local native test log).
 - API tests: default-off, two leases/reference counts, last close/expiry, missing
   and stale samples, wrong owner/anonymous/cross-room/unwatched denial, bounds,
-  invalid fields, live replacement and an in-flight publication race.
+  invalid fields, live replacement, an in-flight publication race, session departure
+  and shared production snapshot validation.
 - A new isolated native AV1 1080p120 fixture exercises publisher -> API -> two
   native viewers, including Stop/rewatch and a deliberately reduced watcher cap.
   It passed in 46.6 seconds: both viewers received fresh sender aggregates,
@@ -95,7 +96,7 @@ sink. This review does not claim inspection/deployment of the running VPS config
   rooms or the live production session.
 
 Physical screen presentation, AMD/game load, deliberate packet-loss/network
-impairment, controlled CPU overload and real UI interaction are separate gates.
+impairment, controlled CPU overload are separate gates.
 Adding this tool does not establish a stutter or low-bitrate performance fix.
 
 Observed NVIDIA fixture evidence: capture and encoder input near 120 FPS,
@@ -104,3 +105,35 @@ restricted viewer was present, and one initial preview upload. The first
 short-duration run observed no fresh samples for its second viewer; extending
 that viewer through a complete post-unsubscribe/rewatch window passed. The
 reports are local ephemeral acceptance artifacts, not production telemetry.
+
+Independent review: fresh GPT-6.1-Sol high review approved the code after fixes
+for generation mutation races, worker retirement, SFU lookup amplification and
+receiver freshness. Follow-ups made non-advancing encoder snapshots unavailable
+and corrected the availability footer. The subsequent final media rerun exposed
+an intermittent second-viewer sampling failure; the native diagnostic client now
+retries publication-busy responses with bounded jitter inside a two-second budget,
+so periodic samplers do not repeatedly collide. Acceptance results below must be
+read with that follow-up's rerun result.
+
+Native setup in this worktree rejected a downloaded installer whose checksum did
+not match the pin. Checks used the existing development runtime read-only from
+the separate performance checkout, verified SDK copies in this worktree and an
+isolated short Cargo target path. No existing SDK, live executable, saved room or
+production service was replaced.
+
+Final follow-up verification: Node 24 check, native Clippy and native workspace
+tests passed. After bounded diagnostic-busy retries, the two-viewer real-media
+fixture passed in 45.9 seconds and then again in 45.7 seconds. The existing AV1
+software-decoder fixture also passed (27.7 seconds), including previews,
+unsubscribe/rewatch and reconnect. This does not constitute CPU-overload testing.
+
+Actual native UI acceptance used a separate local test room/profile and the
+isolated SFU. Verified Watch, the PT-BR right-click Advanced information action,
+local and sender live samples, scrolling, closing without stopping watching,
+language change to English, the hover ellipsis action, reopening the English
+panel and Stop watching returning to Preview/zero watching. Observed about
+120 decoded FPS versus 62 UI texture submissions/s with presentation overwrites;
+these are measured stages, not a display-refresh or performance-fix claim.
+The test GUI closed normally and its fixture services terminated. The temporary
+invitation was deleted; no production session or profile was touched.
+Controlled packet-loss/CPU-overload acceptance remains open.

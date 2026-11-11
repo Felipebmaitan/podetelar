@@ -278,5 +278,6 @@
   "Encoder input queue": "Fila de entrada do codificador",
   "Capture queue overruns": "Saturações da fila de captura",
   "Encoder counter window": "Janela dos contadores do codificador",
-  "Unavailable: capture drops, internal encoder timing/overload, visible crop, unrecognized decoder, render queue and physical end-to-end latency.": "Indisponíveis: perdas na captura, tempo/sobrecarga interna do codificador, recorte visível, decodificador não identificado, fila de renderização e latência física ponta a ponta."
+  "Unavailable: capture drops, internal encoder timing/overload, visible crop, unrecognized decoder, render queue and physical end-to-end latency.": "Indisponíveis: perdas na captura, tempo/sobrecarga interna do codificador, recorte visível, decodificador não identificado, fila de renderização e latência física ponta a ponta.",
+  "Limiting input": "Restrição ativa"
 }

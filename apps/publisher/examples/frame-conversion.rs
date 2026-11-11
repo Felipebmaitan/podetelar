@@ -1,4 +1,8 @@
 //! Offscreen conversion-stage benchmark; does not capture, connect or render.
+#[cfg(feature = "performance-experiments")]
+#[allow(dead_code)]
+#[path = "../src/resource_experiment.rs"]
+mod resource_experiment;
 #[path = "../src/video_image.rs"]
 #[allow(dead_code)]
 mod video_image;

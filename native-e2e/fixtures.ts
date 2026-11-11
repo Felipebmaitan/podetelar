@@ -9,6 +9,27 @@ export function nativeExecutable(): string {
   return resolve(executable);
 }
 
+/** Isolate the tone fixture without muting or changing other applications. */
+export async function backgroundAudioExclusions(): Promise<string[]> {
+  const applications = await nativeRequest("--audio-apps", {}).result;
+  if (!Array.isArray(applications))
+    throw new Error("Audio application inventory was unavailable.");
+  return applications.flatMap((application: unknown) => {
+    if (
+      typeof application !== "object" ||
+      application === null ||
+      !("id" in application) ||
+      typeof application.id !== "string"
+    )
+      return [];
+    // The game is our child; excluding this harness image would exclude it too.
+    return resolve(application.id).toLowerCase() ===
+      process.execPath.toLowerCase()
+      ? []
+      : [application.id];
+  });
+}
+
 export function toneFixtures(directory: string) {
   mkdirSync(directory, { recursive: true });
   const game = join(directory, "Game.exe");

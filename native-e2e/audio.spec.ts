@@ -1,6 +1,10 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { expect, test } from "@playwright/test";
-import { nativeRequest, toneFixtures } from "./fixtures.js";
+import {
+  backgroundAudioExclusions,
+  nativeRequest,
+  toneFixtures,
+} from "./fixtures.js";
 
 type AudioMetrics = {
   frames: number;
@@ -9,6 +13,9 @@ type AudioMetrics = {
 };
 
 test("desktop mix excludes Discord and owned playback across process restarts", async ({}, testInfo) => {
+  // Unrelated desktop sound can contain these frequencies. Enumerate before
+  // starting the fixtures; keep the original rejection thresholds unchanged.
+  const background = await backgroundAudioExclusions();
   const fixtures = toneFixtures(testInfo.outputPath("audio-applications"));
   let game = fixtures.game();
   let discord = fixtures.discord();
@@ -18,6 +25,7 @@ test("desktop mix excludes Discord and owned playback across process restarts", 
     await delay(1500);
     capture = nativeRequest("--qualify-audio", {
       choice: { mode: "desktop" },
+      exclusions: background,
       seconds: 14,
       playback_tone: true,
     });
@@ -51,7 +59,7 @@ test("desktop mix excludes Discord and owned playback across process restarts", 
     expect(metrics.windows.at(-1)!.tones[1]).toBeLessThan(0.0002);
     capture = nativeRequest("--qualify-audio", {
       choice: { mode: "desktop" },
-      exclusions: [fixtures.application],
+      exclusions: [...background, fixtures.application],
       seconds: 4,
     });
     const excluded = (await capture.result) as AudioMetrics;

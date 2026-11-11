@@ -26,13 +26,14 @@ const publishFixture = process.env.FREEDOMSTREAM_BENCH_PUBLISH === "1";
 const disconnected = process.env.FREEDOMSTREAM_BENCH_DISCONNECTED === "1";
 const audioEnabled = process.env.FREEDOMSTREAM_BENCH_AUDIO === "1";
 const contention = process.env.FREEDOMSTREAM_BENCH_CONTENTION === "1";
+const mixedCodecs = process.env.FREEDOMSTREAM_DEEP_MIXED === "1";
 const resolution = process.env.FREEDOMSTREAM_BENCH_RESOLUTION ?? "p1080";
 const rounds = Number(process.env.FREEDOMSTREAM_BENCH_ROUNDS ?? 1);
 const steadySeconds = Number(process.env.FREEDOMSTREAM_BENCH_STEADY ?? 0);
 const durationSeconds = phaseSeconds * 6 * rounds + steadySeconds;
 if (
   !/^[a-z0-9-]{1,50}$/.test(label) ||
-  ![0, 1, 4].includes(count) ||
+  ![0, 1, 4, 5, 7].includes(count) ||
   ![15, 30, 60].includes(fps) ||
   !["p1080", "p2160"].includes(resolution) ||
   !["h264", "h265", "av1", "av1-software"].includes(codec) ||
@@ -258,7 +259,9 @@ async function executeWorkload() {
       const publisher = start(exe, ["--publish-fixture"], nativeEnv, {
         invitationUrl,
         displayName: `Synthetic publisher ${i + 1}`,
-        codec: codec.replace("-software", ""),
+        codec: mixedCodecs
+          ? ["h264", "h265", "av1", "h265"][i % 4]
+          : codec.replace("-software", ""),
         seconds: durationSeconds + 35,
         fixture4k: resolution === "p2160",
         audio: audioPath
@@ -512,16 +515,30 @@ async function executeWorkload() {
     const observed = appResult.samples.filter(
       (s) => s.phase !== "stopped" && s.activeWatches > 0,
     );
-    const expectedCodec =
-      `video/${codec.replace("-software", "")}`.toLowerCase();
+    const expectedCodecs = (
+      mixedCodecs
+        ? Array.from(
+            { length: count },
+            (_, i) => ["h264", "h265", "av1", "h265"][i % 4],
+          )
+        : Array(count).fill(codec.replace("-software", ""))
+    ).map((c) => `video/${c}`);
     const codecStable =
       count === 0
         ? true
         : !observed.length ||
             observed.some((s) => !Array.isArray(s.videoCodecs))
           ? null
-          : observed.every((s) =>
-              s.videoCodecs.every((c) => c.toLowerCase() === expectedCodec),
+          : observed.every(
+              (s) =>
+                s.videoCodecs.every((c) =>
+                  expectedCodecs.includes(c.toLowerCase()),
+                ) &&
+                (s.activeWatches !== count ||
+                  [...s.videoCodecs]
+                    .map((c) => c.toLowerCase())
+                    .sort()
+                    .join() === [...expectedCodecs].sort().join()),
             );
     const aggregate = {
       schema: 1,
@@ -529,6 +546,7 @@ async function executeWorkload() {
       count,
       codec,
       codecStable,
+      mixedCodecs,
       phaseSeconds,
       fps,
       resolution,
@@ -553,6 +571,20 @@ async function executeWorkload() {
         conversionWorkers: Number(appEnv.FREEDOMSTREAM_CONVERSION_WORKERS ?? 0),
         tokioWorkers: Number(appEnv.TOKIO_WORKER_THREADS ?? 0),
         countSdkLogs: appEnv.FREEDOMSTREAM_COUNT_SDK_LOGS === "1",
+        deepClip: appEnv.FREEDOMSTREAM_DEEP_CLIP === "1",
+        deepPlanar: appEnv.FREEDOMSTREAM_DEEP_PLANAR === "1",
+        requestedPlaneRetention:
+          appEnv.FREEDOMSTREAM_DEEP_RETAIN_PLANES ?? "default",
+        sharedDecoderDevice: appEnv.FREEDOMSTREAM_DEEP_SHARED_DEVICE === "1",
+        selectiveStop: appEnv.FREEDOMSTREAM_DEEP_SELECTIVE_STOP === "1",
+        relaxedReadback: appEnv.FREEDOMSTREAM_DEEP_RELAXED_MAP === "1",
+        flushBeforeReadbackPoll: appEnv.FREEDOMSTREAM_DEEP_FLUSH_MAP === "1",
+        poolTrace: appEnv.FREEDOMSTREAM_DEEP_POOL_TRACE === "1",
+        owners: appEnv.FREEDOMSTREAM_DEEP_OWNERS === "1",
+        idleHeapOptimization: appEnv.FREEDOMSTREAM_DEEP_HEAP === "1",
+        narrowViewport: appEnv.FREEDOMSTREAM_DEEP_NARROW === "1",
+        scriptedScroll: appEnv.FREEDOMSTREAM_DEEP_SCROLL === "1",
+        av1Decoder: appEnv.FREEDOMSTREAM_AV1_DECODER ?? "",
       },
       source:
         process.env.FREEDOMSTREAM_PERFORMANCE_SOURCE ??

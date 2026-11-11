@@ -108,6 +108,8 @@ pub struct PublisherUi {
     diagnostics_open: bool,
     show_invitation: bool,
     self_preview_revision: Option<(crate::preview::Latest, u64)>,
+    #[cfg(feature = "performance-experiments")]
+    planar: crate::planar_experiment::Videos,
     picker: crate::source_picker::Preview,
     picker_hover: Option<crate::sources::SourceInfo>,
     picker_texture: Option<(String, egui::TextureHandle)>,
@@ -158,6 +160,8 @@ impl PublisherUi {
             diagnostics_open: false,
             show_invitation: false,
             self_preview_revision: None,
+            #[cfg(feature = "performance-experiments")]
+            planar: Default::default(),
             picker: crate::source_picker::Preview::new(),
             picker_hover: None,
             picker_texture: None,
@@ -1082,9 +1086,25 @@ impl PublisherUi {
             return;
         }
         tile.presentation.request_context(ctx);
+        #[cfg(feature = "performance-experiments")]
+        if !tile.watching
+            && let Some(texture) = self.textures.get(&tile.id)
+        {
+            crate::resource_experiment::untag_rgba_texture(texture.id());
+        }
+        #[cfg(feature = "performance-experiments")]
+        if let Ok(mut latest) = tile.presentation.planar.lock()
+            && let Some(picture) = latest.take()
+        {
+            self.planar.update(&tile.id, picture);
+            self.textures.remove(&tile.id);
+            tile.presentation.uploaded.fetch_add(1, Ordering::Relaxed);
+        }
         if let Ok(mut picture) = tile.picture.lock()
             && let Some(image) = picture.take()
         {
+            #[cfg(feature = "performance-experiments")]
+            self.planar.rgba(&tile.id);
             tile.presentation.uploaded.fetch_add(1, Ordering::Relaxed);
             if let Some(texture) = self.textures.get_mut(&tile.id) {
                 texture.set(egui::ImageData::Color(image), egui::TextureOptions::LINEAR);
@@ -1097,6 +1117,12 @@ impl PublisherUi {
                         egui::TextureOptions::LINEAR,
                     ),
                 );
+            }
+            #[cfg(feature = "performance-experiments")]
+            if tile.watching
+                && let Some(texture) = self.textures.get(&tile.id)
+            {
+                crate::resource_experiment::tag_rgba_texture(texture.id());
             }
         }
     }
@@ -1222,7 +1248,11 @@ impl PublisherUi {
             .frame(egui::Frame::new().fill(egui::Color32::BLACK))
             .show(root, |ui| {
                 let rect = ui.max_rect();
-                if let Some(texture) = self.textures.get(&tile.id) {
+                #[cfg(feature = "performance-experiments")]
+                let planar = self.planar.paint(ui, &tile.id, rect);
+                #[cfg(not(feature = "performance-experiments"))]
+                let planar = false;
+                if !planar && let Some(texture) = self.textures.get(&tile.id) {
                     let aspect = texture.aspect_ratio();
                     let size = egui::vec2(
                         rect.width().min(rect.height() * aspect),
@@ -1300,15 +1330,35 @@ impl PublisherUi {
 
     fn stream_tile(&mut self, ui: &mut egui::Ui, tile: &Tile, width: f32) {
         ui.push_id(&tile.id, |ui| {
-            self.update_picture(ui.ctx(), tile);
             let (rect, response) =
                 ui.allocate_exact_size(egui::vec2(width, width * 9.0 / 16.0), egui::Sense::click());
+            #[cfg(feature = "performance-experiments")]
+            let present = {
+                use std::sync::OnceLock;
+                static CLIP: OnceLock<bool> = OnceLock::new();
+                let visible = ui.is_rect_visible(rect);
+                tile.presentation.visible.store(visible, Ordering::Relaxed);
+                !*CLIP.get_or_init(|| {
+                    std::env::var("FREEDOMSTREAM_DEEP_CLIP")
+                        .ok()
+                        .is_none_or(|v| v != "0")
+                }) || visible
+            };
+            #[cfg(not(feature = "performance-experiments"))]
+            let present = ui.is_rect_visible(rect);
+            if present {
+                self.update_picture(ui.ctx(), tile);
+            }
             ui.painter().rect_filled(rect, 8.0, egui::Color32::BLACK);
-            if let Some(texture) = self.textures.get(&tile.id) {
+            #[cfg(feature = "performance-experiments")]
+            let planar = present && self.planar.paint(ui, &tile.id, rect);
+            #[cfg(not(feature = "performance-experiments"))]
+            let planar = false;
+            if !planar && let Some(texture) = self.textures.get(&tile.id) {
                 egui::Image::new((texture.id(), texture.size_vec2()))
                     .corner_radius(8)
                     .paint_at(ui, fit_picture(rect, texture.aspect_ratio()));
-            } else {
+            } else if !planar {
                 ui.painter().text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
@@ -1473,6 +1523,10 @@ impl PublisherUi {
 }
 
 impl eframe::App for PublisherUi {
+    #[cfg(feature = "performance-experiments")]
+    fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
+        self.planar.destroy(gl);
+    }
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.handle_close(ctx);
     }
@@ -1506,6 +1560,13 @@ impl eframe::App for PublisherUi {
             }
         }
         let state = self.controller.snapshot();
+        #[cfg(feature = "performance-experiments")]
+        self.planar.retain(_frame.gl(), |id| {
+            state
+                .tiles
+                .iter()
+                .any(|tile| tile.id == id && tile.watching)
+        });
         // Fullscreen returns early below; retired stream/source textures must
         // still be released when another participant stops or leaves.
         self.textures.retain(|id, _| {
@@ -1803,15 +1864,19 @@ impl eframe::App for PublisherUi {
                     ((ui.available_width() - width * columns as f32 - gap * (columns - 1) as f32)
                         / 2.0)
                         .max(0.0);
-                egui::ScrollArea::vertical()
+                let scroll = egui::ScrollArea::vertical()
                     .id_salt("streams-scroll")
                     .scroll_bar_visibility(if columns == 1 && tiles.len() > 1 {
                         egui::scroll_area::ScrollBarVisibility::AlwaysVisible
                     } else {
                         egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
                     })
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
+                    .auto_shrink([false, false]);
+                #[cfg(feature = "performance-experiments")]
+                let scroll = if let Some(offset) = ui.ctx().data(|data| data.get_temp::<f32>(egui::Id::unique("deep-scroll-offset"))) {
+                    scroll.vertical_scroll_offset(offset)
+                } else { scroll };
+                scroll.show(ui, |ui| {
                         ui.horizontal_top(|ui| {
                             ui.add_space(inset);
                             egui::Grid::new("stream-grid")
@@ -2239,6 +2304,8 @@ mod tests {
             diagnostics_open: false,
             show_invitation: false,
             self_preview_revision: None,
+            #[cfg(feature = "performance-experiments")]
+            planar: Default::default(),
             picker: crate::source_picker::Preview::new(),
             picker_hover: None,
             picker_texture: None,
@@ -2259,6 +2326,57 @@ mod tests {
                 }
             }
             _ => {}
+        }
+    }
+
+    #[test]
+    fn clipped_stream_preserves_picture_and_resumes_without_changing_watch_or_volume() {
+        let mut app = app();
+        let ctx = egui::Context::default();
+        let tile = Tile {
+            id: "clipping".into(),
+            name: "Remote".into(),
+            codec: String::new(),
+            watching: true,
+            picture: std::sync::Arc::new(std::sync::Mutex::new(Some(std::sync::Arc::new(
+                egui::ColorImage::filled([2, 2], egui::Color32::RED),
+            )))),
+            presentation: Default::default(),
+            frames: Default::default(),
+            received_bps: Default::default(),
+            volume: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(77)),
+            audio: Default::default(),
+            status: String::new(),
+        };
+        for clipped in [true, false] {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(960.0, 540.0),
+                    )),
+                    ..Default::default()
+                },
+                |root| {
+                    egui::CentralPanel::default().show(root, |ui| {
+                        if clipped {
+                            ui.set_clip_rect(egui::Rect::from_min_size(
+                                egui::pos2(0.0, 500.0),
+                                egui::vec2(960.0, 40.0),
+                            ));
+                        }
+                        app.stream_tile(ui, &tile, 320.0);
+                    });
+                },
+            );
+            output.textures_delta.clear();
+            assert_eq!(tile.picture.lock().unwrap().is_some(), clipped);
+            assert_eq!(
+                tile.presentation.uploaded.load(Ordering::Relaxed),
+                u64::from(!clipped)
+            );
+            assert!(tile.watching);
+            assert_eq!(tile.volume.load(Ordering::Relaxed), 77);
         }
     }
 

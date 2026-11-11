@@ -7,10 +7,16 @@ mod diagnostics;
 mod encoding;
 mod locale;
 mod network;
+#[cfg(feature = "performance-experiments")]
+#[allow(dead_code)]
+mod planar_experiment;
 mod playback;
 mod preview;
 mod publisher;
 mod quality;
+#[cfg(feature = "performance-experiments")]
+#[allow(dead_code)]
+mod resource_experiment;
 mod settings;
 mod source_picker;
 mod sources;

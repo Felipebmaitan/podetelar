@@ -259,6 +259,11 @@ of observed absence from the SFU. Presence failures and server restarts reset th
 grace period. Closed rooms are deleted from the directory and lose invitations,
 sessions, previews and signaling/media access through durable removal retries.
 This intentionally supersedes the original persistent-empty-room behavior.
+On schema-3 migration, existing rooms enter the presence check even if their old
+sessions have already been removed. Successfully observed empty legacy rooms
+close after the same grace period; only newly created managed rooms receive the
+awaiting-first-join exception. Take the existing deployment backup before
+migration; rolling back to schema-3 code requires its matching database backup.
 
 Store recoverable invitations encrypted with a key derived from ADMIN_TOKEN,
 bound to their room ID; retain hashes for admission. Rotation of ADMIN_TOKEN or
@@ -276,6 +281,8 @@ GPT-6.1-Sol review. No native hardware capability changes or new qualification.
 After the Windows experience meets the above gates, add macOS and Linux in separate PRs. Preserve the room, invitation, subscription and preview contracts; replace platform capture/audio/encoder adapters. No cross-platform promise until each backend is tested on its actual OS.
 
 ## Administrator room directory — independent PR
+
+This earlier directory behavior is superseded by phase 16 above.
 
 Add a Rooms tab to the authenticated administrator dashboard. List persistent
 rooms in bounded pages and create a named room without admitting the administrator

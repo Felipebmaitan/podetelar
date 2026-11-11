@@ -280,3 +280,12 @@ per-user registry registration/removal and Windows launch handoff, malformed URL
 rejection, native GUI loading without automatic admission, Node 24 checks,
 native Clippy/tests, desktop/mobile browser workflows and independent review.
 Keep untested browser prompts and deployment/distribution gates explicit.
+
+During the native teardown follow-up, retain room, source-picker and browser-load
+worker ownership through normal window close. Cancel pending work, poll full
+Windows thread termination without blocking the closing UI, and retain explicit
+Force close for stalled cleanup. Drain native test fixtures before their tests
+finish. Validate cancellation, held cleanup/TLS destructors and real HTTP Load
+behavior. Record the original unexplained fatal test-process exit independently;
+passing retries and fixing demonstrated ownership gaps do not prove its cause or
+waive native interaction acceptance.

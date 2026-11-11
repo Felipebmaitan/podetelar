@@ -108,7 +108,7 @@ pub struct PublisherUi {
     diagnostics_open: bool,
     show_invitation: bool,
     pending_link: Option<crate::browser_links::Link>,
-    link_result: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+    link_result: Option<crate::browser_links::Load>,
     browser_links_enabled: bool,
     self_preview_revision: Option<(crate::preview::Latest, u64)>,
     #[cfg(feature = "performance-experiments")]
@@ -354,18 +354,7 @@ impl PublisherUi {
             ui.label(tr("Load this invitation only if you trust this server. Loading does not join a room or start sharing."));
             if ui.button(tr("Load invitation")).clicked() {
                 let link = self.pending_link.take().expect("Displayed browser link");
-                let (sender, receiver) = std::sync::mpsc::channel();
-                self.link_result = Some(receiver);
-                std::thread::spawn(move || {
-                    let result = tokio::runtime::Runtime::new()
-                        .map_err(|_| "Could not prepare app invitation.".to_owned())
-                        .and_then(|runtime| {
-                            runtime
-                                .block_on(link.redeem())
-                                .map_err(|error| error.to_string())
-                        });
-                    let _ = sender.send(result);
-                });
+                self.link_result = Some(crate::browser_links::Load::start(link));
             }
             if ui.button(tr("Dismiss browser invitation")).clicked() {
                 self.pending_link = None;
@@ -1574,10 +1563,20 @@ impl PublisherUi {
         if ctx.input(|i| i.viewport().close_requested()) && self.closing_since.is_none() {
             self.closing_since = Some(Instant::now());
             self.clear_picker();
+            self.picker.begin_shutdown();
+            if let Some(load) = &mut self.link_result {
+                load.cancel();
+            }
             self.controller.begin_shutdown();
         }
         if self.closing_since.is_some() {
-            if self.controller.shutdown_finished() {
+            if self.controller.shutdown_finished()
+                && self.picker.shutdown_finished()
+                && self
+                    .link_result
+                    .as_ref()
+                    .is_none_or(crate::browser_links::Load::shutdown_finished)
+            {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             } else {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -1597,10 +1596,11 @@ impl eframe::App for PublisherUi {
     }
 
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        if let Some(result) = self
-            .link_result
-            .as_ref()
-            .and_then(|receiver| receiver.try_recv().ok())
+        if self.closing_since.is_none()
+            && let Some(result) = self
+                .link_result
+                .as_mut()
+                .and_then(crate::browser_links::Load::poll)
         {
             self.link_result = None;
             match result {
@@ -2347,6 +2347,11 @@ mod tests {
             assert!(app.closing_since.is_some());
         }
         finish();
+        let started = Instant::now();
+        while !app.picker.shutdown_finished() {
+            assert!(started.elapsed() < Duration::from_secs(3));
+            std::thread::sleep(Duration::from_millis(2));
+        }
         let mut output = ctx.run_ui(egui::RawInput::default(), |root| {
             app.handle_close(root.ctx())
         });
@@ -2356,6 +2361,141 @@ mod tests {
                 .commands
                 .contains(&egui::ViewportCommand::Close)
         );
+    }
+
+    #[test]
+    fn normal_close_waits_for_picker_cleanup_without_blocking_the_ui() {
+        use std::sync::mpsc;
+        let mut app = app();
+        let (controller, finish) = Controller::pending_shutdown_for_test();
+        app.controller = controller;
+        finish();
+        let (started, ready) = mpsc::channel();
+        let (release, released) = mpsc::channel();
+        // Releasing on panic also keeps a failed assertion from stranding the fixture.
+        struct Release(Option<mpsc::Sender<()>>);
+        impl Drop for Release {
+            fn drop(&mut self) {
+                if let Some(sender) = self.0.take() {
+                    let _ = sender.send(());
+                }
+            }
+        }
+        let mut release = Release(Some(release));
+        app.picker = crate::source_picker::Preview::with_capture(move |_, _| {
+            started.send(()).unwrap();
+            released.recv_timeout(Duration::from_secs(5)).unwrap();
+            None
+        });
+        app.picker.request(&crate::sources::SourceInfo {
+            id: "owned-mock".into(),
+            label: "Owned mock source".into(),
+            width: 2,
+            height: 2,
+        });
+        ready.recv_timeout(Duration::from_secs(3)).unwrap();
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input
+            .viewports
+            .get_mut(&egui::ViewportId::ROOT)
+            .unwrap()
+            .events
+            .push(egui::ViewportEvent::Close);
+        let start = Instant::now();
+        let mut output = ctx.run_ui(input, |root| app.handle_close(root.ctx()));
+        output.textures_delta.clear();
+        let commands = &output.viewport_output[&egui::ViewportId::ROOT].commands;
+        let premature = commands.contains(&egui::ViewportCommand::Close);
+        let cancelled = commands.contains(&egui::ViewportCommand::CancelClose);
+        let elapsed = start.elapsed();
+        release.0.take().unwrap().send(()).unwrap();
+        while !app.picker.shutdown_finished() {
+            assert!(start.elapsed() < Duration::from_secs(3));
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(!premature && cancelled);
+        assert!(elapsed < Duration::from_secs(1));
+        let mut output = ctx.run_ui(egui::RawInput::default(), |root| {
+            app.handle_close(root.ctx())
+        });
+        output.textures_delta.clear();
+        assert!(
+            output.viewport_output[&egui::ViewportId::ROOT]
+                .commands
+                .contains(&egui::ViewportCommand::Close)
+        );
+    }
+
+    #[test]
+    fn normal_close_cancels_browser_loading_and_waits_for_request_cleanup() {
+        use std::sync::mpsc;
+        let mut app = app();
+        let (controller, finish) = Controller::pending_shutdown_for_test();
+        app.controller = controller;
+        finish();
+        let (entered, ready) = mpsc::channel();
+        let (cleaned, cleanup) = mpsc::channel();
+        let (release, released) = mpsc::channel();
+        struct Request(mpsc::Sender<()>, mpsc::Receiver<()>);
+        impl Drop for Request {
+            fn drop(&mut self) {
+                self.0.send(()).unwrap();
+                self.1.recv_timeout(Duration::from_secs(5)).unwrap();
+            }
+        }
+        struct Release(Option<mpsc::Sender<()>>);
+        impl Drop for Release {
+            fn drop(&mut self) {
+                if let Some(sender) = self.0.take() {
+                    let _ = sender.send(());
+                }
+            }
+        }
+        let mut release = Release(Some(release));
+        let request = Request(cleaned, released);
+        app.link_result = Some(crate::browser_links::Load::with_request(async move {
+            let _request = request;
+            entered.send(()).unwrap();
+            std::future::pending::<anyhow::Result<String>>().await
+        }));
+        ready.recv_timeout(Duration::from_secs(3)).unwrap();
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input
+            .viewports
+            .get_mut(&egui::ViewportId::ROOT)
+            .unwrap()
+            .events
+            .push(egui::ViewportEvent::Close);
+        let start = Instant::now();
+        let mut output = ctx.run_ui(input, |root| app.handle_close(root.ctx()));
+        output.textures_delta.clear();
+        let commands = &output.viewport_output[&egui::ViewportId::ROOT].commands;
+        let premature = commands.contains(&egui::ViewportCommand::Close);
+        let cancelled = commands.contains(&egui::ViewportCommand::CancelClose);
+        let elapsed = start.elapsed();
+        // Cancel reached and dropped the request; hold its cleanup until released.
+        cleanup.recv_timeout(Duration::from_secs(3)).unwrap();
+        release.0.take().unwrap().send(()).unwrap();
+        while !app.picker.shutdown_finished()
+            || !app.link_result.as_ref().unwrap().shutdown_finished()
+        {
+            assert!(start.elapsed() < Duration::from_secs(3));
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(!premature && cancelled);
+        assert!(elapsed < Duration::from_secs(1));
+        let mut output = ctx.run_ui(egui::RawInput::default(), |root| {
+            app.handle_close(root.ctx())
+        });
+        output.textures_delta.clear();
+        assert!(
+            output.viewport_output[&egui::ViewportId::ROOT]
+                .commands
+                .contains(&egui::ViewportCommand::Close)
+        );
+        assert!(app.invitation.is_empty());
     }
 
     fn app() -> PublisherUi {

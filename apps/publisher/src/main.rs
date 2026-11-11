@@ -26,6 +26,7 @@ mod ui_style;
 mod video_image;
 #[cfg(windows)]
 mod win32;
+mod worker;
 
 use anyhow::{Context, Result, bail, ensure};
 use encoding::{Codec, Encoding, Metrics, Mode};

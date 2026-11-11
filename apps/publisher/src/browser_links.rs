@@ -3,6 +3,75 @@ use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 use url::Url;
 
+/// A window owns its request through cancellation and full worker termination.
+pub struct Load {
+    cancel: Option<tokio::sync::oneshot::Sender<()>>,
+    worker: Option<std::thread::JoinHandle<Option<Result<String, String>>>>,
+}
+
+impl Load {
+    pub fn start(link: Link) -> Self {
+        Self::with_request(async move { link.redeem().await })
+    }
+
+    pub(crate) fn with_request(
+        request: impl std::future::Future<Output = Result<String>> + Send + 'static,
+    ) -> Self {
+        let (cancel, cancelled) = tokio::sync::oneshot::channel();
+        let worker = std::thread::Builder::new()
+            .name("freedomstream-invitation".into())
+            .spawn(move || {
+                let runtime = match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(runtime) => runtime,
+                    Err(_) => return Some(Err("Could not prepare app invitation.".into())),
+                };
+                runtime.block_on(async {
+                    tokio::select! {
+                        biased;
+                        _ = cancelled => None,
+                        result = request => Some(result.map_err(|error| error.to_string())),
+                    }
+                })
+            })
+            .expect("invitation worker thread");
+        Self {
+            cancel: Some(cancel),
+            worker: Some(worker),
+        }
+    }
+
+    pub fn cancel(&mut self) {
+        if let Some(cancel) = self.cancel.take() {
+            let _ = cancel.send(());
+        }
+    }
+
+    pub fn shutdown_finished(&self) -> bool {
+        self.worker.as_ref().is_none_or(crate::worker::finished)
+    }
+
+    pub fn poll(&mut self) -> Option<Result<String, String>> {
+        if !self.shutdown_finished() {
+            return None;
+        }
+        self.worker
+            .take()?
+            .join()
+            .unwrap_or_else(|_| Some(Err("Could not load app invitation.".into())))
+    }
+}
+
+impl Drop for Load {
+    fn drop(&mut self) {
+        self.cancel();
+        #[cfg(test)]
+        crate::worker::drain_fixture(self.worker.take());
+    }
+}
+
 pub struct Link {
     pub origin: Url,
     ticket: String,
@@ -130,6 +199,55 @@ pub fn set_enabled(enabled: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cancelling_a_pending_load_drops_the_request_before_worker_completion() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+            mpsc,
+        };
+        use std::time::{Duration, Instant};
+        struct Request(Arc<AtomicBool>);
+        impl Drop for Request {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+        let dropped = Arc::new(AtomicBool::new(false));
+        let request = Request(dropped.clone());
+        let (started, ready) = mpsc::channel();
+        let mut load = Load::with_request(async move {
+            let _request = request;
+            started.send(()).unwrap();
+            std::future::pending::<Result<String>>().await
+        });
+        ready.recv_timeout(Duration::from_secs(3)).unwrap();
+        load.cancel();
+        let started = Instant::now();
+        while !load.shutdown_finished() {
+            assert!(started.elapsed() < Duration::from_secs(3));
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(dropped.load(Ordering::Acquire));
+        assert!(load.poll().is_none());
+    }
+
+    #[test]
+    fn completed_load_can_be_collected_only_once() {
+        let mut load = Load::with_request(async { Ok("synthetic result, no invitation".into()) });
+        let start = std::time::Instant::now();
+        let received = loop {
+            if let Some(result) = load.poll() {
+                break result.unwrap();
+            }
+            assert!(start.elapsed() < std::time::Duration::from_secs(3));
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        };
+        assert_eq!(received, "synthetic result, no invitation");
+        assert!(load.poll().is_none());
+    }
+
     #[test]
     #[ignore = "requires a live FreedomStream API and local fixture path"]
     fn redeem_real_server_invitation() {
@@ -142,17 +260,27 @@ mod tests {
         let fixture: Fixture =
             serde_json::from_slice(&std::fs::read(path).expect("Read local fixture"))
                 .expect("Valid local fixture");
-        let link = Link::parse(&fixture.link).expect("Valid local browser link");
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let received = runtime
-            .block_on(link.redeem())
-            .expect("Redeem live app invitation");
+        let collect = |load: &mut Load| {
+            let started = std::time::Instant::now();
+            loop {
+                if let Some(result) = load.poll() {
+                    break result;
+                }
+                assert!(
+                    started.elapsed() < std::time::Duration::from_secs(15),
+                    "Native handoff worker timed out"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        };
+        let mut load = Load::start(Link::parse(&fixture.link).expect("Valid local browser link"));
+        let received = collect(&mut load).expect("Redeem live app invitation");
         assert!(
             received == fixture.invitation,
             "Native invitation must match the live server"
         );
         assert!(
-            runtime.block_on(link.redeem()).is_err(),
+            collect(&mut Load::start(Link::parse(&fixture.link).unwrap())).is_err(),
             "Replaying a native handoff must fail"
         );
     }

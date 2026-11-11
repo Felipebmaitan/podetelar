@@ -163,3 +163,82 @@ The previously documented native-helper and actual GUI/browser prompt acceptance
 blockers are unchanged and unwaived. PR #20 remains draft and must not merge until
 those interactions actually pass. The earlier conditional technical review is not
 an approval to waive this follow-up integration's remaining acceptance.
+
+## Worker ownership and teardown investigation
+
+The original `0xc0000005` and identical clean retry remain in the record. The
+failing process was the default publisher unit-test harness after its 60-pass
+summary. No original fault-thread stack, matching WER event or dump was available.
+Five alternating plain pairs and two debugger pairs against main `90a6f5d`
+previously exited cleanly. A handled first-chance baseline access violation was
+not the original fatal event and does not establish a shared fatal cause.
+
+The follow-up used a text-only Windows debugger with fault-thread stack walking,
+thread descriptions and a test-summary observation point. Separate owned,
+synthetic handled/fatal fault fixtures verified that it forwards first-chance
+exceptions, captures an unhandled second chance and records the fatal exit. Those
+fixtures are diagnostic calibration, **not** a FreedomStream crash reproduction.
+No process memory dump or environment dump was collected.
+
+One default and one serial run of each unchanged tree again exited cleanly. At
+the first debug event after the summary, PR20 still had room/Tokio/RTC workers
+alive (93 total threads in its default run; 72 serial). Main also retained room
+workers in its serial run (72 total threads). This demonstrates a shared fixture
+ownership gap; it does not identify the cause of the original fatal exit.
+
+The resulting repair retains the room and picker worker handles. Normal close
+cancels the picker and any pending browser request and waits for all three
+workers. On Windows, a zero-timeout thread-handle check includes TLS/native
+cleanup; it does not block the UI on a destructor. The existing explicit Force
+close after ten seconds remains available. Browser loading now owns its request,
+cancellation and result on one current-thread Tokio runtime; closing never applies
+a late invitation result. Unit fixtures drain and join their native workers
+before finishing rather than abandoning them to process shutdown.
+
+Five new regressions cover pending request cancellation, single result collection,
+picker cleanup before close, browser request cleanup before close, and a Windows
+TLS destructor held open behind a barrier while the caller stays responsive.
+The live ignored HTTP test now exercises the managed Load worker too.
+
+Post-repair, one default and one serial run of the repaired candidate and rebuilt
+main baseline used the same runtime, short Cargo cache, isolated profile and
+GStreamer registry. All four exited zero without an access violation. Neither
+candidate run retained named room, picker, invitation, Tokio or RTC workers at the
+summary observation; the serial baseline retained one room and 16 Tokio workers.
+Other OS/library threads remained (8/13 total on the candidate), so this is not a
+claim of an empty process. Debugging changes timing and the summary observation
+occurs at the next debug event, not atomically with the print.
+
+Validation on the repaired tree passed Node 24.11.1 project checks (43 server,
+23 web, four configuration tests), native formatting, workspace/all-targets/
+all-features Clippy, debug build, 10 portable and 65 publisher tests (three ignored),
+and all six desktop/mobile headless HTTP browser workflows. A rebuilt local debug
+bundle passed real per-user enable/update, moved-download Windows dispatch,
+publisher startup, disable and cleanup. The managed Rust Load passed real local
+HTTP redemption and replay rejection. This remains a local qualification bundle,
+not a new release. The benchmark import, `with_browser_link(None)` and explicit
+profile-free planar constructor remain intact. No audible test or GPU/planar
+qualification ran; PR21, root edits, perf checkout and shared SDK were untouched.
+
+The sanitized [investigation record](browser-links-teardown.json) includes binary
+hashes, original log hashes, bounded runs, calibration and limitations. The local
+full record is `.local/teardown-investigation/report.txt`. The demonstrated
+ownership defects are repaired; **the original fatal exit remains unexplained**.
+There is no evidence-backed claim that the repair fixes that event. Keep its
+merge blocker open rather than inferring clearance from successful repetitions.
+
+Native automation recovery started the installed official ChatGPT desktop host
+and retried fresh supported Sky and unified CUA sessions. Both still report
+`Computer Use native pipe is unavailable` / `os error 2`; unified browser inventory
+also reports `browser access host is unavailable`. No supported reconnect/start
+method is exposed. Current [Computer Use setup documentation](https://learn.chatgpt.com/docs/computer-use)
+identifies the concrete host recovery: ChatGPT desktop Work/Codex → Settings →
+Computer use → Any App, install/enable if offered, and keep Windows unlocked.
+The skill forbids automating ChatGPT's own UI, so that host setup requires the
+user. No protected setting or dialog was bypassed.
+
+Actual native Load/Join/server-trust, saved-room autojoin suppression, existing
+window isolation and browser-native external-app permission interactions remain
+unverified and unwaived. **Keep PR20 draft; no merge while either original blocker
+remains open.** Compilation, HTTP/process checks and technical review cannot
+replace those interactions or establish the original crash's cause.

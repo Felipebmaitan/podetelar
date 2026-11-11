@@ -1,13 +1,6 @@
-import { test, type APIRequestContext, type Page } from "@playwright/test";
+import { test, type APIRequestContext } from "@playwright/test";
 import { setTimeout as delay } from "node:timers/promises";
 import { appendFileSync } from "node:fs";
-
-/** Navigation errors must not echo a private invitation URL into a call log. */
-export async function openTestRoom(page: Page, invitation: string) {
-  await page.goto(invitation).catch(() => {
-    throw new Error("Could not open the private test room.");
-  });
-}
 
 /** Never let Playwright's network-error call log echo the administrator header. */
 export async function createTestRoom(

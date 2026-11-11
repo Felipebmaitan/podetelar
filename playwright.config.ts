@@ -10,26 +10,11 @@ export default defineConfig({
     baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000",
     screenshot: "only-on-failure",
     trace: "off",
-    launchOptions: {
-      args: [
-        "--use-fake-device-for-media-stream",
-        "--use-fake-ui-for-media-stream",
-      ],
-    },
   },
   projects: [
     {
-      name: "desktop",
+      name: "admin-desktop",
       use: { browserName: "chromium", viewport: { width: 1280, height: 800 } },
-    },
-    {
-      name: "mobile",
-      use: {
-        browserName: "chromium",
-        viewport: { width: 390, height: 844 },
-        isMobile: true,
-        hasTouch: true,
-      },
     },
   ],
 });

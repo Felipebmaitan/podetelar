@@ -54,20 +54,25 @@ With the Docker stack running, exercise actual room creation/admission, persiste
 npm run smoke
 ```
 
-Add `-- --restart-app` to the smoke command to also verify session continuity through an app-container restart. For desktop/mobile browser admission checks against the running stack:
+Add `-- --restart-app` to verify session continuity through an app-container restart.
+For the desktop administrator dashboard and access-management UI against the running stack:
 
 ```sh
 npx playwright install chromium
-npm run test:e2e
+npm run test:admin
 ```
 
-The smoke and browser checks create uniquely named rooms in the running database
+The smoke and administrator checks create uniquely named rooms in the running database
 and report no invitation/session/media authority. API tests use isolated databases
-and exercise access, persistence, CSRF, revocation and grants. Browser checks cover
-the admission/download portal. `npm run native:room-smoke` exercises actual native
+and exercise access, persistence, CSRF, revocation, grants and authenticated downloads.
+Browser tests cover desktop operator workflows; mobile and participant browser-room
+scenarios are retired. `npm run test:e2e` remains an alias for `test:admin`.
+`npm run native:room-smoke` exercises actual native
 HEVC/H.264 decode, fallback, subscriptions, preview/reconnect and audio against an
 isolated Windows SFU. These checks do not qualify real games, AMD, physical 4K120,
 A/V latency or large-group performance. Docker smoke is not a streaming test.
+See [test scope and commands](docs/testing.md) for the current coverage inventory
+and the distinction between automated checks and hardware qualification.
 
 ## Access model
 

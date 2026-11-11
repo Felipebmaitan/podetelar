@@ -71,10 +71,11 @@ async function fixture(t: TestContext) {
   };
   const owner = await create();
   media.publish(owner.owner);
-  const viewer = async () => {
+  const viewer = async (remoteAddress?: string) => {
     const response = await app.inject({
       method: "POST",
       url: `/api/rooms/${owner.room}/join`,
+      ...(remoteAddress ? { remoteAddress } : {}),
       headers: { origin: ORIGIN },
       payload: { invitation: owner.invitation, displayName: "Viewer" },
     });
@@ -300,4 +301,73 @@ test("production snapshot validation shares bounded participant facts", async (t
   assert.equal(individual, 1);
   f.media.participants.get(a.id)!.attributes = {};
   assert.equal((await f.request("GET")).json().demand, 1);
+});
+
+test("room capacity bounds diagnostic viewers and expired leases release demand", async (t) => {
+  const f = await fixture(t);
+  const viewers = [];
+  // The existing 32-session room cap includes the publisher, leaving31 viewers.
+  for (let i = 1; i <= 31; i++) viewers.push(await f.viewer(`192.0.2.${i}`));
+  for (const viewer of viewers)
+    assert.equal((await f.request("POST", viewer.cookie)).statusCode, 200);
+  assert.equal((await f.request("GET")).json().demand, 31);
+  const overflow = await f.app.inject({
+    method: "POST",
+    url: `/api/rooms/${f.owner.room}/join`,
+    remoteAddress: "192.0.2.32",
+    headers: { origin: ORIGIN },
+    payload: { invitation: f.owner.invitation, displayName: "Overflow" },
+  });
+  assert.equal(overflow.statusCode, 404);
+  await f.request("DELETE", viewers[0]!.cookie);
+  assert.equal((await f.request("GET")).json().demand, 30);
+  f.advance(10001);
+  assert.equal((await f.request("GET")).json().demand, 0);
+});
+
+test("global diagnostic concurrency is bounded across distinct publications", async (t) => {
+  const f = await fixture(t);
+  const publishers = [];
+  for (let i = 1; i <= 17; i++) {
+    const owner = await f.viewer(`192.0.2.${i}`);
+    f.media.publish(owner.id, `TR_${i}`);
+    publishers.push(owner);
+  }
+  let release!: () => void;
+  let entered!: () => void;
+  let active = 0;
+  const held = new Promise<void>((r) => (release = r));
+  const ready = new Promise<void>((r) => (entered = r));
+  f.media.beforeLookup = async () => {
+    active++;
+    if (active === 16) entered();
+    await held;
+  };
+  const requests = publishers
+    .slice(0, 16)
+    .map((p, i) =>
+      Promise.resolve(
+        f.request(
+          "GET",
+          p.cookie,
+          undefined,
+          `/api/rooms/${f.owner.room}/stream-diagnostics/${p.id}/TR_${i + 1}`,
+        ),
+      ),
+    );
+  await ready;
+  const extra = publishers[16]!;
+  assert.equal(
+    (
+      await f.request(
+        "GET",
+        extra.cookie,
+        undefined,
+        `/api/rooms/${f.owner.room}/stream-diagnostics/${extra.id}/TR_17`,
+      )
+    ).statusCode,
+    429,
+  );
+  release();
+  assert.ok((await Promise.all(requests)).every((r) => r.statusCode === 200));
 });

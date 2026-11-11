@@ -136,4 +136,33 @@ panel and Stop watching returning to Preview/zero watching. Observed about
 these are measured stages, not a display-refresh or performance-fix claim.
 The test GUI closed normally and its fixture services terminated. The temporary
 invitation was deleted; no production session or profile was touched.
-Controlled packet-loss/CPU-overload acceptance remains open.
+Controlled interruption acceptance is recorded below. Literal packet-loss and CPU-saturation sweeps remain unverified.
+
+## Pre-merge recheck
+
+Merged current main, including its fullscreen cursor correction, into this
+feature branch. Fresh independent GPT-6.1-Sol high
+reviews approved the application code and the test-only follow-up for merge.
+
+- Node 24.11.1 checks and native Clippy/workspace tests pass.
+- Eight diagnostic API tests pass, including 31 simultaneous diagnostic viewers
+  at the existing 32-session room limit, lease expiry at capacity, and the global
+  16-publication concurrency limit. The participant snapshot path is exercised.
+- The real two-viewer AV1 1080p120 acceptance passed again (46.3 seconds).
+- Controlled degradation acceptance passed twice (45.7 and45.9 seconds): the isolated test SFU
+  is paused for three seconds, resumed, and the fixture publisher is separately
+  paused for three seconds. Receiver diagnostic FPS falls during the SFU-outage
+  window and subsequently recovers above 90 FPS. Sender samples retain requested
+  120 FPS while reporting both reduced (<100) and healthy (>110) capture FPS.
+  Capture assertions cover a broad post-start window; they do not establish
+  precise pause-to-sample timing or physical end-to-end latency.
+
+The pause helper only targets PIDs captured from this harness's own child
+processes, verifies the exact executable path, and resumes in a finally block.
+The harness terminates its children afterward. No system-wide CPU load, firewall
+rules, production processes, saved room or live session are changed. Native
+fixture aggregates remain memory-only; no new telemetry file is retained.
+
+This completes controlled stage-interruption verification for the diagnostic
+feature. It does not qualify a statistical packet-loss sweep, CPU-saturation
+benchmark, AMD/game performance, physical display refresh or a stutter fix.

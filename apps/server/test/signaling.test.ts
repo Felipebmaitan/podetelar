@@ -24,6 +24,11 @@ test(
     });
     const rooms = new Rooms(":memory:");
     const session = rooms.create({ name: "Private", displayName: "Publisher" });
+    rooms.observePresence(session.snapshot.room.id, false);
+    assert.notEqual(
+      rooms.lifecycle(session.snapshot.room.id)!.emptySince,
+      null,
+    );
     const gateway = new Signaling(rooms);
     const app = Fastify();
     await gateway.register(app, config);
@@ -81,6 +86,11 @@ test(
     assert.deepEqual([...data], [1, 2, 3]);
     assert.equal(binary, true);
     assert.equal(upstreamCalls, 2);
+    assert.equal(
+      rooms.lifecycle(session.snapshot.room.id)!.emptySince,
+      null,
+      "authenticated upstream signaling connections reset the empty-room grace",
+    );
     const closed = Promise.all([once(browser, "close"), once(native, "close")]);
     rooms.revoke(session.snapshot.room.id, session.snapshot.participant.id);
     gateway.closeRevoked();

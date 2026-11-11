@@ -245,6 +245,14 @@ export class Rooms {
       .run(id);
   }
 
+  signalingConnected(id: string): void {
+    // SDK reconnects reuse their session. An older empty SFU response must not
+    // expire a connection that has just been admitted upstream.
+    this.db
+      .prepare("UPDATE room_lifecycle SET empty_since = NULL WHERE room_id = ?")
+      .run(id);
+  }
+
   closeRoom(id: string): boolean {
     if (!this.find(id)) return false;
     this.transaction(() => {

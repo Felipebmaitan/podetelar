@@ -184,6 +184,7 @@ export class Signaling {
                 peer.close();
                 return;
               }
+              this.rooms.signalingConnected(member.room);
               for (const { data, binary } of queue) send(target, data, binary);
               queue = [];
               queuedBytes = 0;

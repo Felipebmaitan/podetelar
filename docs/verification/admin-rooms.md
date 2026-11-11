@@ -5,7 +5,7 @@ Docker application/SFU stack. Scope: the browser administrator UI and room
 authority/lifecycle. This does not qualify native capture, codecs, audio,
 hardware, portable distribution or remote deployment.
 
-- `npm run check` passed: formatting, workspace/tool types, 48 server tests,
+- `npm run check` passed: formatting, workspace/tool types, 49 server tests,
   two web tests, four deployment/relay configuration tests, and builds.
 - `docker compose -p freedomstream-admin-rework up --build -d --wait` passed.
 - `COMPOSE_PROJECT_NAME=freedomstream-admin-rework npm run smoke -- --restart-app`
@@ -27,6 +27,11 @@ hardware, portable distribution or remote deployment.
   reconnect/outage grace reset, restart/migration, room-bound AES-GCM ciphertext,
   credential/invitation rotation, same-origin/admin enforcement, immediate
   authority denial and pending SFU disconnect retries.
+- Review found a stale-empty-response race at the reconnect grace boundary.
+  Successful upstream signaling now resets the grace for an SDK reconnect that
+  reuses its session. A deferred-response regression covers the 58s read / 59s
+  reconnect / 60s response ordering, and the actual WebSocket gateway test
+  confirms upstream connections reset the persisted empty interval.
 
 The approved layout uses one expanded room rather than a separate detail pane
 or a bottom creation/share walkthrough. Members show their confirmed presence;

@@ -12,6 +12,51 @@ import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 
 const key = "test-administrator-invitation-key-not-production";
+test("an older empty presence response cannot close a same-session signaling reconnect", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "freedomstream-presence-race-"));
+  let now = 0;
+  const rooms = new Rooms(join(dir, "rooms.db"), () => now, key);
+  t.after(() => {
+    rooms.close();
+    rmSync(dir, { recursive: true });
+  });
+  const created = rooms.create({ name: "Friends", displayName: "Ana" });
+  const id = created.snapshot.room.id;
+  rooms.observePresence(id, false);
+  let respond!: (members: { id: string; displayName: string }[]) => void;
+  const media = {
+    members: () =>
+      new Promise<{ id: string; displayName: string }[]>((resolve) => {
+        respond = resolve;
+      }),
+    async remove() {},
+    async participant() {
+      return null;
+    },
+    async attribute() {},
+  };
+  const access = new Access(
+    rooms,
+    media,
+    new Previews(media, () => now),
+    () => {},
+  );
+  const lifecycle = new RoomLifecycle(rooms, media, access);
+  now = 58000;
+  const oldRead = lifecycle.describePage(rooms.list(0).rooms);
+  now = 59000;
+  rooms.signalingConnected(id); // Successful SDK reconnect, without a new POST /join.
+  now = 60000;
+  respond([]); // An old snapshot taken before that reconnect.
+  assert.equal((await oldRead).length, 1);
+  assert.ok(rooms.session(id, created.token));
+  assert.equal(rooms.acceptsInvitation(id, created.invitation), true);
+  assert.equal(rooms.lifecycle(id)!.emptySince, 60000);
+  const currentRead = lifecycle.describePage(rooms.list(0).rooms);
+  respond([{ id: created.snapshot.participant.id, displayName: "Ana" }]);
+  assert.equal((await currentRead)[0]!.presence, "active");
+  assert.equal(rooms.lifecycle(id)!.emptySince, null);
+});
 test("background presence cleanup preserves pending rooms, reconnects and outages, then deletes all room authority", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "freedomstream-lifecycle-"));
   let now = 100000;

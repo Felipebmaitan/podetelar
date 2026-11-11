@@ -63,6 +63,14 @@ export type JoinRoomInput = z.infer<typeof joinRoomSchema>;
 export type Room = { id: string; name: string; createdAt: string };
 export type ManagedRoom = Room & { invitationEnabled: boolean };
 export type RoomDirectory = { rooms: ManagedRoom[]; nextOffset: number | null };
+export type AdminRoom = ManagedRoom & {
+  members: Participant[];
+  presence: "active" | "waiting" | "closing" | "unavailable";
+};
+export type AdminRoomDirectory = {
+  rooms: AdminRoom[];
+  nextOffset: number | null;
+};
 export type AdminCreatedRoom = { room: Room; invitationUrl: string };
 export type Participant = { id: string; displayName: string };
 export type RoomSession = {

@@ -26,7 +26,7 @@ export function Admin() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [section, setSection] = useState<"usage" | "rooms">("usage");
+  const [section, setSection] = useState<"usage" | "rooms">("rooms");
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     const abort = new AbortController();
@@ -65,7 +65,7 @@ export function Admin() {
     try {
       await request("/api/admin/logout", { method: "POST" });
       setAuth("login");
-      setSection("usage");
+      setSection("rooms");
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -73,14 +73,19 @@ export function Admin() {
     }
   };
   return (
-    <div className="admin-shell">
+    <div
+      className={`admin-shell ${auth === "ready" ? "admin-authenticated" : ""}`}
+    >
       <header className="admin-header">
         <a href="/" className="admin-brand">
+          <span className="admin-brand-mark" aria-hidden="true">
+            F
+          </span>
           FreedomStream
         </a>
         {auth === "ready" && (
           <div>
-            <span>Administrator</span>
+            <span>Private administration</span>
             <button onClick={() => void logout()} disabled={busy}>
               Sign out
             </button>
@@ -97,17 +102,18 @@ export function Admin() {
             {error && <p role="alert">{error}</p>}
           </div>
           <nav className="admin-nav" aria-label="Administration sections">
-            <button
-              aria-pressed={section === "usage"}
-              onClick={() => setSection("usage")}
-            >
-              Usage
-            </button>
+            <p>Administration</p>
             <button
               aria-pressed={section === "rooms"}
               onClick={() => setSection("rooms")}
             >
               Rooms
+            </button>
+            <button
+              aria-pressed={section === "usage"}
+              onClick={() => setSection("usage")}
+            >
+              Usage
             </button>
           </nav>
           {section === "usage" ? (

@@ -31,6 +31,7 @@ struct State {
 pub struct Preview {
     shared: Arc<(Mutex<State>, Condvar)>,
     generation: Arc<AtomicU64>,
+    worker: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Preview {
@@ -43,7 +44,7 @@ impl Preview {
         })
     }
 
-    fn with_capture(
+    pub(crate) fn with_capture(
         capture: impl Fn(&SourceInfo, &dyn Fn() -> bool) -> Option<ColorImage> + Send + 'static,
     ) -> Self {
         let shared = Arc::new((Mutex::new(State::default()), Condvar::new()));
@@ -111,8 +112,11 @@ impl Preview {
         if worker.is_err() {
             shared.0.lock().unwrap_or_else(|p| p.into_inner()).closed = true;
         }
-        // Dropping the handle detaches; Drop cancels without blocking the UI on a driver.
-        Self { shared, generation }
+        Self {
+            shared,
+            generation,
+            worker: worker.ok(),
+        }
     }
 
     pub fn request(&self, source: &SourceInfo) {
@@ -154,14 +158,27 @@ impl Preview {
     }
 }
 
-impl Drop for Preview {
-    fn drop(&mut self) {
+impl Preview {
+    pub fn begin_shutdown(&self) {
         let mut state = self.shared.0.lock().unwrap_or_else(|p| p.into_inner());
         state.closed = true;
         state.pending = None;
         state.result = None;
         self.generation.fetch_add(1, Ordering::AcqRel);
         self.shared.1.notify_one();
+    }
+
+    pub fn shutdown_finished(&self) -> bool {
+        self.worker.as_ref().is_none_or(crate::worker::finished)
+    }
+}
+
+impl Drop for Preview {
+    fn drop(&mut self) {
+        self.begin_shutdown();
+        // Normal window close polls completion; explicit Force close stays nonblocking.
+        #[cfg(test)]
+        crate::worker::drain_fixture(self.worker.take());
     }
 }
 

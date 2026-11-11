@@ -9,6 +9,9 @@ mod admission;
 #[path = "../src/audio/mod.rs"]
 mod audio;
 #[cfg(feature = "performance-experiments")]
+#[path = "../src/browser_links.rs"]
+mod browser_links;
+#[cfg(feature = "performance-experiments")]
 #[path = "../src/connection.rs"]
 mod connection;
 #[cfg(feature = "performance-experiments")]
@@ -65,6 +68,9 @@ mod video_image;
 #[cfg(all(windows, feature = "performance-experiments"))]
 #[path = "../src/win32.rs"]
 mod win32;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/worker.rs"]
+mod worker;
 
 #[cfg(feature = "performance-experiments")]
 fn main() -> anyhow::Result<()> {

@@ -160,6 +160,14 @@ export class Rooms {
     };
   }
 
+  acceptsInvitation(id: string, invitation: string): boolean {
+    const room = this.find(id);
+    return Boolean(
+      room?.invitation_enabled &&
+      timingSafeEqual(digest(invitation), Buffer.from(room.invitation_hash)),
+    );
+  }
+
   join(
     id: string,
     invitation: string,

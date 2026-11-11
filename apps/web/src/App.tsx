@@ -6,6 +6,7 @@ import { ApiError, request } from "./api";
 import { RoomAccess } from "./RoomAccess";
 import { PublisherDownload } from "./PublisherDownload";
 import { Admin } from "./Admin";
+import { OpenInApp } from "./OpenInApp";
 
 const managedRoomId = /^\/manage\/([A-Za-z0-9_-]{22})$/.exec(
   window.location.pathname,
@@ -253,6 +254,14 @@ function RoomApp() {
                 </>
               )}
             </section>
+            {invitationUrl && (
+              <OpenInApp
+                roomId={session.room.id}
+                invitation={new URL(invitationUrl).hash.slice(
+                  "#invite=".length,
+                )}
+              />
+            )}
             <PublisherDownload roomId={session.room.id} />
           </div>
         ) : entryRoomId ? (
@@ -428,6 +437,7 @@ function JoinRoom({
   };
   return (
     <div className="centered">
+      {secret && <OpenInApp roomId={roomId} invitation={secret} />}
       <form className="panel join-panel" onSubmit={(event) => void join(event)}>
         <p className="eyebrow">YOU'RE INVITED</p>
         <h1>Take your place.</h1>

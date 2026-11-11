@@ -80,6 +80,10 @@ pub fn qualify_planar_transitions(
         advanced_open: false,
         diagnostics_open: false,
         show_invitation: false,
+        browser_invitation_open: false,
+        pending_link: None,
+        link_result: None,
+        browser_links_enabled: false,
         self_preview_revision: None,
         planar: Default::default(),
         picker: crate::source_picker::Preview::new(),
@@ -212,7 +216,7 @@ pub fn run(request: Request) -> Result<()> {
         options,
         Box::new(move |context| {
             configure_theme(&context.egui_ctx);
-            let mut inner = PublisherUi::new();
+            let mut inner = PublisherUi::with_browser_link(None);
             inner.store = None;
             inner.invitation = request.invitation_url.clone();
             inner.name = "Local benchmark".into();

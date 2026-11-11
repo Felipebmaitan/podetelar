@@ -457,3 +457,98 @@ test("browser tokens cannot publish or subscribe and browser fetch cannot obtain
     assert.equal(response.statusCode, 403);
   }
 });
+
+test("app handoff tickets are private, single-use, expiring and revoked by invitation changes", async (t) => {
+  const f = await fixture(t);
+  const created = await f.create();
+  const url = `/api/rooms/${created.body.room.id}/app-link`;
+  const issue = async (invitation = created.invitation) =>
+    f.app.inject({
+      method: "POST",
+      url,
+      headers: { origin: ORIGIN },
+      payload: { invitation },
+    });
+  const redeem = async (ticket: string, extra = {}) =>
+    f.app.inject({
+      method: "POST",
+      url: "/api/app-links/redeem",
+      headers: { origin: ORIGIN, ...extra },
+      payload: { ticket },
+    });
+  assert.equal(
+    (
+      await f.app.inject({
+        method: "POST",
+        url,
+        payload: { invitation: created.invitation },
+      })
+    ).statusCode,
+    403,
+  );
+  assert.equal((await issue("x".repeat(43))).statusCode, 404);
+  const issued = await issue();
+  assert.equal(issued.statusCode, 200);
+  assert.equal(issued.headers["cache-control"], "no-store");
+  assert.ok(!issued.body.includes(created.invitation));
+  const link = new URL(issued.json().appUrl);
+  assert.equal(link.protocol, "freedomstream:");
+  assert.equal(link.searchParams.get("server"), ORIGIN);
+  const ticket = link.hash.slice("#handoff=".length);
+  assert.equal(ticket.length, 43);
+  assert.equal(
+    (await redeem(ticket, { "sec-fetch-mode": "cors" })).statusCode,
+    403,
+  );
+  const consumed = await redeem(ticket);
+  assert.equal(consumed.statusCode, 200);
+  assert.equal(consumed.json().invitationUrl, created.body.invitationUrl);
+  assert.equal((await redeem(ticket)).statusCode, 404);
+  const expiring = new URL((await issue()).json().appUrl).hash.slice(
+    "#handoff=".length,
+  );
+  f.advance(60000);
+  assert.equal((await redeem(expiring)).statusCode, 404);
+  const revoked = new URL((await issue()).json().appUrl).hash.slice(
+    "#handoff=".length,
+  );
+  await f.app.inject({
+    method: "POST",
+    url: `/api/rooms/${created.body.room.id}/access`,
+    headers: { origin: ORIGIN, authorization: `Bearer ${ADMIN}` },
+    payload: { invitation: "rotate", revokeSessions: false },
+  });
+  assert.equal((await redeem(revoked)).statusCode, 404);
+  assert.equal((await issue()).statusCode, 404);
+});
+
+test("app handoff memory is bounded, expiry frees capacity and restart discards tickets", async (t) => {
+  const f = await fixture(t);
+  const created = await f.create();
+  const issue = async (index: number) =>
+    f.app.inject({
+      method: "POST",
+      url: `/api/rooms/${created.body.room.id}/app-link`,
+      remoteAddress: `127.0.1.${index}`,
+      headers: { origin: ORIGIN },
+      payload: { invitation: created.invitation },
+    });
+  for (let i = 1; i <= 128; i++) assert.equal((await issue(i)).statusCode, 200);
+  assert.equal((await issue(129)).statusCode, 503);
+  f.advance(60001);
+  const fresh = await issue(130);
+  assert.equal(fresh.statusCode, 200);
+  const ticket = new URL(fresh.json().appUrl).hash.slice("#handoff=".length);
+  await f.restart();
+  assert.equal(
+    (
+      await f.app.inject({
+        method: "POST",
+        url: "/api/app-links/redeem",
+        headers: { origin: ORIGIN },
+        payload: { ticket },
+      })
+    ).statusCode,
+    404,
+  );
+});

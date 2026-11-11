@@ -640,3 +640,12 @@ input::placeholder {
   flex-wrap: wrap;
   margin: 1rem 0;
 }
+
+.app-link-panel {
+  width: min(100%, 680px);
+  display: block;
+  overflow-wrap: anywhere;
+}
+.app-link-panel .button {
+  margin-top: 12px;
+}

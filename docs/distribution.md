@@ -174,3 +174,28 @@ This host is not a fresh Windows PC or a disconnected network environment.
 Native hardware capture, audio and browser delivery need actual runtime checks;
 AMD, physical 4K120, real-game/fullscreen behavior, macOS/Linux and a full evening
 with four/five friends remain separate gates. See [Phase 8 qualification](phase8-qualification.md).
+
+## Optional browser invitation links
+
+Run the portable EXE once, then choose **Room options → Enable browser links**.
+This registers `freedomstream://` for your Windows user only. No administrator
+privileges or installer are needed. A complete launcher copy is retained under
+`%LOCALAPPDATA%\FreedomStreamPortable\browser-links`; moving the downloaded EXE
+afterward does not break the registration. Choose **Update browser links to this version** from a newer release
+to update the registered launcher. **Disable browser links** removes our URL
+registration; cached launchers stay on disk because a running app may use them.
+Other applications' registrations are never silently replaced or removed.
+
+On an invitation page, choose **Prepare app invitation**, then **Open in
+FreedomStream**. The second click is deliberate so external-app launch remains
+a direct user gesture. Allow the browser's app-launch prompt if shown. In the app,
+verify the server, choose **Load invitation**, enter your name, then **Join room**.
+Loading alone starts no room session, capture or subscriptions. If FreedomStream
+is already running, the link opens another window without changing that room.
+
+Handoffs expire after one minute and work only once. If the app is missing, the
+browser refuses the launch, or the ticket expires, run the EXE/enable links and
+prepare a fresh app invitation. Manual copy/paste still works. A new browser
+invitation never automatically joins the saved room; ordinary EXE launches retain
+saved-room behavior. Short-lived handoff tickets can appear in OS activation
+arguments; permanent invitations and media/session credentials do not.

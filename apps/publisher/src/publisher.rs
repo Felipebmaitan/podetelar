@@ -237,6 +237,7 @@ pub struct Controller {
     cancellation: Cancellation,
     join_cancellation: JoinCancellation,
     shutdown: Arc<Shutdown>,
+    worker: Option<std::thread::JoinHandle<()>>,
 }
 
 #[derive(Default)]
@@ -274,7 +275,7 @@ impl Controller {
         let cancel = cancellation.clone();
         let shutdown = Arc::new(Shutdown::default());
         let closing = shutdown.clone();
-        std::thread::Builder::new()
+        let worker = std::thread::Builder::new()
             .name("freedomstream-room".into())
             .spawn(move || {
                 let _completion = WorkerCompletion(closing.clone());
@@ -295,6 +296,7 @@ impl Controller {
             cancellation,
             join_cancellation: JoinCancellation::new(),
             shutdown,
+            worker: Some(worker),
         }
     }
 
@@ -385,7 +387,10 @@ impl Controller {
     }
 
     pub fn shutdown_finished(&self) -> bool {
-        self.shutdown.finished.load(Ordering::Acquire)
+        self.worker.as_ref().map_or_else(
+            || self.shutdown.finished.load(Ordering::Acquire),
+            crate::worker::finished,
+        )
     }
 
     #[cfg(test)]
@@ -400,6 +405,7 @@ impl Controller {
                 cancellation: Arc::default(),
                 join_cancellation: JoinCancellation::new(),
                 shutdown,
+                worker: None,
             },
             move || completed.finished.store(true, Ordering::Release),
         )
@@ -409,6 +415,9 @@ impl Controller {
 impl Drop for Controller {
     fn drop(&mut self) {
         self.begin_shutdown();
+        // Paint fixtures must not let native initialization/cleanup outlive the harness.
+        #[cfg(test)]
+        crate::worker::drain_fixture(self.worker.take());
     }
 }
 
@@ -1311,6 +1320,7 @@ mod tests {
             cancellation: Arc::default(),
             join_cancellation: JoinCancellation::new(),
             shutdown: Arc::default(),
+            worker: None,
         };
         for _ in 0..8 {
             controller.send(Command::DownloadBudget { bps: Some(0) });
@@ -1363,6 +1373,7 @@ mod tests {
             cancellation: Arc::default(),
             join_cancellation: JoinCancellation::new(),
             shutdown: Arc::default(),
+            worker: None,
         };
         controller.send(Command::RefreshSources);
         let command = receiver.try_recv().expect("Quiet source update");

@@ -1,0 +1,219 @@
+{
+  "status": "Original fatal publisher process exit remains unexplained and unwaived; independently demonstrated worker-lifetime defects repaired.",
+  "sourceBase": "3679c6d2614b222fd9e90199870cfeacb0690fa2",
+  "baseline": "90a6f5dde0ab67a84a3dff24701efa4231809b56",
+  "originalLogs": {
+    "native-tests-after23.log": {
+      "sha256": "8ee91518adc96a548c84f1250e90a64746c4a69c2a04452900d212d95801f209",
+      "bytes": 17214,
+      "mtimeEpoch": 1794356984.0254633
+    },
+    "native-tests-after23-retry.log": {
+      "sha256": "076cf4cc8852684dc8b9b1a94f9424442a805568ba25e06853bf82d195307e3f",
+      "bytes": 16909,
+      "mtimeEpoch": 1794357048.4393086
+    }
+  },
+  "originalFault": {
+    "process": "freedomstream_publisher-76a196ab1bce999d.exe",
+    "stage": "after 60-pass summary",
+    "exit": "0xc0000005",
+    "faultThreadAndStack": "not available",
+    "identicalRetry": "clean exit; not a fix"
+  },
+  "previousBoundedRuns": {
+    "plainCandidateClean": 5,
+    "plainBaselineClean": 5,
+    "debugCandidateClean": 2,
+    "debugBaselineClean": 2,
+    "handledBaselineAV": "one first-chance AV, no second chance, exit 0; not the original fatal event"
+  },
+  "diagnosticCalibration": {
+    "separateOwnedSyntheticProcess": true,
+    "handledAV": "first chance captured with stack, exit 0",
+    "fatalAV": "first and second chance captured with owned_fault/main stack, exit 0xc0000005",
+    "productReproduction": false,
+    "memoryDumpCollected": false
+  },
+  "newPreFixRuns": [
+    {
+      "label": "pr20",
+      "args": "",
+      "diagnosticExit": 0,
+      "seconds": 1.328,
+      "events": [
+        "SUMMARY_OBSERVED event=4 live=93",
+        "EXIT code=0x0 exceptions=0 timeout=0"
+      ]
+    },
+    {
+      "label": "main90a6f5d",
+      "args": "",
+      "diagnosticExit": 0,
+      "seconds": 1.328,
+      "events": [
+        "SUMMARY_OBSERVED event=4 live=8",
+        "EXIT code=0x0 exceptions=0 timeout=0"
+      ]
+    },
+    {
+      "label": "main90a6f5d",
+      "args": "--test-threads=1",
+      "diagnosticExit": 0,
+      "seconds": 3.641,
+      "events": [
+        "SUMMARY_OBSERVED event=4 live=72",
+        "EXIT code=0x0 exceptions=0 timeout=0"
+      ]
+    },
+    {
+      "label": "pr20",
+      "args": "--test-threads=1",
+      "diagnosticExit": 0,
+      "seconds": 3.562,
+      "events": [
+        "SUMMARY_OBSERVED event=4 live=72",
+        "EXIT code=0x0 exceptions=0 timeout=0"
+      ]
+    }
+  ],
+  "postFixRuns": [
+    {
+      "label": "candidate-owned",
+      "args": "",
+      "diagnosticExit": 0,
+      "seconds": 1.953,
+      "events": [
+        "SUMMARY_OBSERVED event=4 live=8",
+        "EXIT code=0x0 exceptions=0 timeout=0"
+      ]
+    },
+    {
+      "label": "main90a6f5d-rebuilt",
+      "args": "",
+      "diagnosticExit": 0,
+      "seconds": 1.609,
+      "events": [
+        "SUMMARY_OBSERVED event=4 live=8",
+        "EXIT code=0x0 exceptions=0 timeout=0"
+      ]
+    },
+    {
+      "label": "main90a6f5d-rebuilt",
+      "args": "--test-threads=1",
+      "diagnosticExit": 0,
+      "seconds": 3.453,
+      "events": [
+        "SUMMARY_OBSERVED event=4 live=30",
+        "EXIT code=0x0 exceptions=0 timeout=0"
+      ]
+    },
+    {
+      "label": "candidate-owned",
+      "args": "--test-threads=1",
+      "diagnosticExit": 0,
+      "seconds": 4.172,
+      "events": [
+        "SUMMARY_OBSERVED event=4 live=13",
+        "EXIT code=0x0 exceptions=0 timeout=0"
+      ]
+    }
+  ],
+  "postFixWorkerObservations": [
+    {
+      "case": "owned-trace-1-candidate-owned",
+      "summaryObserved": ["SUMMARY_OBSERVED event=4 live=8"],
+      "liveNames": {
+        "freedomstream-room": 0,
+        "freedomstream-source-preview": 0,
+        "freedomstream-invitation": 0,
+        "tokio-rt-worker": 0,
+        "SyntheticAudioDevice": 0,
+        "network_thread": 0,
+        "worker_thread": 0,
+        "signaling_thread": 0
+      },
+      "exit": ["EXIT code=0x0 exceptions=0 timeout=0"]
+    },
+    {
+      "case": "owned-trace-2-main90a6f5d-rebuilt",
+      "summaryObserved": ["SUMMARY_OBSERVED event=4 live=8"],
+      "liveNames": {
+        "freedomstream-room": 0,
+        "freedomstream-source-preview": 0,
+        "freedomstream-invitation": 0,
+        "tokio-rt-worker": 0,
+        "SyntheticAudioDevice": 0,
+        "network_thread": 0,
+        "worker_thread": 0,
+        "signaling_thread": 0
+      },
+      "exit": ["EXIT code=0x0 exceptions=0 timeout=0"]
+    },
+    {
+      "case": "owned-trace-3-main90a6f5d-rebuilt",
+      "summaryObserved": ["SUMMARY_OBSERVED event=4 live=30"],
+      "liveNames": {
+        "freedomstream-room": 1,
+        "freedomstream-source-preview": 0,
+        "freedomstream-invitation": 0,
+        "tokio-rt-worker": 16,
+        "SyntheticAudioDevice": 0,
+        "network_thread": 0,
+        "worker_thread": 0,
+        "signaling_thread": 0
+      },
+      "exit": ["EXIT code=0x0 exceptions=0 timeout=0"]
+    },
+    {
+      "case": "owned-trace-4-candidate-owned",
+      "summaryObserved": ["SUMMARY_OBSERVED event=4 live=13"],
+      "liveNames": {
+        "freedomstream-room": 0,
+        "freedomstream-source-preview": 0,
+        "freedomstream-invitation": 0,
+        "tokio-rt-worker": 0,
+        "SyntheticAudioDevice": 0,
+        "network_thread": 0,
+        "worker_thread": 0,
+        "signaling_thread": 0
+      },
+      "exit": ["EXIT code=0x0 exceptions=0 timeout=0"]
+    }
+  ],
+  "binarySha256": {
+    "candidate-owned.exe": "eda171ee4b2f74cf8389226ad23bc5d4be995f354af2c83c0fb3f541daa38771",
+    "main90a6f5d.exe": "3c7b4933d54105b6bf0b4beb5b251287cbb72aec6493ed05cae4455c54df0942"
+  },
+  "testRuntime": "same read-only GStreamer 1.28.8 development DLLs, same pinned WebRTC and short Cargo cache, isolated common LocalAppData and GStreamer registry; debugger alters timing",
+  "validatedDefects": [
+    "UI test fixtures could finish with owned room/Tokio/RTC workers still live; observed in both candidate and baseline.",
+    "Normal close checked room completion alone, ignoring in-flight picker and invitation request cleanup.",
+    "Room completion flag could precede Windows TLS/native thread cleanup; barrier regression covers full thread termination."
+  ],
+  "fixes": [
+    "Retain room and picker JoinHandles; poll the Windows thread handle with zero timeout.",
+    "Own/cancel invitation request on a single-thread Tokio worker; collect only after termination; discard results while closing.",
+    "Normal close polls room, picker and invitation workers; explicit ten-second Force close remains available.",
+    "Bounded test fixture drain joins workers before tests finish."
+  ],
+  "validation": {
+    "node": "24.11.1 npm run check: pass; 43 server, 23 web, 4 configuration",
+    "native": "fmt, all-targets/all-features workspace Clippy, debug workspace build: pass",
+    "tests": "10 portable, 65 publisher pass; 3 ignored",
+    "httpBrowser": "6 desktop/mobile workflows pass",
+    "windowsDispatch": "real per-user enable/update/moved-download dispatch/startup/disable/cleanup pass with rebuilt local debug bundle",
+    "realHttpLoad": "managed Rust Load against local API: redemption and replay rejection pass"
+  },
+  "unresolved": [
+    "No real publisher fatal recurrence captured; no root cause connecting original 0xc0000005 to lifetime defects established.",
+    "Actual native Load/Join/server trust, saved-autojoin suppression, existing-window isolation and browser external-app permission interactions unverified; supported host native pipe missing (os error 2)."
+  ],
+  "recovery": {
+    "attempt": "Started installed official ChatGPT desktop host, reset/reimported supported sky API, retried unified CUA inventory; same missing pipe. No user config computer_use disable flag found.",
+    "minimalHostAction": "ChatGPT desktop Work/Codex > Settings > Computer use > Any App: install/enable if offered; keep Windows unlocked. The skill forbids automating ChatGPT own UI.",
+    "reference": "https://learn.chatgpt.com/docs/computer-use"
+  },
+  "safetyScope": "No audible test, audio frames/publication, GPU or planar qualifier, shared SDK/perf/root tracked edit, PR21 change, protected dialog bypass, exception swallowing or exit suppression.",
+  "merge": "KEEP DRAFT. Both original gates remain open. Fresh review cannot waive acceptance."
+}

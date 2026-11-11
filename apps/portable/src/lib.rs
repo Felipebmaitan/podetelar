@@ -12,6 +12,8 @@ use std::{
 
 pub const MAGIC: &[u8; 16] = b"FREEDOMSTREAM01!";
 #[cfg(windows)]
+pub mod browser_links;
+#[cfg(windows)]
 mod windows;
 const FOOTER_SIZE: u64 = 56;
 const MAX_ARCHIVE: u64 = 512 * 1024 * 1024;

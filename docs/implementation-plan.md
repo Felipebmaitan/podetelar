@@ -1,5 +1,16 @@
 # Implementation phases
 
+## Installed Windows distribution and update rollout — separate PR
+
+Add an unsigned preview installer using a pinned native Rust Velopack bootstrap
+and the existing qualified portable payload. Keep installer/update ownership
+outside the portable cleanup job. Build in GitHub Actions without publishing
+release assets yet. Track the update badge, hover changelog, background checks,
+click-to-download and explicit graceful restart in [the rollout plan](windows-updates.md).
+Public GitHub release access, rebrand identity, signing, helper notices and real
+two-version/fresh-Windows acceptance remain gates before shipping auto-updates.
+Private repository visibility does not block implementation or local testing.
+
 Each phase is an acceptance gate. Phase 1 is the initial commit on `main`; every later phase gets its own branch and PR. Felipe authorized autonomous implementation and merging: each PR must pass its acceptance checks and a new GPT-6.1-Sol review at high reasoning before merge. Address review findings before proceeding. Code can be MIT licensed while third-party runtimes retain their own licenses; qualify distribution licenses before bundling native media dependencies. Report external hardware/deployment verification separately and do not waive it merely to finish the sequence.
 
 **Current checkpoint:** Phases 1–8 and clipboard PR #8 are merged. Portable

@@ -135,7 +135,7 @@ export async function buildApp(
 
   app.get("/api/health", async () => ({ status: "ok", phase: 8 }));
   await adminRoutes(app, config, usage, rooms, options.now);
-  appLinkRoutes(app, config, rooms, options.now);
+  appLinkRoutes(app, config, rooms, directory, options.now);
   app.get("/api/diagnostics", async (request, reply) => {
     if (!administrator(request, config))
       return reply.code(401).send({ error: "Server access key required." });

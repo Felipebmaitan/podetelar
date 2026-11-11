@@ -29,6 +29,9 @@ async function fixture(t: TestContext) {
   config.webRoot = join(directory, "no-web-build");
   let now = Date.now();
   const mediaDirectory = {
+    async members() {
+      return [];
+    },
     async remove() {},
     async participant() {
       return null;

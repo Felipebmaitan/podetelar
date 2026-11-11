@@ -17,6 +17,7 @@ test("only the configured proxy peer can supply per-viewer rate-limit addresses"
   });
   const app = await buildApp(config, {
     mediaDirectory: {
+      members: async () => [],
       async participant() {
         return null;
       },

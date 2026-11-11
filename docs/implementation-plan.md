@@ -303,3 +303,21 @@ finish. Validate cancellation, held cleanup/TLS destructors and real HTTP Load
 behavior. Record the original unexplained fatal test-process exit independently;
 passing retries and fixing demonstrated ownership gaps do not prove its cause or
 waive native interaction acceptance.
+
+## Invitation landing correction - independent PR
+
+Keep invitation pages limited to a single Join room in FreedomStream action and
+the connected room members. Prepare short-lived tickets before the click so
+protocol navigation remains synchronous with the browser user gesture; refresh
+and replace tickets without expanding the page. Do not create a browser room
+session or request media tokens. Fetch current SFU members only after validating
+the invitation in a POST body, filter against active room sessions, and recheck
+invitation validity after the SFU request. Keep registration opt-in and native
+server trust/name/join confirmation. Verify authorization, stale sessions,
+revocation, replay/expiry, desktop/mobile layout and protocol navigation; report
+actual Windows activation separately from browser navigation assertions.
+
+Windows activation qualification exposed shell URL canonicalization: accept both
+empty and root-slash `join` paths while rejecting other paths. Rebuild the
+portable EXE and update the cached registered launcher; verify native Load/Join
+and live member appearance before marking this correction deployed.

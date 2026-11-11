@@ -83,7 +83,7 @@ impl Link {
         ensure!(
             url.scheme() == "freedomstream"
                 && url.host_str() == Some("join")
-                && url.path().is_empty()
+                && matches!(url.path(), "" | "/")
                 && url.username().is_empty()
                 && url.password().is_none()
                 && url.port().is_none(),
@@ -283,6 +283,27 @@ mod tests {
             collect(&mut Load::start(Link::parse(&fixture.link).unwrap())).is_err(),
             "Replaying a native handoff must fail"
         );
+    }
+
+    #[test]
+    fn accepts_windows_shell_canonical_root_but_rejects_other_paths() {
+        let ticket = "t".repeat(43);
+        for path in ["", "/"] {
+            let link = Link::parse(&format!(
+                "freedomstream://join{path}?server=http%3A%2F%2Flocalhost%3A18321#handoff={ticket}"
+            ))
+            .expect("Windows may append a slash to a protocol authority");
+            assert_eq!(link.origin.as_str(), "http://localhost:18321/");
+            assert_eq!(link.ticket, ticket);
+        }
+        for path in ["/room", "//", "/%2F", "/%6aoin"] {
+            assert!(
+                Link::parse(&format!(
+                    "freedomstream://join{path}?server=https%3A%2F%2Fexample.test#handoff={ticket}"
+                ))
+                .is_err()
+            );
+        }
     }
 
     #[test]

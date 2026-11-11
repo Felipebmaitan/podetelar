@@ -20,6 +20,7 @@ test("real connection transfers authenticate early, share one lease, pace downlo
   });
   const app = await buildApp(config, {
     mediaDirectory: {
+      members: async () => [],
       async participant() {
         return null;
       },

@@ -29,6 +29,7 @@ import { networkTestRoutes } from "./network-test.js";
 import { adminRoutes } from "./admin.js";
 import { Usage } from "./usage.js";
 import { appLinkRoutes } from "./app-links.js";
+import { RoomLifecycle } from "./room-lifecycle.js";
 
 const COOKIE = "fs_session";
 const MEDIA_TOKEN_TTL_SECONDS = 120;
@@ -49,7 +50,7 @@ export async function buildApp(
     bodyLimit: 4096,
     trustProxy: config.trustedProxy ?? false,
   });
-  const rooms = new Rooms(config.databasePath, options.now);
+  const rooms = new Rooms(config.databasePath, options.now, config.adminToken);
   const usage = new Usage(
     config.databasePath,
     config.usageMetricsUrl ?? "http://127.0.0.1:6789/metrics",
@@ -62,16 +63,24 @@ export async function buildApp(
   const access = new Access(rooms, directory, previews, () =>
     signaling.closeRevoked(),
   );
+  const lifecycle = new RoomLifecycle(rooms, directory, access);
+  const lifecycleSweep = setInterval(() => {
+    void lifecycle.tick();
+  }, 5000);
+  lifecycleSweep.unref();
   const previewSweep = setInterval(() => {
     previews.sweep();
     void access.settle();
   }, ACCESS_SWEEP_MS);
   previewSweep.unref();
   app.addHook("preClose", async () => {
+    clearInterval(lifecycleSweep);
     clearInterval(previewSweep);
     signaling.close();
   });
   app.addHook("onClose", async () => {
+    clearInterval(lifecycleSweep);
+    await lifecycle.settle();
     clearInterval(previewSweep);
     signaling.close();
     await access.settle();
@@ -134,7 +143,7 @@ export async function buildApp(
   });
 
   app.get("/api/health", async () => ({ status: "ok", phase: 8 }));
-  await adminRoutes(app, config, usage, rooms, options.now);
+  await adminRoutes(app, config, usage, rooms, access, lifecycle, options.now);
   appLinkRoutes(app, config, rooms, directory, options.now);
   app.get("/api/diagnostics", async (request, reply) => {
     if (!administrator(request, config))

@@ -12,6 +12,7 @@ export type MediaParticipant = {
   tracks: { sid: string; kind: PreviewKind; muted: boolean }[];
 };
 export interface MediaDirectory {
+  members(roomId: string): Promise<{ id: string; displayName: string }[]>;
   remove(roomId: string, identity: string): Promise<void>;
   participant(
     roomId: string,
@@ -40,6 +41,21 @@ export class LivekitDirectory implements MediaDirectory {
       config.livekitApiSecret,
       { requestTimeout: 3, failover: false },
     );
+  }
+  async members(
+    roomId: string,
+  ): Promise<{ id: string; displayName: string }[]> {
+    try {
+      return (await this.client.listParticipants(mediaRoomName(roomId)))
+        .slice(0, 100)
+        .map((participant) => ({
+          id: participant.identity,
+          displayName: participant.name.slice(0, 60) || "Participant",
+        }));
+    } catch (error) {
+      if (error instanceof TwirpError && error.code === "not_found") return [];
+      throw new MediaUnavailable();
+    }
   }
   async remove(roomId: string, identity: string): Promise<void> {
     try {

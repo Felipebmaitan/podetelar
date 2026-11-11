@@ -649,3 +649,35 @@ input::placeholder {
 .app-link-panel .button {
   margin-top: 12px;
 }
+
+.invitation-page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.invitation-card {
+  width: min(100%, 420px);
+}
+.invitation-card > .button {
+  display: block;
+  text-align: center;
+}
+.invitation-card h1 {
+  font-size: 18px;
+  margin-top: 28px;
+}
+.invitation-card ul {
+  list-style: none;
+  padding: 0;
+  margin-bottom: 0;
+}
+.invitation-card li {
+  padding: 12px 0;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border, #334155);
+}
+.invitation-card [aria-disabled="true"] {
+  opacity: 0.6;
+  cursor: wait;
+}

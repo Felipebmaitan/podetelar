@@ -30,6 +30,7 @@ test("release downloads require current room authority and verify the installed 
   });
   const app = await buildApp(config, {
     mediaDirectory: {
+      members: async () => [],
       async participant() {
         return null;
       },

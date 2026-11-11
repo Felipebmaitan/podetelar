@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { invitationSchema, roomIdSchema } from "@freedomstream/contracts";
 import type { Config } from "./config.js";
 import type { Rooms } from "./rooms.js";
+import type { MediaDirectory } from "./media.js";
 
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -12,6 +13,7 @@ export function appLinkRoutes(
   app: FastifyInstance,
   config: Config,
   rooms: Rooms,
+  directory: MediaDirectory,
   now = Date.now,
 ) {
   const tickets = new Map<
@@ -28,6 +30,40 @@ export function appLinkRoutes(
     clearInterval(timer);
     tickets.clear();
   });
+  app.post<{ Params: { roomId: string } }>(
+    "/api/rooms/:roomId/invitation-preview",
+    { config: { rateLimit: { max: 12, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const id = roomIdSchema.safeParse(request.params.roomId);
+      const invitation = invitationSchema.safeParse(
+        (request.body as { invitation?: unknown } | null)?.invitation,
+      );
+      if (
+        !id.success ||
+        !invitation.success ||
+        !rooms.acceptsInvitation(id.data, invitation.data)
+      )
+        return reply
+          .code(404)
+          .send({ error: "This invitation could not be accepted." });
+      let members;
+      try {
+        members = await directory.members(id.data);
+      } catch {
+        return reply
+          .code(503)
+          .send({ error: "Could not load room members. Try again shortly." });
+      }
+      // Rotation or disabling during the SFU request must also deny disclosure.
+      if (!rooms.acceptsInvitation(id.data, invitation.data))
+        return reply
+          .code(404)
+          .send({ error: "This invitation could not be accepted." });
+      return {
+        members: members.filter((member) => rooms.active(id.data, member.id)),
+      };
+    },
+  );
   app.post<{ Params: { roomId: string } }>(
     "/api/rooms/:roomId/app-link",
     { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },

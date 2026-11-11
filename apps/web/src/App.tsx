@@ -7,6 +7,7 @@ import { RoomAccess } from "./RoomAccess";
 import { PublisherDownload } from "./PublisherDownload";
 import { Admin } from "./Admin";
 import { OpenInApp } from "./OpenInApp";
+import { InvitationPage } from "./InvitationPage";
 
 const managedRoomId = /^\/manage\/([A-Za-z0-9_-]{22})$/.exec(
   window.location.pathname,
@@ -43,6 +44,8 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export function App() {
+  if (entryRoomId)
+    return <InvitationPage roomId={entryRoomId} invitation={entryInvitation} />;
   return window.location.pathname === "/" ? <Admin /> : <RoomApp />;
 }
 

@@ -24,6 +24,9 @@ const jpeg = readFileSync(new URL("fixtures/preview.jpg", import.meta.url));
 const ORIGIN = "http://localhost:5173";
 const ADMIN = "test-admin-key-not-a-production-secret";
 class Directory implements MediaDirectory {
+  async members() {
+    return [];
+  }
   beforeRemove: () => Promise<void> = async () => {};
   async remove() {
     await this.beforeRemove();

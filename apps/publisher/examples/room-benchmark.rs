@@ -9,6 +9,9 @@ mod admission;
 #[path = "../src/audio/mod.rs"]
 mod audio;
 #[cfg(feature = "performance-experiments")]
+#[path = "../src/browser_links.rs"]
+mod browser_links;
+#[cfg(feature = "performance-experiments")]
 #[path = "../src/connection.rs"]
 mod connection;
 #[cfg(feature = "performance-experiments")]

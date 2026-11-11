@@ -90,7 +90,44 @@ headless browser, process launch, HTTP tests, synthetic UI rendering or compilat
 
 Fresh GPT-6.1-Sol high static review of runtime integration commit `d76dabe`
 found no actionable findings and gave technical approval conditional on the
-remaining acceptance checks. Integration-specific Node/native/browser checks
-remain in progress. CPU-intensive builds and GPU/native launch checks are deferred during the
-performance thread's explicitly coordinated PR #23 benchmark window. The read-only
-GStreamer development SDK and performance checkout are not modified.
+remaining acceptance checks. The subsequent all-features check caught a missing
+`browser_links` module import in the separate `room-benchmark` example; that
+feature-gated import was added and all-features Clippy passed afterward. This is
+in addition to adapting the experiment constructor, and does not change benchmark
+measurement or product rendering behavior.
+
+After the performance thread explicitly released its benchmark window:
+
+- Node **24.11.1** `npm run check` passed formatting, types, 42 API/server tests,
+  23 web unit tests, 4 configuration tests and production builds.
+- The built HTTP app passed all six desktop/mobile headless Chromium workflows
+  in `e2e/admin.spec.ts` and `e2e/app-links.spec.ts`.
+- Native formatting/default Clippy passed. Native tests passed **10 portable**
+  and **59 publisher** tests, with three environment-dependent tests ignored by
+  default. Workspace/all-targets/**all-features** Clippy also passed, covering the
+  performance-experiment example entry point. Existing third-party LiveKit
+  warnings remain outside the workspace lint cap; no workspace warning was waived.
+- The live Rust HTTP handoff test was explicitly enabled and passed redemption
+  and replay rejection against the real local API.
+- A new local qualification bundle with the integrated debug launcher/publisher
+  passed real per-user enable/update, moved-download Windows URL dispatch,
+  native-process startup, no permanent invitation in activation arguments,
+  disable and cleanup. It reused the earlier qualified runtime payload and is
+  not a new distributable release.
+- The decoder SDK was regenerated from this checkout's current pin under its own
+  `.local/native-sdk`. The GStreamer development SDK supplied by the performance
+  thread was read only and was not modified. A private short build cache plus
+  `LK_CUSTOM_WEBRTC` pointing to its unchanged downloaded WebRTC artifact avoided
+  MSVC's long include-path limit; no source patch was used to bypass the failure.
+- Validation was silent: no audible, media publication or playback test was run.
+  Root's unrelated edits and the performance checkout were not changed.
+
+`origin/main` was refreshed after these checks and still pointed to `feefc2f`
+(PRs #22 and #19). PR #23 was not yet merged. Before any future PR #20 merge,
+refresh main again and integrate/recheck #23 if it has landed.
+
+The required native Load/Join/server-trust, saved-autojoin/existing-window and
+browser-native external-app permission interactions **remain unverified** because
+the supported native helper is unavailable. The successful process/HTTP/headless
+checks above do not satisfy those interaction gates. Keep PR #20 draft and do not
+merge until they actually pass.

@@ -21,6 +21,7 @@ mod resource_experiment;
 mod settings;
 mod source_picker;
 mod sources;
+mod stream_diagnostics;
 mod ui;
 mod ui_style;
 mod video_image;
@@ -353,6 +354,8 @@ struct AudioRequest {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct WatchRequest {
+    #[serde(default)]
+    diagnostics: bool,
     invitation_url: String,
     seconds: u64,
     #[serde(default)]
@@ -440,6 +443,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
             let watching = !request.preview_only && phase.is_some_and(|phase| !(5..8).contains(&phase));
             for tile in &tiles {
                 if tile.watching { tile.presentation.request(); }
+                if request.diagnostics { tile.presentation.diagnostics.open.store(tile.watching, Ordering::Relaxed); }
                 if watching != previous_watching || (watching && !known.contains(&tile.id)) { playback.watch(tile.id.clone(), watching)?; }
                 known.insert(tile.id.clone());
             }
@@ -468,7 +472,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                         }
                     }
                 }
-                samples.push(serde_json::json!({"second": elapsed, "recoveries": recovery.load(Ordering::Acquire), "connected": room.connection_state() == ConnectionState::Connected, "phaseSecond": phase, "watching": watching,"receivedBytes":byte_totals.values().sum::<u64>(), "decoders":decoders, "streams": tiles.iter().map(|tile| serde_json::json!({"codec":tile.codec,"frames":tile.frames.load(Ordering::Relaxed),"watching":tile.watching,"pictureSize":tile.picture.lock().ok().and_then(|p|p.as_ref().map(|image|image.size)),"audio":tile.audio.lock().map(|m|m.clone()).unwrap_or_default()})).collect::<Vec<_>>() }));
+                samples.push(serde_json::json!({"second": elapsed, "recoveries": recovery.load(Ordering::Acquire), "connected": room.connection_state() == ConnectionState::Connected, "phaseSecond": phase, "watching": watching,"receivedBytes":byte_totals.values().sum::<u64>(), "decoders":decoders, "streams": tiles.iter().map(|tile| serde_json::json!({"diagnosticSender":tile.presentation.diagnostics.sender.lock().ok().and_then(|value|value.as_ref().map(|(_,value)|value.clone())),"codec":tile.codec,"frames":tile.frames.load(Ordering::Relaxed),"watching":tile.watching,"pictureSize":tile.picture.lock().ok().and_then(|p|p.as_ref().map(|image|image.size)),"audio":tile.audio.lock().map(|m|m.clone()).unwrap_or_default()})).collect::<Vec<_>>() }));
                 if request.consume_pictures { for tile in &tiles { if let Ok(mut picture) = tile.picture.lock() { picture.take(); } } }
                 next_sample = elapsed + 1;
             }

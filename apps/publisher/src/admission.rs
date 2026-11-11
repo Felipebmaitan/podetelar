@@ -137,6 +137,57 @@ pub fn media_diagnostic(error: impl std::fmt::Display) -> String {
 }
 
 impl Admission {
+    pub async fn stream_diagnostic(
+        &self,
+        method: reqwest::Method,
+        owner: &str,
+        sid: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<serde_json::Value> {
+        ensure!(
+            owner.len() <= 128
+                && sid.len() <= 131
+                && owner
+                    .bytes()
+                    .chain(sid.bytes())
+                    .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'),
+            "Invalid publication."
+        );
+        let url = self.origin.join(&format!(
+            "api/rooms/{}/stream-diagnostics/{owner}/{sid}",
+            self.room_id
+        ))?;
+        let mut request = self
+            .client
+            .request(method, url)
+            .header("Origin", self.origin.origin().ascii_serialization())
+            .timeout(Duration::from_secs(2));
+        if let Some(body) = body {
+            request = request.json(body);
+        }
+        let response = request.send().await?;
+        ensure!(response.status().is_success(), "Diagnostics unavailable.");
+        if response.status() == reqwest::StatusCode::NO_CONTENT {
+            return Ok(serde_json::Value::Null);
+        }
+        ensure!(
+            response.content_length().unwrap_or(0) <= 8192,
+            "Diagnostic response too large."
+        );
+        use futures_util::StreamExt;
+        let mut bytes = Vec::new();
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            ensure!(
+                bytes.len() + chunk.len() <= 8192,
+                "Diagnostic response too large."
+            );
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(serde_json::from_slice(&bytes)?)
+    }
+
     pub async fn measure_connection(&self) -> crate::network::Capacity {
         use crate::network::{Capacity, PROBE_BYTES, PROBE_CAP_BPS};
         #[derive(Deserialize)]

@@ -33,6 +33,10 @@ pub struct Presentation {
     pub converted: AtomicU64,
     pub uploaded: AtomicU64,
     #[cfg(feature = "performance-experiments")]
+    pub visible: AtomicBool,
+    #[cfg(feature = "performance-experiments")]
+    pub planar: Mutex<Option<Arc<crate::planar_experiment::Picture>>>,
+    #[cfg(feature = "performance-experiments")]
     repaint: Mutex<Option<egui::Context>>,
 }
 impl Presentation {
@@ -561,7 +565,11 @@ impl Playback {
                         let (picture, presentation) = watch.begin_video();
                         let frames = watch.frames.clone();
                         let last_frame = watch.last_frame.clone();
+                        #[cfg(feature = "performance-experiments")]
+                        let lifetime = crate::resource_experiment::VideoTask::start();
                         tokio::spawn(async move {
+                            #[cfg(feature = "performance-experiments")]
+                            let _lifetime = lifetime;
                             let mut image_pool = crate::video_image::ImagePool::default();
                             #[cfg(feature = "performance-experiments")]
                             let pooled = std::env::var("FREEDOMSTREAM_IMAGE_POOL")
@@ -595,12 +603,44 @@ impl Playback {
                                     *last = Instant::now();
                                 }
                                 if !presentation.active() {
+                                    #[cfg(feature = "performance-experiments")]
+                                    if let Ok(mut latest) = presentation.planar.lock() {
+                                        *latest = None;
+                                    }
                                     if let Ok(mut latest) = picture.lock() {
                                         *latest = None;
                                     }
                                     image_pool.clear();
                                     continue;
                                 }
+                                #[cfg(feature = "performance-experiments")]
+                                let frame = if crate::planar_experiment::enabled() {
+                                    match crate::planar_experiment::Picture::prepare(frame.buffer) {
+                                        Ok(planar) => {
+                                            image_pool.clear();
+                                            // Never let an older RGBA mailbox replace this newer planar frame.
+                                            if let Ok(mut latest) = picture.lock() {
+                                                *latest = None;
+                                            }
+                                            presentation.converted.fetch_add(1, Ordering::Relaxed);
+                                            if let Ok(mut latest) = presentation.planar.lock() {
+                                                *latest = Some(planar);
+                                            }
+                                            continue;
+                                        }
+                                        Err(buffer) => {
+                                            if let Ok(mut latest) = presentation.planar.lock() {
+                                                *latest = None;
+                                            }
+                                            livekit::webrtc::video_frame::VideoFrame {
+                                                buffer,
+                                                ..frame
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    frame
+                                };
                                 if pooled {
                                     let mut image = image_pool.convert(frame.buffer.as_ref());
                                     if image.is_none() {

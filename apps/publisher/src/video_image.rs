@@ -30,6 +30,8 @@ fn write_color_image(buffer: &dyn VideoBuffer, image: &mut ColorImage) {
 /// Exclusive mutation comes from Arc::get_mut, including while egui retains an
 /// image for deferred upload. No buffer is recycled while another owner reads it.
 pub struct ImagePool {
+    #[cfg(feature = "performance-experiments")]
+    observation: crate::resource_experiment::Pool,
     images: Vec<Arc<ColorImage>>,
     limit: usize,
     #[cfg(feature = "performance-experiments")]
@@ -46,6 +48,8 @@ impl Default for ImagePool {
         #[cfg(not(feature = "performance-experiments"))]
         let limit = 2;
         Self {
+            #[cfg(feature = "performance-experiments")]
+            observation: Default::default(),
             images: Vec::new(),
             limit,
             #[cfg(feature = "performance-experiments")]
@@ -65,6 +69,8 @@ impl ImagePool {
     }
     pub fn clear(&mut self) {
         self.images.clear();
+        #[cfg(feature = "performance-experiments")]
+        self.observation.update(&self.images);
         #[cfg(feature = "performance-experiments")]
         {
             self.fallback = std::sync::Weak::new();
@@ -87,6 +93,8 @@ impl ImagePool {
             }
             self.images
                 .push(Arc::new(ColorImage::filled(size, Color32::TRANSPARENT)));
+            #[cfg(feature = "performance-experiments")]
+            self.observation.update(&self.images);
             self.images.len() - 1
         };
         write_color_image(buffer, Arc::get_mut(&mut self.images[index])?);

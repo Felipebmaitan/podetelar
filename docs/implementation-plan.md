@@ -275,6 +275,12 @@ server and asks before loading; it never automatically joins a saved room on a
 browser launch. Joining, sharing and watching remain explicit. A browser launch
 opens a separate app window so existing streams are undisturbed.
 
+Present native browser invitations in a centered modal over an inactive, lightly
+softened and darkened onboarding screen. Keep server trust/Load and nickname/Join
+explicit inside the modal; hide the long invitation field in this flow. Center
+the dismiss action under Load on the first screen, retaining its existing
+alignment on the nickname screen. Dismissal cancels pending work and never joins.
+
 Accept with ticket authorization/replay/expiry/revocation/resource tests, real
 per-user registry registration/removal and Windows launch handoff, malformed URL
 rejection, native GUI loading without automatic admission, Node 24 checks,

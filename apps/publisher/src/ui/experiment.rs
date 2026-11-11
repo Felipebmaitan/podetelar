@@ -80,6 +80,7 @@ pub fn qualify_planar_transitions(
         advanced_open: false,
         diagnostics_open: false,
         show_invitation: false,
+        browser_invitation_open: false,
         pending_link: None,
         link_result: None,
         browser_links_enabled: false,

@@ -107,6 +107,7 @@ pub struct PublisherUi {
     advanced_open: bool,
     diagnostics_open: bool,
     show_invitation: bool,
+    browser_invitation_open: bool,
     pending_link: Option<crate::browser_links::Link>,
     link_result: Option<crate::browser_links::Load>,
     browser_links_enabled: bool,
@@ -177,6 +178,7 @@ impl PublisherUi {
             advanced_open: false,
             diagnostics_open: false,
             show_invitation: false,
+            browser_invitation_open: is_browser_launch,
             pending_link,
             link_result: None,
             browser_links_enabled: std::env::var("FREEDOMSTREAM_BROWSER_LINKS").as_deref()
@@ -204,6 +206,7 @@ impl PublisherUi {
     }
 
     fn join(&mut self) {
+        self.browser_invitation_open = false;
         self.show_invitation = false;
         self.forgetting = false;
         self.controller.send(Command::Join {
@@ -347,22 +350,90 @@ impl PublisherUi {
         });
     }
 
-    fn join_form(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
-        if let Some(link) = &self.pending_link {
-            ui.heading(tr("Invitation from your browser"));
-            ui.label(link.origin.origin().ascii_serialization());
-            ui.label(tr("Load this invitation only if you trust this server. Loading does not join a room or start sharing."));
-            if ui.button(tr("Load invitation")).clicked() {
-                let link = self.pending_link.take().expect("Displayed browser link");
-                self.link_result = Some(crate::browser_links::Load::start(link));
-            }
-            if ui.button(tr("Dismiss browser invitation")).clicked() {
-                self.pending_link = None;
-            }
-            return;
+    fn dismiss_browser_invitation(&mut self) {
+        self.browser_invitation_open = false;
+        self.pending_link = None;
+        if let Some(load) = &mut self.link_result {
+            load.cancel();
         }
-        if self.link_result.is_some() {
-            ui.label(tr("Loading browser invitation…"));
+        self.invitation.clear();
+        self.settings_error.clear();
+    }
+
+    fn browser_invitation_modal(&mut self, ctx: &egui::Context, state: &Snapshot) {
+        let mut dismiss = false;
+        let trust_confirmation = self.pending_link.is_some();
+        let width = (ctx.content_rect().width() - 80.0).clamp(240.0, 440.0);
+        let modal = egui::Modal::new(egui::Id::unique("browser-invitation"))
+            .backdrop_color(egui::Color32::from_black_alpha(155))
+            .frame(egui::Frame::new().fill(CARD).stroke(egui::Stroke::new(1.0, BORDER))
+                .corner_radius(16).inner_margin(28).shadow(skin::menu_frame().shadow))
+            .show(ctx, |ui| {
+                ui.set_width(width);
+                ui.spacing_mut().item_spacing.y = 12.0;
+                ui.horizontal(|ui| {
+                    ui.label(skin::strong(tr("Invitation from your browser"), 22.0));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        dismiss |= skin::icon_button(ui, Icon::Close, tr("Close")).clicked();
+                    });
+                });
+                ui.add_space(4.0);
+                if let Some(link) = &self.pending_link {
+                    ui.label(egui::RichText::new(link.origin.origin().ascii_serialization()).strong());
+                    ui.label(tr("Load this invitation only if you trust this server. Loading does not join a room or start sharing."));
+                    if ui.add(primary(tr("Load invitation"), width)).clicked() {
+                        let link = self.pending_link.take().expect("Displayed browser link");
+                        self.link_result = Some(crate::browser_links::Load::start(link));
+                    }
+                } else if self.link_result.is_some() {
+                    ui.horizontal(|ui| { ui.spinner(); ui.label(tr("Loading browser invitation…")); });
+                    ctx.request_repaint_after(Duration::from_millis(50));
+                } else if !self.invitation.is_empty() {
+                    self.join_form(ui, state);
+                }
+                if !self.settings_error.is_empty() {
+                    ui.colored_label(ERROR, tr(&self.settings_error));
+                }
+                dismiss |= if trust_confirmation {
+                    ui.vertical_centered(|ui| ui.button(tr("Dismiss browser invitation")))
+                        .inner.clicked()
+                } else {
+                    ui.button(tr("Dismiss browser invitation")).clicked()
+                };
+            });
+        if dismiss || modal.should_close() {
+            self.dismiss_browser_invitation();
+        }
+    }
+
+    fn join_form(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+        if self.browser_invitation_open {
+            ui.heading(tr("Join your room"));
+            if let Ok(invitation) = url::Url::parse(&self.invitation) {
+                ui.label(invitation.origin().ascii_serialization());
+            }
+            let label = ui.label(tr("Your name"));
+            let name = ui
+                .add(
+                    egui::TextEdit::singleline(&mut self.name)
+                        .id_salt("browser-display-name")
+                        .interactive(!state.busy)
+                        .char_limit(60)
+                        .desired_width(f32::INFINITY)
+                        .hint_text(tr("How friends will see you")),
+                )
+                .labelled_by(label.id);
+            let valid = ui.is_enabled() && !state.busy && !self.name.trim().is_empty();
+            let enter = ui.input(|i| i.key_pressed(egui::Key::Enter))
+                && (name.has_focus() || name.lost_focus());
+            if ui
+                .add_enabled(valid, primary(tr("Join room"), ui.available_width()))
+                .clicked()
+                || (valid && enter)
+            {
+                self.join();
+            }
+            ui.small(tr("Your last joined room and name are encrypted on this PC and remembered for next launch."));
             return;
         }
         ui.heading(tr("Join your room"));
@@ -404,8 +475,10 @@ impl PublisherUi {
                     .hint_text(tr("How friends will see you")),
             )
             .labelled_by(name_label.id);
-        let valid =
-            !state.busy && !self.invitation.trim().is_empty() && !self.name.trim().is_empty();
+        let valid = ui.is_enabled()
+            && !state.busy
+            && !self.invitation.trim().is_empty()
+            && !self.name.trim().is_empty();
         let enter = ui.input(|i| i.key_pressed(egui::Key::Enter))
             && (invitation.has_focus()
                 || invitation.lost_focus()
@@ -1597,18 +1670,26 @@ impl eframe::App for PublisherUi {
 
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if self.closing_since.is_none()
-            && let Some(result) = self
+            && self
+                .link_result
+                .as_ref()
+                .is_some_and(crate::browser_links::Load::shutdown_finished)
+        {
+            let result = self
                 .link_result
                 .as_mut()
-                .and_then(crate::browser_links::Load::poll)
-        {
+                .and_then(crate::browser_links::Load::poll);
             self.link_result = None;
-            match result {
-                Ok(invitation) => {
-                    self.invitation = invitation;
-                    self.settings_error.clear();
+            if self.browser_invitation_open
+                && let Some(result) = result
+            {
+                match result {
+                    Ok(invitation) => {
+                        self.invitation = invitation;
+                        self.settings_error.clear();
+                    }
+                    Err(error) => self.settings_error = error,
                 }
-                Err(error) => self.settings_error = error,
             }
         }
         let ctx = root.ctx().clone();
@@ -1629,7 +1710,7 @@ impl eframe::App for PublisherUi {
             });
             return;
         }
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if !self.browser_invitation_open && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             if self.advanced_open {
                 self.advanced_open = false;
             } else if self.fullscreen.is_some() {
@@ -1673,7 +1754,7 @@ impl eframe::App for PublisherUi {
         } else {
             250
         }));
-        if ctx.input(|i| i.key_pressed(egui::Key::F11)) {
+        if !self.browser_invitation_open && ctx.input(|i| i.key_pressed(egui::Key::F11)) {
             if self.fullscreen.is_some() {
                 self.set_fullscreen(&ctx, None);
             } else if let Some(tile) = state
@@ -1734,6 +1815,9 @@ impl eframe::App for PublisherUi {
             .any(|t| Some(&t.id) == self.focused.as_ref())
         {
             self.focused = None;
+        }
+        if self.browser_invitation_open {
+            root.disable();
         }
         egui::Panel::top("room-header")
             .exact_size(54.0)
@@ -1972,7 +2056,7 @@ impl eframe::App for PublisherUi {
                         });
                     });
             });
-        if self.advanced_open {
+        if self.advanced_open && !self.browser_invitation_open {
             self.clear_picker();
             let mut done = false;
             let width = (ctx.viewport_rect().width() - 72.0).clamp(420.0, 620.0);
@@ -2021,7 +2105,51 @@ impl eframe::App for PublisherUi {
                 });
             self.advanced_open = !done && !modal.should_close();
         }
+        if self.browser_invitation_open {
+            defocus_invitation_background(root);
+            self.browser_invitation_modal(&ctx, &state);
+        }
     }
+}
+
+/// A small fixed kernel softens only this new window's onboarding paint. No
+/// framebuffer readback, media capture, persistent texture or renderer changes.
+fn defocus_invitation_background(root: &egui::Ui) {
+    fn has_callback(shape: &egui::Shape) -> bool {
+        match shape {
+            egui::Shape::Callback(_) => true,
+            egui::Shape::Vec(shapes) => shapes.iter().any(has_callback),
+            _ => false,
+        }
+    }
+    root.ctx().graphics_mut(|graphics| {
+        let Some(paint) = graphics.get_mut(root.layer_id()) else {
+            return;
+        };
+        let entries: Vec<_> = paint.all_entries().cloned().collect();
+        for (index, entry) in entries.into_iter().enumerate() {
+            // Never replay a native painting callback (e.g. a video presenter).
+            if has_callback(&entry.shape) {
+                continue;
+            }
+            let mut taps = Vec::with_capacity(9);
+            for y in [-1.5, 0.0, 1.5] {
+                for x in [-1.5, 0.0, 1.5] {
+                    let mut shape = entry.shape.clone();
+                    shape.translate(egui::vec2(x, y));
+                    egui::epaint::shape_transform::adjust_colors(&mut shape, |color| {
+                        *color = color.gamma_multiply(1.0 / 9.0);
+                    });
+                    taps.push(shape);
+                }
+            }
+            paint.set(
+                egui::layers::ShapeIdx(index),
+                entry.clip_rect,
+                egui::Shape::Vec(taps),
+            );
+        }
+    });
 }
 
 fn primary(label: &str, width: f32) -> egui::Button<'_> {
@@ -2326,6 +2454,75 @@ mod tests {
     use super::*;
 
     #[test]
+    fn browser_confirmation_is_centered_and_enter_cannot_skip_server_trust() {
+        for size in [egui::vec2(1280.0, 720.0), egui::vec2(960.0, 540.0)] {
+            let mut app = app();
+            app.browser_invitation_open = true;
+            app.pending_link = Some(
+                crate::browser_links::Link::parse(&format!(
+                    "freedomstream://join?server=https%3A%2F%2Fexample.test#handoff={}",
+                    "t".repeat(43)
+                ))
+                .unwrap(),
+            );
+            let ctx = egui::Context::default();
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+            for pass in 0..3 {
+                let mut output = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(screen),
+                        events: if pass == 2 {
+                            vec![egui::Event::Key {
+                                key: egui::Key::Enter,
+                                physical_key: None,
+                                pressed: true,
+                                repeat: false,
+                                modifiers: Default::default(),
+                            }]
+                        } else {
+                            vec![]
+                        },
+                        ..Default::default()
+                    },
+                    |root| app.browser_invitation_modal(root.ctx(), &Snapshot::default()),
+                );
+                output.textures_delta.clear();
+                let mut text = String::new();
+                for shape in &output.shapes {
+                    painted_text(&shape.shape, &mut text);
+                }
+                if pass == 2 {
+                    assert!(text.contains("https://example.test"));
+                }
+            }
+            let rect = ctx
+                .memory(|memory| memory.area_rect(egui::Id::unique("browser-invitation")))
+                .unwrap();
+            assert!((rect.center() - screen.center()).length() < 2.0);
+            assert!(screen.contains_rect(rect));
+            assert!(app.pending_link.is_some());
+            assert!(app.link_result.is_none());
+            assert!(app.invitation.is_empty());
+            assert!(!app.controller.snapshot().busy);
+        }
+    }
+
+    #[test]
+    fn dismissing_browser_confirmation_discards_loaded_authority_without_joining() {
+        let mut app = app();
+        app.browser_invitation_open = true;
+        app.invitation = "synthetic pending authority".into();
+        app.link_result = Some(crate::browser_links::Load::with_request(
+            std::future::pending(),
+        ));
+        app.dismiss_browser_invitation();
+        assert!(!app.browser_invitation_open);
+        assert!(app.pending_link.is_none());
+        assert!(app.invitation.is_empty());
+        assert!(!app.controller.snapshot().busy);
+    }
+
+    #[test]
     fn window_close_waits_for_cleanup_and_repeated_close_cannot_skip_it() {
         let mut app = app();
         let (controller, finish) = Controller::pending_shutdown_for_test();
@@ -2522,6 +2719,7 @@ mod tests {
             advanced_open: false,
             diagnostics_open: false,
             show_invitation: false,
+            browser_invitation_open: false,
             pending_link: None,
             link_result: None,
             browser_links_enabled: false,

@@ -227,18 +227,43 @@ ownership defects are repaired; **the original fatal exit remains unexplained**.
 There is no evidence-backed claim that the repair fixes that event. Keep its
 merge blocker open rather than inferring clearance from successful repetitions.
 
-Native automation recovery started the installed official ChatGPT desktop host
-and retried fresh supported Sky and unified CUA sessions. Both still report
-`Computer Use native pipe is unavailable` / `os error 2`; unified browser inventory
-also reports `browser access host is unavailable`. No supported reconnect/start
-method is exposed. Current [Computer Use setup documentation](https://learn.chatgpt.com/docs/computer-use)
-identifies the concrete host recovery: ChatGPT desktop Work/Codex → Settings →
-Computer use → Any App, install/enable if offered, and keep Windows unlocked.
-The skill forbids automating ChatGPT's own UI, so that host setup requires the
-user. No protected setting or dialog was bypassed.
+## Native interaction recovery and centered confirmation
 
-Actual native Load/Join/server-trust, saved-room autojoin suppression, existing
-window isolation and browser-native external-app permission interactions remain
-unverified and unwaived. **Keep PR20 draft; no merge while either original blocker
-remains open.** Compilation, HTTP/process checks and technical review cannot
-replace those interactions or establish the original crash's cause.
+The earlier missing-pipe diagnosis is historical. After enabling Computer Use
+and restarting the host/session, the supported API recovered. Actual native
+interactions on the final local modal build passed:
+
+- The centered server-trust screen appears before any admission. Load is explicit.
+- Expired handoffs show rejection in the modal without joining.
+- A fresh Load opens the nickname/Join step; entering a nickname does not join.
+- Explicit Join connects to the real local SFU: room name and participant appear,
+  with zero published streams and zero subscriptions. No audible test ran.
+- After the successful join saved an encrypted profile, a second browser launch
+  using that same profile opened a separate trust modal with zero participants,
+  suppressing saved-room autojoin. The original joined window remained connected
+  with its participant unchanged. This tests connection/window isolation with an
+  empty room, not preservation of a running media stream.
+
+The approved presentation uses an inactive, darkened background with a fixed
+3�3 defocus kernel on onboarding paint only. It captures no framebuffer, retains
+no background image, and never replays native paint callbacks. The modal contains
+server trust/Load followed by server, nickname and explicit Join; the long
+invitation field is omitted. Dismiss cancels pending loading and discards the
+invitation. The first screen's dismiss button is centered under Load; its
+nickname-screen position is unchanged. Actual native screenshots verified the
+centered first screen and the final nickname layout. Unit layout/Enter regressions
+cover 1280�720 and 960�540; dismissal cannot join. The profile-free planar fixture
+initializes the new modal flag false and still loads no saved profile.
+
+Node 24 checks, native workspace/all-targets/all-features Clippy, native build,
+10 portable and 67 publisher tests passed (three environment tests ignored).
+These local runs exited cleanly; they do not diagnose the original fatal exit.
+
+The remaining actual browser external-app permission/dispatch check stopped with:
+`browser URL policy enforcement is not yet supported for the current Windows browser`.
+No raw input, alternate driver or security-policy bypass was attempted after that
+stop. This is a browser tooling restriction, not a missing native helper. The
+browser prompt gate remains open until exercised through a supported connection
+or a precisely recorded manual interaction. The historical `0xc0000005` also
+remains unexplained and unwaived. Keep PR20 draft; neither merge nor the user's
+conditional post-merge shutdown may occur while either gate remains open.

@@ -12,8 +12,13 @@ Desktop 1280px and mobile 390px Playwright checks use the built HTTP server and
 a real local LiveKit service (empty room). They verify mouse/Space protocol
 navigation, stable page contents, ticket redemption/replay denial, automatic
 refresh, absent browser admission/media requests and no browser-storage secrets.
-They do not establish actual Windows activation or populated-room behavior
-through a real native client. Those checks remain unverified for this correction.
+The first actual Windows activation exposed the native failure: ShellExecute
+canonicalizes `freedomstream://join?...` into `freedomstream://join/?...`. The
+installed parser rejected the root slash and showed Invalid browser invitation.
+The correction accepts the empty/root path only, retains every other validation,
+and tests both canonical forms and rejection of other paths. A new portable
+release and updated cached protocol launcher are required.
 
 A fresh GPT-6.1-Sol high-reasoning independent review approved the patch after
-fixing Space-key activation. No native/runtime distribution changes are included.
+fixing Space-key activation. A second fresh GPT-6.1-Sol high-reasoning review approved the native URL-parser
+correction. No runtime dependencies or media capabilities change.

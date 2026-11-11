@@ -316,3 +316,8 @@ invitation validity after the SFU request. Keep registration opt-in and native
 server trust/name/join confirmation. Verify authorization, stale sessions,
 revocation, replay/expiry, desktop/mobile layout and protocol navigation; report
 actual Windows activation separately from browser navigation assertions.
+
+Windows activation qualification exposed shell URL canonicalization: accept both
+empty and root-slash `join` paths while rejecting other paths. Rebuild the
+portable EXE and update the cached registered launcher; verify native Load/Join
+and live member appearance before marking this correction deployed.

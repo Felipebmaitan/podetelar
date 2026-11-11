@@ -186,16 +186,20 @@ to update the registered launcher. **Disable browser links** removes our URL
 registration; cached launchers stay on disk because a running app may use them.
 Other applications' registrations are never silently replaced or removed.
 
-On an invitation page, choose **Prepare app invitation**, then **Open in
-FreedomStream**. The second click is deliberate so external-app launch remains
-a direct user gesture. Allow the browser's app-launch prompt if shown. In the app,
+On an invitation page, choose **Join room in FreedomStream**. The page prepares
+a temporary ticket in advance, so this single click launches the app directly. Allow the browser's app-launch prompt if shown. In the app,
 verify the server, choose **Load invitation**, enter your name, then **Join room**.
 Loading alone starts no room session, capture or subscriptions. If FreedomStream
 is already running, the link opens another window without changing that room.
 
 Handoffs expire after one minute and work only once. If the app is missing, the
 browser refuses the launch, or the ticket expires, run the EXE/enable links and
-prepare a fresh app invitation. Manual copy/paste still works. A new browser
+retry the join action. Manual copy/paste still works. A new browser
 invitation never automatically joins the saved room; ordinary EXE launches retain
 saved-room behavior. Short-lived handoff tickets can appear in OS activation
 arguments; permanent invitations and media/session credentials do not.
+
+Windows canonicalizes activation URLs by adding a root slash after `join`. The
+app accepts both forms while rejecting other paths. Older builds reject this
+Windows form: download the corrected EXE and choose **Update browser links to
+this version** once so the registered cached launcher also receives the fix.

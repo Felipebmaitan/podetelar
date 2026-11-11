@@ -131,3 +131,35 @@ browser-native external-app permission interactions **remain unverified** becaus
 the supported native helper is unavailable. The successful process/HTTP/headless
 checks above do not satisfy those interaction gates. Keep PR #20 draft and do not
 merge until they actually pass.
+
+## Follow-up integration with PR #23
+
+Merged `origin/main` at `90a6f5dde0ab67a84a3dff24701efa4231809b56` into
+PR #20 (runtime merge commit `1574350`). The merge was clean. The benchmark example
+still imports `browser_links` and constructs its ordinary benchmark UI through
+`with_browser_link(None)`. The disabled planar qualifier retains its explicit
+`PublisherUi` literal with `store: None` and `attempted_profile: None`; only
+`pending_link: None`, `link_result: None` and `browser_links_enabled: false` were
+added. No saved-profile load or automatic join was introduced into that qualifier.
+PR #23's clipping, history cache, source picker, shutdown and redesigned UX remain
+intact. Neither the performance checkout nor its read-only SDK was modified.
+
+On this integrated tree:
+
+- Node 24.11.1 `npm run check` passed: 43 API/server, 23 web and four configuration
+  tests, formatting, types and production builds.
+- Native formatting and workspace/all-targets/all-features Clippy passed, including
+  the planar qualifier and standalone benchmark example.
+- The default native test run reported all 10 portable and 60 publisher tests
+  passing (three ignored), but the publisher test process then exited with
+  `0xc0000005` (`STATUS_ACCESS_VIOLATION`) during teardown. An identical default
+  rerun exited cleanly with all tests passing. The first failure is not considered
+  diagnosed or remediated; retain it as a native teardown reliability follow-up
+  before merge, rather than treating assertion counts as process success.
+- All six desktop/mobile headless HTTP browser workflows passed again. No audible
+  test or real planar/GPU qualifier was run.
+
+The previously documented native-helper and actual GUI/browser prompt acceptance
+blockers are unchanged and unwaived. PR #20 remains draft and must not merge until
+those interactions actually pass. The earlier conditional technical review is not
+an approval to waive this follow-up integration's remaining acceptance.

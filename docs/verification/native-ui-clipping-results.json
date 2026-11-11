@@ -3743,6 +3743,82 @@
       "limits": "Actual local Fastify administrator login/usage/logout and health routes. Separate client/server processes. Fixed 10 reports and 40 successful health requests per trial. Cached experiment refreshes unchanged closed history while current records change and freshness fields remain live; not all report requests or VPS/WAN capacity."
     }
   },
+  "packageAcceptance": {
+    "schema": 1,
+    "package": {
+      "filename": "freedomstream-windows-x64-0.1.0-a453145ab69a.exe",
+      "version": "0.1.0",
+      "commit": "a453145ab69a76772f967b906430f53d6cb04c98",
+      "sha256": "a3c3b54401ab4a25fae1b6040187d4ec3eef904a104b1e7f628ec12230923d99",
+      "size": 82298538
+    },
+    "innerPublisherSha256": "b310cc56e58ff80d8361be0aa95c4992ddae0b18a8b4738f684903e558ec9d98",
+    "guiSubsystem": 2,
+    "experimentMarkersAbsent": true,
+    "receive": [
+      {
+        "path": "ui23-package-h264-1-h264-513b6232-0e26-4eaa-976d-6bf346e77f7e/diagnostic.json",
+        "sha256": "55aa06bb36adf41a38dc35d859bec3a45a06d470c795710ad6a9ee3a953512f7",
+        "codec": "h264",
+        "frames": 1125,
+        "hardware": true
+      },
+      {
+        "path": "ui23-package-h265-1-h265-c5c0b71e-b869-4ac2-be27-4f27b1dd9435/diagnostic.json",
+        "sha256": "e10d5b32450544a2dd11a43690cf03cb7264191f57b02cbf04a46ccdab95a156",
+        "codec": "h265",
+        "frames": 1127,
+        "hardware": true
+      }
+    ],
+    "bundledProbe": {
+      "schema": 1,
+      "exitCode": 0,
+      "probe": {
+        "decoders": [
+          "video/h264",
+          "video/rtx",
+          "video/h264",
+          "video/h264",
+          "video/h264",
+          "video/h264",
+          "video/h264",
+          "video/h264",
+          "video/h264",
+          "video/h265",
+          "video/av1",
+          "video/vp8",
+          "video/vp9",
+          "video/vp9",
+          "video/vp9",
+          "video/vp9",
+          "video/red",
+          "video/ulpfec",
+          "video/flexfec-03"
+        ],
+        "encoders": [
+          {
+            "codec": "av1",
+            "factory": "nvd3d11av1enc",
+            "label": "NVIDIA NVENC AV1"
+          },
+          {
+            "codec": "h265",
+            "factory": "nvd3d11h265enc",
+            "label": "NVIDIA NVENC HEVC"
+          },
+          {
+            "codec": "h264",
+            "factory": "nvd3d11h264enc",
+            "label": "NVIDIA NVENC H.264"
+          }
+        ],
+        "runtime": "GStreamer 1.28.8 (GIT)",
+        "sourceCount": 10
+      }
+    },
+    "limits": "Short isolated cache, silent packaged CLI receive and probe only. No packaged egui, audible or physical A/V acceptance; PR19 deep-cache failure remains unexplained. No performance numbers inferred from launcher counters."
+  },
   "evidence": [
     {
       "path": "ui-pr23-pass/build-five.json",
@@ -3847,6 +3923,22 @@
     {
       "path": "ui23-seven-b2-7-h265-078b34ed-9f30-48a0-8770-7bb786f90c42/process.json",
       "sha256": "3ae33a38b5bf096aef930ede938b69194663a083e3b581fe1ac925f4ae45ffe8"
+    },
+    {
+      "path": "ui-pr23-pass/package-acceptance.json",
+      "sha256": "279b5397ed7ce3371778f7b813988e496e8772a4e97d0b7675d6b031cd27dd35"
+    },
+    {
+      "path": "ui-pr23-pass/bundled-probe.json",
+      "sha256": "683dde834bfde5366e99cf0ca43c7b4a819030b5d52d691f8bda0e6d107941c1"
+    },
+    {
+      "path": "ui23-package-h264-1-h264-513b6232-0e26-4eaa-976d-6bf346e77f7e/diagnostic.json",
+      "sha256": "55aa06bb36adf41a38dc35d859bec3a45a06d470c795710ad6a9ee3a953512f7"
+    },
+    {
+      "path": "ui23-package-h265-1-h265-c5c0b71e-b869-4ac2-be27-4f27b1dd9435/diagnostic.json",
+      "sha256": "e10d5b32450544a2dd11a43690cf03cb7264191f57b02cbf04a46ccdab95a156"
     },
     {
       "path": "ui-pr23-pass/usage/production-json-http.json",

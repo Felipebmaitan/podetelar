@@ -191,6 +191,23 @@ Zero recorded milliseconds does not mean zero work. This is a warm historical
 report win, not a normal live Today/Month dashboard, server RAM or WAN/VPS claim.
 No historical evidence files or fixture databases were overwritten.
 
-Final package/source review and PR23 CI are required before merge. PR20 is being
-qualified independently; main will be refreshed before merging and its changes
-preserved if it lands first. E2EE PR21 remains untouched.
+Final local checks pass: Node 24 full workspace checks, all-target/all-feature
+Clippy, 59 default publisher tests, 60 all-feature publisher tests, nine portable
+tests in each run, and both explicit silent Windows hardware tests. The package
+from `a453145ab69a` has SHA-256
+`a3c3b54401ab4a25fae1b6040187d4ec3eef904a104b1e7f628ec12230923d99`;
+its inner publisher is
+`b310cc56e58ff80d8361be0aa95c4992ddae0b18a8b4738f684903e558ec9d98`.
+Both are GUI executables, experiment markers are absent, and the same pinned
+runtime/source/import/license checks pass. Silent packaged H.264/HEVC hardware
+receive passes (1,125/1,127 frames in the final watch generation) using a short
+isolated cache; the forced bundled probe passes. No full audible or packaged
+egui/physical A/V acceptance is claimed. Product sources are unchanged after
+`4eadabc`; subsequent edits concern evidence/tooling only.
+
+Fresh source review and PR23 CI remain required before merge. Main is refreshed
+before merging. PR20 remains a draft with an **unwaived** native interaction gate;
+it must not merge until those interactions are verified. A future combination
+must retain its `browser_links` module import in `room-benchmark.rs` and
+`with_browser_link(None)` construction, adapting the disabled planar qualifier's
+constructor too. PR20's branch/checkout and E2EE PR21 remain untouched here.

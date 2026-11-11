@@ -177,6 +177,14 @@ const usageMetrics = Object.fromEntries(
   }),
 );
 assert.ok(usageMetrics.reportLatencyP50Ms.changePercent < -90);
+const packageAcceptance = read(join(pass, "package-acceptance.json"));
+assert.equal(packageAcceptance.receive.length, 2);
+assert.equal(packageAcceptance.bundledProbe.exitCode, 0);
+evidencePaths.push(
+  "ui-pr23-pass/package-acceptance.json",
+  "ui-pr23-pass/bundled-probe.json",
+  ...packageAcceptance.receive.map((entry) => entry.path),
+);
 evidencePaths.push(
   "ui-pr23-pass/usage/production-json-http.json",
   "ui-pr23-pass/server-code/source.json",
@@ -186,6 +194,7 @@ const result = {
   base: "feefc2f08a9daf4d6207265630bba59f69a9974e",
   ...summaries,
   usage: { metrics: usageMetrics, raw: usage },
+  packageAcceptance,
   evidence: evidencePaths.map((path) => ({
     path,
     sha256: hash(join(root, ".local/experiments", path)),

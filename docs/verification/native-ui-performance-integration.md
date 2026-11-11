@@ -124,5 +124,73 @@ the integrated range are required before merging [PR19](https://github.com/Felip
 
 ## PR23 adaptation
 
-Pending PR19 integration. Retain only optimizations valid for the redesigned
-layout and keep all experimental rendering/decoder paths disabled by default.
+PR19 merged as `feefc2f08a9daf4d6207265630bba59f69a9974e` after fresh independent
+approval and successful Windows/Linux/container CI (optional native CI skipped).
+PR23 includes that actual merge commit. The redesigned tile now allocates its
+video rectangle before deciding whether to renew presentation demand and consume
+its mailbox. Focus/fullscreen, the source picker and coordinated shutdown retain
+PR19/PR22 behavior. The regression test covers clipped-to-visible resumption
+without changing watch intent or volume.
+
+The disabled planar presenter was adapted to the new video rectangle and
+constructor fields, including fallback and GL resource cleanup. The feature-only
+scripted-scroll hook was also ported into the new scroll area. These paths remain
+experimental/off by default; earlier planar pixel/performance qualification is
+historical, not new-UI renderer acceptance. Normal and all-feature Rust tests and
+Clippy pass for the initial adaptation. Historical JSON cache behavior remains
+separate from rendering and is being checked through the authenticated API.
+
+Initial five-stream narrow-window A/B/B/A controls completed. All five tiles
+remain at least partly visible in the redesigned layout: both variants convert
+approximately 300 frames/s. The old UI's four/five-stream clipping improvement
+does **not** reproduce in that situation. CPU and memory varied between runs;
+there is no measured clipping win claimed for that layout. The unused four-stream
+cases in the original batch were intentionally stopped at a completed-case
+boundary (exit 20); no partial case is counted as evidence.
+
+The benchmark-only stream allowance was extended to seven to exercise fully
+clipped rows without changing the product's layout or watching policy.
+[New-UI clipping/cache results](native-ui-clipping-results.json) and input hashes
+are reproduced with `node scripts/summarize-ui-clipping.mjs`.
+
+Seven-stream B/A/A/B comparisons, two runs per variant, consistently have six
+intersecting video rectangles and one fully clipped rectangle. Decode delivery
+remains approximately 419 frames/s for all seven watches. Conversion falls from
+419.02 to 359.46 frames/s, avoiding the fully clipped stream's expansion.
+
+| Seven-stream grid metric | Clipping off |  Clipping on |  Change |
+| ------------------------ | -----------: | -----------: | ------: |
+| CPU, one core = 100%     |      226.55% |      185.63% | −18.06% |
+| GPU 3D engine activity   |       53.27% |       43.94% | −17.52% |
+| Dedicated GPU memory     |   488.95 MiB |   476.49 MiB |  −2.55% |
+| Private commit           | 1,137.72 MiB | 1,140.69 MiB |  +0.26% |
+| Resident memory          |   603.52 MiB |   615.10 MiB |  +1.92% |
+
+Both matched CPU pairs improve by approximately 18%. There is no demonstrated
+RAM reduction. These are short background-window measurements, not foreground,
+game, latency, physical display or packaged egui qualification. Occlusion was
+unreported. All eight grid observations per seven-stream trial are retained.
+GPU engine counters are separate, and lower egui handoffs for the hidden stream
+are not measured physical GL upload or display counts.
+
+The five-stream control remains a counterexample to extrapolating the old UI's
+gains. One control has only three grid observations and unusually low CPU/GPU
+activity; its CPU sampling window does not have matching application observation
+coverage. All raw results and aggregate arithmetic remain included. Neither a
+five-stream gain nor a causal regression is established by those mixed samples.
+
+The shared server cache was also rechecked through the actual authenticated
+HTTP routes: five alternating pairs, each with ten closed-history reports and
+40 health requests, using copies of the preserved 522,000-row synthetic fixture.
+Full response equivalence, fresh collector metadata, denial before login and
+denial after logout pass in every trial. Median report latency falls from
+836.85 to 3.89 ms; health p95 under that workload falls from 821.96 to 1.99 ms.
+Server CPU for the fixed burst is median 8,124 versus 16 ms; cached samples range
+from 0 to 62 ms, so timer granularity limits precise percentage interpretation.
+Zero recorded milliseconds does not mean zero work. This is a warm historical
+report win, not a normal live Today/Month dashboard, server RAM or WAN/VPS claim.
+No historical evidence files or fixture databases were overwritten.
+
+Final package/source review and PR23 CI are required before merge. PR20 is being
+qualified independently; main will be refreshed before merging and its changes
+preserved if it lands first. E2EE PR21 remains untouched.

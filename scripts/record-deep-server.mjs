@@ -10,7 +10,9 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 const root = resolve(import.meta.dirname, ".."),
-  out = resolve(root, ".local/experiments/deep-pass/server-code");
+  out = process.argv[2]
+    ? resolve(process.argv[2])
+    : resolve(root, ".local/experiments/deep-pass/server-code");
 if (existsSync(out)) throw Error("Server code archive is immutable");
 const files = [];
 function visit(folder, extension) {

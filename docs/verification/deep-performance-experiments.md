@@ -1,5 +1,11 @@
 # Independent follow-up performance experiments
 
+**Historical UI measurements:** this campaign predates native UI PR22. Its
+clipping numbers are not verified gains on the redesigned layout. See the
+[native UI integration ledger](native-ui-performance-integration.md) for the
+separate post-redesign checks and counterexamples. The measurements below remain
+unchanged historical evidence.
+
 Status: **local experiment campaign completed**. Packaged acceptance and its
 remaining verification limits are documented at the end of this report.
 These experiments start from the optimized application at

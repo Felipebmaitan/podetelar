@@ -1,0 +1,3861 @@
+{
+  "schema": 1,
+  "base": "feefc2f08a9daf4d6207265630bba59f69a9974e",
+  "fiveVisible": {
+    "build": {
+      "head": "5e6c9e7264e5e2115926fbc39996df1754781f94",
+      "control": "Same executable, FREEDOMSTREAM_DEEP_CLIP=0 versus 1; all other experiments disabled; image pool=1 limit2 matches default",
+      "exeSha256": "f9ca99aa023380f125164f67a61286a701d34de34e2e9cba61fca16809794132",
+      "schema": 1,
+      "base": "feefc2f08a9daf4d6207265630bba59f69a9974e",
+      "sources": [
+        {
+          "path": ".cargo/config.toml",
+          "sha256": "8c79bc4bcfc0c8dc46272b76aefd0a6e00faa106f11fdd058c63cb647e2b3d93"
+        },
+        {
+          "path": "Cargo.lock",
+          "sha256": "88be86efa640136cff20b4a0dde5196ad34e06eb79c88aefb46ce29c590b6164"
+        },
+        {
+          "path": "Cargo.toml",
+          "sha256": "caef46a8202ba227ffec50808c6a0687a9e4b3ac02880c42fda51ca7f88a2f6d"
+        },
+        {
+          "path": "apps/portable/Cargo.toml",
+          "sha256": "6f16954e10a1cab5d3953cc124d86c25de51c070cf943227ae88f762e8af23ee"
+        },
+        {
+          "path": "apps/portable/build.rs",
+          "sha256": "556ab9dd27667d20dcfafb29cb785c051ff28df55e63c241790207838a4835bd"
+        },
+        {
+          "path": "apps/portable/src/lib.rs",
+          "sha256": "a055da1397bb34886500578860149d042544fc52d557e712640d61dbe7d8ce80"
+        },
+        {
+          "path": "apps/portable/src/main.rs",
+          "sha256": "a86e4ea632f69781dfa662362964011113e17702f8138ab66bdb72e18f7714a3"
+        },
+        {
+          "path": "apps/portable/src/windows.rs",
+          "sha256": "8318fe1baceee4d97ce102bec00788319a9f495b9e97bc6157d6d9d919378b03"
+        },
+        {
+          "path": "apps/portable/src/windows/process.rs",
+          "sha256": "f439050fc5f359be4c21738fe72b8c8fa632506cffdad6ce6f8199bbe86d91cc"
+        },
+        {
+          "path": "apps/publisher/Cargo.toml",
+          "sha256": "119bd5a2ee7e3247a55557421444a71358ab9f452ae06dec88edd91c16b926cc"
+        },
+        {
+          "path": "apps/publisher/build.rs",
+          "sha256": "fba61e5b573b8b95269feba1f50d18ab41c0ecc34a2d66232c8d0d1bdc7d05b2"
+        },
+        {
+          "path": "apps/publisher/decoder/bounded_readback.h",
+          "sha256": "8f10c0a2c123a3a2c683c66fc19740b7fef03f9aa49dfeb48ff908bd1b6bc55e"
+        },
+        {
+          "path": "apps/publisher/decoder/deferred_i420.h",
+          "sha256": "6f9af0ee8b835a342a1d608b2fee6c04fa9d12713783457af95034123172bac2"
+        },
+        {
+          "path": "apps/publisher/decoder/freedomstream_decoder.h",
+          "sha256": "78083e8a925a9289526e7349ba29389d4e7b49d6b663df8168d93b0bd77ebca6"
+        },
+        {
+          "path": "apps/publisher/examples/decoder-resource.cpp",
+          "sha256": "b2639a99b1417a694ea4a7384168fce238f7f8070df257e86b2237d79ddd73cc"
+        },
+        {
+          "path": "apps/publisher/examples/deep-decoder.cpp",
+          "sha256": "6297335d0a250045e9abd50110e4fdd28061a20eba60e824d1ace6289bf8fce2"
+        },
+        {
+          "path": "apps/publisher/examples/deferred-i420.h",
+          "sha256": "d5180141a4a91081c02956155a35feb1b9f7053eb709712e0250c76744266aed"
+        },
+        {
+          "path": "apps/publisher/examples/frame-conversion.rs",
+          "sha256": "7dd892c0378f83b0373daff5a7cacd579335e2b18455933092240f0786deea60"
+        },
+        {
+          "path": "apps/publisher/examples/gpu-present-minimal.rs",
+          "sha256": "e1bef7914d7934972fd6235fc17e5a41e520fbd32c47801db1e7160d83e168b8"
+        },
+        {
+          "path": "apps/publisher/examples/pipeline-resource.rs",
+          "sha256": "0f5b56fa6792843257b57e9d1f745669c2c57689b6480eb1204509ac5cf9fb0e"
+        },
+        {
+          "path": "apps/publisher/examples/report-memory.rs",
+          "sha256": "60bc42fea50def19364d7ea9a754405bd011cae22f345189a5ad3bb5c648d1fd"
+        },
+        {
+          "path": "apps/publisher/examples/room-benchmark.rs",
+          "sha256": "6750deaf062a317ea8ee2923f93fd607ed6eb3ff3cdad5dfeecc23a44e10567b"
+        },
+        {
+          "path": "apps/publisher/examples/sdk-idle-resource.cpp",
+          "sha256": "41e23833af41b61b5812c70aef7cfdc920538855d62c89f347838d69f285823d"
+        },
+        {
+          "path": "apps/publisher/examples/texture-present-common.rs",
+          "sha256": "5ac05ef90f4c28ca35a924d4825dcf95fcfee6dc9bd98f255193ae71f3442f36"
+        },
+        {
+          "path": "apps/publisher/src/admission.rs",
+          "sha256": "c8e14ea1e2f635a53e259c5f5d5b2a729492e8f588be15ff9627fe0cd5f283fe"
+        },
+        {
+          "path": "apps/publisher/src/audio/mod.rs",
+          "sha256": "1711bd18303dc46adf51383042660ab47b370533ef46e0e53a714b928a847122"
+        },
+        {
+          "path": "apps/publisher/src/audio/policy.rs",
+          "sha256": "30d7c0ef9d060fb3852ae0aab2c10a3c4d5fbe5c2c39a93e916fb1272fe8ff14"
+        },
+        {
+          "path": "apps/publisher/src/audio/windows.rs",
+          "sha256": "2e1e4a584d7b666c61020cfbeafe14372832a39afee1814196200bf1fa622cdf"
+        },
+        {
+          "path": "apps/publisher/src/connection.rs",
+          "sha256": "55a8d0d4292de08cc43badaad2bd9394b3f706eb42bd646973b966f0c28343aa"
+        },
+        {
+          "path": "apps/publisher/src/delivery.rs",
+          "sha256": "1a50b13756a502e73ac5c824b82d31881ddcd6e4b8a9856fc1e405e28257039a"
+        },
+        {
+          "path": "apps/publisher/src/diagnostics.rs",
+          "sha256": "eef9ce6ecfbbe9cf896feaa7fc2d0753a2ed5bd5e09580c8a6db398ded9fc62d"
+        },
+        {
+          "path": "apps/publisher/src/encoding.rs",
+          "sha256": "863e2e2d7f7250a8c73ebb25b8178b9396ec273a01cc811e71dfdc1ab23f02e6"
+        },
+        {
+          "path": "apps/publisher/src/locale.rs",
+          "sha256": "20949fb0e35ef47b6345fa6e7c357e51a23ad4e5b50bd4ad1ea3b0f59c9a1420"
+        },
+        {
+          "path": "apps/publisher/src/main.rs",
+          "sha256": "c2b837a0ca43a5804b5a36478be67ff2df37aaf3b8d440c1e14c70dcaeebd558"
+        },
+        {
+          "path": "apps/publisher/src/network.rs",
+          "sha256": "25247a0e7d64216aa85134e4bb1ce06772464ee8b04e5d967f10c0c83e59dd50"
+        },
+        {
+          "path": "apps/publisher/src/planar_experiment.rs",
+          "sha256": "c2b68ea371071e716ec359712b76cae282ad6cd2fcc474209651a9b1939ab98a"
+        },
+        {
+          "path": "apps/publisher/src/playback.rs",
+          "sha256": "59739001e113288d35c958c14b94c7f514a026aee4154d93fd85546db131be42"
+        },
+        {
+          "path": "apps/publisher/src/preview.rs",
+          "sha256": "d8f34e7419a407a3899cfbe4d8e6c3aee2d150046df8df5fcb9c7cb540fa40ea"
+        },
+        {
+          "path": "apps/publisher/src/pt_br.json",
+          "sha256": "c53b1f132cf70a242fbe821c774776f3d1d06395d81a1040a68a98ac3f1a261e"
+        },
+        {
+          "path": "apps/publisher/src/publisher.rs",
+          "sha256": "41a33c2458d4dd96ccc2c4b812e027fd0fe85897467378f4b386e4da6170afa1"
+        },
+        {
+          "path": "apps/publisher/src/quality.rs",
+          "sha256": "3fbd78a712fe8d7b7644e83eb069eea2935f5938ea69dc8aa9882dbc68fb9261"
+        },
+        {
+          "path": "apps/publisher/src/resource_experiment.rs",
+          "sha256": "59f9f12632148860761070789593331144fcef9a4730ce21f10caa3ec0303e99"
+        },
+        {
+          "path": "apps/publisher/src/settings.rs",
+          "sha256": "71519ac2509fa4101307ac32ac8757f83c095d359a05e2e0c93aed82156f123d"
+        },
+        {
+          "path": "apps/publisher/src/source_picker.rs",
+          "sha256": "e6f4d558861d1bc1a252c2daa1fff10113a54a71bf6a2ad032594c1522291e37"
+        },
+        {
+          "path": "apps/publisher/src/sources.rs",
+          "sha256": "6a86c1e0f47e64112210d99bdabec969c7c1b3a5039ffebe825184e909b79759"
+        },
+        {
+          "path": "apps/publisher/src/sources/windows.rs",
+          "sha256": "30c558922176ae98bd3cd48d014e65eddb868a51d1578c0d657d1c22eb48e74a"
+        },
+        {
+          "path": "apps/publisher/src/ui.rs",
+          "sha256": "2cb8839bdf0fac91a7f66df176c49239ff07cd9577bcb140269313e7ce84ab87"
+        },
+        {
+          "path": "apps/publisher/src/ui/experiment.rs",
+          "sha256": "e6de7ee546bad166cd0f3904d1ea5fef2977c87743100eb68f59d2f74477bec4"
+        },
+        {
+          "path": "apps/publisher/src/ui/micro.rs",
+          "sha256": "73b6195f78bd73a28d534f1746b06da64e6c3f75bedbf64338563382ba22a774"
+        },
+        {
+          "path": "apps/publisher/src/ui_style.rs",
+          "sha256": "dd0579b81bedcbbf806e6bf722419e9533f301d6831aa453b4bb35772e4a8bae"
+        },
+        {
+          "path": "apps/publisher/src/video_image.rs",
+          "sha256": "c68171a3c4011a160a11f53d58fa06c8235e202bc2e046098bdc8c4a7ac8c65a"
+        },
+        {
+          "path": "apps/publisher/src/win32.rs",
+          "sha256": "9b65147178ef3baf506fc09d9471777ded8c8e3487f9733e3d54f253b25b2476"
+        },
+        {
+          "path": "assets/fonts/Inter-Regular.ttf",
+          "sha256": "5a44b94757c798f52a30d4fc27726da4847d14b5aa45111438f4b1c4df267bdd"
+        },
+        {
+          "path": "assets/fonts/Inter-SemiBold.ttf",
+          "sha256": "c687e5ac064f279b7dab38dae50c90c28ca936855ba3cae8a309bdc7fb246e4a"
+        },
+        {
+          "path": "assets/fonts/Inter-Variable.ttf",
+          "sha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031"
+        },
+        {
+          "path": "assets/fonts/OFL-Inter.txt",
+          "sha256": "5dd548d31a85f756e01d63e00d7faf1e324103ed3e9102fcbbabf2cc2db6dd39"
+        },
+        {
+          "path": "assets/fonts/README.md",
+          "sha256": "4c9ab216cc09ce5ced83ff639a08f28e1fe7ef818e8456a6f6ca7c3358408e91"
+        },
+        {
+          "path": "assets/windows/freedomstream-64.rgba",
+          "sha256": "f6ec657dbb8fb61c540324c0b32605d934701d4848162d5050352f9a36fd317a"
+        },
+        {
+          "path": "assets/windows/freedomstream.ico",
+          "sha256": "afb8bec4b1d737cbbe3242d3517b0f4a3fea830e60af6f456a417824a85c2f0d"
+        },
+        {
+          "path": "deploy/native-decoder.json",
+          "sha256": "34708760c5e8cdeb8d8f89271cbe345a593cbeac932e02e05995f3c735d0bd66"
+        },
+        {
+          "path": "deploy/native-sdk.json",
+          "sha256": "3cb90291c2ede58afb0fedfdf2252e27869b78e27f5c056cab56b22d150a90ca"
+        }
+      ]
+    },
+    "metrics": {
+      "cpuCorePercent": {
+        "before": 88.06125044181671,
+        "after": 118.84644463892782,
+        "changePercent": 34.95884289929692
+      },
+      "privateMiB": {
+        "before": 866.865234375,
+        "after": 891.91796875,
+        "changePercent": 2.8900379645589114
+      },
+      "workingSetMiB": {
+        "before": 469.1328125,
+        "after": 501.89453125,
+        "changePercent": 6.98346350480441
+      },
+      "dedicatedGpuMiB": {
+        "before": 352.5703125,
+        "after": 355.27734375,
+        "changePercent": 0.7677989762680415
+      },
+      "decodedFramesPerSecond": {
+        "before": 299.20168002503533,
+        "after": 299.38166349107007,
+        "changePercent": 0.06015456397827634
+      },
+      "convertedFramesPerSecond": {
+        "before": 299.20168002503533,
+        "after": 299.57564494112836,
+        "changePercent": 0.12498757228291968
+      },
+      "textureUploadsPerSecond": {
+        "before": 286.74538346139536,
+        "after": 277.6558431015158,
+        "changePercent": -3.169899459289216
+      },
+      "gpu3dPercent": {
+        "before": 16.183098820514562,
+        "after": 34.846330287587676,
+        "changePercent": 115.32544955737775
+      }
+    },
+    "pairs": [
+      {
+        "pair": 1,
+        "cpuChangePercent": -0.15978071860383025
+      },
+      {
+        "pair": 2,
+        "cpuChangePercent": 108.36949671351034
+      }
+    ],
+    "runs": [
+      {
+        "directory": "ui23-clip-a1-5-h265-9b0ee635-b2f6-4126-9c97-80250afd5b65",
+        "inputSha256": "727fffa683f052dbb73205af448e3a3a1ecd537f558248578bb02ff142cc104a",
+        "label": "ui23-clip-a1",
+        "count": 5,
+        "codec": "h265",
+        "codecStable": true,
+        "phaseSeconds": 8,
+        "steadySeconds": 0,
+        "rounds": 1,
+        "fps": 60,
+        "resolution": "p1080",
+        "publishFixture": false,
+        "disconnected": false,
+        "audioEnabled": false,
+        "audioSourceAliveAtAppExit": null,
+        "fixtureHelperSha256": "fb824fb740ff7ceaf2532335aa8dab6c5823af62555a084cc1c8c3163e1e04d9",
+        "contention": false,
+        "experimentSettings": {
+          "imagePool": true,
+          "imagePoolLimit": 2,
+          "temporaryImage": false,
+          "frameDrivenRepaint": false,
+          "conversionWorkers": 0,
+          "tokioWorkers": 0,
+          "countSdkLogs": false,
+          "deepClip": false,
+          "deepPlanar": false,
+          "requestedPlaneRetention": "default",
+          "sharedDecoderDevice": false,
+          "selectiveStop": false,
+          "relaxedReadback": false,
+          "flushBeforeReadbackPoll": false,
+          "poolTrace": false,
+          "owners": false,
+          "idleHeapOptimization": false,
+          "narrowViewport": true,
+          "scriptedScroll": false,
+          "av1Decoder": ""
+        },
+        "appSha256": "f9ca99aa023380f125164f67a61286a701d34de34e2e9cba61fca16809794132",
+        "publisherSha256": "a81099095ccea4f8ec4b8733b146d7a66ee07cf569d8d453f045f13d7190ba8c",
+        "counterFailures": 1,
+        "samplerCpuMs": 3421.875,
+        "rows": [
+          {
+            "phase": "grid",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 119.13161358094605,
+            "privateMiB": 839.4765625,
+            "workingSetMiB": 446.734375,
+            "threads": 181,
+            "handles": 2818,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "videodecode": 14.490142252635426,
+              "security_1": 0,
+              "ofa_0": 0,
+              "vr": 0,
+              "3d": 32.366197641029125,
+              "videoencode": 0,
+              "jpeg_decode_1": 0,
+              "security": 0,
+              "copy": 0
+            },
+            "dedicatedGpuMiB": 352.44140625,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 299.8923038367196,
+            "convertedFramesPerSecond": 299.8923038367196,
+            "textureUploadsPerSecond": 287.7031327775497,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 483,
+              "maxMs": 17.3734,
+              "p50Ms": 16.395400000000002,
+              "p95Ms": 16.7526,
+              "p99Ms": 16.971,
+              "phase": "grid"
+            },
+            "errors": false
+          },
+          {
+            "phase": "focus",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 35.2183147699944,
+            "privateMiB": 773.48828125,
+            "workingSetMiB": 381.09765625,
+            "threads": 180,
+            "handles": 2815,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "videodecode": 16.088822851220733,
+              "security_1": 0,
+              "ofa_0": 0,
+              "vr": 0,
+              "3d": 5.332160344901426,
+              "videoencode": 0,
+              "jpeg_decode_1": 0,
+              "security": 0,
+              "copy": 0
+            },
+            "dedicatedGpuMiB": 352.41796875,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 299.80755498113933,
+            "convertedFramesPerSecond": 59.96151099622787,
+            "textureUploadsPerSecond": 58.26904899230208,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 538,
+              "maxMs": 17.1942,
+              "p50Ms": 16.360599999999998,
+              "p95Ms": 16.6977,
+              "p99Ms": 16.9785,
+              "phase": "focus"
+            },
+            "errors": false
+          },
+          {
+            "phase": "fullscreen",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 35.11992050811203,
+            "privateMiB": 751.26953125,
+            "workingSetMiB": 367.13671875,
+            "threads": 180,
+            "handles": 2930,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "videodecode": 15.61028457463345,
+              "security_1": 0,
+              "ofa_0": 0,
+              "vr": 0,
+              "3d": 5.4131717619431665,
+              "videoencode": 0,
+              "jpeg_decode_1": 0,
+              "security": 0,
+              "copy": 0
+            },
+            "dedicatedGpuMiB": 378.98828125,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 299.82482053440236,
+            "convertedFramesPerSecond": 59.96496410688047,
+            "textureUploadsPerSecond": 58.796815455447735,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 534,
+              "maxMs": 17.6851,
+              "p50Ms": 16.3554,
+              "p95Ms": 16.7043,
+              "p99Ms": 16.9256,
+              "phase": "fullscreen"
+            },
+            "errors": false
+          },
+          {
+            "phase": "minimized",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 19.412889009059008,
+            "privateMiB": 735.68359375,
+            "workingSetMiB": 352.2109375,
+            "threads": 179,
+            "handles": 2925,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "videodecode": 15.576037303041211,
+              "security_1": 0,
+              "ofa_0": 0,
+              "vr": 0,
+              "3d": 0,
+              "videoencode": 0,
+              "jpeg_decode_1": 0,
+              "security": 0,
+              "copy": 0
+            },
+            "dedicatedGpuMiB": 378.98828125,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 299.9689317892074,
+            "convertedFramesPerSecond": 0,
+            "textureUploadsPerSecond": 0,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 0,
+              "maxMs": null,
+              "p50Ms": null,
+              "p95Ms": null,
+              "p99Ms": null,
+              "phase": "minimized"
+            },
+            "errors": false
+          },
+          {
+            "phase": "restore",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 139.24183812943014,
+            "privateMiB": 841.01953125,
+            "workingSetMiB": 444.6484375,
+            "threads": 179,
+            "handles": 2923,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "videodecode": 14.790290276512199,
+              "security_1": 0,
+              "ofa_0": 0,
+              "vr": 0,
+              "3d": 37.352843142866256,
+              "videoencode": 0,
+              "jpeg_decode_1": 0,
+              "security": 0,
+              "copy": 0
+            },
+            "dedicatedGpuMiB": 360.87890625,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 299.9480239319726,
+            "convertedFramesPerSecond": 299.57495425046517,
+            "textureUploadsPerSecond": 285.02523667167543,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 532,
+              "maxMs": 17.766000000000002,
+              "p50Ms": 16.4302,
+              "p95Ms": 17.0109,
+              "p99Ms": 17.3962,
+              "phase": "restore"
+            },
+            "errors": false
+          },
+          {
+            "phase": "stopped",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 1.042911323391616,
+            "privateMiB": 287.15234375,
+            "workingSetMiB": 187.48046875,
+            "threads": 49,
+            "handles": 2169,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 10368000,
+            "textureBytesMax": 10368000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "videodecode": 0,
+              "security_1": 0,
+              "ofa_0": 0,
+              "vr": 0,
+              "3d": 0.05258578348878201,
+              "videoencode": 0,
+              "jpeg_decode_1": 0,
+              "security": 0,
+              "copy": 0
+            },
+            "dedicatedGpuMiB": 80.79296875,
+            "activeWatches": 0,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 0,
+            "convertedFramesPerSecond": 0,
+            "textureUploadsPerSecond": 0,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 68,
+              "maxMs": 250.9813,
+              "p50Ms": 16.6598,
+              "p95Ms": 250.718,
+              "p99Ms": 250.7878,
+              "phase": "stopped"
+            },
+            "errors": false
+          }
+        ],
+        "gridObservation": {
+          "sampleCount": 8,
+          "firstSecond": 0.1096392,
+          "lastSecond": 7.3413293,
+          "windowFocused": [false],
+          "windowOccluded": [null],
+          "lastRectVisibility": [true, true, true, true, true]
+        }
+      },
+      {
+        "directory": "ui23-clip-a2-5-h265-517e202f-b34d-4d48-a33b-4b5daa800ce6",
+        "inputSha256": "ff19b40268e2121e0265056380d0d8489812b32964d0799004dd8213d344611a",
+        "label": "ui23-clip-a2",
+        "count": 5,
+        "codec": "h265",
+        "codecStable": true,
+        "phaseSeconds": 8,
+        "steadySeconds": 0,
+        "rounds": 1,
+        "fps": 60,
+        "resolution": "p1080",
+        "publishFixture": false,
+        "disconnected": false,
+        "audioEnabled": false,
+        "audioSourceAliveAtAppExit": null,
+        "fixtureHelperSha256": "fb824fb740ff7ceaf2532335aa8dab6c5823af62555a084cc1c8c3163e1e04d9",
+        "contention": false,
+        "experimentSettings": {
+          "imagePool": true,
+          "imagePoolLimit": 2,
+          "temporaryImage": false,
+          "frameDrivenRepaint": false,
+          "conversionWorkers": 0,
+          "tokioWorkers": 0,
+          "countSdkLogs": false,
+          "deepClip": false,
+          "deepPlanar": false,
+          "requestedPlaneRetention": "default",
+          "sharedDecoderDevice": false,
+          "selectiveStop": false,
+          "relaxedReadback": false,
+          "flushBeforeReadbackPoll": false,
+          "poolTrace": false,
+          "owners": false,
+          "idleHeapOptimization": false,
+          "narrowViewport": true,
+          "scriptedScroll": false,
+          "av1Decoder": ""
+        },
+        "appSha256": "f9ca99aa023380f125164f67a61286a701d34de34e2e9cba61fca16809794132",
+        "publisherSha256": "a81099095ccea4f8ec4b8733b146d7a66ee07cf569d8d453f045f13d7190ba8c",
+        "counterFailures": 1,
+        "samplerCpuMs": 3500,
+        "rows": [
+          {
+            "phase": "grid",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 56.990887302687376,
+            "privateMiB": 894.25390625,
+            "workingSetMiB": 491.53125,
+            "threads": 185,
+            "handles": 2819,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "security_1": 0,
+              "videoencode": 0,
+              "3d": 0,
+              "security": 0,
+              "copy": 0,
+              "videodecode": 18.98401837310562,
+              "ofa_0": 0
+            },
+            "dedicatedGpuMiB": 352.69921875,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 298.511056213351,
+            "convertedFramesPerSecond": 298.511056213351,
+            "textureUploadsPerSecond": 285.787634145241,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 147,
+              "maxMs": 17.021600000000003,
+              "p50Ms": 16.491100000000003,
+              "p95Ms": 16.785600000000002,
+              "p99Ms": 16.9746,
+              "phase": "grid"
+            },
+            "errors": false
+          },
+          {
+            "phase": "focus",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 40.800426134587646,
+            "privateMiB": 906.390625,
+            "workingSetMiB": 512.59375,
+            "threads": 184,
+            "handles": 2816,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "security_1": 0,
+              "videoencode": 0,
+              "3d": 5.913801893623769,
+              "security": 0,
+              "copy": 0,
+              "videodecode": 16.046407029793002,
+              "ofa_0": 0
+            },
+            "dedicatedGpuMiB": 352.69140625,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 300.18321021059967,
+            "convertedFramesPerSecond": 60.03664204211994,
+            "textureUploadsPerSecond": 57.913159526160705,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 537,
+              "maxMs": 17.4366,
+              "p50Ms": 16.38,
+              "p95Ms": 16.778499999999998,
+              "p99Ms": 16.9635,
+              "phase": "focus"
+            },
+            "errors": false
+          },
+          {
+            "phase": "fullscreen",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 36.09491091298422,
+            "privateMiB": 908.859375,
+            "workingSetMiB": 505.01171875,
+            "threads": 184,
+            "handles": 2816,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "security_1": 0,
+              "videoencode": 0,
+              "3d": 5.698392685785027,
+              "security": 0,
+              "copy": 0,
+              "videodecode": 16.47142950189925,
+              "ofa_0": 0
+            },
+            "dedicatedGpuMiB": 370.69140625,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 299.7427720006703,
+            "convertedFramesPerSecond": 59.909902849908306,
+            "textureUploadsPerSecond": 56.62452108071979,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 535,
+              "maxMs": 17.4056,
+              "p50Ms": 16.3872,
+              "p95Ms": 16.7701,
+              "p99Ms": 16.967699999999997,
+              "phase": "fullscreen"
+            },
+            "errors": false
+          },
+          {
+            "phase": "minimized",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 19.4532597971952,
+            "privateMiB": 893.640625,
+            "workingSetMiB": 489.5546875,
+            "threads": 180,
+            "handles": 2800,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "security_1": 0,
+              "videoencode": 0,
+              "3d": 0,
+              "security": 0,
+              "copy": 0,
+              "videodecode": 18.22561349933899,
+              "ofa_0": 0
+            },
+            "dedicatedGpuMiB": 370.69140625,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 299.5575204084551,
+            "convertedFramesPerSecond": 0,
+            "textureUploadsPerSecond": 0,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 0,
+              "maxMs": null,
+              "p50Ms": null,
+              "p95Ms": null,
+              "p99Ms": null,
+              "phase": "minimized"
+            },
+            "errors": false
+          },
+          {
+            "phase": "restore",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 136.79578077873694,
+            "privateMiB": 977.2265625,
+            "workingSetMiB": 581.42578125,
+            "threads": 180,
+            "handles": 2800,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "security_1": 0,
+              "videoencode": 0,
+              "3d": 36.396287459730395,
+              "security": 0,
+              "copy": 0,
+              "videodecode": 14.913360592003926,
+              "ofa_0": 0
+            },
+            "dedicatedGpuMiB": 352.71484375,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 299.73716576881657,
+            "convertedFramesPerSecond": 299.73716576881657,
+            "textureUploadsPerSecond": 277.0119950307887,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 536,
+              "maxMs": 18.3178,
+              "p50Ms": 16.3933,
+              "p95Ms": 17.0916,
+              "p99Ms": 17.5904,
+              "phase": "restore"
+            },
+            "errors": false
+          },
+          {
+            "phase": "stopped",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 1.7283880969645073,
+            "privateMiB": 287.984375,
+            "workingSetMiB": 188.61328125,
+            "threads": 51,
+            "handles": 2064,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 10368000,
+            "textureBytesMax": 10368000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "security_1": 0,
+              "videoencode": 0,
+              "3d": 0.05561110624479604,
+              "security": 0,
+              "copy": 0,
+              "videodecode": 0,
+              "ofa_0": 0
+            },
+            "dedicatedGpuMiB": 55.46484375,
+            "activeWatches": 0,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 0,
+            "convertedFramesPerSecond": 0,
+            "textureUploadsPerSecond": 0,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 67,
+              "maxMs": 251.0921,
+              "p50Ms": 16.8221,
+              "p95Ms": 250.66680000000002,
+              "p99Ms": 251.06,
+              "phase": "stopped"
+            },
+            "errors": false
+          }
+        ],
+        "gridObservation": {
+          "sampleCount": 3,
+          "firstSecond": 5.656842,
+          "lastSecond": 7.7175212,
+          "windowFocused": [false],
+          "windowOccluded": [null],
+          "lastRectVisibility": [true, true, true, true, true]
+        }
+      },
+      {
+        "directory": "ui23-clip-b1-5-h265-6f898651-35a9-469a-b837-197f8651edb2",
+        "inputSha256": "733b3625edfc926a5b4ea21b130d071a41e267ee8f1af21d7067d8c908b9b764",
+        "label": "ui23-clip-b1",
+        "count": 5,
+        "codec": "h265",
+        "codecStable": true,
+        "phaseSeconds": 8,
+        "steadySeconds": 0,
+        "rounds": 1,
+        "fps": 60,
+        "resolution": "p1080",
+        "publishFixture": false,
+        "disconnected": false,
+        "audioEnabled": false,
+        "audioSourceAliveAtAppExit": null,
+        "fixtureHelperSha256": "fb824fb740ff7ceaf2532335aa8dab6c5823af62555a084cc1c8c3163e1e04d9",
+        "contention": false,
+        "experimentSettings": {
+          "imagePool": true,
+          "imagePoolLimit": 2,
+          "temporaryImage": false,
+          "frameDrivenRepaint": false,
+          "conversionWorkers": 0,
+          "tokioWorkers": 0,
+          "countSdkLogs": false,
+          "deepClip": true,
+          "deepPlanar": false,
+          "requestedPlaneRetention": "default",
+          "sharedDecoderDevice": false,
+          "selectiveStop": false,
+          "relaxedReadback": false,
+          "flushBeforeReadbackPoll": false,
+          "poolTrace": false,
+          "owners": false,
+          "idleHeapOptimization": false,
+          "narrowViewport": true,
+          "scriptedScroll": false,
+          "av1Decoder": ""
+        },
+        "appSha256": "f9ca99aa023380f125164f67a61286a701d34de34e2e9cba61fca16809794132",
+        "publisherSha256": "a81099095ccea4f8ec4b8733b146d7a66ee07cf569d8d453f045f13d7190ba8c",
+        "counterFailures": 1,
+        "samplerCpuMs": 3734.375,
+        "rows": [
+          {
+            "phase": "grid",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 118.94126423268207,
+            "privateMiB": 942.74609375,
+            "workingSetMiB": 557.92578125,
+            "threads": 181,
+            "handles": 2818,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "copy": 0,
+              "security": 0,
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "ofa_0": 0,
+              "3d": 34.443672195233034,
+              "videoencode": 0,
+              "security_1": 0,
+              "videodecode": 14.73563075008854
+            },
+            "dedicatedGpuMiB": 358.109375,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 299.895321790105,
+            "convertedFramesPerSecond": 300.2832846902216,
+            "textureUploadsPerSecond": 281.85504693468476,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 488,
+              "maxMs": 17.6335,
+              "p50Ms": 16.458299999999998,
+              "p95Ms": 16.8354,
+              "p99Ms": 17.0899,
+              "phase": "grid"
+            },
+            "errors": false
+          },
+          {
+            "phase": "focus",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 27.42947404949028,
+            "privateMiB": 874.21875,
+            "workingSetMiB": 490.37109375,
+            "threads": 180,
+            "handles": 2815,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "copy": 0,
+              "security": 0,
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "ofa_0": 0,
+              "3d": 5.660006331664879,
+              "videoencode": 0,
+              "security_1": 0,
+              "videodecode": 15.76361376044527
+            },
+            "dedicatedGpuMiB": 358.078125,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 299.552941392467,
+            "convertedFramesPerSecond": 59.9105882784934,
+            "textureUploadsPerSecond": 57.39820877004045,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 535,
+              "maxMs": 17.189200000000003,
+              "p50Ms": 16.385,
+              "p95Ms": 16.7214,
+              "p99Ms": 16.9116,
+              "phase": "focus"
+            },
+            "errors": false
+          },
+          {
+            "phase": "fullscreen",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 39.80597262209991,
+            "privateMiB": 851.73828125,
+            "workingSetMiB": 475.9453125,
+            "threads": 180,
+            "handles": 2930,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "copy": 0,
+              "security": 0,
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "ofa_0": 0,
+              "3d": 5.801444730031716,
+              "videoencode": 0,
+              "security_1": 0,
+              "videodecode": 14.144325488828734
+            },
+            "dedicatedGpuMiB": 384.64453125,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 300.0879036562745,
+            "convertedFramesPerSecond": 59.90126759030285,
+            "textureUploadsPerSecond": 58.350425710942254,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 534,
+              "maxMs": 17.0959,
+              "p50Ms": 16.395400000000002,
+              "p95Ms": 16.7335,
+              "p99Ms": 16.9494,
+              "phase": "fullscreen"
+            },
+            "errors": false
+          },
+          {
+            "phase": "minimized",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 17.353662918986295,
+            "privateMiB": 836.23046875,
+            "workingSetMiB": 461.38671875,
+            "threads": 179,
+            "handles": 2927,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "copy": 0,
+              "security": 0,
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "ofa_0": 0,
+              "3d": 0,
+              "videoencode": 0,
+              "security_1": 0,
+              "videodecode": 15.964581001613315
+            },
+            "dedicatedGpuMiB": 384.64453125,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 299.96858451755645,
+            "convertedFramesPerSecond": 0,
+            "textureUploadsPerSecond": 0,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 0,
+              "maxMs": null,
+              "p50Ms": null,
+              "p95Ms": null,
+              "p99Ms": null,
+              "phase": "minimized"
+            },
+            "errors": false
+          },
+          {
+            "phase": "restore",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 102.62267387605789,
+            "privateMiB": 943.875,
+            "workingSetMiB": 561.5,
+            "threads": 179,
+            "handles": 2925,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "copy": 0,
+              "security": 0,
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "ofa_0": 0,
+              "3d": 32.94526595385836,
+              "videoencode": 0,
+              "security_1": 0,
+              "videodecode": 14.585470272761697
+            },
+            "dedicatedGpuMiB": 366.55859375,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 299.95713273290096,
+            "convertedFramesPerSecond": 300.3426817466964,
+            "textureUploadsPerSecond": 279.5230350017393,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 530,
+              "maxMs": 17.377299999999998,
+              "p50Ms": 16.4146,
+              "p95Ms": 16.7711,
+              "p99Ms": 17.030199999999997,
+              "phase": "restore"
+            },
+            "errors": false
+          },
+          {
+            "phase": "stopped",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 1.6604768223471866,
+            "privateMiB": 577.453125,
+            "workingSetMiB": 350.32421875,
+            "threads": 49,
+            "handles": 2174,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 10368000,
+            "textureBytesMax": 10368000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "copy": 0,
+              "security": 0,
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "ofa_0": 0,
+              "3d": 0.06359955525697289,
+              "videoencode": 0,
+              "security_1": 0,
+              "videodecode": 0
+            },
+            "dedicatedGpuMiB": 80.8046875,
+            "activeWatches": 0,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 0,
+            "convertedFramesPerSecond": 0,
+            "textureUploadsPerSecond": 0,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 71,
+              "maxMs": 251.11129999999997,
+              "p50Ms": 16.5737,
+              "p95Ms": 250.74259999999998,
+              "p99Ms": 250.9126,
+              "phase": "stopped"
+            },
+            "errors": false
+          }
+        ],
+        "gridObservation": {
+          "sampleCount": 8,
+          "firstSecond": 0.0007809,
+          "lastSecond": 7.2266703,
+          "windowFocused": [false],
+          "windowOccluded": [null],
+          "lastRectVisibility": [true, true, true, true, true]
+        }
+      },
+      {
+        "directory": "ui23-clip-b2-5-h265-de4c5745-18a9-4687-8a54-f4a93e4e645f",
+        "inputSha256": "5d5be968e37eda701b8408dab7debcfbbbed1b3a3b40592ecb8151853fa57d29",
+        "label": "ui23-clip-b2",
+        "count": 5,
+        "codec": "h265",
+        "codecStable": true,
+        "phaseSeconds": 8,
+        "steadySeconds": 0,
+        "rounds": 1,
+        "fps": 60,
+        "resolution": "p1080",
+        "publishFixture": false,
+        "disconnected": false,
+        "audioEnabled": false,
+        "audioSourceAliveAtAppExit": null,
+        "fixtureHelperSha256": "fb824fb740ff7ceaf2532335aa8dab6c5823af62555a084cc1c8c3163e1e04d9",
+        "contention": false,
+        "experimentSettings": {
+          "imagePool": true,
+          "imagePoolLimit": 2,
+          "temporaryImage": false,
+          "frameDrivenRepaint": false,
+          "conversionWorkers": 0,
+          "tokioWorkers": 0,
+          "countSdkLogs": false,
+          "deepClip": true,
+          "deepPlanar": false,
+          "requestedPlaneRetention": "default",
+          "sharedDecoderDevice": false,
+          "selectiveStop": false,
+          "relaxedReadback": false,
+          "flushBeforeReadbackPoll": false,
+          "poolTrace": false,
+          "owners": false,
+          "idleHeapOptimization": false,
+          "narrowViewport": true,
+          "scriptedScroll": false,
+          "av1Decoder": ""
+        },
+        "appSha256": "f9ca99aa023380f125164f67a61286a701d34de34e2e9cba61fca16809794132",
+        "publisherSha256": "a81099095ccea4f8ec4b8733b146d7a66ee07cf569d8d453f045f13d7190ba8c",
+        "counterFailures": 0,
+        "samplerCpuMs": 3656.25,
+        "rows": [
+          {
+            "phase": "grid",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 118.75162504517357,
+            "privateMiB": 841.08984375,
+            "workingSetMiB": 445.86328125,
+            "threads": 182,
+            "handles": 2820,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "videodecode": 14.746251163445674,
+              "ofa_0": 0,
+              "security": 0,
+              "3d": 35.24898837994232,
+              "security_1": 0,
+              "vr": 0,
+              "videoencode": 0
+            },
+            "dedicatedGpuMiB": 352.4453125,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 298.8680051920351,
+            "convertedFramesPerSecond": 298.8680051920351,
+            "textureUploadsPerSecond": 273.45663926834686,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 477,
+              "maxMs": 19.014799999999997,
+              "p50Ms": 16.5429,
+              "p95Ms": 17.8675,
+              "p99Ms": 18.3731,
+              "phase": "grid"
+            },
+            "errors": false
+          },
+          {
+            "phase": "focus",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 42.59173140638963,
+            "privateMiB": 782.44140625,
+            "workingSetMiB": 387.9375,
+            "threads": 181,
+            "handles": 2818,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "videodecode": 14.663405430303388,
+              "ofa_0": 0,
+              "security": 0,
+              "3d": 5.727140159599826,
+              "security_1": 0,
+              "vr": 0,
+              "videoencode": 0
+            },
+            "dedicatedGpuMiB": 352.421875,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 299.8571616090012,
+            "convertedFramesPerSecond": 59.81556115267276,
+            "textureUploadsPerSecond": 52.80135854193588,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 536,
+              "maxMs": 18.0747,
+              "p50Ms": 16.4117,
+              "p95Ms": 16.999,
+              "p99Ms": 17.369,
+              "phase": "focus"
+            },
+            "errors": false
+          },
+          {
+            "phase": "fullscreen",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 41.432233031368035,
+            "privateMiB": 760.52734375,
+            "workingSetMiB": 373.83984375,
+            "threads": 181,
+            "handles": 2933,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "videodecode": 14.019672660654173,
+              "ofa_0": 0,
+              "security": 0,
+              "3d": 5.944156487013377,
+              "security_1": 0,
+              "vr": 0,
+              "videoencode": 0
+            },
+            "dedicatedGpuMiB": 378.98828125,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 299.3167284739848,
+            "convertedFramesPerSecond": 60.01873400289508,
+            "textureUploadsPerSecond": 57.105203226055515,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 531,
+              "maxMs": 17.654,
+              "p50Ms": 16.3997,
+              "p95Ms": 16.8848,
+              "p99Ms": 17.336199999999998,
+              "phase": "fullscreen"
+            },
+            "errors": false
+          },
+          {
+            "phase": "minimized",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 18.467402870766268,
+            "privateMiB": 744.75390625,
+            "workingSetMiB": 358.90234375,
+            "threads": 180,
+            "handles": 2928,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "videodecode": 16.61522961213393,
+              "ofa_0": 0,
+              "security": 0,
+              "3d": 0,
+              "security_1": 0,
+              "vr": 0,
+              "videoencode": 0
+            },
+            "dedicatedGpuMiB": 378.98828125,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 300.3833080584064,
+            "convertedFramesPerSecond": 0,
+            "textureUploadsPerSecond": 0,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 0,
+              "maxMs": null,
+              "p50Ms": null,
+              "p95Ms": null,
+              "p99Ms": null,
+              "phase": "minimized"
+            },
+            "errors": false
+          },
+          {
+            "phase": "restore",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 154.35624931918457,
+            "privateMiB": 847.29296875,
+            "workingSetMiB": 454.390625,
+            "threads": 180,
+            "handles": 2926,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 41472000,
+            "textureBytesMax": 41472000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "videodecode": 14.87678667494925,
+              "ofa_0": 0,
+              "security": 0,
+              "3d": 34.65471698678064,
+              "security_1": 0,
+              "vr": 0,
+              "videoencode": 0
+            },
+            "dedicatedGpuMiB": 360.8828125,
+            "activeWatches": 5,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 300.0136500463382,
+            "convertedFramesPerSecond": 300.0136500463382,
+            "textureUploadsPerSecond": 274.91672274361133,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 536,
+              "maxMs": 17.645899999999997,
+              "p50Ms": 16.4394,
+              "p95Ms": 17.0038,
+              "p99Ms": 17.3243,
+              "phase": "restore"
+            },
+            "errors": false
+          },
+          {
+            "phase": "stopped",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 1.3823366133416495,
+            "privateMiB": 520.6015625,
+            "workingSetMiB": 264.234375,
+            "threads": 50,
+            "handles": 2174,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 10368000,
+            "textureBytesMax": 10368000,
+            "texturesMedian": 5,
+            "gpuEnginesPercent": {
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "videodecode": 0,
+              "ofa_0": 0,
+              "security": 0,
+              "3d": 0.057169880783720296,
+              "security_1": 0,
+              "vr": 0,
+              "videoencode": 0
+            },
+            "dedicatedGpuMiB": 63.89453125,
+            "activeWatches": 0,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 0,
+            "convertedFramesPerSecond": 0,
+            "textureUploadsPerSecond": 0,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 65,
+              "maxMs": 251.1741,
+              "p50Ms": 16.6784,
+              "p95Ms": 250.6677,
+              "p99Ms": 250.8013,
+              "phase": "stopped"
+            },
+            "errors": false
+          }
+        ],
+        "gridObservation": {
+          "sampleCount": 8,
+          "firstSecond": 0.1086959,
+          "lastSecond": 7.4966866,
+          "windowFocused": [false],
+          "windowOccluded": [null],
+          "lastRectVisibility": [true, true, true, true, true]
+        }
+      }
+    ]
+  },
+  "sevenWithClipping": {
+    "build": {
+      "base": "feefc2f08a9daf4d6207265630bba59f69a9974e",
+      "schema": 1,
+      "exeSha256": "12ad8d00ef0937b2e5d79d78391548c6cdfa9469b6bb414cfadb0bf11e69ba00",
+      "head": "4eadabc254e15aa9d3a0d451ed50b5d2df0a8a19",
+      "sources": [
+        {
+          "path": ".cargo/config.toml",
+          "sha256": "8c79bc4bcfc0c8dc46272b76aefd0a6e00faa106f11fdd058c63cb647e2b3d93"
+        },
+        {
+          "path": "Cargo.lock",
+          "sha256": "88be86efa640136cff20b4a0dde5196ad34e06eb79c88aefb46ce29c590b6164"
+        },
+        {
+          "path": "Cargo.toml",
+          "sha256": "caef46a8202ba227ffec50808c6a0687a9e4b3ac02880c42fda51ca7f88a2f6d"
+        },
+        {
+          "path": "apps/portable/Cargo.toml",
+          "sha256": "6f16954e10a1cab5d3953cc124d86c25de51c070cf943227ae88f762e8af23ee"
+        },
+        {
+          "path": "apps/portable/build.rs",
+          "sha256": "556ab9dd27667d20dcfafb29cb785c051ff28df55e63c241790207838a4835bd"
+        },
+        {
+          "path": "apps/portable/src/lib.rs",
+          "sha256": "a055da1397bb34886500578860149d042544fc52d557e712640d61dbe7d8ce80"
+        },
+        {
+          "path": "apps/portable/src/main.rs",
+          "sha256": "a86e4ea632f69781dfa662362964011113e17702f8138ab66bdb72e18f7714a3"
+        },
+        {
+          "path": "apps/portable/src/windows.rs",
+          "sha256": "8318fe1baceee4d97ce102bec00788319a9f495b9e97bc6157d6d9d919378b03"
+        },
+        {
+          "path": "apps/portable/src/windows/process.rs",
+          "sha256": "f439050fc5f359be4c21738fe72b8c8fa632506cffdad6ce6f8199bbe86d91cc"
+        },
+        {
+          "path": "apps/publisher/Cargo.toml",
+          "sha256": "119bd5a2ee7e3247a55557421444a71358ab9f452ae06dec88edd91c16b926cc"
+        },
+        {
+          "path": "apps/publisher/build.rs",
+          "sha256": "fba61e5b573b8b95269feba1f50d18ab41c0ecc34a2d66232c8d0d1bdc7d05b2"
+        },
+        {
+          "path": "apps/publisher/decoder/bounded_readback.h",
+          "sha256": "8f10c0a2c123a3a2c683c66fc19740b7fef03f9aa49dfeb48ff908bd1b6bc55e"
+        },
+        {
+          "path": "apps/publisher/decoder/deferred_i420.h",
+          "sha256": "6f9af0ee8b835a342a1d608b2fee6c04fa9d12713783457af95034123172bac2"
+        },
+        {
+          "path": "apps/publisher/decoder/freedomstream_decoder.h",
+          "sha256": "78083e8a925a9289526e7349ba29389d4e7b49d6b663df8168d93b0bd77ebca6"
+        },
+        {
+          "path": "apps/publisher/examples/decoder-resource.cpp",
+          "sha256": "b2639a99b1417a694ea4a7384168fce238f7f8070df257e86b2237d79ddd73cc"
+        },
+        {
+          "path": "apps/publisher/examples/deep-decoder.cpp",
+          "sha256": "6297335d0a250045e9abd50110e4fdd28061a20eba60e824d1ace6289bf8fce2"
+        },
+        {
+          "path": "apps/publisher/examples/deferred-i420.h",
+          "sha256": "d5180141a4a91081c02956155a35feb1b9f7053eb709712e0250c76744266aed"
+        },
+        {
+          "path": "apps/publisher/examples/frame-conversion.rs",
+          "sha256": "7dd892c0378f83b0373daff5a7cacd579335e2b18455933092240f0786deea60"
+        },
+        {
+          "path": "apps/publisher/examples/gpu-present-minimal.rs",
+          "sha256": "e1bef7914d7934972fd6235fc17e5a41e520fbd32c47801db1e7160d83e168b8"
+        },
+        {
+          "path": "apps/publisher/examples/pipeline-resource.rs",
+          "sha256": "0f5b56fa6792843257b57e9d1f745669c2c57689b6480eb1204509ac5cf9fb0e"
+        },
+        {
+          "path": "apps/publisher/examples/report-memory.rs",
+          "sha256": "60bc42fea50def19364d7ea9a754405bd011cae22f345189a5ad3bb5c648d1fd"
+        },
+        {
+          "path": "apps/publisher/examples/room-benchmark.rs",
+          "sha256": "6750deaf062a317ea8ee2923f93fd607ed6eb3ff3cdad5dfeecc23a44e10567b"
+        },
+        {
+          "path": "apps/publisher/examples/sdk-idle-resource.cpp",
+          "sha256": "41e23833af41b61b5812c70aef7cfdc920538855d62c89f347838d69f285823d"
+        },
+        {
+          "path": "apps/publisher/examples/texture-present-common.rs",
+          "sha256": "5ac05ef90f4c28ca35a924d4825dcf95fcfee6dc9bd98f255193ae71f3442f36"
+        },
+        {
+          "path": "apps/publisher/src/admission.rs",
+          "sha256": "c8e14ea1e2f635a53e259c5f5d5b2a729492e8f588be15ff9627fe0cd5f283fe"
+        },
+        {
+          "path": "apps/publisher/src/audio/mod.rs",
+          "sha256": "1711bd18303dc46adf51383042660ab47b370533ef46e0e53a714b928a847122"
+        },
+        {
+          "path": "apps/publisher/src/audio/policy.rs",
+          "sha256": "30d7c0ef9d060fb3852ae0aab2c10a3c4d5fbe5c2c39a93e916fb1272fe8ff14"
+        },
+        {
+          "path": "apps/publisher/src/audio/windows.rs",
+          "sha256": "2e1e4a584d7b666c61020cfbeafe14372832a39afee1814196200bf1fa622cdf"
+        },
+        {
+          "path": "apps/publisher/src/connection.rs",
+          "sha256": "55a8d0d4292de08cc43badaad2bd9394b3f706eb42bd646973b966f0c28343aa"
+        },
+        {
+          "path": "apps/publisher/src/delivery.rs",
+          "sha256": "1a50b13756a502e73ac5c824b82d31881ddcd6e4b8a9856fc1e405e28257039a"
+        },
+        {
+          "path": "apps/publisher/src/diagnostics.rs",
+          "sha256": "eef9ce6ecfbbe9cf896feaa7fc2d0753a2ed5bd5e09580c8a6db398ded9fc62d"
+        },
+        {
+          "path": "apps/publisher/src/encoding.rs",
+          "sha256": "863e2e2d7f7250a8c73ebb25b8178b9396ec273a01cc811e71dfdc1ab23f02e6"
+        },
+        {
+          "path": "apps/publisher/src/locale.rs",
+          "sha256": "20949fb0e35ef47b6345fa6e7c357e51a23ad4e5b50bd4ad1ea3b0f59c9a1420"
+        },
+        {
+          "path": "apps/publisher/src/main.rs",
+          "sha256": "c2b837a0ca43a5804b5a36478be67ff2df37aaf3b8d440c1e14c70dcaeebd558"
+        },
+        {
+          "path": "apps/publisher/src/network.rs",
+          "sha256": "25247a0e7d64216aa85134e4bb1ce06772464ee8b04e5d967f10c0c83e59dd50"
+        },
+        {
+          "path": "apps/publisher/src/planar_experiment.rs",
+          "sha256": "c2b68ea371071e716ec359712b76cae282ad6cd2fcc474209651a9b1939ab98a"
+        },
+        {
+          "path": "apps/publisher/src/playback.rs",
+          "sha256": "59739001e113288d35c958c14b94c7f514a026aee4154d93fd85546db131be42"
+        },
+        {
+          "path": "apps/publisher/src/preview.rs",
+          "sha256": "d8f34e7419a407a3899cfbe4d8e6c3aee2d150046df8df5fcb9c7cb540fa40ea"
+        },
+        {
+          "path": "apps/publisher/src/pt_br.json",
+          "sha256": "c53b1f132cf70a242fbe821c774776f3d1d06395d81a1040a68a98ac3f1a261e"
+        },
+        {
+          "path": "apps/publisher/src/publisher.rs",
+          "sha256": "41a33c2458d4dd96ccc2c4b812e027fd0fe85897467378f4b386e4da6170afa1"
+        },
+        {
+          "path": "apps/publisher/src/quality.rs",
+          "sha256": "3fbd78a712fe8d7b7644e83eb069eea2935f5938ea69dc8aa9882dbc68fb9261"
+        },
+        {
+          "path": "apps/publisher/src/resource_experiment.rs",
+          "sha256": "59f9f12632148860761070789593331144fcef9a4730ce21f10caa3ec0303e99"
+        },
+        {
+          "path": "apps/publisher/src/settings.rs",
+          "sha256": "71519ac2509fa4101307ac32ac8757f83c095d359a05e2e0c93aed82156f123d"
+        },
+        {
+          "path": "apps/publisher/src/source_picker.rs",
+          "sha256": "e6f4d558861d1bc1a252c2daa1fff10113a54a71bf6a2ad032594c1522291e37"
+        },
+        {
+          "path": "apps/publisher/src/sources.rs",
+          "sha256": "6a86c1e0f47e64112210d99bdabec969c7c1b3a5039ffebe825184e909b79759"
+        },
+        {
+          "path": "apps/publisher/src/sources/windows.rs",
+          "sha256": "30c558922176ae98bd3cd48d014e65eddb868a51d1578c0d657d1c22eb48e74a"
+        },
+        {
+          "path": "apps/publisher/src/ui.rs",
+          "sha256": "3dabdd60121ef001bf39ecd4993527512b076b674a20b166a168e141e75f3c18"
+        },
+        {
+          "path": "apps/publisher/src/ui/experiment.rs",
+          "sha256": "e455205460523af54b98e6fd1409be9011746120432a9dbddf073bb35142c72f"
+        },
+        {
+          "path": "apps/publisher/src/ui/micro.rs",
+          "sha256": "73b6195f78bd73a28d534f1746b06da64e6c3f75bedbf64338563382ba22a774"
+        },
+        {
+          "path": "apps/publisher/src/ui_style.rs",
+          "sha256": "dd0579b81bedcbbf806e6bf722419e9533f301d6831aa453b4bb35772e4a8bae"
+        },
+        {
+          "path": "apps/publisher/src/video_image.rs",
+          "sha256": "c68171a3c4011a160a11f53d58fa06c8235e202bc2e046098bdc8c4a7ac8c65a"
+        },
+        {
+          "path": "apps/publisher/src/win32.rs",
+          "sha256": "9b65147178ef3baf506fc09d9471777ded8c8e3487f9733e3d54f253b25b2476"
+        },
+        {
+          "path": "assets/fonts/Inter-Regular.ttf",
+          "sha256": "5a44b94757c798f52a30d4fc27726da4847d14b5aa45111438f4b1c4df267bdd"
+        },
+        {
+          "path": "assets/fonts/Inter-SemiBold.ttf",
+          "sha256": "c687e5ac064f279b7dab38dae50c90c28ca936855ba3cae8a309bdc7fb246e4a"
+        },
+        {
+          "path": "assets/fonts/Inter-Variable.ttf",
+          "sha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031"
+        },
+        {
+          "path": "assets/fonts/OFL-Inter.txt",
+          "sha256": "5dd548d31a85f756e01d63e00d7faf1e324103ed3e9102fcbbabf2cc2db6dd39"
+        },
+        {
+          "path": "assets/fonts/README.md",
+          "sha256": "4c9ab216cc09ce5ced83ff639a08f28e1fe7ef818e8456a6f6ca7c3358408e91"
+        },
+        {
+          "path": "assets/windows/freedomstream-64.rgba",
+          "sha256": "f6ec657dbb8fb61c540324c0b32605d934701d4848162d5050352f9a36fd317a"
+        },
+        {
+          "path": "assets/windows/freedomstream.ico",
+          "sha256": "afb8bec4b1d737cbbe3242d3517b0f4a3fea830e60af6f456a417824a85c2f0d"
+        },
+        {
+          "path": "deploy/native-decoder.json",
+          "sha256": "34708760c5e8cdeb8d8f89271cbe345a593cbeac932e02e05995f3c735d0bd66"
+        },
+        {
+          "path": "deploy/native-sdk.json",
+          "sha256": "3cb90291c2ede58afb0fedfdf2252e27869b78e27f5c056cab56b22d150a90ca"
+        }
+      ],
+      "control": "Same executable, clip0 versus clip1; all other experiments disabled; seven-stream driver allowance only"
+    },
+    "metrics": {
+      "cpuCorePercent": {
+        "before": 226.5478357776305,
+        "after": 185.62662649601634,
+        "changePercent": -18.062944252436218
+      },
+      "privateMiB": {
+        "before": 1137.716796875,
+        "after": 1140.689453125,
+        "changePercent": 0.26128261955569165
+      },
+      "workingSetMiB": {
+        "before": 603.5234375,
+        "after": 615.099609375,
+        "changePercent": 1.9180981475968029
+      },
+      "dedicatedGpuMiB": {
+        "before": 488.9453125,
+        "after": 476.490234375,
+        "changePercent": -2.5473356235519717
+      },
+      "decodedFramesPerSecond": {
+        "before": 418.9263237688119,
+        "after": 419.37474097433767,
+        "changePercent": 0.10703963443776665
+      },
+      "convertedFramesPerSecond": {
+        "before": 419.0225251143802,
+        "after": 359.45574189067315,
+        "changePercent": -14.215651821449725
+      },
+      "textureUploadsPerSecond": {
+        "before": 378.9637158021982,
+        "after": 327.6913645277823,
+        "changePercent": -13.529620155291521
+      },
+      "gpu3dPercent": {
+        "before": 53.271969676370496,
+        "after": 43.94034432799489,
+        "changePercent": -17.51695198256349
+      }
+    },
+    "pairs": [
+      {
+        "pair": 1,
+        "cpuChangePercent": -17.96018894289887
+      },
+      {
+        "pair": 2,
+        "cpuChangePercent": -18.175132384785975
+      }
+    ],
+    "runs": [
+      {
+        "directory": "ui23-seven-a1-7-h265-851c0500-c02a-400b-b36d-a886e76f55ed",
+        "inputSha256": "7c55bb6c3fd220c9c5e090e42e3ed7b75d369c428d28ff0911bdfb9f845508e6",
+        "label": "ui23-seven-a1",
+        "count": 7,
+        "codec": "h265",
+        "codecStable": true,
+        "phaseSeconds": 8,
+        "steadySeconds": 0,
+        "rounds": 1,
+        "fps": 60,
+        "resolution": "p1080",
+        "publishFixture": false,
+        "disconnected": false,
+        "audioEnabled": false,
+        "audioSourceAliveAtAppExit": null,
+        "fixtureHelperSha256": "fb824fb740ff7ceaf2532335aa8dab6c5823af62555a084cc1c8c3163e1e04d9",
+        "contention": false,
+        "experimentSettings": {
+          "imagePool": true,
+          "imagePoolLimit": 2,
+          "temporaryImage": false,
+          "frameDrivenRepaint": false,
+          "conversionWorkers": 0,
+          "tokioWorkers": 0,
+          "countSdkLogs": false,
+          "deepClip": false,
+          "deepPlanar": false,
+          "requestedPlaneRetention": "default",
+          "sharedDecoderDevice": false,
+          "selectiveStop": false,
+          "relaxedReadback": false,
+          "flushBeforeReadbackPoll": false,
+          "poolTrace": false,
+          "owners": false,
+          "idleHeapOptimization": false,
+          "narrowViewport": true,
+          "scriptedScroll": false,
+          "av1Decoder": ""
+        },
+        "appSha256": "12ad8d00ef0937b2e5d79d78391548c6cdfa9469b6bb414cfadb0bf11e69ba00",
+        "publisherSha256": "a81099095ccea4f8ec4b8733b146d7a66ee07cf569d8d453f045f13d7190ba8c",
+        "counterFailures": 0,
+        "samplerCpuMs": 3953.125,
+        "rows": [
+          {
+            "phase": "grid",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 236.4899190282845,
+            "privateMiB": 1143.9921875,
+            "workingSetMiB": 610.82421875,
+            "threads": 234,
+            "handles": 3132,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 58060800,
+            "textureBytesMax": 58060800,
+            "texturesMedian": 7,
+            "gpuEnginesPercent": {
+              "security_1": 0,
+              "videoencode": 0,
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "ofa_0": 0,
+              "3d": 53.17180405376308,
+              "videodecode": 21.419873023226636,
+              "security": 0,
+              "copy": 0
+            },
+            "dedicatedGpuMiB": 485.78515625,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 418.8606586040319,
+            "convertedFramesPerSecond": 419.05306129516833,
+            "textureUploadsPerSecond": 380.7649257590166,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 478,
+              "maxMs": 20.0918,
+              "p50Ms": 16.543300000000002,
+              "p95Ms": 17.4703,
+              "p99Ms": 18.0575,
+              "phase": "grid"
+            },
+            "errors": false
+          },
+          {
+            "phase": "focus",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 51.45739517743218,
+            "privateMiB": 1047.02734375,
+            "workingSetMiB": 516.7265625,
+            "threads": 233,
+            "handles": 3129,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 58060800,
+            "textureBytesMax": 58060800,
+            "texturesMedian": 7,
+            "gpuEnginesPercent": {
+              "security_1": 0,
+              "videoencode": 0,
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "ofa_0": 0,
+              "3d": 5.675222536546351,
+              "videodecode": 20.106509889208205,
+              "security": 0,
+              "copy": 0
+            },
+            "dedicatedGpuMiB": 485.75390625,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 419.4925415194923,
+            "convertedFramesPerSecond": 60.06590663789497,
+            "textureUploadsPerSecond": 54.05931597410547,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 534,
+              "maxMs": 17.928199999999997,
+              "p50Ms": 16.3876,
+              "p95Ms": 17.025499999999997,
+              "p99Ms": 17.506600000000002,
+              "phase": "focus"
+            },
+            "errors": false
+          },
+          {
+            "phase": "fullscreen",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 48.93754112842924,
+            "privateMiB": 1019.07421875,
+            "workingSetMiB": 494.0546875,
+            "threads": 233,
+            "handles": 3244,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 58060800,
+            "textureBytesMax": 58060800,
+            "texturesMedian": 7,
+            "gpuEnginesPercent": {
+              "security_1": 0,
+              "videoencode": 0,
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "ofa_0": 0,
+              "3d": 5.554323103896729,
+              "videodecode": 20.854682882063337,
+              "security": 0,
+              "copy": 0
+            },
+            "dedicatedGpuMiB": 512.3203125,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 419.38569195556596,
+            "convertedFramesPerSecond": 59.912241707937994,
+            "textureUploadsPerSecond": 57.39979286212124,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 534,
+              "maxMs": 17.9978,
+              "p50Ms": 16.3347,
+              "p95Ms": 17.002799999999997,
+              "p99Ms": 17.368000000000002,
+              "phase": "fullscreen"
+            },
+            "errors": false
+          },
+          {
+            "phase": "minimized",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 29.431286240200585,
+            "privateMiB": 999.5234375,
+            "workingSetMiB": 478.95703125,
+            "threads": 232,
+            "handles": 3239,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 58060800,
+            "textureBytesMax": 58060800,
+            "texturesMedian": 7,
+            "gpuEnginesPercent": {
+              "security_1": 0,
+              "videoencode": 0,
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "ofa_0": 0,
+              "3d": 0,
+              "videodecode": 20.38787642337354,
+              "security": 0,
+              "copy": 0
+            },
+            "dedicatedGpuMiB": 512.3203125,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 419.17406870993943,
+            "convertedFramesPerSecond": 0,
+            "textureUploadsPerSecond": 0,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 0,
+              "maxMs": null,
+              "p50Ms": null,
+              "p95Ms": null,
+              "p99Ms": null,
+              "phase": "minimized"
+            },
+            "errors": false
+          },
+          {
+            "phase": "restore",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 211.44621182135944,
+            "privateMiB": 1142.53125,
+            "workingSetMiB": 614.88671875,
+            "threads": 232,
+            "handles": 3237,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 58060800,
+            "textureBytesMax": 58060800,
+            "texturesMedian": 7,
+            "gpuEnginesPercent": {
+              "security_1": 0,
+              "videoencode": 0,
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "ofa_0": 0,
+              "3d": 50.192002090444,
+              "videodecode": 20.93262986465952,
+              "security": 0,
+              "copy": 0
+            },
+            "dedicatedGpuMiB": 494.234375,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 419.6272916130772,
+            "convertedFramesPerSecond": 419.6272916130772,
+            "textureUploadsPerSecond": 387.7692345413811,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 537,
+              "maxMs": 18.069000000000003,
+              "p50Ms": 16.438399999999998,
+              "p95Ms": 17.0239,
+              "p99Ms": 17.5289,
+              "phase": "restore"
+            },
+            "errors": false
+          },
+          {
+            "phase": "stopped",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 1.6470700757954413,
+            "privateMiB": 562.25,
+            "workingSetMiB": 299.953125,
+            "threads": 50,
+            "handles": 2185,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 14515200,
+            "textureBytesMax": 14515200,
+            "texturesMedian": 7,
+            "gpuEnginesPercent": {
+              "security_1": 0,
+              "videoencode": 0,
+              "vr": 0,
+              "jpeg_decode_1": 0,
+              "ofa_0": 0,
+              "3d": 0.055606558780234024,
+              "videodecode": 0,
+              "security": 0,
+              "copy": 0
+            },
+            "dedicatedGpuMiB": 102.47265625,
+            "activeWatches": 0,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 0,
+            "convertedFramesPerSecond": 0,
+            "textureUploadsPerSecond": 0,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 65,
+              "maxMs": 251.29800000000003,
+              "p50Ms": 16.8783,
+              "p95Ms": 250.9132,
+              "p99Ms": 251.22090000000003,
+              "phase": "stopped"
+            },
+            "errors": false
+          }
+        ],
+        "gridObservation": {
+          "sampleCount": 8,
+          "firstSecond": 0.1149835,
+          "lastSecond": 7.4966886,
+          "windowFocused": [false],
+          "windowOccluded": [null],
+          "lastRectVisibility": [true, true, true, true, true, true, false]
+        }
+      },
+      {
+        "directory": "ui23-seven-a2-7-h265-8f14f556-7b5b-41a3-9469-56245a04dedd",
+        "inputSha256": "c452302cd19ed422bd4c147299bdd44b6369ab10c5346370ca33e1479411d875",
+        "label": "ui23-seven-a2",
+        "count": 7,
+        "codec": "h265",
+        "codecStable": true,
+        "phaseSeconds": 8,
+        "steadySeconds": 0,
+        "rounds": 1,
+        "fps": 60,
+        "resolution": "p1080",
+        "publishFixture": false,
+        "disconnected": false,
+        "audioEnabled": false,
+        "audioSourceAliveAtAppExit": null,
+        "fixtureHelperSha256": "fb824fb740ff7ceaf2532335aa8dab6c5823af62555a084cc1c8c3163e1e04d9",
+        "contention": false,
+        "experimentSettings": {
+          "imagePool": true,
+          "imagePoolLimit": 2,
+          "temporaryImage": false,
+          "frameDrivenRepaint": false,
+          "conversionWorkers": 0,
+          "tokioWorkers": 0,
+          "countSdkLogs": false,
+          "deepClip": false,
+          "deepPlanar": false,
+          "requestedPlaneRetention": "default",
+          "sharedDecoderDevice": false,
+          "selectiveStop": false,
+          "relaxedReadback": false,
+          "flushBeforeReadbackPoll": false,
+          "poolTrace": false,
+          "owners": false,
+          "idleHeapOptimization": false,
+          "narrowViewport": true,
+          "scriptedScroll": false,
+          "av1Decoder": ""
+        },
+        "appSha256": "12ad8d00ef0937b2e5d79d78391548c6cdfa9469b6bb414cfadb0bf11e69ba00",
+        "publisherSha256": "a81099095ccea4f8ec4b8733b146d7a66ee07cf569d8d453f045f13d7190ba8c",
+        "counterFailures": 1,
+        "samplerCpuMs": 3828.125,
+        "rows": [
+          {
+            "phase": "grid",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 216.6057525269765,
+            "privateMiB": 1131.44140625,
+            "workingSetMiB": 596.22265625,
+            "threads": 236,
+            "handles": 3140,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 58060800,
+            "textureBytesMax": 58060800,
+            "texturesMedian": 7,
+            "gpuEnginesPercent": {
+              "jpeg_decode_1": 0,
+              "3d": 53.37213529897791,
+              "security_1": 0,
+              "videodecode": 21.585666421165357,
+              "copy": 0,
+              "ofa_0": 0,
+              "videoencode": 0,
+              "vr": 0,
+              "security": 0
+            },
+            "dedicatedGpuMiB": 492.10546875,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 418.991988933592,
+            "convertedFramesPerSecond": 418.991988933592,
+            "textureUploadsPerSecond": 377.1625058453798,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 481,
+              "maxMs": 20.247999999999998,
+              "p50Ms": 16.5295,
+              "p95Ms": 17.5427,
+              "p99Ms": 18.148600000000002,
+              "phase": "grid"
+            },
+            "errors": false
+          },
+          {
+            "phase": "focus",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 59.603156453679276,
+            "privateMiB": 1031.88671875,
+            "workingSetMiB": 497.55078125,
+            "threads": 235,
+            "handles": 3137,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 58060800,
+            "textureBytesMax": 58060800,
+            "texturesMedian": 7,
+            "gpuEnginesPercent": {
+              "jpeg_decode_1": 0,
+              "3d": 6.030809392350978,
+              "security_1": 0,
+              "videodecode": 19.851834204275207,
+              "copy": 0,
+              "ofa_0": 0,
+              "videoencode": 0,
+              "vr": 0,
+              "security": 0
+            },
+            "dedicatedGpuMiB": 492.07421875,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 419.8321623150134,
+            "convertedFramesPerSecond": 59.92097406148196,
+            "textureUploadsPerSecond": 57.416238811323545,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 528,
+              "maxMs": 18.1926,
+              "p50Ms": 16.418599999999998,
+              "p95Ms": 17.1448,
+              "p99Ms": 17.7116,
+              "phase": "focus"
+            },
+            "errors": false
+          },
+          {
+            "phase": "fullscreen",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 41.31129107294409,
+            "privateMiB": 1001.3828125,
+            "workingSetMiB": 475.546875,
+            "threads": 233,
+            "handles": 3244,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 58060800,
+            "textureBytesMax": 58060800,
+            "texturesMedian": 7,
+            "gpuEnginesPercent": {
+              "jpeg_decode_1": 0,
+              "3d": 6.101816789526303,
+              "security_1": 0,
+              "videodecode": 20.053229744298623,
+              "copy": 0,
+              "ofa_0": 0,
+              "videoencode": 0,
+              "vr": 0,
+              "security": 0
+            },
+            "dedicatedGpuMiB": 518.640625,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 420.2713614798394,
+            "convertedFramesPerSecond": 60.121883737309744,
+            "textureUploadsPerSecond": 55.079403165793444,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 531,
+              "maxMs": 18.4883,
+              "p50Ms": 16.4104,
+              "p95Ms": 17.134,
+              "p99Ms": 17.7205,
+              "phase": "fullscreen"
+            },
+            "errors": false
+          },
+          {
+            "phase": "minimized",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 22.149934558702,
+            "privateMiB": 985.62890625,
+            "workingSetMiB": 461.26953125,
+            "threads": 232,
+            "handles": 3239,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 58060800,
+            "textureBytesMax": 58060800,
+            "texturesMedian": 7,
+            "gpuEnginesPercent": {
+              "jpeg_decode_1": 0,
+              "3d": 0,
+              "security_1": 0,
+              "videodecode": 20.39727976661623,
+              "copy": 0,
+              "ofa_0": 0,
+              "videoencode": 0,
+              "vr": 0,
+              "security": 0
+            },
+            "dedicatedGpuMiB": 518.640625,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 419.6455325569493,
+            "convertedFramesPerSecond": 0,
+            "textureUploadsPerSecond": 0,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 0,
+              "maxMs": null,
+              "p50Ms": null,
+              "p95Ms": null,
+              "p99Ms": null,
+              "phase": "minimized"
+            },
+            "errors": false
+          },
+          {
+            "phase": "restore",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 229.0936508837228,
+            "privateMiB": 1128.91796875,
+            "workingSetMiB": 597.34765625,
+            "threads": 232,
+            "handles": 3237,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 58060800,
+            "textureBytesMax": 58060800,
+            "texturesMedian": 7,
+            "gpuEnginesPercent": {
+              "jpeg_decode_1": 0,
+              "3d": 54.184786351622485,
+              "security_1": 0,
+              "videodecode": 21.33758985430456,
+              "copy": 0,
+              "ofa_0": 0,
+              "videoencode": 0,
+              "vr": 0,
+              "security": 0
+            },
+            "dedicatedGpuMiB": 500.546875,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 418.31484007656644,
+            "convertedFramesPerSecond": 418.31484007656644,
+            "textureUploadsPerSecond": 380.20066454653056,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 517,
+              "maxMs": 19.720399999999998,
+              "p50Ms": 16.4871,
+              "p95Ms": 17.3377,
+              "p99Ms": 17.7836,
+              "phase": "restore"
+            },
+            "errors": false
+          },
+          {
+            "phase": "stopped",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 1.1027945307461067,
+            "privateMiB": 561.515625,
+            "workingSetMiB": 296.13671875,
+            "threads": 50,
+            "handles": 2185,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 14515200,
+            "textureBytesMax": 14515200,
+            "texturesMedian": 7,
+            "gpuEnginesPercent": {
+              "jpeg_decode_1": 0,
+              "3d": 0.06247590624131044,
+              "security_1": 0,
+              "videodecode": 0,
+              "copy": 0,
+              "ofa_0": 0,
+              "videoencode": 0,
+              "vr": 0,
+              "security": 0
+            },
+            "dedicatedGpuMiB": 102.46875,
+            "activeWatches": 0,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 0,
+            "convertedFramesPerSecond": 0,
+            "textureUploadsPerSecond": 0,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 71,
+              "maxMs": 251.24059999999997,
+              "p50Ms": 16.6554,
+              "p95Ms": 250.6969,
+              "p99Ms": 251.1092,
+              "phase": "stopped"
+            },
+            "errors": false
+          }
+        ],
+        "gridObservation": {
+          "sampleCount": 8,
+          "firstSecond": 0.0799522,
+          "lastSecond": 7.6846933,
+          "windowFocused": [false],
+          "windowOccluded": [null],
+          "lastRectVisibility": [true, true, true, true, true, true, false]
+        }
+      },
+      {
+        "directory": "ui23-seven-b1-7-h265-374d1b72-b1c6-4a0d-86f9-78950fe355ee",
+        "inputSha256": "19d03c001881c11aad5d46ee85a33398a3e08c134d636308167ed224255b3b4d",
+        "label": "ui23-seven-b1",
+        "count": 7,
+        "codec": "h265",
+        "codecStable": true,
+        "phaseSeconds": 8,
+        "steadySeconds": 0,
+        "rounds": 1,
+        "fps": 60,
+        "resolution": "p1080",
+        "publishFixture": false,
+        "disconnected": false,
+        "audioEnabled": false,
+        "audioSourceAliveAtAppExit": null,
+        "fixtureHelperSha256": "fb824fb740ff7ceaf2532335aa8dab6c5823af62555a084cc1c8c3163e1e04d9",
+        "contention": false,
+        "experimentSettings": {
+          "imagePool": true,
+          "imagePoolLimit": 2,
+          "temporaryImage": false,
+          "frameDrivenRepaint": false,
+          "conversionWorkers": 0,
+          "tokioWorkers": 0,
+          "countSdkLogs": false,
+          "deepClip": true,
+          "deepPlanar": false,
+          "requestedPlaneRetention": "default",
+          "sharedDecoderDevice": false,
+          "selectiveStop": false,
+          "relaxedReadback": false,
+          "flushBeforeReadbackPoll": false,
+          "poolTrace": false,
+          "owners": false,
+          "idleHeapOptimization": false,
+          "narrowViewport": true,
+          "scriptedScroll": false,
+          "av1Decoder": ""
+        },
+        "appSha256": "12ad8d00ef0937b2e5d79d78391548c6cdfa9469b6bb414cfadb0bf11e69ba00",
+        "publisherSha256": "a81099095ccea4f8ec4b8733b146d7a66ee07cf569d8d453f045f13d7190ba8c",
+        "counterFailures": 1,
+        "samplerCpuMs": 3843.75,
+        "rows": [
+          {
+            "phase": "grid",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 194.01588273989606,
+            "privateMiB": 1183.98828125,
+            "workingSetMiB": 663.85546875,
+            "threads": 236,
+            "handles": 3134,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 49766400,
+            "textureBytesMax": 49766400,
+            "texturesMedian": 6,
+            "gpuEnginesPercent": {
+              "videodecode": 21.103001947604596,
+              "security": 0,
+              "videoencode": 0,
+              "security_1": 0,
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "3d": 46.45445285519519,
+              "ofa_0": 0,
+              "vr": 0
+            },
+            "dedicatedGpuMiB": 478.12109375,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 419.1750516488836,
+            "convertedFramesPerSecond": 359.5573985433445,
+            "textureUploadsPerSecond": 324.5644282422672,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 485,
+              "maxMs": 20.985699999999998,
+              "p50Ms": 16.497600000000002,
+              "p95Ms": 17.2547,
+              "p99Ms": 17.7171,
+              "phase": "grid"
+            },
+            "errors": false
+          },
+          {
+            "phase": "focus",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 54.143655285027144,
+            "privateMiB": 1105.02734375,
+            "workingSetMiB": 585.3046875,
+            "threads": 235,
+            "handles": 3131,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 49766400,
+            "textureBytesMax": 49766400,
+            "texturesMedian": 6,
+            "gpuEnginesPercent": {
+              "videodecode": 20.15307900541974,
+              "security": 0,
+              "videoencode": 0,
+              "security_1": 0,
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "3d": 6.027960680913771,
+              "ofa_0": 0,
+              "vr": 0
+            },
+            "dedicatedGpuMiB": 478.1015625,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 418.90154193724874,
+            "convertedFramesPerSecond": 59.87102841326395,
+            "textureUploadsPerSecond": 56.54486016808262,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 535,
+              "maxMs": 18.4846,
+              "p50Ms": 16.3997,
+              "p95Ms": 17.0516,
+              "p99Ms": 17.56,
+              "phase": "focus"
+            },
+            "errors": false
+          },
+          {
+            "phase": "fullscreen",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 37.9581181786511,
+            "privateMiB": 1079.62109375,
+            "workingSetMiB": 568.38671875,
+            "threads": 234,
+            "handles": 3243,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 49766400,
+            "textureBytesMax": 49766400,
+            "texturesMedian": 6,
+            "gpuEnginesPercent": {
+              "videodecode": 21.337448347999924,
+              "security": 0,
+              "videoencode": 0,
+              "security_1": 0,
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "3d": 5.992753552996896,
+              "ofa_0": 0,
+              "vr": 0
+            },
+            "dedicatedGpuMiB": 504.66796875,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 419.87434765427463,
+            "convertedFramesPerSecond": 59.95405990770324,
+            "textureUploadsPerSecond": 54.46806749784804,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 531,
+              "maxMs": 18.700499999999998,
+              "p50Ms": 16.400100000000002,
+              "p95Ms": 17.180999999999997,
+              "p99Ms": 17.5874,
+              "phase": "fullscreen"
+            },
+            "errors": false
+          },
+          {
+            "phase": "minimized",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 29.77958985726009,
+            "privateMiB": 1063.35546875,
+            "workingSetMiB": 553.55078125,
+            "threads": 233,
+            "handles": 3238,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 49766400,
+            "textureBytesMax": 49766400,
+            "texturesMedian": 6,
+            "gpuEnginesPercent": {
+              "videodecode": 21.46239855274238,
+              "security": 0,
+              "videoencode": 0,
+              "security_1": 0,
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "3d": 0,
+              "ofa_0": 0,
+              "vr": 0
+            },
+            "dedicatedGpuMiB": 504.66796875,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 419.959450231129,
+            "convertedFramesPerSecond": 0,
+            "textureUploadsPerSecond": 0,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 0,
+              "maxMs": null,
+              "p50Ms": null,
+              "p95Ms": null,
+              "p99Ms": null,
+              "phase": "minimized"
+            },
+            "errors": false
+          },
+          {
+            "phase": "restore",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 191.53757045347493,
+            "privateMiB": 1187.15234375,
+            "workingSetMiB": 669.453125,
+            "threads": 233,
+            "handles": 3236,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 49766400,
+            "textureBytesMax": 49766400,
+            "texturesMedian": 6,
+            "gpuEnginesPercent": {
+              "videodecode": 21.17778816342553,
+              "security": 0,
+              "videoencode": 0,
+              "security_1": 0,
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "3d": 45.11384109954984,
+              "ofa_0": 0,
+              "vr": 0
+            },
+            "dedicatedGpuMiB": 486.56640625,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 418.72847157037444,
+            "convertedFramesPerSecond": 359.39754735057943,
+            "textureUploadsPerSecond": 326.41486104308956,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 533,
+              "maxMs": 22.3032,
+              "p50Ms": 16.4717,
+              "p95Ms": 17.5243,
+              "p99Ms": 18.2152,
+              "phase": "restore"
+            },
+            "errors": false
+          },
+          {
+            "phase": "stopped",
+            "cycle": 0,
+            "samples": 6,
+            "cpuCorePercent": 1.3775422023388295,
+            "privateMiB": 615.09375,
+            "workingSetMiB": 332.53515625,
+            "threads": 51,
+            "handles": 2185,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 12441600,
+            "textureBytesMax": 12441600,
+            "texturesMedian": 6,
+            "gpuEnginesPercent": {
+              "videodecode": 0,
+              "security": 0,
+              "videoencode": 0,
+              "security_1": 0,
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "3d": 0.055001389332333624,
+              "ofa_0": 0,
+              "vr": 0
+            },
+            "dedicatedGpuMiB": 91.640625,
+            "activeWatches": 0,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 0,
+            "convertedFramesPerSecond": 0,
+            "textureUploadsPerSecond": 0,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 64,
+              "maxMs": 251.43300000000002,
+              "p50Ms": 17.3527,
+              "p95Ms": 250.76090000000002,
+              "p99Ms": 250.9046,
+              "phase": "stopped"
+            },
+            "errors": false
+          }
+        ],
+        "gridObservation": {
+          "sampleCount": 8,
+          "firstSecond": 0.0156273,
+          "lastSecond": 7.4803076,
+          "windowFocused": [false],
+          "windowOccluded": [null],
+          "lastRectVisibility": [true, true, true, true, true, true, false]
+        }
+      },
+      {
+        "directory": "ui23-seven-b2-7-h265-078b34ed-9f30-48a0-8770-7bb786f90c42",
+        "inputSha256": "236467e91da5da5fa2082aee5cb1782b95cc75130628ff2c882efd203ea41ed3",
+        "label": "ui23-seven-b2",
+        "count": 7,
+        "codec": "h265",
+        "codecStable": true,
+        "phaseSeconds": 8,
+        "steadySeconds": 0,
+        "rounds": 1,
+        "fps": 60,
+        "resolution": "p1080",
+        "publishFixture": false,
+        "disconnected": false,
+        "audioEnabled": false,
+        "audioSourceAliveAtAppExit": null,
+        "fixtureHelperSha256": "fb824fb740ff7ceaf2532335aa8dab6c5823af62555a084cc1c8c3163e1e04d9",
+        "contention": false,
+        "experimentSettings": {
+          "imagePool": true,
+          "imagePoolLimit": 2,
+          "temporaryImage": false,
+          "frameDrivenRepaint": false,
+          "conversionWorkers": 0,
+          "tokioWorkers": 0,
+          "countSdkLogs": false,
+          "deepClip": true,
+          "deepPlanar": false,
+          "requestedPlaneRetention": "default",
+          "sharedDecoderDevice": false,
+          "selectiveStop": false,
+          "relaxedReadback": false,
+          "flushBeforeReadbackPoll": false,
+          "poolTrace": false,
+          "owners": false,
+          "idleHeapOptimization": false,
+          "narrowViewport": true,
+          "scriptedScroll": false,
+          "av1Decoder": ""
+        },
+        "appSha256": "12ad8d00ef0937b2e5d79d78391548c6cdfa9469b6bb414cfadb0bf11e69ba00",
+        "publisherSha256": "a81099095ccea4f8ec4b8733b146d7a66ee07cf569d8d453f045f13d7190ba8c",
+        "counterFailures": 1,
+        "samplerCpuMs": 3687.5,
+        "rows": [
+          {
+            "phase": "grid",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 177.23737025213663,
+            "privateMiB": 1097.390625,
+            "workingSetMiB": 566.34375,
+            "threads": 235,
+            "handles": 3134,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 49766400,
+            "textureBytesMax": 49766400,
+            "texturesMedian": 6,
+            "gpuEnginesPercent": {
+              "videoencode": 0,
+              "videodecode": 20.581441786785874,
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "vr": 0,
+              "3d": 41.4262358007946,
+              "security": 0,
+              "ofa_0": 0,
+              "security_1": 0
+            },
+            "dedicatedGpuMiB": 474.859375,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 419.5744302997918,
+            "convertedFramesPerSecond": 359.3540852380018,
+            "textureUploadsPerSecond": 330.81830081329736,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 483,
+              "maxMs": 17.8655,
+              "p50Ms": 16.4329,
+              "p95Ms": 17.0506,
+              "p99Ms": 17.4556,
+              "phase": "grid"
+            },
+            "errors": false
+          },
+          {
+            "phase": "focus",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 43.79414230573708,
+            "privateMiB": 1010.2734375,
+            "workingSetMiB": 480.06640625,
+            "threads": 234,
+            "handles": 3131,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 49766400,
+            "textureBytesMax": 49766400,
+            "texturesMedian": 6,
+            "gpuEnginesPercent": {
+              "videoencode": 0,
+              "videodecode": 20.58043130723753,
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "vr": 0,
+              "3d": 5.843583883552336,
+              "security": 0,
+              "ofa_0": 0,
+              "security_1": 0
+            },
+            "dedicatedGpuMiB": 474.82421875,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 419.59551497892795,
+            "convertedFramesPerSecond": 59.88666293489796,
+            "textureUploadsPerSecond": 57.3589791097237,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 534,
+              "maxMs": 17.7683,
+              "p50Ms": 16.4075,
+              "p95Ms": 17.151400000000002,
+              "p99Ms": 17.5562,
+              "phase": "focus"
+            },
+            "errors": false
+          },
+          {
+            "phase": "fullscreen",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 38.63948229954449,
+            "privateMiB": 989.0390625,
+            "workingSetMiB": 465.91796875,
+            "threads": 232,
+            "handles": 3240,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 49766400,
+            "textureBytesMax": 49766400,
+            "texturesMedian": 6,
+            "gpuEnginesPercent": {
+              "videoencode": 0,
+              "videodecode": 19.5974206507766,
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "vr": 0,
+              "3d": 6.0420393621654815,
+              "security": 0,
+              "ofa_0": 0,
+              "security_1": 0
+            },
+            "dedicatedGpuMiB": 501.390625,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 420.22012624220423,
+            "convertedFramesPerSecond": 60.10096767911085,
+            "textureUploadsPerSecond": 56.45111134232275,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 535,
+              "maxMs": 18.1513,
+              "p50Ms": 16.3641,
+              "p95Ms": 17.055500000000002,
+              "p99Ms": 17.6873,
+              "phase": "fullscreen"
+            },
+            "errors": false
+          },
+          {
+            "phase": "minimized",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 24.32105000552576,
+            "privateMiB": 973.9140625,
+            "workingSetMiB": 451.6640625,
+            "threads": 231,
+            "handles": 3235,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 49766400,
+            "textureBytesMax": 49766400,
+            "texturesMedian": 6,
+            "gpuEnginesPercent": {
+              "videoencode": 0,
+              "videodecode": 22.547447696874958,
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "vr": 0,
+              "3d": 0,
+              "security": 0,
+              "ofa_0": 0,
+              "security_1": 0
+            },
+            "dedicatedGpuMiB": 501.390625,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 419.44805380424395,
+            "convertedFramesPerSecond": 0,
+            "textureUploadsPerSecond": 0,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 0,
+              "maxMs": null,
+              "p50Ms": null,
+              "p95Ms": null,
+              "p99Ms": null,
+              "phase": "minimized"
+            },
+            "errors": false
+          },
+          {
+            "phase": "restore",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 185.8128074122609,
+            "privateMiB": 1096.75390625,
+            "workingSetMiB": 563.953125,
+            "threads": 231,
+            "handles": 3233,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 49766400,
+            "textureBytesMax": 49766400,
+            "texturesMedian": 6,
+            "gpuEnginesPercent": {
+              "videoencode": 0,
+              "videodecode": 20.621454592322074,
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "vr": 0,
+              "3d": 43.08290946850559,
+              "security": 0,
+              "ofa_0": 0,
+              "security_1": 0
+            },
+            "dedicatedGpuMiB": 483.296875,
+            "activeWatches": 7,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 420.092936456681,
+            "convertedFramesPerSecond": 359.64379398878816,
+            "textureUploadsPerSecond": 333.90046833211454,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 532,
+              "maxMs": 19.642799999999998,
+              "p50Ms": 16.4386,
+              "p95Ms": 17.1854,
+              "p99Ms": 17.7921,
+              "phase": "restore"
+            },
+            "errors": false
+          },
+          {
+            "phase": "stopped",
+            "cycle": 0,
+            "samples": 5,
+            "cpuCorePercent": 0.6860366686928716,
+            "privateMiB": 335.40234375,
+            "workingSetMiB": 206.3671875,
+            "threads": 49,
+            "handles": 2181,
+            "settledStoppedTail": null,
+            "textureBytesMedian": 12441600,
+            "textureBytesMax": 12441600,
+            "texturesMedian": 6,
+            "gpuEnginesPercent": {
+              "videoencode": 0,
+              "videodecode": 0,
+              "jpeg_decode_1": 0,
+              "copy": 0,
+              "vr": 0,
+              "3d": 0.05257313164350123,
+              "security": 0,
+              "ofa_0": 0,
+              "security_1": 0
+            },
+            "dedicatedGpuMiB": 74.7421875,
+            "activeWatches": 0,
+            "counterDiscontinuities": [],
+            "decodedFramesPerSecond": 0,
+            "convertedFramesPerSecond": 0,
+            "textureUploadsPerSecond": 0,
+            "encodedFramesPerSecond": 0,
+            "previewFramesInPhase": 0,
+            "sharing": false,
+            "audioSamplesPerSecond": 0,
+            "audioQueueMaxMs": 0,
+            "audioDroppedFrames": 0,
+            "subscriptionSetterCallsPerSecond": 0,
+            "nativeLogMessagesPerSecond": 0,
+            "uiIntervals": {
+              "count": 67,
+              "maxMs": 251.42969999999997,
+              "p50Ms": 16.7817,
+              "p95Ms": 250.6582,
+              "p99Ms": 251.3613,
+              "phase": "stopped"
+            },
+            "errors": false
+          }
+        ],
+        "gridObservation": {
+          "sampleCount": 8,
+          "firstSecond": 0.0923339,
+          "lastSecond": 7.2376597,
+          "windowFocused": [false],
+          "windowOccluded": [null],
+          "lastRectVisibility": [true, true, true, true, true, true, false]
+        }
+      }
+    ]
+  },
+  "usage": {
+    "metrics": {
+      "cpuMs": {
+        "before": 8124,
+        "after": 16,
+        "changePercent": -99.80305268340719
+      },
+      "reportLatencyP50Ms": {
+        "before": 836.8467999999993,
+        "after": 3.88550000000032,
+        "changePercent": -99.53569757331924
+      },
+      "healthLatencyP95Ms": {
+        "before": 821.9560000000001,
+        "after": 1.9890999999988708,
+        "changePercent": -99.7580040780773
+      }
+    },
+    "raw": {
+      "schema": 1,
+      "treatment": "production-json",
+      "steady": false,
+      "simulatedCurrentWritePerReport": true,
+      "closedHistoricalRange": true,
+      "fixture": {
+        "rows": 522000,
+        "users": 30,
+        "days": 400,
+        "synthetic": true
+      },
+      "runs": [
+        {
+          "pair": 1,
+          "variant": "baseline",
+          "type": "finished",
+          "cpuMs": 8124,
+          "wallMs": 9313.619700000001,
+          "eventLoopP50Ms": 15.532031,
+          "eventLoopP95Ms": 833.617919,
+          "eventLoopP99Ms": 849.346559,
+          "eventLoopMaxMs": 872.415231,
+          "memory": {
+            "rss": 79171584,
+            "heapTotal": 25583616,
+            "heapUsed": 23184584,
+            "external": 4046057,
+            "arrayBuffers": 152020
+          },
+          "memorySamples": [
+            {
+              "second": 5.0159475,
+              "rss": 106299392,
+              "heapTotal": 67002368,
+              "heapUsed": 42801464,
+              "external": 4046191,
+              "arrayBuffers": 152194
+            }
+          ],
+          "cache": null,
+          "reports": 10,
+          "healthRequests": 40,
+          "reportLatencyP50Ms": 843.9094000000005,
+          "reportLatencyP95Ms": 853.9511000000002,
+          "healthLatencyP50Ms": 0.9732999999996537,
+          "healthLatencyP95Ms": 821.9560000000001,
+          "healthLatencyP99Ms": 824.8599999999988,
+          "fullResponseEquivalent": true,
+          "authenticationAndLogoutPassed": true,
+          "outputSha256": "fdf46cbeabce0d40ae017d832f77854d9cbc6e4a21638e1b89e61692644fb9b0"
+        },
+        {
+          "pair": 1,
+          "variant": "production-json",
+          "type": "finished",
+          "cpuMs": 0,
+          "wallMs": 1218.0095999999999,
+          "eventLoopP50Ms": 15.515647,
+          "eventLoopP95Ms": 16.465919,
+          "eventLoopP99Ms": 17.629183,
+          "eventLoopMaxMs": 20.054015,
+          "memory": {
+            "rss": 106954752,
+            "heapTotal": 71573504,
+            "heapUsed": 39655544,
+            "external": 4046209,
+            "arrayBuffers": 152212
+          },
+          "memorySamples": [],
+          "cache": null,
+          "reports": 10,
+          "healthRequests": 40,
+          "reportLatencyP50Ms": 4.626000000000204,
+          "reportLatencyP95Ms": 13.654900000001362,
+          "healthLatencyP50Ms": 0.6635999999998603,
+          "healthLatencyP95Ms": 2.4914000000007945,
+          "healthLatencyP99Ms": 2.845499999999447,
+          "fullResponseEquivalent": true,
+          "authenticationAndLogoutPassed": true,
+          "outputSha256": "fdf46cbeabce0d40ae017d832f77854d9cbc6e4a21638e1b89e61692644fb9b0"
+        },
+        {
+          "pair": 2,
+          "variant": "production-json",
+          "type": "finished",
+          "cpuMs": 47,
+          "wallMs": 1232.8168,
+          "eventLoopP50Ms": 15.564799,
+          "eventLoopP95Ms": 16.179199,
+          "eventLoopP99Ms": 16.465919,
+          "eventLoopMaxMs": 20.856831,
+          "memory": {
+            "rss": 107147264,
+            "heapTotal": 71311360,
+            "heapUsed": 39723504,
+            "external": 4046209,
+            "arrayBuffers": 152212
+          },
+          "memorySamples": [],
+          "cache": null,
+          "reports": 10,
+          "healthRequests": 40,
+          "reportLatencyP50Ms": 3.88550000000032,
+          "reportLatencyP95Ms": 14.942300000000614,
+          "healthLatencyP50Ms": 0.6352999999980966,
+          "healthLatencyP95Ms": 2.211300000000847,
+          "healthLatencyP99Ms": 4.538300000000163,
+          "fullResponseEquivalent": true,
+          "authenticationAndLogoutPassed": true,
+          "outputSha256": "fdf46cbeabce0d40ae017d832f77854d9cbc6e4a21638e1b89e61692644fb9b0"
+        },
+        {
+          "pair": 2,
+          "variant": "baseline",
+          "type": "finished",
+          "cpuMs": 8234,
+          "wallMs": 9379.842700000001,
+          "eventLoopP50Ms": 15.704063,
+          "eventLoopP95Ms": 841.482239,
+          "eventLoopP99Ms": 930.611199,
+          "eventLoopMaxMs": 953.679871,
+          "memory": {
+            "rss": 79765504,
+            "heapTotal": 28729344,
+            "heapUsed": 23684464,
+            "external": 4046057,
+            "arrayBuffers": 152020
+          },
+          "memorySamples": [
+            {
+              "second": 5.1655565999999995,
+              "rss": 106082304,
+              "heapTotal": 68050944,
+              "heapUsed": 41155992,
+              "external": 4046191,
+              "arrayBuffers": 152194
+            }
+          ],
+          "cache": null,
+          "reports": 10,
+          "healthRequests": 40,
+          "reportLatencyP50Ms": 836.8467999999993,
+          "reportLatencyP95Ms": 927.9459000000024,
+          "healthLatencyP50Ms": 0.760999999998603,
+          "healthLatencyP95Ms": 908.1029999999992,
+          "healthLatencyP99Ms": 910.143500000002,
+          "fullResponseEquivalent": true,
+          "authenticationAndLogoutPassed": true,
+          "outputSha256": "fdf46cbeabce0d40ae017d832f77854d9cbc6e4a21638e1b89e61692644fb9b0"
+        },
+        {
+          "pair": 3,
+          "variant": "baseline",
+          "type": "finished",
+          "cpuMs": 8109,
+          "wallMs": 9195.1516,
+          "eventLoopP50Ms": 15.622143,
+          "eventLoopP95Ms": 837.287935,
+          "eventLoopP99Ms": 839.909375,
+          "eventLoopMaxMs": 846.200831,
+          "memory": {
+            "rss": 103374848,
+            "heapTotal": 61464576,
+            "heapUsed": 25829216,
+            "external": 4046057,
+            "arrayBuffers": 152020
+          },
+          "memorySamples": [
+            {
+              "second": 5.7761772,
+              "rss": 108879872,
+              "heapTotal": 68280320,
+              "heapUsed": 45100256,
+              "external": 4046191,
+              "arrayBuffers": 152194
+            }
+          ],
+          "cache": null,
+          "reports": 10,
+          "healthRequests": 40,
+          "reportLatencyP50Ms": 835.7727000000014,
+          "reportLatencyP95Ms": 840.2773000000016,
+          "healthLatencyP50Ms": 0.7692999999999302,
+          "healthLatencyP95Ms": 809.8875999999946,
+          "healthLatencyP99Ms": 813.2334000000046,
+          "fullResponseEquivalent": true,
+          "authenticationAndLogoutPassed": true,
+          "outputSha256": "fdf46cbeabce0d40ae017d832f77854d9cbc6e4a21638e1b89e61692644fb9b0"
+        },
+        {
+          "pair": 3,
+          "variant": "production-json",
+          "type": "finished",
+          "cpuMs": 0,
+          "wallMs": 1240.3822000000002,
+          "eventLoopP50Ms": 15.515647,
+          "eventLoopP95Ms": 16.244735,
+          "eventLoopP99Ms": 16.547839,
+          "eventLoopMaxMs": 18.972671,
+          "memory": {
+            "rss": 107569152,
+            "heapTotal": 71311360,
+            "heapUsed": 39707584,
+            "external": 4046209,
+            "arrayBuffers": 152212
+          },
+          "memorySamples": [],
+          "cache": null,
+          "reports": 10,
+          "healthRequests": 40,
+          "reportLatencyP50Ms": 3.6278000000020256,
+          "reportLatencyP95Ms": 3.897799999998824,
+          "healthLatencyP50Ms": 0.6702000000004773,
+          "healthLatencyP95Ms": 0.8847999999998137,
+          "healthLatencyP99Ms": 4.733000000000175,
+          "fullResponseEquivalent": true,
+          "authenticationAndLogoutPassed": true,
+          "outputSha256": "fdf46cbeabce0d40ae017d832f77854d9cbc6e4a21638e1b89e61692644fb9b0"
+        },
+        {
+          "pair": 4,
+          "variant": "production-json",
+          "type": "finished",
+          "cpuMs": 16,
+          "wallMs": 1225.1515,
+          "eventLoopP50Ms": 15.540223,
+          "eventLoopP95Ms": 16.318463,
+          "eventLoopP99Ms": 16.695295,
+          "eventLoopMaxMs": 16.924671,
+          "memory": {
+            "rss": 107962368,
+            "heapTotal": 71573504,
+            "heapUsed": 39737464,
+            "external": 4046209,
+            "arrayBuffers": 152212
+          },
+          "memorySamples": [],
+          "cache": null,
+          "reports": 10,
+          "healthRequests": 40,
+          "reportLatencyP50Ms": 3.999599999995553,
+          "reportLatencyP95Ms": 5.493899999994028,
+          "healthLatencyP50Ms": 0.518900000002759,
+          "healthLatencyP95Ms": 1.9890999999988708,
+          "healthLatencyP99Ms": 4.345800000002782,
+          "fullResponseEquivalent": true,
+          "authenticationAndLogoutPassed": true,
+          "outputSha256": "fdf46cbeabce0d40ae017d832f77854d9cbc6e4a21638e1b89e61692644fb9b0"
+        },
+        {
+          "pair": 4,
+          "variant": "baseline",
+          "type": "finished",
+          "cpuMs": 8297,
+          "wallMs": 9536.7259,
+          "eventLoopP50Ms": 15.663103,
+          "eventLoopP95Ms": 849.870847,
+          "eventLoopP99Ms": 926.416895,
+          "eventLoopMaxMs": 940.572671,
+          "memory": {
+            "rss": 78696448,
+            "heapTotal": 25321472,
+            "heapUsed": 23213120,
+            "external": 4046057,
+            "arrayBuffers": 152020
+          },
+          "memorySamples": [
+            {
+              "second": 5.0031299,
+              "rss": 106979328,
+              "heapTotal": 67264512,
+              "heapUsed": 42788968,
+              "external": 4046191,
+              "arrayBuffers": 152194
+            }
+          ],
+          "cache": null,
+          "reports": 10,
+          "healthRequests": 40,
+          "reportLatencyP50Ms": 850.8243000000002,
+          "reportLatencyP95Ms": 939.1696999999986,
+          "healthLatencyP50Ms": 0.5742000000027474,
+          "healthLatencyP95Ms": 864.629200000003,
+          "healthLatencyP99Ms": 913.421199999997,
+          "fullResponseEquivalent": true,
+          "authenticationAndLogoutPassed": true,
+          "outputSha256": "fdf46cbeabce0d40ae017d832f77854d9cbc6e4a21638e1b89e61692644fb9b0"
+        },
+        {
+          "pair": 5,
+          "variant": "baseline",
+          "type": "finished",
+          "cpuMs": 7937,
+          "wallMs": 9085.1442,
+          "eventLoopP50Ms": 15.622143,
+          "eventLoopP95Ms": 821.559295,
+          "eventLoopP99Ms": 828.375039,
+          "eventLoopMaxMs": 910.688255,
+          "memory": {
+            "rss": 79048704,
+            "heapTotal": 25321472,
+            "heapUsed": 23216736,
+            "external": 4046057,
+            "arrayBuffers": 152020
+          },
+          "memorySamples": [
+            {
+              "second": 5.6748243,
+              "rss": 110538752,
+              "heapTotal": 68280320,
+              "heapUsed": 45151648,
+              "external": 4046191,
+              "arrayBuffers": 152194
+            }
+          ],
+          "cache": null,
+          "reports": 10,
+          "healthRequests": 40,
+          "reportLatencyP50Ms": 823.8958999999959,
+          "reportLatencyP95Ms": 842.6846000000005,
+          "healthLatencyP50Ms": 0.7164999999949941,
+          "healthLatencyP95Ms": 798.463699999993,
+          "healthLatencyP99Ms": 802.3796000000002,
+          "fullResponseEquivalent": true,
+          "authenticationAndLogoutPassed": true,
+          "outputSha256": "fdf46cbeabce0d40ae017d832f77854d9cbc6e4a21638e1b89e61692644fb9b0"
+        },
+        {
+          "pair": 5,
+          "variant": "production-json",
+          "type": "finished",
+          "cpuMs": 62,
+          "wallMs": 1240.8561,
+          "eventLoopP50Ms": 15.548415,
+          "eventLoopP95Ms": 16.121855,
+          "eventLoopP99Ms": 16.334847,
+          "eventLoopMaxMs": 16.506879,
+          "memory": {
+            "rss": 106315776,
+            "heapTotal": 71311360,
+            "heapUsed": 39709864,
+            "external": 4046209,
+            "arrayBuffers": 152212
+          },
+          "memorySamples": [],
+          "cache": null,
+          "reports": 10,
+          "healthRequests": 40,
+          "reportLatencyP50Ms": 3.659299999999348,
+          "reportLatencyP95Ms": 8.928199999994831,
+          "healthLatencyP50Ms": 0.633799999995972,
+          "healthLatencyP95Ms": 0.9302000000025146,
+          "healthLatencyP99Ms": 2.2446000000054482,
+          "fullResponseEquivalent": true,
+          "authenticationAndLogoutPassed": true,
+          "outputSha256": "fdf46cbeabce0d40ae017d832f77854d9cbc6e4a21638e1b89e61692644fb9b0"
+        }
+      ],
+      "limits": "Actual local Fastify administrator login/usage/logout and health routes. Separate client/server processes. Fixed 10 reports and 40 successful health requests per trial. Cached experiment refreshes unchanged closed history while current records change and freshness fields remain live; not all report requests or VPS/WAN capacity."
+    }
+  },
+  "evidence": [
+    {
+      "path": "ui-pr23-pass/build-five.json",
+      "sha256": "30936624bfbce91fefc8a423a59eb49f078a8ba9c63430a7e1b00daabe6ea61e"
+    },
+    {
+      "path": "ui23-clip-a1-5-h265-9b0ee635-b2f6-4126-9c97-80250afd5b65/result.json",
+      "sha256": "727fffa683f052dbb73205af448e3a3a1ecd537f558248578bb02ff142cc104a"
+    },
+    {
+      "path": "ui23-clip-a1-5-h265-9b0ee635-b2f6-4126-9c97-80250afd5b65/app.json",
+      "sha256": "0cddb544211dd474f33650c5a4c126a98dc17c2d3154c5b12996b417632f500f"
+    },
+    {
+      "path": "ui23-clip-a1-5-h265-9b0ee635-b2f6-4126-9c97-80250afd5b65/process.json",
+      "sha256": "9ab5a60bb142a2659dbefbf99278cdd22e1d69c0b072044889877f94309adf4c"
+    },
+    {
+      "path": "ui23-clip-a2-5-h265-517e202f-b34d-4d48-a33b-4b5daa800ce6/result.json",
+      "sha256": "ff19b40268e2121e0265056380d0d8489812b32964d0799004dd8213d344611a"
+    },
+    {
+      "path": "ui23-clip-a2-5-h265-517e202f-b34d-4d48-a33b-4b5daa800ce6/app.json",
+      "sha256": "8927defcf41f457000fc73fb9860f0b79709f01f1e7629c8ee8e75c44fffca96"
+    },
+    {
+      "path": "ui23-clip-a2-5-h265-517e202f-b34d-4d48-a33b-4b5daa800ce6/process.json",
+      "sha256": "0e3bf1b7838907bab1a8f25320b0638134e4baa58d1c1bd6d767b59a6b7a3126"
+    },
+    {
+      "path": "ui23-clip-b1-5-h265-6f898651-35a9-469a-b837-197f8651edb2/result.json",
+      "sha256": "733b3625edfc926a5b4ea21b130d071a41e267ee8f1af21d7067d8c908b9b764"
+    },
+    {
+      "path": "ui23-clip-b1-5-h265-6f898651-35a9-469a-b837-197f8651edb2/app.json",
+      "sha256": "ece89f071313c714a58463253513d2e18f54834c8ec1dd7d5e1fc4fe059c2f31"
+    },
+    {
+      "path": "ui23-clip-b1-5-h265-6f898651-35a9-469a-b837-197f8651edb2/process.json",
+      "sha256": "dde56cc8a839ad23f2f50fd9fed887c4f2d942c274223817a12d45eaa53ebe15"
+    },
+    {
+      "path": "ui23-clip-b2-5-h265-de4c5745-18a9-4687-8a54-f4a93e4e645f/result.json",
+      "sha256": "5d5be968e37eda701b8408dab7debcfbbbed1b3a3b40592ecb8151853fa57d29"
+    },
+    {
+      "path": "ui23-clip-b2-5-h265-de4c5745-18a9-4687-8a54-f4a93e4e645f/app.json",
+      "sha256": "cda102c822d4d1ab557e0c7444d9cfd6118810d3ddf25c46c50a7353da223b95"
+    },
+    {
+      "path": "ui23-clip-b2-5-h265-de4c5745-18a9-4687-8a54-f4a93e4e645f/process.json",
+      "sha256": "dbdd376d1b195c31330fbaa9d7e84b3e123cbbbd185eab351439580a53982fbd"
+    },
+    {
+      "path": "ui-pr23-pass/build-seven.json",
+      "sha256": "e0d3894996da4d2f74cf0244c77488d334baa93182399253aa847de38d4bc831"
+    },
+    {
+      "path": "ui23-seven-a1-7-h265-851c0500-c02a-400b-b36d-a886e76f55ed/result.json",
+      "sha256": "7c55bb6c3fd220c9c5e090e42e3ed7b75d369c428d28ff0911bdfb9f845508e6"
+    },
+    {
+      "path": "ui23-seven-a1-7-h265-851c0500-c02a-400b-b36d-a886e76f55ed/app.json",
+      "sha256": "d0c28c4b2bddc435ef40452ff8bf34924c539febd0d857fb1110212fd7e6349d"
+    },
+    {
+      "path": "ui23-seven-a1-7-h265-851c0500-c02a-400b-b36d-a886e76f55ed/process.json",
+      "sha256": "031b0762931799ebdd8b4e8240e13245bc2463b2a811829664cbeab169b60e84"
+    },
+    {
+      "path": "ui23-seven-a2-7-h265-8f14f556-7b5b-41a3-9469-56245a04dedd/result.json",
+      "sha256": "c452302cd19ed422bd4c147299bdd44b6369ab10c5346370ca33e1479411d875"
+    },
+    {
+      "path": "ui23-seven-a2-7-h265-8f14f556-7b5b-41a3-9469-56245a04dedd/app.json",
+      "sha256": "d18123ab5e63f871ea18fef7cc4be761689a3566a01c57765b65465bc9d7108b"
+    },
+    {
+      "path": "ui23-seven-a2-7-h265-8f14f556-7b5b-41a3-9469-56245a04dedd/process.json",
+      "sha256": "44b83248af4fa1b735a53183f1b6b31927082b975ef0db8bcdaa8a748cbf465e"
+    },
+    {
+      "path": "ui23-seven-b1-7-h265-374d1b72-b1c6-4a0d-86f9-78950fe355ee/result.json",
+      "sha256": "19d03c001881c11aad5d46ee85a33398a3e08c134d636308167ed224255b3b4d"
+    },
+    {
+      "path": "ui23-seven-b1-7-h265-374d1b72-b1c6-4a0d-86f9-78950fe355ee/app.json",
+      "sha256": "aafef59e970abe221f624e6762d53c0dfc71c05e536399f1409778464996720b"
+    },
+    {
+      "path": "ui23-seven-b1-7-h265-374d1b72-b1c6-4a0d-86f9-78950fe355ee/process.json",
+      "sha256": "85b4d5d00d1bf35eeba462268d7027d7a7056e253906bab24c3db4c42a1eb164"
+    },
+    {
+      "path": "ui23-seven-b2-7-h265-078b34ed-9f30-48a0-8770-7bb786f90c42/result.json",
+      "sha256": "236467e91da5da5fa2082aee5cb1782b95cc75130628ff2c882efd203ea41ed3"
+    },
+    {
+      "path": "ui23-seven-b2-7-h265-078b34ed-9f30-48a0-8770-7bb786f90c42/app.json",
+      "sha256": "788052a67d4d432dec357962f02d66ea8c2042e2fdf0094b66d1234454a5d6e5"
+    },
+    {
+      "path": "ui23-seven-b2-7-h265-078b34ed-9f30-48a0-8770-7bb786f90c42/process.json",
+      "sha256": "3ae33a38b5bf096aef930ede938b69194663a083e3b581fe1ac925f4ae45ffe8"
+    },
+    {
+      "path": "ui-pr23-pass/usage/production-json-http.json",
+      "sha256": "a94b5660a4d4afd32d9709574e989b9f2d2ab103a9615f7db659cb35dca4f685"
+    },
+    {
+      "path": "ui-pr23-pass/server-code/source.json",
+      "sha256": "de87eaa3d0bdad60ef2c1a339faa24b2a9525f31ebb265103faa6819a97f8a68"
+    }
+  ],
+  "limits": "Short local B/A/A/B phases, two runs per variant. Five streams remain partly visible: no demonstrated clipping gain. Five-stream a2 has only three grid observations; its CPU/GPU aggregates are not a matched full-window comparison, and apparent regression is not causally established. Seven-stream trials have eight grid observations each, one fully clipped tile and ~419 decoded frames/s. All grid samples report unfocused windows and unknown occlusion; no foreground/display qualification. CPU100%=one core; private=commit, working set=resident; GPU engines separate; handoffs are not physical GL uploads/display frames. Cached HTTP is warm closed history, not normal live dashboard or WAN/VPS qualification. Windows CPU timer granularity can produce 0 ms in short cached bursts; that is not zero work. No audible/physical A/V, AMD GPU, games or physical4K qualification."
+}

@@ -1,4 +1,8 @@
-# FreedomStream
+<p align="center">
+  <img src="assets/PodeTelar.png" alt="PodeTelar icon" width="128" height="128" />
+</p>
+
+# PodeTelar
 
 Private screen and camera sharing for friends. Native Windows capture, server-forwarded media, a Discord-like room interface and selective watching are the intended product. Licensed under [MIT](LICENSE).
 

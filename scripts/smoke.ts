@@ -12,7 +12,7 @@ const health = await fetch(`${origin}/api/health`);
 assert.equal(health.status, 200);
 const home = await fetch(origin);
 assert.equal(home.status, 200);
-assert.match(await home.text(), /FreedomStream/);
+assert.match(await home.text(), /PodeTelar/);
 
 const created = await fetch(`${origin}/api/rooms`, {
   method: "POST",

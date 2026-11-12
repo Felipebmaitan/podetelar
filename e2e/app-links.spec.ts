@@ -24,7 +24,7 @@ for (const width of [1280, 390])
     });
     await page.goto(invitationUrl);
     const open = page.getByRole("button", {
-      name: "Join room in FreedomStream",
+      name: "Join room in PodeTelar",
       exact: true,
     });
     await expect(open).toBeVisible();

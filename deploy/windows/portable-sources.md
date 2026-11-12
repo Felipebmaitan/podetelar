@@ -4,7 +4,7 @@ These archives accompany the exact curated media binaries inside this executable
 `../runtime-inputs.json` identifies each archive's upstream URL and SHA-256, each
 shipped media DLL/plugin and its component, and the GStreamer/Cerbero revisions.
 `../gstreamer-versions.txt` is the upstream package inventory, including components
-that FreedomStream does **not** ship. Only the allowlisted binaries are bundled.
+that PodeTelar does **not** ship. Only the allowlisted binaries are bundled.
 
 GStreamer is revision `202e42fa1bbff4ed61e08d47202db5c744987f0c`, as recorded by
 the official 1.28.8 Windows runtime. The complete monorepo source includes the
@@ -27,7 +27,7 @@ corresponding `gstreamer-1.0`, `gst-plugins-base-1.0`, `gst-plugins-good-1.0` an
 Reproducing identical binary timestamps/toolchain output is not claimed.
 
 You may modify/rebuild the LGPL libraries and replace the compatible DLLs in the
-extracted runtime's `bin/` and `lib/gstreamer-1.0/` directories. FreedomStream does
+extracted runtime's `bin/` and `lib/gstreamer-1.0/` directories. PodeTelar does
 not re-hash or overwrite a completed cache on subsequent launches. A separate
 copy can be extracted with `FreedomStream.exe --extract C:\new\absolute-folder`.
 The normal cache is `%LOCALAPPDATA%\FreedomStreamPortable\<payload-sha256>`.

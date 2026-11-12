@@ -75,7 +75,7 @@ for (const file of [
 }
 writeFileSync(
   join(decoderPatch, "README.txt"),
-  "FreedomStream modifies webrtc-sys 0.3.53 (Apache-2.0) to use native Direct3D11 decoders through the dynamically linked GStreamer runtime and prune expired weak track entries. The adapter, deferred I420 and bounded readback helpers are MIT licensed. All three headers, the setup script and checksum pin reproduce the change from the original crate. No browser runtime is included.\n",
+  "PodeTelar modifies webrtc-sys 0.3.53 (Apache-2.0) to use native Direct3D11 decoders through the dynamically linked GStreamer runtime and prune expired weak track entries. The adapter, deferred I420 and bounded readback helpers are MIT licensed. All three headers, the setup script and checksum pin reproduce the change from the original crate. No browser runtime is included.\n",
 );
 const { dumpbin } = await preparePortableRuntime(root, output, notices);
 const sha256 = (path) =>
@@ -145,7 +145,7 @@ const included = new Set(metadata.resolve.nodes.map((node) => node.id));
 const index = [
   "# Windows publisher dependency notices",
   "",
-  "FreedomStream is MIT licensed. Each dependency retains its own license. The curated runtime, complete corresponding library sources and build recipes accompany this executable. See RUNTIME.md and sources/README.md. No codec patent license or hardware qualification is implied.",
+  "PodeTelar is MIT licensed. Each dependency retains its own license. The curated runtime, complete corresponding library sources and build recipes accompany this executable. See RUNTIME.md and sources/README.md. No codec patent license or hardware qualification is implied.",
   "",
   "Inter Regular and SemiBold fonts: SIL Open Font License 1.1. Copyright 2020 The Inter Project Authors. See Inter-OFL.txt.",
   "",

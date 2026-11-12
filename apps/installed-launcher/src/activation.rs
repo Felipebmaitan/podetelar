@@ -23,7 +23,7 @@ pub fn forward(link: Option<String>) -> anyhow::Result<()> {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    anyhow::bail!("FreedomStream is busy. Try opening the room link again.")
+    anyhow::bail!("PodeTelar is busy. Try opening the room link again.")
 }
 impl Instance {
     pub fn start() -> std::io::Result<Option<Self>> {

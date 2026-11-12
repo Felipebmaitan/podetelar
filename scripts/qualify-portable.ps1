@@ -35,8 +35,8 @@ function Assert-AppResources([string]$Path) {
     if ($iconCount -lt 1 -or $iconCount -eq [uint32]::MaxValue) {
         throw 'A shipped executable has no embedded Windows icon.'
     }
-    if ([Diagnostics.FileVersionInfo]::GetVersionInfo($Path).ProductName -ne 'FreedomStream') {
-        throw 'A shipped executable has no FreedomStream product metadata.'
+    if ([Diagnostics.FileVersionInfo]::GetVersionInfo($Path).ProductName -ne 'PodeTelar') {
+        throw 'A shipped executable has no PodeTelar product metadata.'
     }
 }
 Assert-GuiSubsystem $copy

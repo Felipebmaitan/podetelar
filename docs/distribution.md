@@ -67,7 +67,7 @@ Keep the EXE wherever you prefer. To remove it, close the publisher and delete t
 EXE and its own `FreedomStreamPortable` cache. It creates no Start-menu shortcut,
 registry entry or system PATH change. The earlier script-based installation is
 separate: retain it for rollback or remove it with its original `Uninstall.ps1`.
-Do not remove shared Microsoft/GPU components to uninstall FreedomStream.
+Do not remove shared Microsoft/GPU components to uninstall PodeTelar.
 
 The executable is currently unsigned. Verify its SHA-256 against the authenticated
 room's download details. This checks integrity against that trusted manifest,
@@ -75,12 +75,17 @@ not an independent publisher signature. Code signing remains future work.
 
 ## Windows security warnings and app icon
 
-The launcher and native publisher embed the same original MIT-licensed monitor/play
-icon, with 16–256 pixel Windows resources and FreedomStream product/version metadata.
+The launcher, native publisher and installer use the supplied PodeTelar artwork
+from `assets/PodeTelar.png`, with 16–256 pixel Windows resources and PodeTelar
+product/version metadata.
 The native window also sets that icon explicitly for its title bar and taskbar.
-Regenerate the artwork with `python scripts/make-windows-icon.py` (Pillow required
+Regenerate the resized icons with `python scripts/make-windows-icon.py` (Pillow required
 only for regeneration). Portable qualification checks both executables for an
 embedded icon and product metadata.
+
+PodeTelar is the display name. Existing executable filenames, `freedomstream://`
+links, update package IDs and per-user storage paths retain their identifiers for
+compatibility with installed versions and saved settings.
 
 An icon and version metadata do not establish publisher trust. The current release
 is unsigned. “Windows protected your PC” or “Unknown publisher” usually indicates
@@ -145,7 +150,7 @@ A previous open tab's ZIP endpoint redirects admitted members to the EXE.
 
 ## Dependency licenses
 
-Original FreedomStream code is MIT. Bundled libraries retain their own terms.
+Original application code is MIT. Bundled libraries retain their own terms.
 `deploy/portable-runtime.json` lists the exact media files and hashes, source URLs,
 source hashes and upstream revisions. The curated runtime omits GPL x264/x265/libav
 plugins and unrelated network/framework plugins. Each selected plugin's LGPL
@@ -194,10 +199,10 @@ to update the registered launcher. **Disable browser links** removes our URL
 registration; cached launchers stay on disk because a running app may use them.
 Other applications' registrations are never silently replaced or removed.
 
-On an invitation page, choose **Join room in FreedomStream**. The page prepares
+On an invitation page, choose **Join room in PodeTelar**. The page prepares
 a temporary ticket in advance, so this single click launches the app directly. Allow the browser's app-launch prompt if shown. In the app,
 verify the server, choose **Load invitation**, enter your name, then **Join room**.
-Loading alone starts no room session, capture or subscriptions. If FreedomStream
+Loading alone starts no room session, capture or subscriptions. If PodeTelar
 is already running, the link opens another window without changing that room.
 
 Handoffs expire after one minute and work only once. If the app is missing, the

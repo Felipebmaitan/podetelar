@@ -60,12 +60,12 @@ fn main() {
         Ok(Some(instance)) => instance,
         Ok(None) => {
             if activation::forward(link).is_err() {
-                notice("FreedomStream is busy. Try opening the room link again.");
+                notice("PodeTelar is busy. Try opening the room link again.");
             }
             return;
         }
         Err(_) => {
-            notice("FreedomStream could not prepare room links. Try reopening the application.");
+            notice("PodeTelar could not prepare room links. Try reopening the application.");
             return;
         }
     };
@@ -111,7 +111,7 @@ fn main() {
     if let Some(bridge) = bridge
         && !bridge.child_exited()
     {
-        notice("The update could not start. Reopen FreedomStream and try again.");
+        notice("The update could not start. Reopen PodeTelar and try again.");
     }
     // Never log arguments: browser launch arguments can contain invitations.
     drop(instance);
@@ -124,7 +124,7 @@ fn notice(message: &str) {
         windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxW(
             std::ptr::null_mut(),
             text.as_ptr(),
-            windows_sys::w!("FreedomStream"),
+            windows_sys::w!("PodeTelar"),
             0x10,
         );
     }

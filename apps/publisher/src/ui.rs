@@ -296,7 +296,7 @@ impl PublisherUi {
         let connected = matches!(state.connection, "connected" | "reconnecting");
         ui.horizontal(|ui| {
             brand_mark(ui);
-            ui.label(skin::strong("FreedomStream", 20.0));
+            ui.label(skin::strong("PodeTelar", 20.0));
             ui.separator();
             let room_label = format!(
                 "{}  ·  {} {}",
@@ -980,7 +980,7 @@ impl PublisherUi {
             ui.label(egui::RichText::new(tr("Source audio")).size(12.0));
         })
         .response
-        .on_hover_text(tr("Discord and FreedomStream excluded."));
+        .on_hover_text(tr("Discord and PodeTelar excluded."));
         if state.sharing || state.capture_pending {
             if let Some(mode) = state.mode {
                 ui.colored_label(
@@ -2541,24 +2541,25 @@ fn uv() -> egui::Rect {
 }
 
 fn brand_mark(ui: &mut egui::Ui) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(18.0, 24.0), egui::Sense::hover());
-    let screen = egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 13.0));
-    ui.painter().rect_stroke(
-        screen,
-        2.0,
-        egui::Stroke::new(1.5, ACCENT),
-        egui::StrokeKind::Inside,
-    );
-    let c = screen.center();
-    ui.painter().add(egui::Shape::convex_polygon(
-        vec![
-            c + egui::vec2(-2.0, -3.0),
-            c + egui::vec2(3.0, 0.0),
-            c + egui::vec2(-2.0, 3.0),
-        ],
-        ACCENT,
-        egui::Stroke::NONE,
-    ));
+    let id = egui::Id::unique("podetelar-brand-mark");
+    let texture = ui
+        .ctx()
+        .data_mut(|data| data.get_temp::<egui::TextureHandle>(id))
+        .unwrap_or_else(|| {
+            let texture = ui.ctx().load_texture(
+                "PodeTelar",
+                egui::ColorImage::from_rgba_unmultiplied(
+                    [64, 64],
+                    include_bytes!("../../../assets/windows/podetelar-64.rgba"),
+                ),
+                egui::TextureOptions::LINEAR,
+            );
+            ui.ctx()
+                .data_mut(|data| data.insert_temp(id, texture.clone()));
+            texture
+        });
+    ui.add(egui::Image::new((texture.id(), egui::vec2(28.0, 28.0))))
+        .on_hover_text("PodeTelar");
 }
 
 fn fullscreen_button(ui: &mut egui::Ui) -> egui::Response {

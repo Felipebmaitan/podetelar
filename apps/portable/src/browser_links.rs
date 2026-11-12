@@ -133,7 +133,7 @@ fn register(path: &str, executable: &Path) -> Result<()> {
         set(&command, "", &format!("\"{exe}\" --browser-link \"%1\""))?;
         let key = create(path)?;
         set(&key, OWNER, "1")?;
-        set(&key, "", "URL:FreedomStream invitation")?;
+        set(&key, "", "URL:PodeTelar invitation")?;
         set(&key, "URL Protocol", "")?;
         Ok(())
     })();

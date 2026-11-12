@@ -58,9 +58,7 @@ export class Rooms {
     };
     if (version.user_version > 4) {
       this.db.close();
-      throw new Error(
-        "The database was created by a newer FreedomStream version.",
-      );
+      throw new Error("The database was created by a newer PodeTelar version.");
     }
     try {
       if (version.user_version < 3)

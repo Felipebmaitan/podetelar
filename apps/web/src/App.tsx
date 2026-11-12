@@ -9,6 +9,7 @@ import { Admin } from "./Admin";
 import { OpenInApp } from "./OpenInApp";
 import { InvitationPage } from "./InvitationPage";
 import { DirectDownload } from "./DirectDownload";
+import { BrandMark } from "./BrandMark";
 
 const managedRoomId = /^\/manage\/([A-Za-z0-9_-]{22})$/.exec(
   window.location.pathname,
@@ -168,10 +169,8 @@ function RoomApp() {
     <div className="app-shell">
       <aside className="sidebar">
         <a className="brand" href="/">
-          <span className="brand-mark" aria-hidden="true">
-            f
-          </span>
-          <span>freedomstream</span>
+          <BrandMark className="brand-mark" />
+          <span>PodeTelar</span>
         </a>
         <div className="room-navigation">
           <p className="eyebrow">YOUR ROOM</p>
@@ -182,7 +181,7 @@ function RoomApp() {
         </div>
         <div className="sidebar-footer">
           <span className="avatar" aria-hidden="true">
-            {session?.participant.displayName.slice(0, 1).toUpperCase() ?? "F"}
+            {session?.participant.displayName.slice(0, 1).toUpperCase() ?? "P"}
           </span>
           <div>
             <strong>{session?.participant.displayName ?? "Welcome"}</strong>
@@ -194,7 +193,7 @@ function RoomApp() {
       </aside>
       <main>
         <header className="topbar">
-          <span>{session?.room.name ?? "Welcome to FreedomStream"}</span>
+          <span>{session?.room.name ?? "Welcome to PodeTelar"}</span>
           <span className="privacy-label">Invite only</span>
         </header>
         {error && (
@@ -228,7 +227,7 @@ function RoomApp() {
             <section className="room-stage">
               <h2>Share and watch in the desktop app</h2>
               <p>
-                Download FreedomStream, then paste your room invitation into the
+                Download PodeTelar, then paste your room invitation into the
                 app. Native capture and playback keep your room experience
                 consistent.
               </p>
@@ -286,7 +285,7 @@ function RoomApp() {
         ) : (
           <div className="centered">
             <h1>That room link doesn't look right.</h1>
-            <a href="/">Return to FreedomStream</a>
+            <a href="/">Return to PodeTelar</a>
           </div>
         )}
       </main>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ApiError, request } from "./api";
 import { OpenInApp } from "./OpenInApp";
+import { CardBrand } from "./BrandMark";
 
 export function InvitationPage({
   roomId,
@@ -59,6 +60,7 @@ export function InvitationPage({
   return (
     <main className="invitation-page">
       <section className="panel invitation-card" aria-label="Room invitation">
+        <CardBrand />
         {invitation && !denied ? (
           <>
             <OpenInApp roomId={roomId} invitation={invitation} />

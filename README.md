@@ -7,7 +7,7 @@ Windows app; the website keeps invitations, access management and downloads.
 Local NVIDIA synthetic checks pass native HEVC/H.264 decode, compatibility fallback,
 explicit A/V subscriptions, reconnects, higher-resolution previews and source-derived
 audio exclusion. The self-contained portable EXE launches without a terminal and
-can rejoin an encrypted saved room/name. This is draft PR #10, stacked on portable
+remembers an encrypted server/name and waits for a fresh room invitation. This is draft PR #10, stacked on portable
 PR #9, and requires the matching server update. AMD, physical 4K120, fresh-PC/offline
 startup, native TURN, A/V latency and real-game/group qualification remain open.
 See [verification](docs/verification/phase-11.md), [distribution](docs/distribution.md)
@@ -92,3 +92,5 @@ Windows app. Browsers retain invitations, access management and downloads. See
 [the native acceptance workflow](docs/native-publisher.md), [quality controls](docs/quality.md)
 and [automatic source audio](docs/audio.md). This branch is not a qualified
 production release until its acceptance gates and independent review pass.
+
+Optional [Discord commands](docs/discord.md) create a new private room with `/stream` or `/telar`.

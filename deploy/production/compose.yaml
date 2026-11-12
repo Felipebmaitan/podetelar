@@ -4,6 +4,9 @@ services:
     image: ${APP_IMAGE:?Set an immutable release image tag}
     user: "1000:1000"
     environment:
+      DISCORD_APPLICATION_ID: ${DISCORD_APPLICATION_ID:-}
+      DISCORD_PUBLIC_KEY: ${DISCORD_PUBLIC_KEY:-}
+      DISCORD_GUILD_IDS: ${DISCORD_GUILD_IDS:-}
       HOST: 0.0.0.0
       PORT: 3000
       PUBLIC_URL: ${PUBLIC_URL:?Set HTTPS origin}

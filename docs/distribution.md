@@ -16,14 +16,17 @@ Sharing and watching use the native app. No browser is embedded or launched.
 
 ## Saved room and launch behavior
 
-After a successful join, the app remembers the room invitation and display name
+After a successful join, the app remembers only the server origin and display name
 in `%LOCALAPPDATA%\FreedomStream\settings.json`, encrypted using Windows DPAPI for
-the current user. The same user can reopen any portable release and automatically
-join that room. Session cookies and media tokens are never persisted. Sharing and
-watching require explicit actions after launch. Invalid/revoked invitations return
-to the join form. Room options → Forget saved room deletes the saved profile and leaves
-the room; ordinary Leave keeps it for the next launch. Remove this settings file
-as well as the runtime cache when removing all local app data.
+the current user. Reopening waits for a fresh invitation; use `/stream` or `/telar`
+in Discord to create a room, or receive a friend's link. Existing saved invitations
+are migrated to server/name settings without restoring room access. Invitations,
+session cookies and media tokens are never persisted by the new client. Sharing
+and watching require explicit actions. Room options → Forget saved server deletes
+the saved profile and leaves the room; ordinary Leave keeps the server and name.
+Remove this settings file as well as the runtime cache when removing local app data.
+Older app releases can still save invitations: distribute the new client with this
+workflow change and avoid launching old releases after migration.
 
 Both launcher and native app use the Windows GUI subsystem and launch without a
 terminal. Development helper subprocesses are hidden too. Windows Firewall can
@@ -199,9 +202,8 @@ is already running, the link opens another window without changing that room.
 
 Handoffs expire after one minute and work only once. If the app is missing, the
 browser refuses the launch, or the ticket expires, run the EXE/enable links and
-retry the join action. Manual copy/paste still works. A new browser
-invitation never automatically joins the saved room; ordinary EXE launches retain
-saved-room behavior. Short-lived handoff tickets can appear in OS activation
+retry the join action. Manual copy/paste still works. Both browser invitations and ordinary EXE launches require explicit room entry;
+ordinary launches restore only the server and name. Short-lived handoff tickets can appear in OS activation
 arguments; permanent invitations and media/session credentials do not.
 
 Windows canonicalizes activation URLs by adding a root slash after `join`. The

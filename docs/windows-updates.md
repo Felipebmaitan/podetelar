@@ -138,7 +138,7 @@ opt-in nightly switching and delta optimization remain follow-up work.
 - Install two actual versions; check notes, download, Later and restart; verify
   the updater survives publisher/portable exit and cleans up all media processes.
 - Verify offline launch, shortcut and uninstall, existing portable coexistence,
-  DPAPI room continuity, no resumed capture/subscriptions, and no visible console.
+  DPAPI server/name continuity, no automatic room rejoin or resumed capture/subscriptions, and no visible console.
 - Interrupt downloads; corrupt packages; test missing/auth-denied feeds, multiple
   instances, channel isolation, full fallback and failed application recovery.
 - Verify signed artifacts/tamper rejection and inspect logs for session secrets.
@@ -175,7 +175,7 @@ test on Windows. It also offers an unsafe delta alongside a real base package an
 verifies that delta is ignored, then corrupts the downloaded cache after Later and
 requires the next download to repair it. This verifies helper lifetime and update application with a
 fixture process; it does not establish actual media cleanup, fresh installation,
-signed provenance or saved-room continuity. Those remain separate gates above.
+signed provenance or saved-profile continuity. Those remain separate gates above.
 
 Local 2026-11-11 results: Node 24 `npm run check` passed; launcher Clippy and
 protocol tests passed; the real two-package fixture qualified download, Later and

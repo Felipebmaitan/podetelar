@@ -1,5 +1,5 @@
-//! Only the last successful room/name are persisted. Session/media authority stays
-//! in memory. DPAPI binds the saved invitation to the current Windows user.
+//! Only the last successful server/name are persisted. Room invitations and
+//! session/media authority stay in memory. DPAPI binds settings to this Windows user.
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::{io::Read, path::PathBuf};
@@ -9,14 +9,22 @@ const MAX_FILE: u64 = 16 * 1024;
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Profile {
-    pub invitation: String,
+    pub server: String,
     pub name: String,
 }
 
 impl Profile {
     pub fn new(invitation: &str, name: &str) -> Result<Self> {
         let profile = Self {
-            invitation: invitation.trim().to_owned(),
+            server: {
+                ensure!(
+                    crate::admission::valid_invitation(invitation),
+                    "Invalid room invitation."
+                );
+                url::Url::parse(invitation.trim())?
+                    .origin()
+                    .ascii_serialization()
+            },
             name: name.trim().to_owned(),
         };
         profile.validate()?;
@@ -24,10 +32,7 @@ impl Profile {
     }
 
     fn validate(&self) -> Result<()> {
-        ensure!(
-            crate::admission::valid_invitation(&self.invitation),
-            "Invalid saved room."
-        );
+        ensure!(valid_server(&self.server), "Invalid saved server.");
         ensure!(
             !self.name.is_empty()
                 && self.name == self.name.trim()
@@ -37,6 +42,20 @@ impl Profile {
         );
         Ok(())
     }
+}
+
+pub(crate) fn valid_server(input: &str) -> bool {
+    let Ok(url) = url::Url::parse(input) else {
+        return false;
+    };
+    let local = matches!(
+        url.host_str(),
+        Some("localhost" | "127.0.0.1" | "[::1]" | "::1")
+    );
+    (url.scheme() == "https" || (local && url.scheme() == "http"))
+        && url.origin().ascii_serialization() == input
+        && url.username().is_empty()
+        && url.password().is_none()
 }
 
 #[derive(Serialize, Deserialize)]
@@ -82,10 +101,28 @@ impl Store {
         // Do not propagate serde errors: malformed input can contain authority.
         let envelope: Envelope = serde_json::from_slice(&bytes)
             .map_err(|_| anyhow::anyhow!("Could not read the saved room."))?;
-        ensure!(envelope.version == 1, "Unsupported saved room version.");
+        ensure!(
+            matches!(envelope.version, 1 | 2),
+            "Unsupported saved settings version."
+        );
         let plain = protect(&envelope.protected, false)?;
-        let profile: Profile = serde_json::from_slice(&plain)
-            .map_err(|_| anyhow::anyhow!("Could not read the saved room."))?;
+        let profile: Profile = if envelope.version == 1 {
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Legacy {
+                invitation: String,
+                name: String,
+            }
+            let legacy: Legacy = serde_json::from_slice(&plain)
+                .map_err(|_| anyhow::anyhow!("Could not read saved settings."))?;
+            let profile = Profile::new(&legacy.invitation, &legacy.name)?;
+            // Replace the legacy ciphertext before returning; never restore its invitation to UI.
+            self.save(&profile)?;
+            profile
+        } else {
+            serde_json::from_slice(&plain)
+                .map_err(|_| anyhow::anyhow!("Could not read saved settings."))?
+        };
         profile.validate()?;
         Ok(Some(profile))
     }
@@ -93,7 +130,7 @@ impl Store {
     pub fn save(&self, profile: &Profile) -> Result<()> {
         profile.validate()?;
         let envelope = Envelope {
-            version: 1,
+            version: 2,
             protected: protect(&serde_json::to_vec(profile)?, true)?,
         };
         let parent = self
@@ -182,6 +219,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn legacy_profile_migrates_without_retaining_room_authority() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store {
+            path: directory.path().join("settings.json"),
+        };
+        let invitation = format!(
+            "https://example.test:8443/r/{}#invite={}",
+            "a".repeat(22),
+            "b".repeat(43)
+        );
+        let legacy = serde_json::json!({"invitation": invitation, "name": "Friend"});
+        let envelope = Envelope {
+            version: 1,
+            protected: protect(&serde_json::to_vec(&legacy)?, true)?,
+        };
+        std::fs::write(&store.path, serde_json::to_vec(&envelope)?)?;
+        let profile = store.load()?.unwrap();
+        assert_eq!(profile.server, "https://example.test:8443");
+        assert_eq!(profile.name, "Friend");
+        let saved: Envelope = serde_json::from_slice(&std::fs::read(&store.path)?)?;
+        assert_eq!(saved.version, 2);
+        let plain = String::from_utf8(protect(&saved.protected, false)?)?;
+        assert!(!plain.contains("invite") && !plain.contains(&"b".repeat(43)));
+        assert!(store.load()?.as_ref() == Some(&profile));
+        Ok(())
+    }
+
+    #[test]
     fn windows_profile_round_trip_replacement_tampering_and_forgetting() -> Result<()> {
         let directory = tempfile::tempdir()?;
         let store = Store {
@@ -199,7 +264,7 @@ mod tests {
         store.save(&profile)?;
         assert!(store.load()?.as_ref() == Some(&profile));
         let text = std::fs::read_to_string(&store.path)?;
-        assert!(!text.contains(&profile.invitation) && !text.contains(&profile.name));
+        assert!(!text.contains(&profile.server) && !text.contains(&profile.name));
         profile.name = "Replacement user".into();
         store.save(&profile)?;
         assert!(store.load()?.as_ref() == Some(&profile));

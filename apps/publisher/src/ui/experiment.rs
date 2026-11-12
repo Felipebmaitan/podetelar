@@ -77,6 +77,7 @@ pub fn qualify_planar_transitions(
         fullscreen_controls_until: Instant::now(),
         store: None,
         attempted_profile: None,
+        saved_server: String::new(),
         settings_error: String::new(),
         forgetting: false,
         copied_until: None,

@@ -27,7 +27,8 @@ persist handoff tickets or invoke Update.exe with invitation arguments. Previous
 used server origins may load straight into native Join confirmation; unfamiliar
 origins still need trust. Room changes/sharing/watching stay explicit, dismissing
 a link restores the current room invitation, and pending links must not overwrite
-the last successful saved room. Qualify hooks/registry/real-process forwarding
+the last successful saved profile. With Discord gatherings, that profile stores
+only the server origin and display name. Qualify hooks/registry/real-process forwarding
 with an isolated test scheme; actual browser prompts/native focus and production
 installation remain separate acceptance gates.
 
@@ -397,3 +398,28 @@ Accept with authorization, multi-viewer demand, expiry/revocation/replacement,
 resource/retention bounds, real publisher/API/native-viewer checks, native UI
 interaction and fresh independent review. Compilation and synthetic frames do
 not qualify actual screen refresh, hardware load or network degradation.
+
+## Discord-created gatherings — independent PR
+
+Support optional /stream and /telar guild commands through signed Discord HTTP
+interactions. Each command creates a fresh managed room without issuing a browser
+session and replies in the invoking channel with a fragment-only invitation.
+Allow only configured guilds, suppress mentions and embeds, bound payloads and
+creation rate, reject stale signatures and persist interaction replay protection.
+Retain administrator-created rooms and existing short reconnect/automatic closure.
+
+Replace native saved-room restoration with encrypted server-origin/name settings.
+Migrate legacy encrypted invitations to server/name only and do not autojoin on
+launch. Installer-managed links and existing-app activation retain the known-server
+auto-load path using that saved origin; unfamiliar origins still need trust, and
+all room joins require native confirmation. Keep update badge/download/Later/restart
+controls independent of room admission. A fresh
+invitation may select a different server explicitly; saving a server never grants
+room authority. This supersedes earlier saved-room requirements for this phase.
+
+Accept with signed HTTP tests (bad signatures, raw-body tampering, stale requests,
+unauthorized guilds/DMs, retries/restarts, independent room creation and admission),
+Node 24 checks, Windows DPAPI migration and native startup/join/forget checks,
+independent GPT-6.1-Sol high review, and an actual registered Discord command in a
+private test channel. Discord application setup, production HTTPS validation and
+native UI qualification remain open until exercised. Do not merge on mocks alone.

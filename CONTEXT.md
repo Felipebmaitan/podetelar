@@ -31,3 +31,6 @@ _Avoid_: Room membership, visible tile
 **Preview**:
 A compressed still image used to identify an unwatched live stream.
 _Avoid_: Subscription, low-quality live stream
+
+**Server**:
+The remembered destination where rooms are created. Remembering a server does not grant entry to any room.

@@ -279,5 +279,13 @@
   "Capture queue overruns": "Saturações da fila de captura",
   "Encoder counter window": "Janela dos contadores do codificador",
   "Unavailable: capture drops, internal encoder timing/overload, visible crop, unrecognized decoder, render queue and physical end-to-end latency.": "Indisponíveis: perdas na captura, tempo/sobrecarga interna do codificador, recorte visível, decodificador não identificado, fila de renderização e latência física ponta a ponta.",
-  "Limiting input": "Restrição ativa"
+  "Limiting input": "Restrição ativa",
+  "Your server and name are remembered. Use /stream or /telar in Discord for a new room.": "Seu servidor e nome são lembrados. Use /stream ou /telar no Discord para criar uma sala.",
+  "Saved server and name can be removed in Room options above.": "Remova o servidor e nome salvos nas opções da sala acima.",
+  "Forget saved server": "Esquecer servidor salvo",
+  "Saved server": "Servidor salvo",
+  "Saved server storage is unavailable.": "O armazenamento do servidor salvo está indisponível.",
+  "Could not unlock saved settings. Paste a fresh invitation, or forget saved settings.": "Não foi possível abrir as configurações salvas. Cole um novo convite ou esqueça as configurações.",
+  "Could not forget saved settings. Try again.": "Não foi possível esquecer as configurações. Tente novamente.",
+  "Joined, but could not save this server for the next launch.": "Conectado, mas não foi possível salvar o servidor para a próxima abertura."
 }

@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { isIP } from "node:net";
 
 export type Config = {
+  discord?: { applicationId: string; publicKey: string; guildIds: string[] };
   host: string;
   port: number;
   publicUrl: string;
@@ -77,7 +78,34 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error(
       "TRUSTED_PROXY must be the single IPv4 address of the private proxy gateway.",
     );
+  const discordValues = [
+    env.DISCORD_APPLICATION_ID,
+    env.DISCORD_PUBLIC_KEY,
+    env.DISCORD_GUILD_IDS,
+  ];
+  let discord: Config["discord"];
+  if (discordValues.some(Boolean)) {
+    const guildIds = (env.DISCORD_GUILD_IDS ?? "")
+      .split(",")
+      .map((id) => id.trim());
+    if (
+      !/^\d{17,20}$/.test(env.DISCORD_APPLICATION_ID ?? "") ||
+      !/^[a-fA-F0-9]{64}$/.test(env.DISCORD_PUBLIC_KEY ?? "") ||
+      !guildIds.length ||
+      guildIds.length > 100 ||
+      !guildIds.every((id) => /^\d{17,20}$/.test(id))
+    )
+      throw new Error(
+        "Set valid DISCORD_APPLICATION_ID, DISCORD_PUBLIC_KEY and DISCORD_GUILD_IDS together.",
+      );
+    discord = {
+      applicationId: env.DISCORD_APPLICATION_ID!,
+      publicKey: env.DISCORD_PUBLIC_KEY!,
+      guildIds,
+    };
+  }
   return {
+    ...(discord ? { discord } : {}),
     host: env.HOST ?? "127.0.0.1",
     port,
     publicUrl: publicUrl.origin,

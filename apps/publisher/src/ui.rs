@@ -100,6 +100,7 @@ pub struct PublisherUi {
     fullscreen_controls_until: Instant,
     store: Option<crate::settings::Store>,
     attempted_profile: Option<crate::settings::Profile>,
+    saved_server: String,
     settings_error: String,
     forgetting: bool,
     copied_until: Option<Instant>,
@@ -129,12 +130,12 @@ impl PublisherUi {
         let store = crate::settings::Store::open();
         let mut settings_error = String::new();
         let store = store
-            .map_err(|_| settings_error = "Saved room storage is unavailable.".into())
+            .map_err(|_| settings_error = "Saved server storage is unavailable.".into())
             .ok();
         let profile = store.as_ref().and_then(|store| match store.load() {
             Ok(profile) => profile,
             Err(_) => {
-                settings_error = "Could not unlock the saved room. Paste your invitation to join again, or forget it below.".into();
+                settings_error = "Could not unlock saved settings. Paste a fresh invitation, or forget saved settings.".into();
                 None
             }
         });
@@ -149,16 +150,9 @@ impl PublisherUi {
                     None
                 }
             });
-        let profile_invitation = if is_browser_launch {
-            None
-        } else {
-            profile.as_ref()
-        };
-        let app = Self {
+        Self {
             controller: Controller::new(),
-            invitation: profile_invitation
-                .map(|p| p.invitation.clone())
-                .unwrap_or_default(),
+            invitation: String::new(),
             name: profile.as_ref().map(|p| p.name.clone()).unwrap_or_default(),
             source_id: String::new(),
             encoder: String::new(),
@@ -170,6 +164,10 @@ impl PublisherUi {
             fullscreen: None,
             fullscreen_controls_until: Instant::now(),
             store,
+            saved_server: profile
+                .as_ref()
+                .map(|p| p.server.clone())
+                .unwrap_or_default(),
             attempted_profile: profile.clone(),
             settings_error,
             forgetting: false,
@@ -194,15 +192,7 @@ impl PublisherUi {
             picker_keyboard: false,
             closing_since: None,
             force_close: false,
-        };
-        if let Some(profile) = profile.filter(|_| !is_browser_launch) {
-            app.controller.send(Command::Join {
-                invitation: profile.invitation,
-                name: profile.name,
-                route: Route::Auto,
-            });
         }
-        app
     }
 
     fn join(&mut self) {
@@ -228,10 +218,11 @@ impl PublisherUi {
                 self.show_invitation = false;
                 self.name.clear();
                 self.attempted_profile = None;
+                self.saved_server.clear();
                 self.settings_error.clear();
                 self.textures.clear();
             }
-            Err(_) => self.settings_error = "Could not forget the saved room. Try again.".into(),
+            Err(_) => self.settings_error = "Could not forget saved settings. Try again.".into(),
         }
     }
 
@@ -306,7 +297,7 @@ impl PublisherUi {
                         if ui
                             .add_enabled(
                                 self.store.is_some(),
-                                egui::Button::new(tr("Forget saved room")),
+                                egui::Button::new(tr("Forget saved server")),
                             )
                             .clicked()
                         {
@@ -409,6 +400,9 @@ impl PublisherUi {
     fn join_form(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
         if self.browser_invitation_open {
             ui.heading(tr("Join your room"));
+            if !self.saved_server.is_empty() {
+                ui.label(format!("{}: {}", tr("Saved server"), self.saved_server));
+            }
             if let Ok(invitation) = url::Url::parse(&self.invitation) {
                 ui.label(invitation.origin().ascii_serialization());
             }
@@ -433,10 +427,13 @@ impl PublisherUi {
             {
                 self.join();
             }
-            ui.small(tr("Your last joined room and name are encrypted on this PC and remembered for next launch."));
+            ui.small(tr("Your server and name are remembered. Use /stream or /telar in Discord for a new room."));
             return;
         }
         ui.heading(tr("Join your room"));
+        if !self.saved_server.is_empty() {
+            ui.label(format!("{}: {}", tr("Saved server"), self.saved_server));
+        }
         ui.label(
             egui::RichText::new(tr(
                 "Paste an invitation from a friend, then choose your name.",
@@ -500,9 +497,13 @@ impl PublisherUi {
         {
             self.join();
         }
-        ui.small(tr("Your last joined room and name are encrypted on this PC and remembered for next launch."));
+        ui.small(tr(
+            "Your server and name are remembered. Use /stream or /telar in Discord for a new room.",
+        ));
         ui.add_space(8.0);
-        ui.small(tr("Saved access can be removed in Room options above."));
+        ui.small(tr(
+            "Saved server and name can be removed in Room options above.",
+        ));
     }
 
     fn selection(&self) -> SharingSelection {
@@ -1802,17 +1803,15 @@ impl eframe::App for PublisherUi {
         }
         if state.connection == "connected"
             && !self.forgetting
-            && self.attempted_profile.as_ref().is_none_or(|profile| {
-                profile.invitation != self.invitation.trim() || profile.name != self.name.trim()
-            })
             && let Ok(profile) = crate::settings::Profile::new(&self.invitation, &self.name)
             && self.attempted_profile.as_ref() != Some(&profile)
         {
+            self.saved_server = profile.server.clone();
             self.attempted_profile = Some(profile.clone());
             if let Some(store) = &self.store {
                 self.settings_error = match store.save(&profile) {
                     Ok(()) => String::new(),
-                    Err(_) => "Joined, but could not save this room for the next launch.".into(),
+                    Err(_) => "Joined, but could not save this server for the next launch.".into(),
                 };
             }
         }
@@ -2735,6 +2734,7 @@ mod tests {
             fullscreen_controls_until: Instant::now(),
             store: None,
             attempted_profile: None,
+            saved_server: String::new(),
             settings_error: String::new(),
             forgetting: false,
             copied_until: None,

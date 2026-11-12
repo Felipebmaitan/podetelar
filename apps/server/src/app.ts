@@ -32,6 +32,8 @@ import { streamDiagnosticsRoutes } from "./stream-diagnostics.js";
 import { appLinkRoutes } from "./app-links.js";
 import { RoomLifecycle } from "./room-lifecycle.js";
 
+import { discordRoutes } from "./discord.js";
+
 const COOKIE = "fs_session";
 const MEDIA_TOKEN_TTL_SECONDS = 120;
 
@@ -118,6 +120,11 @@ export async function buildApp(
     );
     if (
       !["GET", "HEAD", "OPTIONS"].includes(request.method) &&
+      !(
+        config.discord &&
+        request.method === "POST" &&
+        request.url === "/api/discord/interactions"
+      ) &&
       request.headers.origin !== config.publicUrl
     ) {
       return reply.code(403).send({ error: "Request origin is not allowed." });
@@ -143,6 +150,7 @@ export async function buildApp(
     });
   });
 
+  await discordRoutes(app, config, rooms, options.now);
   app.get("/api/health", async () => ({ status: "ok", phase: 8 }));
   await adminRoutes(app, config, usage, rooms, access, lifecycle, options.now);
   appLinkRoutes(app, config, rooms, directory, options.now);

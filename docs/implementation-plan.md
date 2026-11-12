@@ -366,3 +366,25 @@ Accept with authorization, multi-viewer demand, expiry/revocation/replacement,
 resource/retention bounds, real publisher/API/native-viewer checks, native UI
 interaction and fresh independent review. Compilation and synthetic frames do
 not qualify actual screen refresh, hardware load or network degradation.
+
+## Discord-created gatherings — independent PR
+
+Support optional /stream and /telar guild commands through signed Discord HTTP
+interactions. Each command creates a fresh managed room without issuing a browser
+session and replies in the invoking channel with a fragment-only invitation.
+Allow only configured guilds, suppress mentions and embeds, bound payloads and
+creation rate, reject stale signatures and persist interaction replay protection.
+Retain administrator-created rooms and existing short reconnect/automatic closure.
+
+Replace native saved-room restoration with encrypted server-origin/name settings.
+Migrate legacy encrypted invitations to server/name only and do not autojoin on
+launch. Browser invitation handoff still requires native confirmation. A fresh
+invitation may select a different server explicitly; saving a server never grants
+room authority. This supersedes earlier saved-room requirements for this phase.
+
+Accept with signed HTTP tests (bad signatures, raw-body tampering, stale requests,
+unauthorized guilds/DMs, retries/restarts, independent room creation and admission),
+Node 24 checks, Windows DPAPI migration and native startup/join/forget checks,
+independent GPT-6.1-Sol high review, and an actual registered Discord command in a
+private test channel. Discord application setup, production HTTPS validation and
+native UI qualification remain open until exercised. Do not merge on mocks alone.

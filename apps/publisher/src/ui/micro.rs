@@ -33,7 +33,8 @@ pub fn run(report: &Path) -> Result<()> {
     }));
     results.push(timed("profile-unchanged-check", 50_000, || {
         black_box(
-            profile.invitation == *black_box(&invitation) && profile.name == "Synthetic benchmark",
+            profile.server.as_str() == *black_box(&"https://example.test")
+                && profile.name == "Synthetic benchmark",
         );
     }));
     let jpeg = crate::preview::Frame {

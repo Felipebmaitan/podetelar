@@ -110,6 +110,9 @@ export class Rooms {
       this.db.close();
       throw error;
     }
+    this.db.exec(`CREATE TABLE IF NOT EXISTS discord_interactions (
+      id TEXT PRIMARY KEY, guild_id TEXT NOT NULL, actor_id TEXT NOT NULL, created_at INTEGER NOT NULL
+    ); CREATE INDEX IF NOT EXISTS discord_interactions_time ON discord_interactions(created_at);`);
     this.findStatement = this.db.prepare(
       "SELECT id, name, invitation_hash, invitation_enabled, created_at FROM rooms WHERE id = ?",
     );
@@ -147,6 +150,45 @@ export class Rooms {
     return this.transaction(() => {
       const { room, invitation } = this.insertRoom(input.name);
       return { ...this.issue(room, input.displayName), invitation };
+    });
+  }
+
+  createFromDiscord(
+    id: string,
+    guildId: string,
+    actorId: string,
+  ): { room: Room; invitation: string } | "duplicate" | "limited" {
+    return this.transaction(() => {
+      const now = this.now();
+      this.db
+        .prepare("DELETE FROM discord_interactions WHERE created_at < ?")
+        .run(now - 10 * 60_000);
+      if (
+        this.db
+          .prepare("SELECT 1 FROM discord_interactions WHERE id = ?")
+          .get(id)
+      )
+        return "duplicate";
+      const count = (
+        this.db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM discord_interactions WHERE created_at > ? AND (guild_id = ? OR actor_id = ?)",
+          )
+          .get(now - 60_000, guildId, actorId) as { count: number }
+      ).count;
+      if (count >= 5) return "limited";
+      this.db
+        .prepare("INSERT INTO discord_interactions VALUES (?, ?, ?, ?)")
+        .run(id, guildId, actorId, now);
+      const { room, invitation } = this.insertRoom("Friends");
+      return {
+        room: {
+          id: room.id,
+          name: room.name,
+          createdAt: new Date(room.created_at).toISOString(),
+        },
+        invitation,
+      };
     });
   }
 

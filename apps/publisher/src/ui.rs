@@ -89,7 +89,7 @@ pub struct PublisherUi {
     updates: crate::updates::Client,
     update_restart_prompt: bool,
     activation: crate::activation::Inbox,
-    prior_invitation: Option<String>,
+    prior_room: Option<(String, String)>,
     controller: Controller,
     invitation: String,
     name: String,
@@ -159,7 +159,7 @@ impl PublisherUi {
             .attempted_profile
             .as_ref()
             .is_some_and(|p| link.known_server(&p.invitation));
-        self.prior_invitation = Some(previous);
+        self.prior_room = Some((previous, self.name.clone()));
         self.invitation.clear();
         self.settings_error.clear();
         self.show_invitation = false;
@@ -219,7 +219,7 @@ impl PublisherUi {
             updates: crate::updates::Client::new(),
             update_restart_prompt: false,
             activation: crate::activation::Inbox::new(),
-            prior_invitation: None,
+            prior_room: None,
             controller: Controller::new(),
             invitation: profile_invitation
                 .map(|p| p.invitation.clone())
@@ -271,7 +271,7 @@ impl PublisherUi {
     }
 
     fn join(&mut self) {
-        self.prior_invitation = None;
+        self.prior_room = None;
         self.browser_invitation_open = false;
         self.show_invitation = false;
         self.forgetting = false;
@@ -427,7 +427,12 @@ impl PublisherUi {
         if let Some(load) = &mut self.link_result {
             load.cancel();
         }
-        self.invitation = self.prior_invitation.take().unwrap_or_default();
+        if let Some((invitation, name)) = self.prior_room.take() {
+            self.invitation = invitation;
+            self.name = name;
+        } else {
+            self.invitation.clear();
+        }
         self.settings_error.clear();
     }
 
@@ -1961,6 +1966,7 @@ impl eframe::App for PublisherUi {
             self.set_fullscreen(&ctx, None);
         }
         if state.connection == "connected"
+            && state.error.is_empty()
             && !state.busy
             && !self.browser_invitation_open
             && !self.forgetting
@@ -2739,6 +2745,7 @@ mod tests {
             "s".repeat(43)
         );
         app.invitation = previous.clone();
+        app.name = "Current nickname".into();
         let ctx = egui::Context::default();
         let link = format!(
             "freedomstream://join?server=https%3A%2F%2Fother.test#handoff={}",
@@ -2755,7 +2762,9 @@ mod tests {
             !app.controller.snapshot().busy,
             "Activation must not join or leave by itself"
         );
+        app.name = "Unjoined nickname".into();
         app.dismiss_browser_invitation();
+        assert_eq!(app.name, "Current nickname");
         assert_eq!(app.invitation, previous);
         assert!(!app.browser_invitation_open);
         // Merely pasting a matching-origin invitation has never established trust.
@@ -3013,7 +3022,7 @@ mod tests {
             updates: crate::updates::Client::new(),
             update_restart_prompt: false,
             activation: crate::activation::Inbox::new(),
-            prior_invitation: None,
+            prior_room: None,
             controller: Controller::new(),
             invitation: String::new(),
             name: String::new(),

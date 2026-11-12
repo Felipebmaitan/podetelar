@@ -10,6 +10,10 @@ const interaction = z.object({
   application_id: snowflake,
   type: z.number().int(),
   guild_id: snowflake.optional(),
+  context: z.number().int().optional(),
+  authorizing_integration_owners: z
+    .object({ "0": snowflake.optional() })
+    .optional(),
   member: z.object({ user: z.object({ id: snowflake }) }).optional(),
   data: z
     .object({
@@ -88,7 +92,12 @@ export async function discordRoutes(
           return reply.code(400).send({ error: "Unsupported interaction." });
         if (
           !input.guild_id ||
-          !discord.guildIds.includes(input.guild_id) ||
+          (input.context !== undefined && input.context !== 0) ||
+          !(
+            discord.guildIds.includes(input.guild_id) ||
+            (discord.guildIds.includes("*") &&
+              input.authorizing_integration_owners?.["0"] === input.guild_id)
+          ) ||
           !input.member
         )
           return message(

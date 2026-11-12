@@ -15,6 +15,9 @@ Implementation branch: `feat/discord-room-creation`, based on main `6dfb8f2`.
 - Docker Compose built the app/SFU and reached healthy state in a separate local
   project. `npm run smoke -- --restart-app` passed actual HTTP admission, built
   assets, persisted sessions, logout and authenticated SFU access.
+- `npm run test:admin`: all **eight browser tests passed**, including real SFU
+  membership/reconnect and room closure after actual elapsed grace time, room
+  administration, invitation/handoff pages and viewport checks.
 - `cargo fmt --all -- --check` passed.
 - Independent GPT-6.1-Sol high source review caught stale optional experiment
   call sites and a Clippy return issue. Fixed those; a fresh independent review

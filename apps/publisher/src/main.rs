@@ -1,4 +1,7 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
+mod activation;
+#[path = "../../activation_protocol.rs"]
+mod activation_protocol;
 mod admission;
 mod audio;
 mod browser_links;
@@ -24,6 +27,9 @@ mod sources;
 mod stream_diagnostics;
 mod ui;
 mod ui_style;
+#[path = "../../update_protocol.rs"]
+mod update_protocol;
+mod updates;
 mod video_image;
 #[cfg(windows)]
 mod win32;

@@ -44,7 +44,7 @@ impl Profile {
     }
 }
 
-fn valid_server(input: &str) -> bool {
+pub(crate) fn valid_server(input: &str) -> bool {
     let Ok(url) = url::Url::parse(input) else {
         return false;
     };

@@ -1,0 +1,81 @@
+name: Windows installer preview
+on:
+  pull_request:
+    paths:
+      - apps/installed-launcher/**
+      - apps/update_protocol.rs
+      - apps/publisher/src/updates.rs
+      - apps/activation_protocol.rs
+      - scripts/qualify-installed-links.mjs
+      - scripts/*installer*
+      - scripts/qualify-update-controls.mjs
+      - deploy/windows/installer.json
+      - .config/dotnet-tools.json
+      - .github/workflows/windows-installer.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  bootstrap:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+      - run: node --test scripts/installer-input.test.mjs
+      - run: cargo fmt --manifest-path apps/installed-launcher/Cargo.toml --check
+      - run: cargo clippy --locked --manifest-path apps/installed-launcher/Cargo.toml -- -D warnings
+      - run: cargo test --locked --manifest-path apps/installed-launcher/Cargo.toml
+      - run: node scripts/qualify-installed-links.mjs
+      - run: cargo build --locked --release --manifest-path apps/installed-launcher/Cargo.toml --target x86_64-pc-windows-msvc
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: node scripts/qualify-update-controls.mjs
+  installer:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+      - run: npm ci
+      - run: npm run check
+      - run: node --test scripts/installer-input.test.mjs
+      - run: npm run native:setup
+      - run: npm run native:check
+      - run: npm run native:test
+      - run: npm run native:package
+      - name: Qualify portable payload
+        shell: powershell
+        run: |
+          $release = Get-Content .local/distribution/publisher.json -Raw | ConvertFrom-Json
+          & scripts/qualify-portable.ps1 -Executable (Join-Path .local/distribution $release.filename)
+      - run: node scripts/package-installer.mjs
+        env:
+          INSTALLER_BUILD_NUMBER: ${{ github.run_number }}
+          FREEDOMSTREAM_UPDATE_FEED: ${{ vars.WINDOWS_UPDATE_FEED }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-preview
+          path: .local/installers/
+          if-no-files-found: error
+          retention-days: 14

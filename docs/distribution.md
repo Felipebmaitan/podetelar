@@ -1,5 +1,10 @@
 # Windows distribution
 
+An additional installed distribution is being prepared. See the
+[installer preview and automatic-update rollout](windows-updates.md). The preview
+supports installed-app update controls when a feed is configured at build time;
+public/signed and actual media-update qualification remain pending.
+
 Download the **portable Windows app** from an admitted room and open the EXE.
 Paste the private room invitation, enter your name and join. No installation,
 PowerShell, elevation, shared runtime installation or first-launch dependency

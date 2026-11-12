@@ -1,5 +1,37 @@
 # Implementation phases
 
+## Installed Windows distribution and update rollout — separate PR
+
+Add an unsigned preview installer using a pinned native Rust Velopack bootstrap
+and the existing qualified portable payload. Keep installer/update ownership
+outside the portable cleanup job. Build in GitHub Actions without publishing
+release assets yet. Track the update badge, hover changelog, background checks,
+click-to-download and explicit graceful restart in [the rollout plan](windows-updates.md).
+Public GitHub release access, rebrand identity, signing, helper notices and real
+two-version/fresh-Windows acceptance remain gates before shipping auto-updates.
+Private repository visibility does not block implementation or local testing.
+
+Follow-up `feat/update-badge-controls` adds a per-launch local update bridge,
+background checks, hover notes, explicit download/progress/retry and Restart/Later
+controls. The existing media/picker shutdown must complete before the outer
+launcher applies an update. Verify real Velopack package/helper behavior with a
+private local feed and distinguish fixture verification from actual installed
+publisher, fresh-machine and signed-distribution gates. Keep this dependent PR
+separate from the installer foundation; no public feed or automatic publishing.
+The installer also owns per-user room-link registration. Install/update hooks
+point `freedomstream://` at the stable installed launcher; uninstall removes only
+that installation's handler. Migrate the old portable handler on explicit install,
+then keep portable registration controls separate. Forward later links/focus to
+the existing instance using bounded per-launch authenticated local IPC. Never
+persist handoff tickets or invoke Update.exe with invitation arguments. Previously
+used server origins may load straight into native Join confirmation; unfamiliar
+origins still need trust. Room changes/sharing/watching stay explicit, dismissing
+a link restores the current room invitation, and pending links must not overwrite
+the last successful saved profile. With Discord gatherings, that profile stores
+only the server origin and display name. Qualify hooks/registry/real-process forwarding
+with an isolated test scheme; actual browser prompts/native focus and production
+installation remain separate acceptance gates.
+
 Each phase is an acceptance gate. Phase 1 is the initial commit on `main`; every later phase gets its own branch and PR. Felipe authorized autonomous implementation and merging: each PR must pass its acceptance checks and a new GPT-6.1-Sol review at high reasoning before merge. Address review findings before proceeding. Code can be MIT licensed while third-party runtimes retain their own licenses; qualify distribution licenses before bundling native media dependencies. Report external hardware/deployment verification separately and do not waive it merely to finish the sequence.
 
 **Current checkpoint:** Phases 1–8 and clipboard PR #8 are merged. Portable
@@ -378,7 +410,10 @@ Retain administrator-created rooms and existing short reconnect/automatic closur
 
 Replace native saved-room restoration with encrypted server-origin/name settings.
 Migrate legacy encrypted invitations to server/name only and do not autojoin on
-launch. Browser invitation handoff still requires native confirmation. A fresh
+launch. Installer-managed links and existing-app activation retain the known-server
+auto-load path using that saved origin; unfamiliar origins still need trust, and
+all room joins require native confirmation. Keep update badge/download/Later/restart
+controls independent of room admission. A fresh
 invitation may select a different server explicitly; saving a server never grants
 room authority. This supersedes earlier saved-room requirements for this phase.
 

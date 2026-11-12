@@ -86,6 +86,10 @@ pub fn configure_theme(ctx: &egui::Context) {
 }
 
 pub struct PublisherUi {
+    updates: crate::updates::Client,
+    update_restart_prompt: bool,
+    activation: crate::activation::Inbox,
+    prior_room: Option<(String, String)>,
     controller: Controller,
     invitation: String,
     name: String,
@@ -125,6 +129,52 @@ pub struct PublisherUi {
     force_close: bool,
 }
 impl PublisherUi {
+    fn begin_close(&mut self) {
+        self.closing_since = Some(Instant::now());
+        self.clear_picker();
+        self.picker.begin_shutdown();
+        if let Some(load) = &mut self.link_result {
+            load.cancel();
+        }
+        self.controller.begin_shutdown();
+    }
+    fn open_activation(&mut self, value: &str, ctx: &egui::Context) {
+        if !crate::activation_protocol::valid(value) {
+            return;
+        }
+        let Ok(link) = crate::browser_links::Link::parse(value) else {
+            self.settings_error =
+                "Invalid browser invitation. Open a fresh invitation from your browser.".into();
+            return;
+        };
+        if self.link_result.is_some() {
+            self.settings_error =
+                "Finish or dismiss the current invitation before opening another.".into();
+            return;
+        }
+        if self.browser_invitation_open {
+            self.dismiss_browser_invitation();
+        }
+        let previous = self.invitation.clone();
+        let known = self
+            .attempted_profile
+            .as_ref()
+            .is_some_and(|p| link.known_server(&p.server));
+        self.prior_room = Some((previous, self.name.clone()));
+        self.invitation.clear();
+        self.settings_error.clear();
+        self.show_invitation = false;
+        self.browser_invitation_open = true;
+        self.set_fullscreen(ctx, None);
+        if self.controller.snapshot().connection == "connecting" {
+            self.controller.send(Command::Leave);
+        }
+        if known {
+            self.link_result = Some(crate::browser_links::Load::start(link));
+        } else {
+            self.pending_link = Some(link);
+        }
+    }
     pub fn with_browser_link(browser_link: Option<String>) -> Self {
         crate::locale::load();
         let store = crate::settings::Store::open();
@@ -140,7 +190,7 @@ impl PublisherUi {
             }
         });
         let is_browser_launch = browser_link.is_some();
-        let pending_link =
+        let mut pending_link =
             browser_link.and_then(|value| match crate::browser_links::Link::parse(&value) {
                 Ok(link) => Some(link),
                 Err(_) => {
@@ -150,7 +200,22 @@ impl PublisherUi {
                     None
                 }
             });
+        let link_result = if pending_link.as_ref().is_some_and(|link| {
+            profile
+                .as_ref()
+                .is_some_and(|profile| link.known_server(&profile.server))
+        }) {
+            Some(crate::browser_links::Load::start(
+                pending_link.take().unwrap(),
+            ))
+        } else {
+            None
+        };
         Self {
+            updates: crate::updates::Client::new(),
+            update_restart_prompt: false,
+            activation: crate::activation::Inbox::new(),
+            prior_room: None,
             controller: Controller::new(),
             invitation: String::new(),
             name: profile.as_ref().map(|p| p.name.clone()).unwrap_or_default(),
@@ -178,7 +243,7 @@ impl PublisherUi {
             show_invitation: false,
             browser_invitation_open: is_browser_launch,
             pending_link,
-            link_result: None,
+            link_result,
             browser_links_enabled: std::env::var("FREEDOMSTREAM_BROWSER_LINKS").as_deref()
                 == Ok("1"),
             self_preview_revision: None,
@@ -196,6 +261,7 @@ impl PublisherUi {
     }
 
     fn join(&mut self) {
+        self.prior_room = None;
         self.browser_invitation_open = false;
         self.show_invitation = false;
         self.forgetting = false;
@@ -268,6 +334,7 @@ impl PublisherUi {
                     }
                 });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                self.update_badge(ui);
                 let mut pt = crate::locale::portuguese();
                 egui::ComboBox::from_id_salt("ui-language")
                     .selected_text(if pt { "PT-BR" } else { "EN" })
@@ -305,6 +372,9 @@ impl PublisherUi {
                             ui.close();
                         }
                         ui.separator();
+                    if std::env::var_os(crate::activation_protocol::INSTALLED).is_some() {
+                        ui.label(tr(if self.browser_links_enabled { "Room links open this installed app automatically." } else { "Room links are handled by another application or need repair." }));
+                    } else {
                     let label = if self.browser_links_enabled { "Disable browser links" } else { "Enable browser links" };
                     if ui.button(tr(label)).on_hover_text(tr("Allow invitation pages to open this app for your Windows user. A launcher copy is kept in Local AppData.")).clicked() {
                         match crate::browser_links::set_enabled(!self.browser_links_enabled) {
@@ -319,6 +389,7 @@ impl PublisherUi {
                             Err(error) => self.settings_error = error.to_string(),
                         }
                         ui.close();
+                    }
                     }
                         open_licenses(ui);
                     });
@@ -347,7 +418,12 @@ impl PublisherUi {
         if let Some(load) = &mut self.link_result {
             load.cancel();
         }
-        self.invitation.clear();
+        if let Some((invitation, name)) = self.prior_room.take() {
+            self.invitation = invitation;
+            self.name = name;
+        } else {
+            self.invitation.clear();
+        }
         self.settings_error.clear();
     }
 
@@ -380,6 +456,9 @@ impl PublisherUi {
                     ui.horizontal(|ui| { ui.spinner(); ui.label(tr("Loading browser invitation…")); });
                     ctx.request_repaint_after(Duration::from_millis(50));
                 } else if !self.invitation.is_empty() {
+                    if matches!(state.connection, "connected" | "reconnecting") {
+                        ui.label(tr("Joining this room will end your current sharing and watching."));
+                    }
                     self.join_form(ui, state);
                 }
                 if !self.settings_error.is_empty() {
@@ -1650,18 +1729,106 @@ impl PublisherUi {
 }
 
 impl PublisherUi {
+    fn update_badge(&mut self, ui: &mut egui::Ui) {
+        use crate::update_protocol::{Action, Phase};
+        let status = self.updates.snapshot();
+        if status.phase == Phase::Disabled {
+            return;
+        }
+        let label = match status.phase {
+            Phase::Checking => "Checking for updates…",
+            Phase::Current => "Up to date",
+            Phase::Available => "Download update",
+            Phase::Downloading => "Downloading update…",
+            Phase::Ready => "Restart to update",
+            Phase::Restarting => "Restarting…",
+            Phase::Error => "Retry update check",
+            Phase::Disabled => unreachable!(),
+        };
+        let response = ui.add_enabled(
+            !matches!(
+                status.phase,
+                Phase::Checking | Phase::Downloading | Phase::Restarting
+            ),
+            egui::Button::new("↻").fill(
+                if matches!(status.phase, Phase::Available | Phase::Ready) {
+                    egui::Color32::from_rgb(33, 91, 85)
+                } else {
+                    CARD
+                },
+            ),
+        );
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tr(label)));
+        response.clone().on_disabled_hover_text(tr(label));
+        response.clone().on_hover_ui(|ui| {
+            ui.set_max_width(340.0);
+            ui.strong(tr(label));
+            if !status.version.is_empty() {
+                ui.label(format!("{} {}", tr("New version"), status.version));
+            }
+            if status.notes.is_empty() {
+                ui.label(tr("No release notes provided."));
+            } else {
+                ui.label(&status.notes);
+            }
+            if !status.message.is_empty() {
+                ui.label(tr(&status.message));
+            }
+            if status.phase == Phase::Downloading {
+                ui.add(
+                    egui::ProgressBar::new(f32::from(status.progress) / 100.0).show_percentage(),
+                );
+            }
+            if status.phase == Phase::Ready {
+                ui.label(tr("Restarting ends sharing and watching."));
+            }
+        });
+        if status.phase == Phase::Downloading {
+            ui.label(format!("{}%", status.progress));
+        }
+        if response.clicked() {
+            match status.phase {
+                Phase::Current | Phase::Error => self.updates.send(Action::Check),
+                Phase::Available => self.updates.send(Action::Download),
+                Phase::Ready => self.update_restart_prompt = true,
+                _ => {}
+            }
+        }
+    }
+
+    fn update_restart_dialog(&mut self, ctx: &egui::Context) {
+        if !self.update_restart_prompt {
+            return;
+        }
+        let mut restart = false;
+        let mut later = false;
+        egui::Modal::new(egui::Id::unique("restart-update")).show(ctx, |ui| {
+            ui.set_max_width(360.0);
+            ui.heading(tr("Restart to update"));
+            ui.label(tr("Restarting ends sharing and watching."));
+            ui.label(tr(
+                "Your server and name are remembered. Open a fresh invitation after restart.",
+            ));
+            ui.horizontal(|ui| {
+                later = ui.button(tr("Later")).clicked();
+                restart = ui.button(tr("Restart to update")).clicked();
+            });
+        });
+        if later {
+            self.update_restart_prompt = false;
+        }
+        if restart {
+            self.updates.send(crate::update_protocol::Action::Restart);
+            self.update_restart_prompt = false;
+        }
+    }
+
     fn handle_close(&mut self, ctx: &egui::Context) {
         if self.force_close {
             return;
         }
         if ctx.input(|i| i.viewport().close_requested()) && self.closing_since.is_none() {
-            self.closing_since = Some(Instant::now());
-            self.clear_picker();
-            self.picker.begin_shutdown();
-            if let Some(load) = &mut self.link_result {
-                load.cancel();
-            }
-            self.controller.begin_shutdown();
+            self.begin_close();
         }
         if self.closing_since.is_some() {
             if self.controller.shutdown_finished()
@@ -1686,6 +1853,21 @@ impl eframe::App for PublisherUi {
         self.planar.destroy(gl);
     }
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.updates.snapshot().phase == crate::update_protocol::Phase::Restarting
+            && self.closing_since.is_none()
+        {
+            self.begin_close();
+        }
+        if self.closing_since.is_none() {
+            ctx.request_repaint_after(Duration::from_millis(250));
+            if let Some(event) = self.activation.poll() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                if let Some(link) = event.link {
+                    self.open_activation(&link, ctx);
+                }
+            }
+        }
         self.handle_close(ctx);
     }
 
@@ -1714,6 +1896,8 @@ impl eframe::App for PublisherUi {
             }
         }
         let ctx = root.ctx().clone();
+        ctx.request_repaint_after(Duration::from_secs(1));
+        self.update_restart_dialog(&ctx);
         if let Some(started) = self.closing_since {
             egui::CentralPanel::default().show(root, |ui| {
                 ui.vertical_centered(|ui| {
@@ -1802,6 +1986,9 @@ impl eframe::App for PublisherUi {
             self.set_fullscreen(&ctx, None);
         }
         if state.connection == "connected"
+            && state.error.is_empty()
+            && !state.busy
+            && !self.browser_invitation_open
             && !self.forgetting
             && let Ok(profile) = crate::settings::Profile::new(&self.invitation, &self.name)
             && self.attempted_profile.as_ref() != Some(&profile)
@@ -2476,6 +2663,132 @@ mod tests {
     use super::*;
 
     #[test]
+    fn update_controls_download_but_require_explicit_restart_confirmation() {
+        use crate::update_protocol::{Action, Phase, Status};
+        fn draw(
+            app: &mut PublisherUi,
+            ctx: &egui::Context,
+            events: Vec<egui::Event>,
+        ) -> egui::FullOutput {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(960.0, 540.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |root| {
+                    egui::CentralPanel::default().show(root, |ui| {
+                        app.update_badge(ui);
+                    });
+                    app.update_restart_dialog(root.ctx());
+                },
+            );
+            output.textures_delta.clear();
+            output
+        }
+        fn click(app: &mut PublisherUi, ctx: &egui::Context, text: &str) {
+            draw(app, ctx, vec![]);
+            let output = draw(app, ctx, vec![]);
+            let pos = output
+                .shapes
+                .iter()
+                .rev()
+                .find_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text_shape) if text_shape.galley.text() == text => {
+                        Some(text_shape.pos + text_shape.galley.size() / 2.0)
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("Missing button: {text}"));
+            for pressed in [true, false] {
+                draw(
+                    app,
+                    ctx,
+                    vec![
+                        egui::Event::PointerMoved(pos),
+                        egui::Event::PointerButton {
+                            pos,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: Default::default(),
+                        },
+                    ],
+                );
+            }
+        }
+        let mut app = app();
+        let ctx = egui::Context::default();
+        let (client, actions) = crate::updates::Client::fixture(Status {
+            phase: Phase::Available,
+            version: "0.1.1".into(),
+            ..Default::default()
+        });
+        app.updates = client;
+        click(&mut app, &ctx, "↻");
+        assert_eq!(actions.try_recv().unwrap(), Action::Download);
+        let (client, actions) = crate::updates::Client::fixture(Status {
+            phase: Phase::Ready,
+            ..Default::default()
+        });
+        app.updates = client;
+        click(&mut app, &ctx, "↻");
+        assert!(app.update_restart_prompt);
+        assert!(actions.try_recv().is_err());
+        click(&mut app, &ctx, tr("Later"));
+        assert!(!app.update_restart_prompt);
+        assert!(app.closing_since.is_none());
+        assert!(actions.try_recv().is_err());
+        app.update_restart_prompt = true;
+        click(&mut app, &ctx, tr("Restart to update"));
+        assert_eq!(actions.try_recv().unwrap(), Action::Restart);
+        assert!(
+            app.closing_since.is_none(),
+            "Wait for launcher acknowledgement before closing"
+        );
+    }
+
+    #[test]
+    fn forwarded_invitation_waits_for_trust_and_dismiss_restores_the_current_room() {
+        let mut app = app();
+        let previous = format!(
+            "https://current.test/r/{}#invite={}",
+            "r".repeat(22),
+            "s".repeat(43)
+        );
+        app.invitation = previous.clone();
+        app.name = "Current nickname".into();
+        let ctx = egui::Context::default();
+        let link = format!(
+            "freedomstream://join?server=https%3A%2F%2Fother.test#handoff={}",
+            "t".repeat(43)
+        );
+        app.open_activation(&link, &ctx);
+        assert!(app.browser_invitation_open);
+        assert!(app.pending_link.is_some());
+        assert!(
+            app.link_result.is_none(),
+            "An unfamiliar server needs trust before any request"
+        );
+        assert!(
+            !app.controller.snapshot().busy,
+            "Activation must not join or leave by itself"
+        );
+        app.name = "Unjoined nickname".into();
+        app.dismiss_browser_invitation();
+        assert_eq!(app.name, "Current nickname");
+        assert_eq!(app.invitation, previous);
+        assert!(!app.browser_invitation_open);
+        // Merely pasting a matching-origin invitation has never established trust.
+        app.invitation = previous.replace("current.test", "other.test");
+        app.open_activation(&link, &ctx);
+        assert!(app.pending_link.is_some());
+        assert!(app.link_result.is_none());
+    }
+
+    #[test]
     fn browser_confirmation_is_centered_and_enter_cannot_skip_server_trust() {
         for size in [egui::vec2(1280.0, 720.0), egui::vec2(960.0, 540.0)] {
             let mut app = app();
@@ -2720,6 +3033,10 @@ mod tests {
     fn app() -> PublisherUi {
         gstreamer::init().expect("Test media runtime");
         PublisherUi {
+            updates: crate::updates::Client::new(),
+            update_restart_prompt: false,
+            activation: crate::activation::Inbox::new(),
+            prior_room: None,
             controller: Controller::new(),
             invitation: String::new(),
             name: String::new(),
@@ -2977,6 +3294,11 @@ mod tests {
     #[test]
     fn long_room_names_preserve_header_actions_at_the_minimum_window_width() {
         let mut app = app();
+        let (client, _actions) = crate::updates::Client::fixture(crate::update_protocol::Status {
+            phase: crate::update_protocol::Phase::Ready,
+            ..Default::default()
+        });
+        app.updates = client;
         let ctx = egui::Context::default();
         configure_theme(&ctx);
         let state = Snapshot {

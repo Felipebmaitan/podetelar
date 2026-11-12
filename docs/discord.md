@@ -14,6 +14,10 @@ Administrator room creation remains available for recovery and installations
 without Discord. Clients remember server origin and display name, not invitations,
 and never autojoin on startup. A saved server is a destination, not admission.
 Opening or pasting a fresh link selects the room and its server explicitly.
+Installer-managed links still activate the running app. A link for the saved server
+can load its one-use handoff directly into Join confirmation; an unfamiliar server
+needs trust first. Loading never joins automatically. Download/Later/restart update
+controls continue to work while waiting for a room.
 
 ## Setup
 

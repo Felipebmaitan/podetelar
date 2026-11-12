@@ -1,4 +1,7 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
+mod activation;
+#[path = "../../activation_protocol.rs"]
+mod activation_protocol;
 mod admission;
 mod audio;
 mod browser_links;

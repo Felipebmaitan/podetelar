@@ -2,6 +2,12 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 #![allow(dead_code)]
 
+#[path = "../src/activation.rs"]
+#[cfg(feature = "performance-experiments")]
+mod activation;
+#[path = "../../activation_protocol.rs"]
+#[cfg(feature = "performance-experiments")]
+mod activation_protocol;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/admission.rs"]
 mod admission;
@@ -56,6 +62,9 @@ mod source_picker;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/sources.rs"]
 mod sources;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/stream_diagnostics.rs"]
+mod stream_diagnostics;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/ui.rs"]
 mod ui;

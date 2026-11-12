@@ -77,6 +77,10 @@ pub struct Link {
     ticket: String,
 }
 impl Link {
+    pub fn known_server(&self, invitation: &str) -> bool {
+        crate::admission::valid_invitation(invitation)
+            && Url::parse(invitation).is_ok_and(|url| url.origin() == self.origin.origin())
+    }
     pub fn parse(input: &str) -> Result<Self> {
         ensure!(input.len() <= 4096, "Invalid browser invitation.");
         let url = Url::parse(input).context("Invalid browser invitation.")?;
@@ -345,5 +349,23 @@ mod tests {
         ] {
             assert!(Link::parse(link).is_err());
         }
+    }
+
+    #[test]
+    fn saved_server_trust_requires_the_same_origin_and_a_valid_invitation() {
+        let link = Link::parse(&format!(
+            "freedomstream://join?server=https%3A%2F%2Fexample.test#handoff={}",
+            "t".repeat(43)
+        ))
+        .unwrap();
+        let invitation = format!(
+            "https://example.test/r/{}#invite={}",
+            "r".repeat(22),
+            "s".repeat(43)
+        );
+        assert!(link.known_server(&invitation));
+        assert!(!link.known_server(&invitation.replace("example.test", "another.test")));
+        assert!(!link.known_server(&invitation.replace("example.test", "example.test:8443")));
+        assert!(!link.known_server("https://example.test"));
     }
 }

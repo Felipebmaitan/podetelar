@@ -59,6 +59,8 @@ pub fn qualify_planar_transitions(
     use livekit::webrtc::video_frame::{I420Buffer, NV12Buffer};
     use std::sync::Arc;
     let mut app = PublisherUi {
+        activation: crate::activation::Inbox::new(),
+        prior_room: None,
         controller: Controller::new(),
         invitation: String::new(),
         name: String::new(),

@@ -58,7 +58,10 @@ fn run() -> Result<i32> {
     #[cfg(windows)]
     command.env(
         "FREEDOMSTREAM_BROWSER_LINKS",
-        if freedomstream_portable::browser_links::enabled() {
+        if (std::env::var_os("FREEDOMSTREAM_INSTALLED_EXE").is_some()
+            && std::env::var("FREEDOMSTREAM_INSTALLED_LINKS").as_deref() == Ok("1"))
+            || freedomstream_portable::browser_links::enabled()
+        {
             "1"
         } else {
             "0"

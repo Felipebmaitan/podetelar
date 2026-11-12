@@ -58,7 +58,8 @@ export class Signaling {
           if (
             queryToken &&
             request.headers.origin &&
-            request.headers.origin !== config.publicUrl
+            request.headers.origin !== config.publicUrl &&
+            request.headers.origin !== config.directUrl
           )
             return reply
               .code(403)

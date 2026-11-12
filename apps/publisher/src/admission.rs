@@ -344,13 +344,38 @@ impl Admission {
         measured
     }
     pub async fn join(invitation: &str, display_name: &str) -> Result<Self> {
-        let invitation = Invitation::parse(invitation)?;
+        let mut invitation = Invitation::parse(invitation)?;
         let client = Client::builder()
             .cookie_store(true)
             .redirect(Policy::none())
             .timeout(Duration::from_secs(12))
             .build()
             .context("Could not initialize secure room access.")?;
+        // Resolve before sending any invitation/session authority. Older servers
+        // lack discovery; failures other than 404 must never silently use a CDN.
+        let connection = client
+            .get(invitation.origin.join("api/connection")?)
+            .send()
+            .await
+            .context("Could not resolve the direct room server.")?;
+        if connection.status() != reqwest::StatusCode::NOT_FOUND {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Connection {
+                direct_url: String,
+            }
+            let connection: Connection = read_response(connection).await?;
+            ensure!(
+                crate::settings::valid_server(&connection.direct_url),
+                "Invalid direct room server."
+            );
+            let direct = Url::parse(&connection.direct_url)?;
+            ensure!(
+                invitation.origin.scheme() != "https" || direct.scheme() == "https",
+                "Direct room access requires HTTPS."
+            );
+            invitation.origin = direct;
+        }
         let response = client
             .post(
                 invitation
@@ -537,6 +562,38 @@ async fn read_response<T: DeserializeOwned>(mut response: Response) -> Result<T>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires a live split-origin API fixture"]
+    async fn joins_discovered_direct_server() {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Fixture {
+            invitation: String,
+            direct_url: String,
+        }
+        let path = std::env::var_os("FREEDOMSTREAM_DIRECT_FIXTURE").expect("Local fixture path");
+        let fixture: Fixture =
+            serde_json::from_slice(&std::fs::read(path).expect("Read local fixture"))
+                .expect("Valid fixture");
+        let admission = Admission::join(&fixture.invitation, "Native direct verification")
+            .await
+            .expect("Join direct API");
+        assert_eq!(
+            admission.origin.origin().ascii_serialization(),
+            fixture.direct_url
+        );
+        let measured = admission.measure_connection().await;
+        assert!(
+            measured.download_bps.is_some(),
+            "Direct download measurement must complete"
+        );
+        assert!(
+            measured.upload_bps.is_some(),
+            "Direct upload measurement must complete"
+        );
+        admission.leave().await;
+    }
 
     fn link(origin: &str) -> String {
         format!("{origin}/r/{}#invite={}", "r".repeat(22), "s".repeat(43))

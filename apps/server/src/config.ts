@@ -7,6 +7,7 @@ export type Config = {
   host: string;
   port: number;
   publicUrl: string;
+  directUrl: string;
   databasePath: string;
   adminToken: string;
   livekitUrl: string;
@@ -46,16 +47,33 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       "PUBLIC_URL must be an HTTPS origin, or an HTTP loopback origin for local development.",
     );
   }
-  // All public signaling passes session admission, including refreshed JWTs.
-  const livekitUrl = new URL("/media", publicUrl);
-  livekitUrl.protocol = publicUrl.protocol === "https:" ? "wss:" : "ws:";
+  const directUrl = new URL(env.DIRECT_URL || publicUrl.origin);
+  const directLocal = ["localhost", "127.0.0.1", "[::1]"].includes(
+    directUrl.hostname,
+  );
+  if (
+    (!directLocal && directUrl.protocol !== "https:") ||
+    (publicUrl.protocol === "https:" && directUrl.protocol !== "https:") ||
+    !["http:", "https:"].includes(directUrl.protocol) ||
+    directUrl.pathname !== "/" ||
+    directUrl.search ||
+    directUrl.hash ||
+    directUrl.username ||
+    directUrl.password
+  )
+    throw new Error(
+      "DIRECT_URL must be an HTTPS origin, or an HTTP loopback origin for local development.",
+    );
+  // Both hostnames terminate at the admitted gateway, never at raw SFU HTTP.
+  const livekitUrl = new URL("/media", directUrl);
+  livekitUrl.protocol = directUrl.protocol === "https:" ? "wss:" : "ws:";
   // The native WebSocket transport does not retry IPv4 after localhost's ::1
   // address, while the development/Docker listeners bind IPv4 loopback.
-  if (publicUrl.protocol === "http:" && publicUrl.hostname === "localhost")
+  if (directUrl.protocol === "http:" && directUrl.hostname === "localhost")
     livekitUrl.hostname = "127.0.0.1";
   if (env.LIVEKIT_URL && env.LIVEKIT_URL !== livekitUrl.toString())
     throw new Error(
-      "LIVEKIT_URL is now derived from PUBLIC_URL + /media. Remove the old direct SFU URL; configure LIVEKIT_INTERNAL_URL for the private SFU.",
+      "LIVEKIT_URL is derived from DIRECT_URL (default PUBLIC_URL) + /media. Configure LIVEKIT_INTERNAL_URL for the private SFU.",
     );
   const port = Number(env.PORT ?? 3000);
   const internalUrl = new URL(
@@ -109,6 +127,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     host: env.HOST ?? "127.0.0.1",
     port,
     publicUrl: publicUrl.origin,
+    directUrl: directUrl.origin,
     databasePath: resolve(
       repositoryRoot,
       env.DATABASE_PATH ?? "data/freedomstream.db",

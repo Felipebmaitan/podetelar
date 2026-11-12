@@ -8,6 +8,7 @@ import { PublisherDownload } from "./PublisherDownload";
 import { Admin } from "./Admin";
 import { OpenInApp } from "./OpenInApp";
 import { InvitationPage } from "./InvitationPage";
+import { DirectDownload } from "./DirectDownload";
 
 const managedRoomId = /^\/manage\/([A-Za-z0-9_-]{22})$/.exec(
   window.location.pathname,
@@ -22,6 +23,9 @@ const invitation = new URLSearchParams(window.location.hash.slice(1)).get(
 const entryInvitation = invitationSchema.safeParse(invitation).success
   ? invitation!
   : undefined;
+const downloadTicket = new URLSearchParams(window.location.hash.slice(1)).get(
+  "ticket",
+);
 // Keep the invitation in memory only; never leave it in history or browser storage.
 if (window.location.hash)
   window.history.replaceState(
@@ -44,6 +48,8 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export function App() {
+  if (window.location.pathname === "/download")
+    return <DirectDownload ticket={downloadTicket} />;
   if (entryRoomId)
     return <InvitationPage roomId={entryRoomId} invitation={entryInvitation} />;
   return window.location.pathname === "/" ? <Admin /> : <RoomApp />;

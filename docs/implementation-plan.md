@@ -423,3 +423,23 @@ Node 24 checks, Windows DPAPI migration and native startup/join/forget checks,
 independent GPT-6.1-Sol high review, and an actual registered Discord command in a
 private test channel. Discord application setup, production HTTPS validation and
 native UI qualification remain open until exercised. Do not merge on mocks alone.
+
+## Public website and direct service domains — independent PR
+
+Support optional `DIRECT_URL` alongside `PUBLIC_URL`, defaulting to the existing
+single origin. Keep Discord/admin/share invitations on the website while native
+admission, authenticated signaling and probes use the direct origin. Discover
+the operator's direct origin before native admission; app handoff and native
+Invite retain the canonical public invitation. Retain host-only session cookies, access
+revocation and private SFU HTTP. Move binary bytes through bounded, expiring,
+single-use download tickets in fragments and POST bodies, rechecking the issuing
+room session without sharing cookies across domains. Deny bulk probes and ticket
+redemption on the public host. Keep preview cadence and subscriptions unchanged.
+
+Generate proxied website 443, DNS-only direct HTTPS 8443 and DNS-only TURN 5349
+configuration and certificates, preserving existing services and private keys.
+Document DNS/proxy flags, cache/challenge/logging policy and rollout compatibility.
+Accept with Node 24 checks, real HTTP/browser download and cookie-isolation checks,
+native discovery and direct upload/download measurement, nginx validation, Docker
+smoke and independent GPT-6.1-Sol high review. Actual DNS/Cloudflare/TLS renewal,
+WAN media and forced TURN remain deployment gates until exercised on the VPS.

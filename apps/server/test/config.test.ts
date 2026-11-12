@@ -83,3 +83,33 @@ test("administrative media access uses a separately configured private HTTP(S) o
       /INTERNAL/,
     );
 });
+
+test("direct origin defaults to the website and rejects paths, secrets and TLS downgrade", () => {
+  assert.equal(loadConfig(valid).directUrl, loadConfig(valid).publicUrl);
+  const split = loadConfig({
+    ...valid,
+    PUBLIC_URL: "https://stream.maitan.me",
+    DIRECT_URL: "https://stream-direct.maitan.me:8443",
+  });
+  assert.equal(split.publicUrl, "https://stream.maitan.me");
+  assert.equal(split.livekitUrl, "wss://stream-direct.maitan.me:8443/media");
+  for (const DIRECT_URL of [
+    "http://remote.test",
+    "https://user:secret@direct.test",
+    "https://direct.test/path",
+    "https://direct.test?q=secret",
+    "https://direct.test/#secret",
+    "http://localhost:3000",
+    "file:///tmp",
+  ]) {
+    assert.throws(
+      () =>
+        loadConfig({
+          ...valid,
+          PUBLIC_URL: "https://stream.maitan.me",
+          DIRECT_URL,
+        }),
+      /DIRECT_URL/,
+    );
+  }
+});

@@ -1,6 +1,6 @@
 # Discord-created rooms verification
 
-Implementation branch: `feat/discord-room-creation`, based on main `6dfb8f2`.
+Implementation branch: `feat/discord-room-creation`, integrated with main `380912a`.
 
 ## Completed locally
 
@@ -24,21 +24,22 @@ Implementation branch: `feat/discord-room-creation`, based on main `6dfb8f2`.
   approved the implementation, requesting a distribution documentation correction
   that is now included. Source approval does not waive runtime acceptance.
 
-## Remaining release gates
+## Verification limits
 
-- `npm run native:check` stops before Clippy because this isolated checkout has no
-  development media runtime. Full native checks (including performance experiments)
-  and Windows DPAPI migration tests have **not** run here.
-- Actual native opening, migration of a prior profile, server/name-only restore,
-  fresh invitation join and Forget saved server need GUI verification.
-- No Discord application credentials were supplied, installation/registration
-  performed or channel message sent. Actual Discord PING validation, HTTPS
-  reachability and both commands in a private guild remain unverified.
-- Preserve the existing hardware, codec, audio and distribution qualification gates.
-  This PR supplies no additional hardware/media performance evidence.
+The integration results below supersede the initial missing-runtime/setup status.
+Native GUI startup and actual OS-protected persistence are verified. The rebuilt
+native executable also joins/leaves through the real HTTP admission path, including
+an invitation created by a live Discord command. The direct graphical media
+connection encountered an untargetable Windows Firewall dialog and timed out;
+that GUI/media path is not claimed as qualified by API or source checks.
 
-Keep the PR draft and do not merge/release until its outstanding acceptance gates
-are exercised. Setup and privacy semantics are documented in [Discord](../discord.md).
+Preserve the existing hardware, codec, audio, signed-distribution, fresh-machine
+and real-group qualification gates. This PR adds no media capability or hardware
+performance claim. The Discord trial uses a temporary HTTPS tunnel and isolated
+local room database; production still needs the documented environment settings
+and a permanent interactions endpoint. Bot credentials remain local and uncommitted.
+
+Setup and privacy semantics are documented in [Discord](../discord.md).
 
 ## Integration with installer and update controls
 
@@ -71,5 +72,19 @@ Revalidation on this integration:
   Firewall dialog that the automation API does not enumerate/target; media
   connection timed out. This is a native connection limitation, not a passed join.
 - Discord application identity/public key verified through the authenticated API.
-  Guild registration currently returns Missing Access until the owner completes
-  installation. No command execution or live Discord response is claimed yet.
+  After owner-authorized installation, both guild commands registered successfully.
+- Discord accepted the temporary HTTPS interactions endpoint after a real signed
+  PING and an invalid-signature probe. The actual endpoint returned 200 and 401,
+  respectively.
+- The owner invoked `/telar` in the private guild and confirmed the reply. The
+  signature-verified endpoint recorded the command and its channel-visible response
+  with SUPPRESS_EMBEDS (4). No invitation or Discord continuation token was logged.
+- Anonymous access and a wrong invitation were denied for that live-created room.
+  The rebuilt native executable then used the correct Discord-issued invitation
+  over public HTTPS to admit a session, measure actual bounded down/up capacity,
+  and leave successfully. This exercises native room admission without claiming
+  a passed graphical media connection.
+- Native admission/measurement/leave also passed independently against Docker.
+  The installer integrity-input test passed. All GitHub Linux, Windows and
+  container checks passed on integrated head `b1b92dc`; native hardware CI remains
+  deliberately skipped, with the local native results listed above.

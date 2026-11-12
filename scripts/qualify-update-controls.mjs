@@ -1,7 +1,15 @@
 // Real Velopack packages/helper, local file feed, test publisher substitute.
 // This does not qualify production media cleanup or fresh-machine installation.
 import { execFileSync, spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 const root = resolve(import.meta.dirname, "..");
 const output = join(root, ".local", `update-controls-${Date.now()}`);
@@ -91,6 +99,29 @@ run(
   },
 );
 const events = join(output, "events.txt");
+// Supply a real old base so the SDK would select deltas, plus a deliberately
+// unsafe delta entry. The launcher must discard that strategy before download.
+const packageDirectory = join(unpacked, "packages");
+mkdirSync(packageDirectory, { recursive: true });
+const oldPackage = readdirSync(join(output, "old")).find((name) =>
+  name.endsWith("-full.nupkg"),
+);
+copyFileSync(
+  join(output, "old", oldPackage),
+  join(packageDirectory, oldPackage),
+);
+const manifestPath = join(feed, "releases.preview.json");
+const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+const trap = Buffer.from("invalid delta fixture");
+writeFileSync(join(output, "trap.nupkg"), trap);
+manifest.Assets.push({
+  ...manifest.Assets[0],
+  Type: "Delta",
+  FileName: "../trap.nupkg",
+  Size: trap.length,
+  SHA256: createHash("sha256").update(trap).digest("hex"),
+});
+writeFileSync(manifestPath, JSON.stringify(manifest));
 async function launch(mode) {
   const child = spawn(
     join(unpacked, "current/freedomstream-installed.exe"),
@@ -127,12 +158,22 @@ async function launch(mode) {
   }
 }
 await launch("later");
+if (existsSync(join(unpacked, "trap.nupkg")))
+  throw new Error("An unvalidated delta was downloaded");
 if (
   !readFileSync(join(unpacked, "current/sq.version"), "utf8").includes(
     "0.1.0-preview.1",
   )
 )
   throw new Error("Later installed an update");
+// Exercise the SDK's existing-file shortcut: corrupt the cached full package,
+// then require a new explicit download to repair it before Ready/restart.
+const packages = join(unpacked, "packages");
+const cached = readdirSync(packages).find(
+  (name) => name.endsWith("-full.nupkg") && name.includes("0.1.0-preview.2"),
+);
+if (!cached) throw new Error("Downloaded package was not cached");
+writeFileSync(join(packages, cached), "corrupted after Later");
 await launch("restart");
 const deadline = Date.now() + 45000;
 while (

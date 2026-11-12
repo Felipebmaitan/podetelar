@@ -198,6 +198,7 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
+ "sha2",
  "url",
  "velopack",
  "windows-sys 0.61.2",

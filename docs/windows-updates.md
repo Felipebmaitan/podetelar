@@ -71,7 +71,9 @@ The saved-room behavior is unchanged, and no media restarts automatically.
 Checks run on startup and at roughly 30-minute intervals with jitter while current
 or retryable. Downgrades, cross-application packages, unsafe filenames, missing
 SHA-256 and packages over 1 GiB are refused. Stable versions refuse prereleases.
-Downloads currently use full packages; the SDK validates size/hash before Ready.
+Downloads explicitly discard SDK delta strategies and use full packages. The
+launcher checks SHA-256/size itself before Ready and again before applying; invalid
+cached packages are removed and downloaded again on an explicit download action.
 This does not establish independent publisher authenticity. In-flight cancellation,
 opt-in nightly switching and delta optimization remain follow-up work.
 
@@ -135,7 +137,9 @@ the package, choose Later and verify version one stays unchanged, then explicitl
 restart through the real Update.exe and observe version two relaunch. Evidence is
 kept under `.local/update-controls-*`. The substitute is behind a Cargo feature
 and is never staged by the production installer packager. The workflow runs this
-test on Windows. This verifies helper lifetime and update application with a
+test on Windows. It also offers an unsafe delta alongside a real base package and
+verifies that delta is ignored, then corrupts the downloaded cache after Later and
+requires the next download to repair it. This verifies helper lifetime and update application with a
 fixture process; it does not establish actual media cleanup, fresh installation,
 signed provenance or saved-room continuity. Those remain separate gates above.
 

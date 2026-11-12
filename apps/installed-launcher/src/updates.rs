@@ -1,5 +1,7 @@
 use crate::protocol::{self, Action, Phase, Request, Status};
+use sha2::{Digest, Sha256};
 use std::{
+    io::Read,
     net::{Ipv4Addr, TcpListener},
     sync::{Arc, Mutex, mpsc},
     time::Duration,
@@ -18,7 +20,7 @@ pub struct Bridge {
     status: Arc<Mutex<Status>>,
 }
 
-fn manager() -> Option<UpdateManager> {
+fn manager() -> Option<(UpdateManager, std::path::PathBuf)> {
     let feed = option_env!("FREEDOMSTREAM_UPDATE_FEED")?;
     let source: Box<dyn sources::UpdateSource> = if std::path::Path::new(feed).is_absolute() {
         Box::new(sources::FileSource::new(feed))
@@ -45,7 +47,12 @@ fn manager() -> Option<UpdateManager> {
             ))
         }
     };
-    UpdateManager::new_boxed(
+    let packages = velopack::locator::auto_locate_app_manifest(
+        velopack::locator::LocationContext::FromCurrentExe,
+    )
+    .ok()?
+    .get_packages_dir();
+    let manager = UpdateManager::new_boxed(
         source,
         Some(UpdateOptions {
             AllowVersionDowngrade: false,
@@ -54,7 +61,47 @@ fn manager() -> Option<UpdateManager> {
         }),
         None,
     )
-    .ok()
+    .ok()?;
+    Some((manager, packages))
+}
+
+fn full_only(mut found: UpdateInfo) -> UpdateInfo {
+    // The pinned Rust SDK does not enforce MaximumDeltasBeforeFallback.
+    found.BaseRelease = None;
+    found.DeltasToTarget.clear();
+    found
+}
+
+fn verified(path: &std::path::Path, asset: &velopack::VelopackAsset) -> bool {
+    let check = || -> std::io::Result<bool> {
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.share_mode(1); // No writes/replacements while hashing.
+        }
+        let mut file = options.open(path)?;
+        if file.metadata()?.len() != asset.Size {
+            return Ok(false);
+        }
+        let mut digest = Sha256::new();
+        let mut buffer = [0; 65536];
+        loop {
+            let count = file.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            digest.update(&buffer[..count]);
+        }
+        let actual = digest
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
+        Ok(actual.eq_ignore_ascii_case(&asset.SHA256))
+    };
+    check().unwrap_or(false)
 }
 
 impl Bridge {
@@ -111,7 +158,7 @@ impl Bridge {
 }
 
 fn worker(status: Arc<Mutex<Status>>, receive: mpsc::Receiver<Work>) {
-    let Some(manager) = manager() else {
+    let Some((manager, packages)) = manager() else {
         status.lock().unwrap().message = "Updates are not configured for this build.".into();
         return;
     };
@@ -129,6 +176,7 @@ fn worker(status: Arc<Mutex<Status>>, receive: mpsc::Receiver<Work>) {
                             || asset.Size > 1024 * 1024 * 1024
                             || asset.Version.len() > 80
                             || asset.PackageId != manager.get_app_id()
+                            || !asset.Type.eq_ignore_ascii_case("full")
                             || !asset.FileName.ends_with(".nupkg")
                             || asset.FileName.contains(['/', '\\', ':'])
                             || asset.SHA256.len() != 64
@@ -146,7 +194,7 @@ fn worker(status: Arc<Mutex<Status>>, receive: mpsc::Receiver<Work>) {
                                 notes: protocol::notes(&asset.NotesMarkdown),
                                 ..Default::default()
                             };
-                            update = Some(*found);
+                            update = Some(full_only(*found));
                         }
                     }
                     Ok(_) => {
@@ -173,7 +221,20 @@ fn worker(status: Arc<Mutex<Status>>, receive: mpsc::Receiver<Work>) {
                             copy.lock().unwrap().progress = percent.clamp(0, 100) as u8;
                         }
                     });
-                    let result = manager.download_updates(found, Some(progress));
+                    let path = packages.join(&found.TargetFullRelease.FileName);
+                    let result = (|| -> Result<(), velopack::Error> {
+                        // SDK download_updates returns Ok without checking existing files.
+                        if path.exists() && !verified(&path, &found.TargetFullRelease) {
+                            std::fs::remove_file(&path)?;
+                        }
+                        manager.download_updates(found, Some(progress))?;
+                        if !verified(&path, &found.TargetFullRelease) {
+                            return Err(
+                                std::io::Error::from(std::io::ErrorKind::InvalidData).into()
+                            );
+                        }
+                        Ok(())
+                    })();
                     let _ = reporter.join();
                     let mut state = status.lock().unwrap();
                     state.phase = if result.is_ok() {
@@ -200,7 +261,10 @@ fn worker(status: Arc<Mutex<Status>>, receive: mpsc::Receiver<Work>) {
                     let requested = status.lock().unwrap().phase == Phase::Restarting;
                     let applied = requested
                         && update.as_ref().is_some_and(|found| {
-                            manager
+                            verified(
+                                &packages.join(&found.TargetFullRelease.FileName),
+                                &found.TargetFullRelease,
+                            ) && manager
                                 .wait_exit_then_apply_updates(
                                     found,
                                     true,
@@ -231,5 +295,23 @@ fn worker(status: Arc<Mutex<Status>>, receive: mpsc::Receiver<Work>) {
                 Err(_) => return,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn accepted_update_discards_all_delta_assets() {
+        let full = full_only(UpdateInfo {
+            BaseRelease: Some(Default::default()),
+            DeltasToTarget: vec![velopack::VelopackAsset {
+                FileName: "../untrusted-delta.nupkg".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        });
+        assert!(full.BaseRelease.is_none());
+        assert!(full.DeltasToTarget.is_empty());
     }
 }

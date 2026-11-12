@@ -3,6 +3,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdlib>
 #include <map>
 #include <mutex>
 #include <gst/app/gstappsrc.h>
@@ -16,12 +17,14 @@
 namespace freedomstream {
 class Decoder final : public webrtc::VideoDecoder {
  public:
-  explicit Decoder(bool hevc) : hevc_(hevc) {}
+  explicit Decoder(bool hevc, bool av1 = false) : hevc_(hevc), av1_(av1) {}
   ~Decoder() override { Release(); }
 
   bool Configure(const Settings&) override {
     Stop();
-    const char* pipeline = hevc_
+    const char* pipeline = av1_
+      ? "appsrc name=input is-live=true format=time max-bytes=4194304 block=false caps=video/x-av1,stream-format=obu-stream,alignment=tu ! av1parse ! d3d11av1dec ! d3d11download ! videoconvert ! video/x-raw,format=I420 ! appsink name=output sync=false max-buffers=2 drop=true"
+      : hevc_
       ? "appsrc name=input is-live=true format=time max-bytes=4194304 block=false caps=video/x-h265,stream-format=byte-stream,alignment=au ! h265parse ! d3d11h265dec ! d3d11download ! videoconvert ! video/x-raw,format=I420 ! appsink name=output sync=false max-buffers=2 drop=true"
       : "appsrc name=input is-live=true format=time max-bytes=4194304 block=false caps=video/x-h264,stream-format=byte-stream,alignment=au ! h264parse ! d3d11h264dec ! d3d11download ! videoconvert ! video/x-raw,format=I420 ! appsink name=output sync=false max-buffers=2 drop=true";
     GError* error = nullptr;
@@ -128,6 +131,7 @@ class Decoder final : public webrtc::VideoDecoder {
     return GST_FLOW_OK;
   }
   const bool hevc_;
+  const bool av1_;
   GstElement *pipeline_ = nullptr, *input_ = nullptr, *output_ = nullptr;
   std::atomic<webrtc::DecodedImageCallback*> callback_{nullptr};
   std::mutex timestamps_mutex_;
@@ -142,11 +146,17 @@ class DecoderFactory final : public webrtc::VideoDecoderFactory {
     // d3d11 factories are registered for available adapters at GStreamer init.
     if (Available("d3d11h264dec")) formats = webrtc::SupportedH264DecoderCodecs();
     if (Available("d3d11h265dec")) formats.push_back(webrtc::SdpVideoFormat("H265"));
+    // The SDK's built-in dav1d decoder remains the CPU path on older GPUs.
+    // Force software locally to qualify that path even on an AV1-capable GPU.
+    const char* backend = std::getenv("FREEDOMSTREAM_AV1_DECODER");
+    if ((!backend || std::string(backend) != "software") && Available("d3d11av1dec"))
+      formats.push_back(webrtc::SdpVideoFormat::AV1Profile0());
     return formats;
   }
   std::unique_ptr<webrtc::VideoDecoder> Create(
       const webrtc::Environment&, const webrtc::SdpVideoFormat& format) override {
-    return std::make_unique<Decoder>(absl::EqualsIgnoreCase(format.name, "H265"));
+    return std::make_unique<Decoder>(absl::EqualsIgnoreCase(format.name, "H265"),
+                                    absl::EqualsIgnoreCase(format.name, "AV1"));
   }
  private:
   static bool Available(const char* name) {

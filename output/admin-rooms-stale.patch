@@ -1,0 +1,562 @@
+diff --git a/apps/server/src/app.ts b/apps/server/src/app.ts
+index 91ab3ad..ebbc0c7 100644
+--- a/apps/server/src/app.ts
++++ b/apps/server/src/app.ts
+@@ -156,6 +156,22 @@ export async function buildApp(
+     },
+   );
+ 
++  app.get<{ Querystring: { offset?: string } }>(
++    "/api/rooms",
++    async (request, reply) => {
++      if (!administrator(request, config))
++        return reply
++          .code(401)
++          .send({ error: "Room management requires the server access key." });
++      const offset = request.query.offset ?? "0";
++      if (!/^(0|[1-9][0-9]{0,8})$/.test(offset))
++        return reply
++          .code(400)
++          .send({ error: "Invalid room directory offset." });
++      return rooms.list(Number(offset));
++    },
++  );
++
+   app.post<{ Params: { roomId: string } }>(
+     "/api/rooms/:roomId/join",
+     { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+@@ -284,7 +300,9 @@ export async function buildApp(
+   app.setNotFoundHandler((request, reply) => {
+     if (
+       request.method === "GET" &&
+-      /^\/(?:r|manage)\/[A-Za-z0-9_-]{22}(?:\?.*)?$/.test(request.url) &&
++      /^(?:\/admin|\/(?:r|manage)\/[A-Za-z0-9_-]{22})(?:\?.*)?$/.test(
++        request.url,
++      ) &&
+       existsSync(config.webRoot)
+     )
+       return reply.sendFile("index.html");
+diff --git a/apps/server/src/rooms.ts b/apps/server/src/rooms.ts
+index 9aea007..8b99aa7 100644
+--- a/apps/server/src/rooms.ts
++++ b/apps/server/src/rooms.ts
+@@ -9,6 +9,7 @@ import { dirname } from "node:path";
+ import { DatabaseSync } from "node:sqlite";
+ import type {
+   CreateRoomInput,
++  ManagedRoom,
+   Room,
+   RoomSession,
+ } from "@freedomstream/contracts";
+@@ -116,6 +117,26 @@ export class Rooms {
+     }
+   }
+ 
++  list(offset: number): { rooms: ManagedRoom[]; nextOffset: number | null } {
++    const rows = this.db
++      .prepare(
++        "SELECT id, name, created_at, invitation_enabled FROM rooms ORDER BY created_at DESC, id DESC LIMIT 51 OFFSET ?",
++      )
++      .all(offset) as Pick<
++      RoomRow,
++      "id" | "name" | "created_at" | "invitation_enabled"
++    >[];
++    return {
++      rooms: rows.slice(0, 50).map((row) => ({
++        id: row.id,
++        name: row.name,
++        createdAt: new Date(row.created_at).toISOString(),
++        invitationEnabled: Boolean(row.invitation_enabled),
++      })),
++      nextOffset: rows.length > 50 ? offset + 50 : null,
++    };
++  }
++
+   join(
+     id: string,
+     invitation: string,
+diff --git a/apps/server/test/rooms.test.ts b/apps/server/test/rooms.test.ts
+index b027b78..65f1100 100644
+--- a/apps/server/test/rooms.test.ts
++++ b/apps/server/test/rooms.test.ts
+@@ -138,7 +138,7 @@ test("unauthenticated users cannot discover room details or obtain media access"
+   }
+   assert.equal(
+     (await f.app.inject({ method: "GET", url: "/api/rooms" })).statusCode,
+-    404,
++    401,
+   );
+ });
+ 
+@@ -457,3 +457,76 @@ test("browser tokens cannot publish or subscribe and browser fetch cannot obtain
+     assert.equal(response.statusCode, 403);
+   }
+ });
++
++test("only administrators can list rooms; directory excludes secrets and survives restart", async (t) => {
++  const f = await fixture(t);
++  const first = await f.create("Private directory room");
++  await f.create("Another room");
++  for (const headers of [
++    {},
++    { authorization: "Bearer wrong" },
++    { cookie: first.cookie },
++  ]) {
++    const denied = await f.app.inject({ url: "/api/rooms", headers });
++    assert.equal(denied.statusCode, 401);
++    assert.ok(!denied.body.includes("Private directory room"));
++  }
++  const headers = { authorization: `Bearer ${ADMIN}` };
++  await f.app.inject({
++    method: "POST",
++    url: `/api/rooms/${first.body.room.id}/access`,
++    headers: { ...headers, origin: ORIGIN },
++    payload: { invitation: "disable", revokeSessions: false },
++  });
++  await f.restart();
++  const response = await f.app.inject({ url: "/api/rooms", headers });
++  assert.equal(response.statusCode, 200);
++  assert.equal(response.headers["cache-control"], "no-store");
++  assert.equal(response.json().nextOffset, null);
++  assert.equal(response.json().rooms.length, 2);
++  assert.deepEqual(
++    response
++      .json()
++      .rooms.find((room: { id: string }) => room.id === first.body.room.id),
++    { ...first.body.room, invitationEnabled: false },
++  );
++  assert.ok(!response.body.includes(first.invitation));
++  assert.ok(!response.body.includes("hash"));
++  assert.ok(!response.body.includes("participant"));
++  for (const offset of ["-1", "1.2", "abc", "9999999999"]) {
++    assert.equal(
++      (await f.app.inject({ url: `/api/rooms?offset=${offset}`, headers }))
++        .statusCode,
++      400,
++    );
++  }
++});
++
++test("room directory pages are bounded with deterministic ordering", async (t) => {
++  const f = await fixture(t);
++  const rooms = new Rooms(f.config.databasePath);
++  try {
++    for (let index = 0; index < 51; index++)
++      rooms.create({ name: `Room ${index}`, displayName: "Admin" });
++  } finally {
++    rooms.close();
++  }
++  const headers = { authorization: `Bearer ${ADMIN}` };
++  const first = (await f.app.inject({ url: "/api/rooms", headers })).json();
++  const second = (
++    await f.app.inject({
++      url: `/api/rooms?offset=${first.nextOffset}`,
++      headers,
++    })
++  ).json();
++  assert.equal(first.rooms.length, 50);
++  assert.equal(first.nextOffset, 50);
++  assert.equal(second.rooms.length, 1);
++  assert.equal(second.nextOffset, null);
++  assert.equal(
++    new Set(
++      [...first.rooms, ...second.rooms].map((room: { id: string }) => room.id),
++    ).size,
++    51,
++  );
++});
+diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+index 20d0b6b..5495ac0 100644
+--- a/apps/web/src/App.tsx
++++ b/apps/web/src/App.tsx
+@@ -1,9 +1,10 @@
+ import { useEffect, useState } from "react";
+ import type { FormEvent, ReactNode } from "react";
+ import { invitationSchema, roomIdSchema } from "@freedomstream/contracts";
+-import type { CreatedRoom, RoomSession } from "@freedomstream/contracts";
++import type { RoomSession } from "@freedomstream/contracts";
+ import { ApiError, request } from "./api";
+ import { RoomAccess } from "./RoomAccess";
++import { AdminPanel } from "./AdminPanel";
+ import { PublisherDownload } from "./PublisherDownload";
+ 
+ const managedRoomId = /^\/manage\/([A-Za-z0-9_-]{22})$/.exec(
+@@ -187,7 +188,9 @@ export function App() {
+             {error}
+           </div>
+         )}
+-        {managedRoomId ? (
++        {window.location.pathname === "/admin" ? (
++          <AdminPanel />
++        ) : managedRoomId ? (
+           <div className="welcome-content">
+             <RoomAccess roomId={managedRoomId} />
+           </div>
+@@ -257,9 +260,7 @@ export function App() {
+             onJoined={entered}
+           />
+         ) : window.location.pathname === "/" ? (
+-          <Start
+-            onCreated={(result) => entered(result, result.invitationUrl)}
+-          />
++          <Start />
+         ) : (
+           <div className="centered">
+             <h1>That room link doesn't look right.</h1>
+@@ -271,31 +272,9 @@ export function App() {
+   );
+ }
+ 
+-function Start({ onCreated }: { onCreated: (result: CreatedRoom) => void }) {
+-  const [roomName, setRoomName] = useState("");
+-  const [displayName, setDisplayName] = useState("");
+-  const [accessKey, setAccessKey] = useState("");
++function Start() {
+   const [link, setLink] = useState("");
+-  const [busy, setBusy] = useState(false);
+   const [error, setError] = useState("");
+-  const create = async (event: FormEvent) => {
+-    event.preventDefault();
+-    setBusy(true);
+-    setError("");
+-    try {
+-      const result = await request<CreatedRoom>("/api/rooms", {
+-        method: "POST",
+-        headers: { Authorization: `Bearer ${accessKey}` },
+-        body: JSON.stringify({ name: roomName, displayName }),
+-      });
+-      setAccessKey("");
+-      onCreated(result);
+-    } catch (caught) {
+-      setError(message(caught));
+-    } finally {
+-      setBusy(false);
+-    }
+-  };
+   const openInvitation = (event: FormEvent) => {
+     event.preventDefault();
+     try {
+@@ -318,50 +297,9 @@ function Start({ onCreated }: { onCreated: (result: CreatedRoom) => void }) {
+       <div className="welcome-heading">
+         <p className="eyebrow">GET TOGETHER</p>
+         <h1>A room for your people.</h1>
+-        <p>
+-          Create a private room, or open the invitation from your group chat.
+-        </p>
++        <p>Open the invitation from your group chat to join your friends.</p>
+       </div>
+       <div className="welcome-grid">
+-        <form className="panel" onSubmit={(event) => void create(event)}>
+-          <h2>Create a room</h2>
+-          <Field label="Room name">
+-            <input
+-              required
+-              maxLength={60}
+-              value={roomName}
+-              onChange={(event) => setRoomName(event.target.value)}
+-              placeholder="The usual place"
+-            />
+-          </Field>
+-          <Field label="Your name">
+-            <input
+-              required
+-              maxLength={60}
+-              autoComplete="nickname"
+-              value={displayName}
+-              onChange={(event) => setDisplayName(event.target.value)}
+-              placeholder="What your friends call you"
+-            />
+-          </Field>
+-          <Field label="Server access key">
+-            <input
+-              required
+-              type="password"
+-              autoComplete="off"
+-              maxLength={256}
+-              value={accessKey}
+-              onChange={(event) => setAccessKey(event.target.value)}
+-              placeholder="Ask your server owner"
+-            />
+-          </Field>
+-          <p className="help">
+-            Only someone with the server access key can create a room.
+-          </p>
+-          <button className="button" disabled={busy}>
+-            {busy ? "Creating…" : "Create private room"}
+-          </button>
+-        </form>
+         <form className="panel invitation-form" onSubmit={openInvitation}>
+           <span className="small-mark" aria-hidden="true">
+             #
+@@ -380,6 +318,7 @@ function Start({ onCreated }: { onCreated: (result: CreatedRoom) => void }) {
+           <button className="button secondary">Open invitation</button>
+         </form>
+       </div>
++      <a href="/admin">Admin panel</a>
+       {error && (
+         <p className="form-error" role="alert">
+           {error}
+diff --git a/apps/web/src/RoomAccess.tsx b/apps/web/src/RoomAccess.tsx
+index d841ffc..f2c569b 100644
+--- a/apps/web/src/RoomAccess.tsx
++++ b/apps/web/src/RoomAccess.tsx
+@@ -1,4 +1,4 @@
+-import { useState } from "react";
++import { useEffect, useState } from "react";
+ import type {
+   ChangedAccess,
+   RoomAccess as AccessState,
+@@ -6,14 +6,20 @@ import type {
+ import { request } from "./api";
+ 
+ /** The operator key and new invitation exist only in this mounted form. */
+-export function RoomAccess({ roomId }: { roomId: string }) {
++export function RoomAccess({
++  roomId,
++  adminKey,
++}: {
++  roomId: string;
++  adminKey?: string;
++}) {
+   const [key, setKey] = useState("");
+   const [state, setState] = useState<AccessState | null>(null);
+   const [revokeSessions, setRevokeSessions] = useState(false);
+   const [invitation, setInvitation] = useState("");
+   const [busy, setBusy] = useState(false);
+   const [feedback, setFeedback] = useState("");
+-  const headers = { Authorization: `Bearer ${key}` };
++  const headers = { Authorization: `Bearer ${adminKey ?? key}` };
+   const options = () => ({ headers, signal: AbortSignal.timeout(15_000) });
+   const refresh = async () =>
+     setState(
+@@ -41,6 +47,26 @@ export function RoomAccess({ roomId }: { roomId: string }) {
+     );
+     await refresh();
+   };
++  useEffect(() => {
++    if (!adminKey) return;
++    const abort = new AbortController();
++    setBusy(true);
++    request<AccessState>(`/api/rooms/${roomId}/access`, {
++      headers: { Authorization: `Bearer ${adminKey}` },
++      signal: abort.signal,
++    })
++      .then(setState)
++      .catch(() => {
++        if (!abort.signal.aborted)
++          setFeedback(
++            "Room management failed. Check the server access key and connection, then retry.",
++          );
++      })
++      .finally(() => {
++        if (!abort.signal.aborted) setBusy(false);
++      });
++    return () => abort.abort();
++  }, [adminKey, roomId]);
+   return (
+     <section className="panel access-panel">
+       <h1>Manage room access</h1>
+@@ -48,45 +74,47 @@ export function RoomAccess({ roomId }: { roomId: string }) {
+         The server access key controls invitations and sessions. Each browser or
+         publisher joins as a separate session.
+       </p>
+-      <form
+-        onSubmit={(event) => {
+-          event.preventDefault();
+-          void act(refresh);
+-        }}
+-      >
+-        <label className="field">
+-          <span>Server access key</span>
+-          <input
+-            type="password"
+-            autoComplete="off"
+-            required
+-            maxLength={256}
++      {!adminKey && (
++        <form
++          onSubmit={(event) => {
++            event.preventDefault();
++            void act(refresh);
++          }}
++        >
++          <label className="field">
++            <span>Server access key</span>
++            <input
++              type="password"
++              autoComplete="off"
++              required
++              maxLength={256}
++              disabled={busy}
++              value={key}
++              onChange={(event) => {
++                setKey(event.target.value);
++                setState(null);
++                setInvitation("");
++              }}
++            />
++          </label>
++          <button className="button" disabled={busy}>
++            Load access
++          </button>
++          <button
++            type="button"
++            className="button secondary"
+             disabled={busy}
+-            value={key}
+-            onChange={(event) => {
+-              setKey(event.target.value);
++            onClick={() => {
++              setKey("");
+               setState(null);
+               setInvitation("");
++              setFeedback("");
+             }}
+-          />
+-        </label>
+-        <button className="button" disabled={busy}>
+-          Load access
+-        </button>
+-        <button
+-          type="button"
+-          className="button secondary"
+-          disabled={busy}
+-          onClick={() => {
+-            setKey("");
+-            setState(null);
+-            setInvitation("");
+-            setFeedback("");
+-          }}
+-        >
+-          Lock
+-        </button>
+-      </form>
++          >
++            Lock
++          </button>
++        </form>
++      )}
+       {state && (
+         <>
+           <p>
+diff --git a/apps/web/src/styles.css b/apps/web/src/styles.css
+index 0163d59..68a820d 100644
+--- a/apps/web/src/styles.css
++++ b/apps/web/src/styles.css
+@@ -640,3 +640,26 @@ input::placeholder {
+   flex-wrap: wrap;
+   margin: 1rem 0;
+ }
++.admin-content > .button,
++.admin-tabs {
++  margin: 1rem 0;
++}
++.admin-tabs [aria-selected="true"] {
++  outline: 2px solid currentColor;
++}
++.admin-rooms {
++  list-style: none;
++  padding: 0;
++}
++.admin-rooms li {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  justify-content: space-between;
++  gap: 1rem;
++  padding: 1rem 0;
++  overflow-wrap: anywhere;
++}
++.admin-content .panel {
++  margin-top: 1.5rem;
++}
+diff --git a/e2e/rooms.spec.ts b/e2e/rooms.spec.ts
+index f8bd2fe..80dcb4c 100644
+--- a/e2e/rooms.spec.ts
++++ b/e2e/rooms.spec.ts
+@@ -7,20 +7,53 @@ test("create, share, join, resume and leave a private room", async ({
+   baseURL,
+ }) => {
+   const name = `Evening room ${Date.now()}`;
+-  await page.goto("/");
++  await page.goto("/admin");
++  await expect(
++    page.getByRole("tab", { name: "Rooms", exact: true }),
++  ).toHaveCount(0);
++  await page.getByLabel("Server access key").fill("wrong-key");
++  await page.getByRole("button", { name: "Unlock admin panel" }).click();
++  await expect(page.getByRole("alert")).toBeVisible();
++  await page.getByLabel("Server access key").fill(process.env.ADMIN_TOKEN!);
++  await page.getByRole("button", { name: "Unlock admin panel" }).click();
++  await expect(
++    page.getByRole("tab", { name: "Rooms", exact: true }),
++  ).toBeVisible();
+   await page.getByLabel("Room name", { exact: true }).fill(name);
+   await page.getByLabel("Your name", { exact: true }).fill("Felipe");
+-  await page.getByLabel("Server access key").fill(process.env.ADMIN_TOKEN!);
+   await page.getByRole("button", { name: "Create private room" }).click();
+-  await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
++  await expect(
++    page.getByRole("heading", { name: `${name} is ready`, exact: true }),
++  ).toBeVisible();
+   const invitation = await page
+     .getByLabel("Room invitation", { exact: true })
+     .inputValue();
+   const roomId = new URL(invitation).pathname.split("/")[2]!;
+-  await expect(page).toHaveURL(`${baseURL}/r/${roomId}`);
+   await expect(
+-    page.getByText("This invitation stays valid when you leave the room."),
++    page.getByRole("list").getByText(name, { exact: true }),
+   ).toBeVisible();
++  await page
++    .getByRole("button", { name: `Manage access for ${name}`, exact: true })
++    .click();
++  await expect(
++    page.getByRole("heading", { name: "Current sessions" }),
++  ).toBeVisible();
++  await page.getByRole("tab", { name: "Rooms", exact: true }).click();
++  const storedAdmin = await page.evaluate(() =>
++    JSON.stringify({
++      local: { ...localStorage },
++      session: { ...sessionStorage },
++    }),
++  );
++  expect(storedAdmin).not.toContain(process.env.ADMIN_TOKEN!);
++  await page.getByRole("button", { name: "Lock admin panel" }).click();
++  await expect(
++    page.getByRole("tab", { name: "Rooms", exact: true }),
++  ).toHaveCount(0);
++  await expect(page.getByText(name, { exact: true })).toHaveCount(0);
++  await expect(page.getByLabel("Room invitation", { exact: true })).toHaveCount(
++    0,
++  );
+   expect(
+     await page.evaluate(
+       () => document.documentElement.scrollWidth <= window.innerWidth,
+@@ -30,6 +63,13 @@ test("create, share, join, resume and leave a private room", async ({
+   const guest = await browser.newContext();
+   try {
+     const friend = await guest.newPage();
++    await friend.goto("/admin");
++    await expect(
++      friend.getByRole("tab", { name: "Rooms", exact: true }),
++    ).toHaveCount(0);
++    expect((await friend.request.get(`${baseURL}/api/rooms`)).status()).toBe(
++      401,
++    );
+     const requestedUrls: string[] = [];
+     const mediaTokens: string[] = [];
+     friend.on("request", (request) => requestedUrls.push(request.url()));
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index ff4a9c5..403cda2 100644
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -60,6 +60,8 @@ export type ChangedAccess = {
+ export type CreateRoomInput = z.infer<typeof createRoomSchema>;
+ export type JoinRoomInput = z.infer<typeof joinRoomSchema>;
+ export type Room = { id: string; name: string; createdAt: string };
++export type ManagedRoom = Room & { invitationEnabled: boolean };
++export type RoomDirectory = { rooms: ManagedRoom[]; nextOffset: number | null };
+ export type Participant = { id: string; displayName: string };
+ export type RoomSession = {
+   room: Room;

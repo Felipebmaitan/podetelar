@@ -5,6 +5,9 @@ import type { CreatedRoom, RoomSession } from "@freedomstream/contracts";
 import { ApiError, request } from "./api";
 import { RoomAccess } from "./RoomAccess";
 import { PublisherDownload } from "./PublisherDownload";
+import { Admin } from "./Admin";
+import { OpenInApp } from "./OpenInApp";
+import { InvitationPage } from "./InvitationPage";
 
 const managedRoomId = /^\/manage\/([A-Za-z0-9_-]{22})$/.exec(
   window.location.pathname,
@@ -41,6 +44,12 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export function App() {
+  if (entryRoomId)
+    return <InvitationPage roomId={entryRoomId} invitation={entryInvitation} />;
+  return window.location.pathname === "/" ? <Admin /> : <RoomApp />;
+}
+
+function RoomApp() {
   const [session, setSession] = useState<RoomSession | null>(null);
   const [loading, setLoading] = useState(Boolean(entryRoomId));
   const [error, setError] = useState("");
@@ -248,6 +257,14 @@ export function App() {
                 </>
               )}
             </section>
+            {invitationUrl && (
+              <OpenInApp
+                roomId={session.room.id}
+                invitation={new URL(invitationUrl).hash.slice(
+                  "#invite=".length,
+                )}
+              />
+            )}
             <PublisherDownload roomId={session.room.id} />
           </div>
         ) : entryRoomId ? (
@@ -423,6 +440,7 @@ function JoinRoom({
   };
   return (
     <div className="centered">
+      {secret && <OpenInApp roomId={roomId} invitation={secret} />}
       <form className="panel join-panel" onSubmit={(event) => void join(event)}>
         <p className="eyebrow">YOU'RE INVITED</p>
         <h1>Take your place.</h1>

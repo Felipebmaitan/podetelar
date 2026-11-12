@@ -20,6 +20,7 @@ test("real connection transfers authenticate early, share one lease, pace downlo
   });
   const app = await buildApp(config, {
     mediaDirectory: {
+      members: async () => [],
       async participant() {
         return null;
       },
@@ -77,9 +78,11 @@ test("real connection transfers authenticate early, share one lease, pace downlo
     const begin = await app.inject({
       method: "POST",
       url: path,
-      headers: { origin, cookie },
+      headers: { origin, cookie, "x-network-test-max-bps": String(PROBE_BPS) },
     });
     assert.equal(begin.statusCode, 200);
+    assert.equal(begin.json().payloadCapBps, 200_000_000);
+    assert.equal(begin.json().byteLimit, 48 * 1024 * 1024);
     const probe = begin.json().probe;
     assert.equal(
       (
@@ -133,6 +136,8 @@ test("real connection transfers authenticate early, share one lease, pace downlo
       headers: { origin, cookie: second },
     });
     assert.equal(next.statusCode, 200);
+    assert.equal(next.json().payloadCapBps, 100_000_000);
+    assert.equal(next.json().byteLimit, 24 * 1024 * 1024);
     const cancelled = await app.inject({
       method: "DELETE",
       url: path,

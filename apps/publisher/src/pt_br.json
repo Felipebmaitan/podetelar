@@ -88,7 +88,7 @@
   "Publishing settings apply with Start sharing or Apply changes.": "Use Iniciar transmissão ou Aplicar alterações para aplicar as configurações.",
   "Licenses and library sources": "Licenças e código-fonte das bibliotecas",
   "No supported encoder": "Nenhum codificador compatível",
-  "HEVC switches to H.264 when a watcher needs compatibility.": "O HEVC muda para H.264 quando um espectador precisa de compatibilidade.",
+  "AV1 / HEVC switch to H.264 when a watcher needs compatibility.": "AV1 / HEVC mudam para H.264 quando um espectador precisa de compatibilidade.",
   "Shared across everything you watch, with headroom. This is an allowance, not a speed test.": "Compartilhado entre as transmissões assistidas, com margem. Este limite não é um teste de velocidade.",
   "A slower watcher's limit can reduce the one shared stream for everyone watching it.": "O limite de um espectador mais lento pode reduzir a transmissão compartilhada para todos.",
   "Higher frame rates use more upload bandwidth.": "Taxas de quadros maiores usam mais banda de upload.",
@@ -180,5 +180,11 @@
   "Your room connection ended. Join again to continue.": "A conexão com a sala terminou. Entre novamente para continuar.",
   "Automatic follows resolution, FPS and content, up to 35 Mbps. Manual: 1–100 Mbps. Connection limits still apply.": "O modo automático considera resolução, FPS e conteúdo, até 35 Mbps. Manual: 1–100 Mbps. Os limites da conexão continuam valendo.",
   "Live video and audio subscription": "Recebendo vídeo e áudio ao vivo",
-  "Still preview, updated at most once per minute. Watch starts live video and audio.": "Prévia estática, atualizada no máximo uma vez por minuto. Assistir inicia o vídeo e o áudio ao vivo."
+  "Still preview, updated at most once per minute. Watch starts live video and audio.": "Prévia estática, atualizada no máximo uma vez por minuto. Assistir inicia o vídeo e o áudio ao vivo.",
+  "Capacity to this VPS · payload capped at 200 Mbps": "Capacidade até este VPS · dados limitados a 200 Mbps",
+  "Choose a watching budget from 1 to 200 Mbps.": "Escolha um limite para assistir de 1 a 200 Mbps.",
+  "Full screen": "Tela cheia",
+  "Exit full screen": "Sair da tela cheia",
+  "Double-click video or press F11. Escape exits full screen.": "Clique duas vezes no vídeo ou pressione F11. Esc sai da tela cheia.",
+  "Received video · recent payload bitrate": "Vídeo recebido · taxa de bits recente"
 }

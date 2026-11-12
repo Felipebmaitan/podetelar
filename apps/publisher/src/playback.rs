@@ -36,6 +36,7 @@ pub struct Tile {
     pub watching: bool,
     pub picture: Picture,
     pub frames: Arc<AtomicU64>,
+    pub received_bps: Arc<AtomicU64>,
     pub volume: Arc<AtomicU32>,
     pub audio: Arc<Mutex<crate::audio::Metrics>>,
     pub status: String,
@@ -44,6 +45,7 @@ pub struct Tile {
 struct Watch {
     picture: Picture,
     frames: Arc<AtomicU64>,
+    received_bps: Arc<AtomicU64>,
     volume: Arc<AtomicU32>,
     since: Instant,
     last_frame: Arc<Mutex<Instant>>,
@@ -70,10 +72,21 @@ struct PreviewImage {
 
 #[derive(Clone)]
 struct ReceivedCounters {
+    bytes: u64,
+    sampled: Instant,
     packets: u64,
     lost: i64,
     delay: f64,
     emitted: u64,
+}
+
+fn received_rate(previous: &ReceivedCounters, current: &ReceivedCounters) -> Option<u64> {
+    let bytes = current.bytes.checked_sub(previous.bytes)?;
+    let elapsed = current
+        .sampled
+        .checked_duration_since(previous.sampled)?
+        .as_secs_f64();
+    (elapsed > 0.0).then(|| (bytes as f64 * 8.0 / elapsed).round() as u64)
 }
 
 pub struct Playback {
@@ -83,6 +96,7 @@ pub struct Playback {
     announce_dirty: bool,
     previews: HashMap<String, PreviewImage>,
     hevc: bool,
+    av1: bool,
     h264: bool,
     measure_audio: bool,
     budget: crate::network::ReceiveBudget,
@@ -118,6 +132,7 @@ impl Playback {
             received: HashMap::new(),
             recovery: Arc::default(),
             observed_recovery: 0,
+            av1: codecs.iter().any(|c| c == "video/av1"),
             hevc: codecs.iter().any(|c| c == "video/h265"),
             h264: codecs.iter().any(|c| c == "video/h264"),
         }
@@ -133,6 +148,7 @@ impl Playback {
             if let Ok(mut last) = watch.last_frame.lock() {
                 *last = Instant::now();
             }
+            watch.received_bps.store(0, Ordering::Relaxed);
         }
     }
 
@@ -152,6 +168,7 @@ impl Playback {
     pub fn compatibility_only(&mut self, enabled: bool) {
         if enabled {
             self.hevc = false;
+            self.av1 = false;
         }
     }
 
@@ -161,18 +178,19 @@ impl Playback {
                 self.budget.set(self.budget_setting);
             }
             anyhow::ensure!(
-                self.h264 || self.hevc,
+                self.h264 || self.hevc || self.av1,
                 "No compatible native video decoder is available on this computer."
             );
             self.watches.entry(id).or_insert_with(|| Watch {
                 picture: Arc::default(),
                 frames: Arc::default(),
+                received_bps: Arc::default(),
                 volume: Arc::new(AtomicU32::new(100)),
                 since: Instant::now(),
                 last_frame: Arc::new(Mutex::new(Instant::now())),
                 audio: Arc::default(),
                 error: Arc::default(),
-                h264: !self.hevc,
+                h264: !self.hevc && !self.av1,
                 video_sid: String::new(),
             });
         } else {
@@ -197,8 +215,10 @@ impl Playback {
             for publication in participant.track_publications().values() {
                 if let Some(RemoteTrack::Video(track)) = publication.track() {
                     let sid = publication.sid().to_string();
+                    let owner = participant.identity().to_string();
                     jobs.push(async move {
                         (
+                            owner,
                             sid,
                             tokio::time::timeout(Duration::from_millis(250), track.get_stats())
                                 .await,
@@ -212,7 +232,8 @@ impl Playback {
         let mut delay = 0.0_f64;
         let mut emitted = 0_u64;
         let mut current = HashSet::new();
-        for (sid, result) in futures_util::future::join_all(jobs).await {
+        let mut rates = HashMap::<String, u64>::new();
+        for (owner, sid, result) in futures_util::future::join_all(jobs).await {
             let Ok(Ok(stats)) = result else {
                 continue;
             };
@@ -221,6 +242,8 @@ impl Playback {
                     let key = format!("{sid}/{}", stat.rtc.id);
                     current.insert(key.clone());
                     let sample = ReceivedCounters {
+                        bytes: stat.inbound.bytes_received,
+                        sampled: Instant::now(),
                         packets: stat.received.packets_received,
                         lost: stat.received.packets_lost,
                         delay: stat.inbound.jitter_buffer_delay,
@@ -232,6 +255,10 @@ impl Playback {
                         && sample.delay >= previous.delay
                         && sample.emitted >= previous.emitted
                     {
+                        if let Some(rate) = received_rate(&previous, &sample) {
+                            let total = rates.entry(owner.clone()).or_default();
+                            *total = total.saturating_add(rate);
+                        }
                         packets += sample.packets - previous.packets;
                         lost += (sample.lost - previous.lost) as u64;
                         delay += sample.delay - previous.delay;
@@ -241,6 +268,11 @@ impl Playback {
             }
         }
         self.received.retain(|sid, _| current.contains(sid));
+        for (owner, watch) in &self.watches {
+            watch
+                .received_bps
+                .store(rates.get(owner).copied().unwrap_or(0), Ordering::Relaxed);
+        }
         self.budget.observe(
             (packets + lost > 0).then(|| lost as f64 / (packets + lost) as f64),
             (emitted > 0).then(|| delay / emitted as f64),
@@ -302,6 +334,7 @@ impl Playback {
             };
             live.insert(id.clone());
             let hevc = video.mime_type().eq_ignore_ascii_case("video/h265");
+            let av1 = video.mime_type().eq_ignore_ascii_case("video/av1");
             if let Some(watch) = self.watches.get_mut(&id) {
                 if watch.video_sid != video.sid().as_str() {
                     watch.video_sid = video.sid().to_string();
@@ -310,7 +343,7 @@ impl Playback {
                         *last = Instant::now();
                     }
                 }
-                if hevc
+                if (hevc || av1)
                     && watch
                         .last_frame
                         .lock()
@@ -321,7 +354,14 @@ impl Playback {
                 if allowed.contains(&id) {
                     announce.insert(
                         format!("{WATCH_PREFIX}{id}"),
-                        if watch.h264 { "h264" } else { "hevc" }.to_owned(),
+                        if watch.h264 || (av1 && !self.av1) || (hevc && !self.hevc) {
+                            "h264"
+                        } else if av1 {
+                            "av1"
+                        } else {
+                            "hevc"
+                        }
+                        .to_owned(),
                     );
                     announce.insert(format!("{LIMIT_PREFIX}{id}"), cap.to_string());
                 }
@@ -371,7 +411,9 @@ impl Playback {
                 }
             }
             let watching = self.watches.contains_key(&id);
-            let compatible = self.watches.get(&id).is_some_and(|w| !hevc || !w.h264);
+            let compatible = self.watches.get(&id).is_some_and(|w| {
+                (!hevc && !av1) || (!w.h264 && (!av1 || self.av1) && (!hevc || self.hevc))
+            });
             let admitted = allowed.contains(&id);
             for publication in publications.values().filter(|p| {
                 matches!(
@@ -463,6 +505,7 @@ impl Playback {
                     .or_else(|| self.previews.get(&id).map(|preview| preview.picture.clone()))
                     .unwrap_or_default(),
                 frames: watch.map(|w| w.frames.clone()).unwrap_or_default(),
+                received_bps: watch.map(|w|w.received_bps.clone()).unwrap_or_default(),
                 audio: watch.map(|w| w.audio.clone()).unwrap_or_default(),
                 volume: watch
                     .map(|w| w.volume.clone())
@@ -626,7 +669,7 @@ pub fn requested_cap(room: &Room) -> Option<u64> {
             let attributes = p.attributes();
             if !attributes
                 .get(&watch)
-                .is_some_and(|v| matches!(v.as_str(), "hevc" | "h264"))
+                .is_some_and(|v| matches!(v.as_str(), "hevc" | "h264" | "av1"))
             {
                 return None;
             }
@@ -637,4 +680,29 @@ pub fn requested_cap(room: &Room) -> Option<u64> {
                 .filter(|bps| (64_000..=100_000_000).contains(bps))
         })
         .min()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn received_bitrate_uses_actual_elapsed_time_and_handles_counter_reset() {
+        let now = Instant::now();
+        let first = ReceivedCounters {
+            bytes: 2_000_000,
+            sampled: now,
+            packets: 1,
+            lost: 0,
+            delay: 0.0,
+            emitted: 1,
+        };
+        let mut next = first.clone();
+        next.bytes = 4_000_000;
+        next.sampled = now + Duration::from_secs(2);
+        assert_eq!(received_rate(&first, &next), Some(8_000_000));
+        next.bytes = 0;
+        assert_eq!(received_rate(&first, &next), None);
+        next.bytes = first.bytes;
+        assert_eq!(received_rate(&first, &next), Some(0));
+    }
 }

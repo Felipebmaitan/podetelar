@@ -1,6 +1,6 @@
 use crate::preview::{self, Frame, Gate, Latest};
 pub use crate::quality::{Codec, Mode};
-use crate::quality::{EncoderBudget, RateControl};
+use crate::quality::{EncoderBudget, RateControl, ReinitializingBudget};
 use crate::sources::{self, Source, Target};
 use anyhow::{Context, Result, bail, ensure};
 use gstreamer::{self as gst, prelude::*};
@@ -27,6 +27,8 @@ pub struct Encoder {
 
 pub fn encoders() -> Vec<Encoder> {
     [
+        ("nvd3d11av1enc", "NVIDIA NVENC AV1", Codec::Av1),
+        ("amfav1enc", "AMD AMF AV1", Codec::Av1),
         ("nvd3d11h265enc", "NVIDIA NVENC HEVC", Codec::H265),
         ("amfh265enc", "AMD AMF HEVC", Codec::H265),
         ("nvd3d11h264enc", "NVIDIA NVENC H.264", Codec::H264),
@@ -52,6 +54,7 @@ pub struct Metrics {
     pub preview_frames: u64,
     pub requested_bitrate: u64,
     pub encoded_bps: u64,
+    pub encoder_bitrate_changes: u64,
 }
 
 // Owns the native pipeline. Every return/error path transitions it to NULL.
@@ -116,9 +119,22 @@ impl Encoding {
                     && candidate.codec == encoder.codec),
             "The selected hardware encoder is unavailable."
         );
-        let (parser, media_type, profile) = match encoder.codec {
-            Codec::H265 => ("h265parse", "video/x-h265", "main"),
-            Codec::H264 => ("h264parse", "video/x-h264", "constrained-baseline"),
+        let (media_type, profile, framing) = match encoder.codec {
+            Codec::Av1 => (
+                "video/x-av1",
+                "main",
+                "av1parse ! video/x-av1,stream-format=obu-stream,alignment=tu",
+            ),
+            Codec::H265 => (
+                "video/x-h265",
+                "main",
+                "h265parse config-interval=-1 ! video/x-h265,stream-format=byte-stream,alignment=au",
+            ),
+            Codec::H264 => (
+                "video/x-h264",
+                "constrained-baseline",
+                "h264parse config-interval=-1 ! video/x-h264,stream-format=byte-stream,alignment=au",
+            ),
         };
         // Only allowlisted factory names and bounded numeric settings enter this pipeline.
         // WGC can stop delivering buffers while a window is unchanged. Retain the
@@ -130,7 +146,7 @@ impl Encoding {
             ""
         };
         let processing = format!(
-            "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! {cadence}videorate drop-only=true max-rate={} ! d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width={},height={},framerate={}/1 ! clocksync ! tee name=raw raw. ! queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! {} name=hardware bitrate={} gop-size={} ! {media_type},profile={profile} ! {parser} config-interval=-1 ! {media_type},stream-format=byte-stream,alignment=au ! appsink name=encoded max-buffers=2 sync=false raw. ! queue name=preview_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=NV12,width=960,height=540 ! d3d11download ! video/x-raw,format=NV12 ! videoconvert ! video/x-raw,format=I420 ! jpegenc quality=85 ! appsink name=preview max-buffers=1 drop=true sync=false async=false wait-on-eos=false",
+            "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! {cadence}videorate drop-only=true max-rate={} ! d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width={},height={},framerate={}/1 ! clocksync ! tee name=raw raw. ! queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! {} name=hardware bitrate={} gop-size={} ! {media_type},profile={profile} ! {framing} ! appsink name=encoded max-buffers=2 sync=false raw. ! queue name=preview_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=NV12,width=960,height=540 ! d3d11download ! video/x-raw,format=NV12 ! videoconvert ! video/x-raw,format=I420 ! jpegenc quality=85 ! appsink name=preview max-buffers=1 drop=true sync=false async=false wait-on-eos=false",
             mode.fps,
             mode.width,
             mode.height,
@@ -196,7 +212,14 @@ impl Encoding {
             hardware.set_property("bframes", 0_u32);
             hardware.set_property("zerolatency", true);
         } else {
-            hardware.set_property_from_str("usage", "ultra-low-latency");
+            hardware.set_property_from_str(
+                "usage",
+                if encoder.codec == Codec::Av1 {
+                    "low-latency"
+                } else {
+                    "ultra-low-latency"
+                },
+            );
             hardware.set_property_from_str("rate-control", "cbr");
         }
         let sink = pipeline
@@ -318,6 +341,12 @@ impl Encoding {
         let mut keyframe_count = 0;
         let mut feedback = None;
         let mut budget = EncoderBudget::new(counters.encoder_bitrate);
+        let reinitializing = self
+            .encoder
+            .factory()
+            .is_some_and(|f| f.name().starts_with("amf"));
+        let mut amf_budget =
+            ReinitializingBudget::new(counters.encoder_bitrate, self.rate.requested());
         let mut first_feedback = false;
         let mut last_rate_update = Instant::now();
         let mut reported_bytes = 0;
@@ -359,11 +388,17 @@ impl Encoding {
             {
                 // AMF can internally reconfigure on property changes. Coalesce
                 // periodic BWE updates; user edits and first feedback apply now.
-                let effective = budget.update(&self.rate, feedback) / 1000 * 1000;
+                let effective = if reinitializing {
+                    amf_budget.update(&self.rate, feedback, started.elapsed())
+                } else {
+                    budget.update(&self.rate, feedback)
+                } / 1000
+                    * 1000;
                 if effective != counters.encoder_bitrate {
                     self.encoder
                         .set_property("bitrate", (effective / 1000) as u32);
                     counters.encoder_bitrate = effective;
+                    counters.encoder_bitrate_changes += 1;
                 }
                 last_rate_update = Instant::now();
                 first_feedback = false;
@@ -412,6 +447,7 @@ impl Encoding {
                 );
                 let accepted = source.capture_encoded_frame(&EncodedVideoFrame {
                     codec: match self.codec {
+                        Codec::Av1 => EncodedVideoCodec::AV1,
                         Codec::H265 => EncodedVideoCodec::H265,
                         Codec::H264 => EncodedVideoCodec::H264,
                     },

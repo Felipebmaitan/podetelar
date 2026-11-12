@@ -15,12 +15,14 @@ const AUTO_CEILING: u64 = 35_000_000;
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Codec {
+    Av1,
     H265,
     H264,
 }
 impl Codec {
     pub fn label(self) -> &'static str {
         match self {
+            Self::Av1 => "AV1",
             Self::H265 => "H.265 / HEVC",
             Self::H264 => "H.264 compatibility",
         }
@@ -170,7 +172,8 @@ impl Settings {
                 // Lower-bandwidth starting targets, not a universal quality law.
                 // See docs/bitrate-guidance.md for sources and our policy choices.
                 let anchors = match codec {
-                    Codec::H265 => [
+                    // Use the HEVC targets until AV1 quality is measured locally.
+                    Codec::Av1 | Codec::H265 => [
                         (1280 * 720, 2.5, 4.0),
                         (1920 * 1080, 4.0, 6.0),
                         (2560 * 1440, 6.0, 10.0),
@@ -325,9 +328,90 @@ impl EncoderBudget {
     }
 }
 
+/// AMF 1.28.8 reopens its encoder component for bitrate property changes.
+/// Keep reductions prompt, but avoid resetting it for every small BWE fluctuation.
+pub struct ReinitializingBudget {
+    current: u64,
+    last_requested: u64,
+    last_change: std::time::Duration,
+}
+impl ReinitializingBudget {
+    pub fn new(current: u64, requested: u64) -> Self {
+        Self {
+            current,
+            last_requested: requested,
+            last_change: std::time::Duration::ZERO,
+        }
+    }
+    pub fn update(
+        &mut self,
+        rate: &RateControl,
+        feedback: Option<u64>,
+        now: std::time::Duration,
+    ) -> u64 {
+        let requested = rate.requested();
+        let explicit = requested != self.last_requested;
+        self.last_requested = requested;
+        let wanted = rate.effective(feedback);
+        let next = if wanted < self.current {
+            // Additional margin prevents repeated resets for nearby feedback.
+            if explicit {
+                wanted
+            } else {
+                (wanted * 95 / 100 / 1000 * 1000).max(1000)
+            }
+        } else if wanted > self.current
+            && (explicit
+                || (now.saturating_sub(self.last_change) >= std::time::Duration::from_secs(5)
+                    && (wanted == requested
+                        || wanted >= self.current.saturating_add((self.current / 10).max(64_000)))))
+        {
+            wanted.min(self.current.saturating_add((self.current / 4).max(500_000)))
+        } else {
+            self.current
+        };
+        if next != self.current {
+            self.current = next;
+            self.last_change = now;
+        }
+        self.current
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reinitializing_encoder_avoids_noise_but_never_delays_a_lower_cap() {
+        use std::time::Duration;
+        let rate = RateControl::new(25_000_000);
+        let mut budget = ReinitializingBudget::new(25_000_000, 25_000_000);
+        let first = budget.update(&rate, Some(24_000_000), Duration::from_secs(1));
+        assert!(first <= 24_000_000);
+        for second in 2..20 {
+            assert_eq!(
+                budget.update(
+                    &rate,
+                    Some(23_900_000 + (second % 2) * 100_000),
+                    Duration::from_secs(second)
+                ),
+                first
+            );
+        }
+        rate.set_viewer_cap(Some(2_000_000));
+        assert!(budget.update(&rate, None, Duration::from_secs(20)) <= 2_000_000);
+        let low = budget.current;
+        rate.set_viewer_cap(None);
+        assert_eq!(budget.update(&rate, None, Duration::from_secs(21)), low);
+        let up = budget.update(&rate, None, Duration::from_secs(25));
+        assert!(up > low && up <= low + (low / 4).max(500_000));
+        rate.set(1_000_000).unwrap();
+        assert_eq!(
+            budget.update(&rate, None, Duration::from_secs(26)),
+            1_000_000
+        );
+    }
 
     #[test]
     fn watcher_departure_never_bypasses_upload_or_transport_limits() {

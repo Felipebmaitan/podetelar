@@ -140,8 +140,11 @@ impl Admission {
     pub async fn measure_connection(&self) -> crate::network::Capacity {
         use crate::network::{Capacity, PROBE_BYTES, PROBE_CAP_BPS};
         #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
         struct Ticket {
             probe: String,
+            payload_cap_bps: u64,
+            byte_limit: usize,
         }
         #[derive(Deserialize)]
         struct Upload {
@@ -154,7 +157,16 @@ impl Admission {
         let result: Result<()> = async {
             let started = std::time::Instant::now();
             let ticket: Ticket = loop {
-                let response = self.post("network-test").await?;
+                let response = self
+                    .client
+                    .post(
+                        self.origin
+                            .join(&format!("api/rooms/{}/network-test", self.room_id))?,
+                    )
+                    .header("Origin", self.origin.origin().ascii_serialization())
+                    .header("X-Network-Test-Max-Bps", PROBE_CAP_BPS.to_string())
+                    .send()
+                    .await?;
                 if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
                     unavailable = "Wait 30 seconds before testing again.";
                 }
@@ -170,6 +182,14 @@ impl Admission {
                 ticket.probe.len() == 48 && ticket.probe.bytes().all(|b| b.is_ascii_hexdigit()),
                 "Invalid connection test."
             );
+            ensure!(
+                (ticket.payload_cap_bps == 100_000_000 && ticket.byte_limit == 24 * 1024 * 1024)
+                    || (ticket.payload_cap_bps == PROBE_CAP_BPS
+                        && ticket.byte_limit == PROBE_BYTES),
+                "Invalid connection test limits."
+            );
+            let cap = ticket.payload_cap_bps;
+            let byte_limit = ticket.byte_limit;
             let path = format!("api/rooms/{}/network-test", self.room_id);
             let _lease = ProbeLease {
                 client: self.client.clone(),
@@ -192,24 +212,23 @@ impl Admission {
             let mut bytes = 0usize;
             while let Some(chunk) = response.chunk().await? {
                 bytes += chunk.len();
-                ensure!(bytes <= PROBE_BYTES, "Connection test exceeded limit.");
+                ensure!(bytes <= byte_limit, "Connection test exceeded limit.");
             }
             ensure!(bytes >= 65_536, "Connection measurement too small.");
             measured.download_bps = Some(
-                ((bytes as f64 * 8.0 / began.elapsed().as_secs_f64().max(0.001)) as u64)
-                    .min(PROBE_CAP_BPS),
+                ((bytes as f64 * 8.0 / began.elapsed().as_secs_f64().max(0.001)) as u64).min(cap),
             );
             let stream = futures_util::stream::unfold(
                 (0usize, std::time::Instant::now()),
-                |(sent, start)| async move {
-                    if sent >= PROBE_BYTES || start.elapsed() >= Duration::from_secs(2) {
+                move |(sent, start)| async move {
+                    if sent >= byte_limit || start.elapsed() >= Duration::from_secs(2) {
                         return None;
                     }
-                    let due = Duration::from_secs_f64(sent as f64 * 8.0 / PROBE_CAP_BPS as f64);
+                    let due = Duration::from_secs_f64(sent as f64 * 8.0 / cap as f64);
                     if let Some(wait) = due.checked_sub(start.elapsed()) {
                         tokio::time::sleep(wait).await;
                     }
-                    let size = (PROBE_BYTES - sent).min(65_536);
+                    let size = (byte_limit - sent).min(65_536);
                     Some((
                         Ok::<_, std::io::Error>(vec![0x5a; size]),
                         (sent + size, start),
@@ -229,12 +248,12 @@ impl Admission {
             let uploaded: Upload = read_response(response).await?;
             ensure!(
                 uploaded.bytes >= 65_536
-                    && uploaded.bytes <= PROBE_BYTES
+                    && uploaded.bytes <= byte_limit
                     && uploaded.seconds > 0.0
                     && uploaded.seconds <= 4.0,
                 "Invalid upload measurement."
             );
-            measured.upload_bps = Some(uploaded.bps.min(PROBE_CAP_BPS));
+            measured.upload_bps = Some(uploaded.bps.min(cap));
             Ok(())
         }
         .await;

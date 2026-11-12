@@ -28,6 +28,9 @@ async function fixture(t: TestContext) {
   let unavailable = false;
   const removed: string[] = [];
   const mediaDirectory = {
+    async members() {
+      return [];
+    },
     async participant() {
       return null;
     },
@@ -251,6 +254,9 @@ test("persisted retry scheduling gives a newer removal a turn behind 128 repeate
     peak = 0;
   const attempts: string[] = [];
   const media = {
+    async members() {
+      return [];
+    },
     async participant() {
       return null;
     },

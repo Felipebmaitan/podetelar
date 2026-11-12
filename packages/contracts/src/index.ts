@@ -33,6 +33,7 @@ const nameSchema = z
   .max(60)
   .refine((value) => !/[\p{Cc}\p{Cf}]/u.test(value));
 
+export const adminCreateRoomSchema = z.object({ name: nameSchema }).strict();
 export const createRoomSchema = z
   .object({ name: nameSchema, displayName: nameSchema })
   .strict();
@@ -60,6 +61,9 @@ export type ChangedAccess = {
 export type CreateRoomInput = z.infer<typeof createRoomSchema>;
 export type JoinRoomInput = z.infer<typeof joinRoomSchema>;
 export type Room = { id: string; name: string; createdAt: string };
+export type ManagedRoom = Room & { invitationEnabled: boolean };
+export type RoomDirectory = { rooms: ManagedRoom[]; nextOffset: number | null };
+export type AdminCreatedRoom = { room: Room; invitationUrl: string };
 export type Participant = { id: string; displayName: string };
 export type RoomSession = {
   room: Room;
@@ -73,3 +77,31 @@ export type MediaAccess = {
   expiresInSeconds: number;
 };
 export type ApiErrorBody = { error: string };
+
+export type UsagePoint = {
+  at: number;
+  durationMs: number;
+  uploadedBytes: number;
+  downloadedBytes: number;
+};
+export type UsageReport = {
+  from: number;
+  to: number;
+  bucketMs: number;
+  lastSampleAt: number | null;
+  available: boolean;
+  uploadedBytes: number;
+  downloadedBytes: number;
+  userCount: number;
+  page: number;
+  retentionDays: number;
+  points: UsagePoint[];
+  users: {
+    id: string;
+    roomId: string;
+    displayName: string;
+    uploadedBytes: number;
+    downloadedBytes: number;
+    points: UsagePoint[];
+  }[];
+};

@@ -26,6 +26,9 @@ import {
 import { Signaling } from "./signaling.js";
 import { loadPublisher, publisherRoutes } from "./distribution.js";
 import { networkTestRoutes } from "./network-test.js";
+import { adminRoutes } from "./admin.js";
+import { Usage } from "./usage.js";
+import { appLinkRoutes } from "./app-links.js";
 
 const COOKIE = "fs_session";
 const MEDIA_TOKEN_TTL_SECONDS = 120;
@@ -36,6 +39,7 @@ export async function buildApp(
     now?: () => number;
     logger?: boolean;
     mediaDirectory?: MediaDirectory;
+    usagePolling?: boolean;
   } = {},
 ) {
   const publisher = await loadPublisher(config.publisherDirectory);
@@ -46,6 +50,12 @@ export async function buildApp(
     trustProxy: config.trustedProxy ?? false,
   });
   const rooms = new Rooms(config.databasePath, options.now);
+  const usage = new Usage(
+    config.databasePath,
+    config.usageMetricsUrl ?? "http://127.0.0.1:6789/metrics",
+    options.now,
+  );
+  if (options.usagePolling !== false) usage.start();
   const directory = options.mediaDirectory ?? new LivekitDirectory(config);
   const previews = new Previews(directory, options.now);
   const signaling = new Signaling(rooms);
@@ -66,6 +76,7 @@ export async function buildApp(
     signaling.close();
     await access.settle();
     previews.clear();
+    await usage.close();
     rooms.close();
   });
   await app.register(cookie);
@@ -123,6 +134,8 @@ export async function buildApp(
   });
 
   app.get("/api/health", async () => ({ status: "ok", phase: 8 }));
+  await adminRoutes(app, config, usage, rooms, options.now);
+  appLinkRoutes(app, config, rooms, directory, options.now);
   app.get("/api/diagnostics", async (request, reply) => {
     if (!administrator(request, config))
       return reply.code(401).send({ error: "Server access key required." });
@@ -144,6 +157,11 @@ export async function buildApp(
             "Enter a room name and display name, each up to 60 characters.",
         });
       const issued = rooms.create(input.data);
+      usage.remember(
+        issued.snapshot.room.id,
+        issued.snapshot.participant.id,
+        issued.snapshot.participant.displayName,
+      );
       reply.setCookie(
         COOKIE,
         issued.token,
@@ -176,6 +194,11 @@ export async function buildApp(
           .code(404)
           .send({ error: "This invitation could not be accepted." });
       // Rejoining from this browser replaces its previous session for this room.
+      usage.remember(
+        issued.snapshot.room.id,
+        issued.snapshot.participant.id,
+        issued.snapshot.participant.displayName,
+      );
       const previous = rooms.session(id.data, request.cookies[COOKIE]);
       if (previous) previews.removeOwner(id.data, previous.participant.id);
       rooms.leave(id.data, request.cookies[COOKIE]);

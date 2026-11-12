@@ -1,0 +1,24 @@
+Use case: ui-mockup.
+Create a polished high-fidelity desktop UI concept image for FreedomStream, a private screen-sharing app for friends. Input image is a reference of the current app's purpose and Portuguese language, NOT a layout to preserve. Dramatically redesign for cleaner Discord-inspired information hierarchy and maximum usable video area. This is a proposed design, not evidence of implemented functionality.
+
+Output a single crisp, full desktop application screenshot, landscape 1920x1080 or similar 16:9, straight-on, edge to edge. No device frame, no presentation background, no external annotations. Professional shipping-quality native desktop app styling: charcoal gray backgrounds, restrained mint/teal accent from original FreedomStream identity, subtle dividers, beautiful small readable Inter-like type, coherent thin line icons, restrained corner radii. Dense yet calm, familiar Discord-like utility. No purple gradients, no excessive cards, no oversized text or margins.
+
+Composition:
+A slim native window title strip. Below, a compact 48px app header: FreedomStream logo/name left, room name "Sala dos amigos" with down chevron and "5 na sala"; right "Convidar" button, room options ellipsis, "PT-BR", discreet leave icon.
+Narrow LEFT SIDEBAR about 220px, preserving 87% of horizontal area for streams. Sidebar top heading "TRANSMITIR"; local source confirmation thumbnail, source dropdown "Rainbow Six Siege", resolution dropdown "1920 × 1080", clearly visible FPS slider with "60 FPS", quality dropdown "Alta qualidade", one discreet "Avançado" link for bitrate/codec. Tiny source audio indicator "Áudio do aplicativo" and "Sem microfone". Main mint "Iniciar transmissão" button. Small participant list below labeled "NA SALA · 5": Felipe (Você), Bods, math, Lucas, Ana; small avatars and unobtrusive live/watch indicators. Footer user row with avatar, "Felipe", green "Conectado" dot and settings gear. No voice chat controls because app never captures microphone. Sidebar not bloated.
+MAIN CONTENT: small heading "Transmissões" and fine secondary label "4 ao vivo · 3 assistindo". Grid/focus toggle icons right. FOUR very large 16:9 stream surfaces in a tight 2x2 grid, with 10px gaps and 12px outer padding. Use almost all remaining height and width with video, no huge unused bottom area. No chunky frame surrounding each stream; slim overlaid identity row at top-left with small avatar and name, small status chip. Actual natural-looking game frames with compelling detail: Bods top-left tactical FPS like screenshot, math top-right colorful competitive driving game, Lucas bottom-left medieval fantasy action game, Ana bottom-right atmospheric futuristic exploration game. These are four distinct publishers, viewer Felipe is fifth person, no duplicate person tiles. All stream names and tiny HUDs visually crisp.
+
+Bods, Lucas, Ana are subscribed: subtle "Assistindo" status; bottom-right tiny measured bitrate such as "15,5 Mbps". Minimal fullscreen and three-dot affordances at bottom edge ON HOVER for one tile only. Otherwise almost entirely video.
+math is NOT subscribed: static screenshot still, slight dark overlay, centered mint "Assistir" button with play icon. Small "Prévia" badge top and bottom small label "Imagem estática · atualiza a cada minuto". Do NOT use volume, bitrate or live-playing indicators on this unsubscribed tile.
+
+Show one OPEN right-click context menu for Bods, anchored near the right lower portion of its upper-left tile, floating above grid. Beautiful compact dark popover about 245px wide. Explicit menu content:
+"Bods" muted heading
+"Volume" with right aligned "35%" then a horizontal mint slider and speaker icon
+"Silenciar" with unchecked toggle
+divider
+"Focar transmissão"
+"Tela cheia" with "F11" shortcut right aligned
+divider
+"Parar de assistir" in soft red with stop icon.
+Cursor arrow next to menu. Menu only occludes a small portion of one stream, never the watch CTA or sidebar. This is the intentional interaction demonstration, no extra popups.
+Everything requested must be visible in this ONE image: huge stream grid, room actions, source/quality/FPS settings, explicit watch versus preview, and contextual sound/stop/fullscreen controls. Use correct Brazilian Portuguese spelling. No fake technical claims like verified 4K120, HEVC/AV1 qualification or working audio exclusions. No chat panel, no server rail, no marketing text, no explanatory callout labels, no bottom permanent per-stream control bars wasting space. Prioritize coherent realistic app screenshot, readable typography and stream area.

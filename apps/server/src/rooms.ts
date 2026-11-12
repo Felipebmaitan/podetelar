@@ -6,9 +6,10 @@ import {
 } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type StatementSync } from "node:sqlite";
 import type {
   CreateRoomInput,
+  ManagedRoom,
   Room,
   RoomSession,
 } from "@freedomstream/contracts";
@@ -36,6 +37,9 @@ type IssuedSession = { snapshot: RoomSession; token: string };
 /** Owns room admission and persistence. Raw invitation/session secrets never enter SQLite. */
 export class Rooms {
   private readonly db: DatabaseSync;
+  private readonly findStatement: StatementSync;
+  private readonly sessionStatement: StatementSync;
+  private readonly activeStatement: StatementSync;
   constructor(
     path: string,
     private readonly now: () => number = Date.now,
@@ -89,31 +93,79 @@ export class Rooms {
       this.db.close();
       throw error;
     }
+    this.findStatement = this.db.prepare(
+      "SELECT id, name, invitation_hash, invitation_enabled, created_at FROM rooms WHERE id = ?",
+    );
+    this.sessionStatement = this.db.prepare(
+      "SELECT participant_id, display_name, expires_at FROM sessions WHERE token_hash = ? AND room_id = ? AND expires_at > ?",
+    );
+    this.activeStatement = this.db.prepare(
+      "SELECT 1 FROM sessions WHERE room_id = ? AND participant_id = ? AND expires_at > ?",
+    );
   }
 
-  create(input: CreateRoomInput): IssuedSession & { invitation: string } {
+  private insertRoom(name: string) {
     const invitation = randomSecret();
     const room: RoomRow = {
       id: randomBytes(16).toString("base64url"),
-      name: input.name,
+      name,
       invitation_hash: digest(invitation),
       invitation_enabled: 1,
       created_at: this.now(),
     };
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      this.db
-        .prepare(
-          "INSERT INTO rooms(id, name, invitation_hash, created_at) VALUES (?, ?, ?, ?)",
-        )
-        .run(room.id, room.name, room.invitation_hash, room.created_at);
-      const issued = this.issue(room, input.displayName);
-      this.db.exec("COMMIT");
-      return { ...issued, invitation };
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
+    this.db
+      .prepare(
+        "INSERT INTO rooms(id, name, invitation_hash, created_at) VALUES (?, ?, ?, ?)",
+      )
+      .run(room.id, room.name, room.invitation_hash, room.created_at);
+    return { room, invitation };
+  }
+
+  create(input: CreateRoomInput): IssuedSession & { invitation: string } {
+    return this.transaction(() => {
+      const { room, invitation } = this.insertRoom(input.name);
+      return { ...this.issue(room, input.displayName), invitation };
+    });
+  }
+
+  createManaged(name: string): { room: Room; invitation: string } {
+    const { room, invitation } = this.insertRoom(name);
+    return {
+      room: {
+        id: room.id,
+        name: room.name,
+        createdAt: new Date(room.created_at).toISOString(),
+      },
+      invitation,
+    };
+  }
+
+  list(offset: number): { rooms: ManagedRoom[]; nextOffset: number | null } {
+    const rows = this.db
+      .prepare(
+        "SELECT id, name, created_at, invitation_enabled FROM rooms ORDER BY created_at DESC, id DESC LIMIT 51 OFFSET ?",
+      )
+      .all(offset) as Pick<
+      RoomRow,
+      "id" | "name" | "created_at" | "invitation_enabled"
+    >[];
+    return {
+      rooms: rows.slice(0, 50).map((row) => ({
+        id: row.id,
+        name: row.name,
+        createdAt: new Date(row.created_at).toISOString(),
+        invitationEnabled: Boolean(row.invitation_enabled),
+      })),
+      nextOffset: rows.length > 50 ? offset + 50 : null,
+    };
+  }
+
+  acceptsInvitation(id: string, invitation: string): boolean {
+    const room = this.find(id);
+    return Boolean(
+      room?.invitation_enabled &&
+      timingSafeEqual(digest(invitation), Buffer.from(room.invitation_hash)),
+    );
   }
 
   join(
@@ -143,11 +195,8 @@ export class Rooms {
   session(id: string, token: string | undefined): RoomSession | null {
     if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
     const room = this.find(id);
-    const session = this.db
-      .prepare(
-        "SELECT participant_id, display_name, expires_at FROM sessions WHERE token_hash = ? AND room_id = ? AND expires_at > ?",
-      )
-      .get(digest(token), id, this.now()) as SessionRow | undefined;
+    const session = this.sessionStatement.get(digest(token), id, this.now()) as
+      SessionRow | undefined;
     return room && session ? this.snapshot(room, session) : null;
   }
 
@@ -157,13 +206,7 @@ export class Rooms {
   }
 
   active(id: string, identity: string): boolean {
-    return Boolean(
-      this.db
-        .prepare(
-          "SELECT 1 FROM sessions WHERE room_id = ? AND participant_id = ? AND expires_at > ?",
-        )
-        .get(id, identity, this.now()),
-    );
+    return Boolean(this.activeStatement.get(id, identity, this.now()));
   }
   access(id: string) {
     const room = this.find(id);
@@ -281,11 +324,7 @@ export class Rooms {
   }
 
   private find(id: string): RoomRow | undefined {
-    return this.db
-      .prepare(
-        "SELECT id, name, invitation_hash, invitation_enabled, created_at FROM rooms WHERE id = ?",
-      )
-      .get(id) as RoomRow | undefined;
+    return this.findStatement.get(id) as RoomRow | undefined;
   }
 
   private issue(room: RoomRow, displayName: string): IssuedSession {

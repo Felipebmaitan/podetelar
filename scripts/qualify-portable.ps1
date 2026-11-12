@@ -22,7 +22,24 @@ function Assert-GuiSubsystem([string]$Path) {
         throw 'A shipped executable does not use the Windows GUI subsystem.'
     }
 }
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class FreedomStreamIconCheck {
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    public static extern uint ExtractIconExW(string file, int index, IntPtr large, IntPtr small, uint count);
+}
+'@
+function Assert-AppResources([string]$Path) {
+    if ([FreedomStreamIconCheck]::ExtractIconExW($Path, -1, [IntPtr]::Zero, [IntPtr]::Zero, 0) -lt 1) {
+        throw 'A shipped executable has no embedded Windows icon.'
+    }
+    if ([Diagnostics.FileVersionInfo]::GetVersionInfo($Path).ProductName -ne 'FreedomStream') {
+        throw 'A shipped executable has no FreedomStream product metadata.'
+    }
+}
 Assert-GuiSubsystem $copy
+Assert-AppResources $copy
 
 function Start-Portable([string]$Arguments) {
     $info = [Diagnostics.ProcessStartInfo]::new()
@@ -65,6 +82,7 @@ try {
     if ($cache.Count -ne 1) { throw 'First launches did not converge on one cache.' }
     $runtime = $cache[0].FullName
     Assert-GuiSubsystem (Join-Path $runtime 'bin/freedomstream-publisher.exe')
+    Assert-AppResources (Join-Path $runtime 'bin/freedomstream-publisher.exe')
     $manifest = Get-Content -LiteralPath (Join-Path $runtime 'release.json') -Raw | ConvertFrom-Json
     foreach ($file in $manifest.files.PSObject.Properties) {
         $path = Join-Path $runtime $file.Name

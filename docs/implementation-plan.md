@@ -141,6 +141,56 @@ device queues. Do not substitute an arbitrary delay or compilation for actual
 audio/video timing acceptance. Verify a synchronized audiovisual fixture and
 record any remaining device/network limitations before claiming the fix.
 
+## 13. Fullscreen viewing, bandwidth headroom and game performance — PR
+
+Build on the feedback beta in a separate dependent branch. Add native borderless
+fullscreen for a selected watched stream, explicit controls and Escape/F11 exit,
+without changing other subscriptions. Show measured received video bitrate at the
+bottom right of watched tiles and fullscreen views. Raise the negotiated test
+ceiling to 200 Mbps while retaining the 100 Mbps encoding ceiling and network
+headroom. Keep legacy 100 Mbps clients compatible, and bound transfer bytes,
+concurrency and proxy settings accordingly.
+
+Investigate the reported RX 7600 whole-monitor HEVC capture stutter at 1080p120
+and 25 Mbps. Remove proven unnecessary rendering/reconfiguration work, preserve
+explicit resolution/FPS/bitrate controls, and report AMD hardware qualification
+separately. Local NVIDIA tests cannot establish an RX 7600/Siege fix.
+
+## 14. Hardware AV1 publication and native decoding — PR
+
+Add runtime-probed NVIDIA NVENC and AMD AMF AV1 publication, SDR Main-profile
+8-bit framing and native Direct3D11 AV1 decoding. Retain the SDK dav1d CPU
+decoder on receivers without an AV1 GPU decoder. Keep one publication and honor
+H.264 compatibility requests, watch intent, explicit unsubscribe and preview cadence.
+Use HEVC automatic bitrate targets until AV1 quality has been measured.
+
+Accept with actual AV1 publication and native hardware/software decode through
+the SFU, stop/rewatch traffic checks, compatibility fallback and reconnect.
+Record NVIDIA and AMD hardware results independently; quantify CPU/game impact
+for multiple software-decoded streams before promising low CPU usage. Existing
+packaging, AMD, fresh-machine and 4K120 gates remain open.
+
+## 15. Stream-first native UI — design branch
+
+Implement the approved ImageGen concept on `feat/stream-first-ui`: charcoal
+surfaces, a compact sharing/member sidebar, and large 16:9 stream surfaces.
+Move viewing actions into a right-click menu, with a hover ellipsis alternative;
+retain explicit Watch/Stop subscriptions, mute/volume, focus and fullscreen.
+Show the received publication's codec immediately left of its measured video
+bitrate inside watched video only on mouse hover; fullscreen may fade its HUD
+after mouse inactivity. Never show delivery metrics on an unsubscribed preview.
+
+Keep source resolution and FPS controls, source-derived audio, start/minute
+preview cadence and saved-room behavior. In short windows, pin sharing actions
+and keep source/FPS accessible; source confirmation can be expanded in the sidebar.
+Truncate long room names while preserving invitation, leave and language controls.
+
+Accept with native-renderer captures at 1280×720 and 960×540, open stream menus,
+sharing, onboarding/error and focus states; native Clippy/tests and Node 24 checks;
+and independent technical/visual review. Synthetic UI captures establish layout
+only. Existing uncommitted media/packaging prerequisites and outstanding physical
+hardware/network acceptance remain separate from this design branch.
+
 ## Later portability
 
 After the Windows experience meets the above gates, add macOS and Linux in separate PRs. Preserve the room, invitation, subscription and preview contracts; replace platform capture/audio/encoder adapters. No cross-platform promise until each backend is tested on its actual OS.

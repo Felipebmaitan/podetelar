@@ -21,6 +21,8 @@ mkdirSync(stage);
 const env = {
   ...process.env,
   FREEDOMSTREAM_UPDATE_FEED: feed,
+  FREEDOMSTREAM_LINK_TEST_SCHEME: `Software\\Classes\\freedomstream-update-qualification-${Date.now()}`,
+  FREEDOMSTREAM_LINK_TEST_ACTIVE: `Software\\FreedomStream\\UpdateQualification-${Date.now()}`,
   CARGO_ENCODED_RUSTFLAGS:
     "-C\x1ftarget-feature=+crt-static\x1f-C\x1flink-arg=/DEPENDENTLOADFLAG:0x800",
 };
@@ -187,3 +189,7 @@ while (
 console.log(
   `Passed real package download/Later/apply/restart with fixture publisher. Evidence: ${output}`,
 );
+run(join(unpacked, "current/freedomstream-installed.exe"), [
+  "--veloapp-uninstall",
+  "0.1.0-preview.2",
+]);

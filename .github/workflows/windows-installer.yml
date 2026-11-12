@@ -5,6 +5,8 @@ on:
       - apps/installed-launcher/**
       - apps/update_protocol.rs
       - apps/publisher/src/updates.rs
+      - apps/activation_protocol.rs
+      - scripts/qualify-installed-links.mjs
       - scripts/*installer*
       - scripts/qualify-update-controls.mjs
       - deploy/windows/installer.json
@@ -32,6 +34,7 @@ jobs:
       - run: cargo fmt --manifest-path apps/installed-launcher/Cargo.toml --check
       - run: cargo clippy --locked --manifest-path apps/installed-launcher/Cargo.toml -- -D warnings
       - run: cargo test --locked --manifest-path apps/installed-launcher/Cargo.toml
+      - run: node scripts/qualify-installed-links.mjs
       - run: cargo build --locked --release --manifest-path apps/installed-launcher/Cargo.toml --target x86_64-pc-windows-msvc
       - uses: actions/setup-dotnet@v4
         with:

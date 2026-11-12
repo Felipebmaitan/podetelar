@@ -88,6 +88,8 @@ pub fn configure_theme(ctx: &egui::Context) {
 pub struct PublisherUi {
     updates: crate::updates::Client,
     update_restart_prompt: bool,
+    activation: crate::activation::Inbox,
+    prior_invitation: Option<String>,
     controller: Controller,
     invitation: String,
     name: String,
@@ -135,6 +137,43 @@ impl PublisherUi {
         }
         self.controller.begin_shutdown();
     }
+    fn open_activation(&mut self, value: &str, ctx: &egui::Context) {
+        if !crate::activation_protocol::valid(value) {
+            return;
+        }
+        let Ok(link) = crate::browser_links::Link::parse(value) else {
+            self.settings_error =
+                "Invalid browser invitation. Open a fresh invitation from your browser.".into();
+            return;
+        };
+        if self.link_result.is_some() {
+            self.settings_error =
+                "Finish or dismiss the current invitation before opening another.".into();
+            return;
+        }
+        if self.browser_invitation_open {
+            self.dismiss_browser_invitation();
+        }
+        let previous = self.invitation.clone();
+        let known = self
+            .attempted_profile
+            .as_ref()
+            .is_some_and(|p| link.known_server(&p.invitation));
+        self.prior_invitation = Some(previous);
+        self.invitation.clear();
+        self.settings_error.clear();
+        self.show_invitation = false;
+        self.browser_invitation_open = true;
+        self.set_fullscreen(ctx, None);
+        if self.controller.snapshot().connection == "connecting" {
+            self.controller.send(Command::Leave);
+        }
+        if known {
+            self.link_result = Some(crate::browser_links::Load::start(link));
+        } else {
+            self.pending_link = Some(link);
+        }
+    }
     pub fn with_browser_link(browser_link: Option<String>) -> Self {
         crate::locale::load();
         let store = crate::settings::Store::open();
@@ -150,7 +189,7 @@ impl PublisherUi {
             }
         });
         let is_browser_launch = browser_link.is_some();
-        let pending_link =
+        let mut pending_link =
             browser_link.and_then(|value| match crate::browser_links::Link::parse(&value) {
                 Ok(link) => Some(link),
                 Err(_) => {
@@ -160,6 +199,17 @@ impl PublisherUi {
                     None
                 }
             });
+        let link_result = if pending_link.as_ref().is_some_and(|link| {
+            profile
+                .as_ref()
+                .is_some_and(|profile| link.known_server(&profile.invitation))
+        }) {
+            Some(crate::browser_links::Load::start(
+                pending_link.take().unwrap(),
+            ))
+        } else {
+            None
+        };
         let profile_invitation = if is_browser_launch {
             None
         } else {
@@ -168,6 +218,8 @@ impl PublisherUi {
         let app = Self {
             updates: crate::updates::Client::new(),
             update_restart_prompt: false,
+            activation: crate::activation::Inbox::new(),
+            prior_invitation: None,
             controller: Controller::new(),
             invitation: profile_invitation
                 .map(|p| p.invitation.clone())
@@ -193,7 +245,7 @@ impl PublisherUi {
             show_invitation: false,
             browser_invitation_open: is_browser_launch,
             pending_link,
-            link_result: None,
+            link_result,
             browser_links_enabled: std::env::var("FREEDOMSTREAM_BROWSER_LINKS").as_deref()
                 == Ok("1"),
             self_preview_revision: None,
@@ -219,6 +271,7 @@ impl PublisherUi {
     }
 
     fn join(&mut self) {
+        self.prior_invitation = None;
         self.browser_invitation_open = false;
         self.show_invitation = false;
         self.forgetting = false;
@@ -255,7 +308,7 @@ impl PublisherUi {
             ui.label(skin::strong("FreedomStream", 20.0));
             ui.separator();
             let room_label = format!(
-                "{}  ·  {} {}",
+                "{}  Â·  {} {}",
                 if state.room_name.is_empty() {
                     tr("Your private room")
                 } else {
@@ -295,7 +348,7 @@ impl PublisherUi {
                 egui::ComboBox::from_id_salt("ui-language")
                     .selected_text(if pt { "PT-BR" } else { "EN" })
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut pt, true, "Português (Brasil)");
+                        ui.selectable_value(&mut pt, true, "PortuguÃªs (Brasil)");
                         ui.selectable_value(&mut pt, false, "English");
                     });
                 if pt != crate::locale::portuguese() && crate::locale::select(pt).is_err() {
@@ -328,6 +381,9 @@ impl PublisherUi {
                             ui.close();
                         }
                         ui.separator();
+                    if std::env::var_os(crate::activation_protocol::INSTALLED).is_some() {
+                        ui.label(tr(if self.browser_links_enabled { "Room links open this installed app automatically." } else { "Room links are handled by another application or need repair." }));
+                    } else {
                     let label = if self.browser_links_enabled { "Disable browser links" } else { "Enable browser links" };
                     if ui.button(tr(label)).on_hover_text(tr("Allow invitation pages to open this app for your Windows user. A launcher copy is kept in Local AppData.")).clicked() {
                         match crate::browser_links::set_enabled(!self.browser_links_enabled) {
@@ -342,6 +398,7 @@ impl PublisherUi {
                             Err(error) => self.settings_error = error.to_string(),
                         }
                         ui.close();
+                    }
                     }
                         open_licenses(ui);
                     });
@@ -370,7 +427,7 @@ impl PublisherUi {
         if let Some(load) = &mut self.link_result {
             load.cancel();
         }
-        self.invitation.clear();
+        self.invitation = self.prior_invitation.take().unwrap_or_default();
         self.settings_error.clear();
     }
 
@@ -400,9 +457,12 @@ impl PublisherUi {
                         self.link_result = Some(crate::browser_links::Load::start(link));
                     }
                 } else if self.link_result.is_some() {
-                    ui.horizontal(|ui| { ui.spinner(); ui.label(tr("Loading browser invitation…")); });
+                    ui.horizontal(|ui| { ui.spinner(); ui.label(tr("Loading browser invitationâ€¦")); });
                     ctx.request_repaint_after(Duration::from_millis(50));
                 } else if !self.invitation.is_empty() {
+                    if matches!(state.connection, "connected" | "reconnecting") {
+                        ui.label(tr("Joining this room will end your current sharing and watching."));
+                    }
                     self.join_form(ui, state);
                 }
                 if !self.settings_error.is_empty() {
@@ -625,7 +685,7 @@ impl PublisherUi {
             ui.scope_id().with("source-preview"),
             egui::Sense::hover(),
         )
-        .on_hover_text(tr("Source confirmation · updates once a minute"));
+        .on_hover_text(tr("Source confirmation Â· updates once a minute"));
     }
 
     fn clear_picker(&mut self) {
@@ -805,7 +865,7 @@ impl PublisherUi {
                             );
                             ui.label(
                                 egui::RichText::new(format!(
-                                    "{} × {}",
+                                    "{} Ã— {}",
                                     source.width, source.height
                                 ))
                                 .size(12.0)
@@ -826,7 +886,7 @@ impl PublisherUi {
                         let message = if self.picker_failed.as_deref() == Some(&source.id) {
                             tr("Preview unavailable. Refresh sources to try again.")
                         } else {
-                            tr("Loading preview…")
+                            tr("Loading previewâ€¦")
                         };
                         let text = ui.painter().layout(
                             message.to_owned(),
@@ -842,9 +902,9 @@ impl PublisherUi {
                     }
                     ui.label(
                         egui::RichText::new(tr(if sharing {
-                            "Local preview · only visible to you"
+                            "Local preview Â· only visible to you"
                         } else {
-                            "Local preview · not broadcasting"
+                            "Local preview Â· not broadcasting"
                         }))
                         .size(12.0)
                         .color(MUTED),
@@ -920,20 +980,20 @@ impl PublisherUi {
                 ui.colored_label(
                     ACCENT,
                     skin::strong(
-                        format!("{}×{} · {} FPS", mode.width, mode.height, mode.fps),
+                        format!("{}Ã—{} Â· {} FPS", mode.width, mode.height, mode.fps),
                         12.0,
                     ),
                 )
                 .on_hover_text(tr("Sharing"));
                 ui.small(format!(
-                    "{}: {:.0} FPS · {:.1} Mbps {}",
+                    "{}: {:.0} FPS Â· {:.1} Mbps {}",
                     tr("Live"),
                     state.metrics.fps,
                     state.delivery.bitrate_bps as f64 / 1_000_000.0,
                     tr("sent")
                 ));
             } else {
-                ui.colored_label(WARNING, tr("Starting your stream…"));
+                ui.colored_label(WARNING, tr("Starting your streamâ€¦"));
             }
             let selection = self.selection();
             let dirty = state
@@ -977,9 +1037,9 @@ impl PublisherUi {
                 ui.colored_label(
                     WARNING,
                     if live {
-                        tr("Changes pending · applies live")
+                        tr("Changes pending Â· applies live")
                     } else {
-                        tr("Changes pending · restarts stream")
+                        tr("Changes pending Â· restarts stream")
                     },
                 );
             }
@@ -1038,7 +1098,7 @@ impl PublisherUi {
             let label=skin::help_label(ui,tr("Watching allowance"),tr("Automatic uses measured download capacity with headroom, or 30 Mbps if unavailable. Shared across everything you watch."));
             let before=self.download_budget;
             egui::ComboBox::from_id_salt("watching-allowance").width(ui.available_width())
-                .selected_text(self.download_budget.map(|bps|format!("{} Mbps",bps/1_000_000)).unwrap_or_else(||format!("{} · {:.0} Mbps",tr("Automatic"),state.capacity.watching_allowance().unwrap_or(crate::network::DEFAULT_DOWNLOAD_BPS) as f64/1_000_000.0)))
+                .selected_text(self.download_budget.map(|bps|format!("{} Mbps",bps/1_000_000)).unwrap_or_else(||format!("{} Â· {:.0} Mbps",tr("Automatic"),state.capacity.watching_allowance().unwrap_or(crate::network::DEFAULT_DOWNLOAD_BPS) as f64/1_000_000.0)))
                 .show_ui(ui,|ui| {
                     ui.selectable_value(&mut self.download_budget,None,tr("Automatic"));
                     for mbps in [1,3,5,10,25,30,50,100,200]{ui.selectable_value(&mut self.download_budget,Some(mbps*1_000_000),format!("{mbps} Mbps"));}
@@ -1070,7 +1130,7 @@ impl PublisherUi {
             ui.vertical(|ui| {
                 ui.label(skin::strong(
                     tr(if state.testing_connection {
-                        "Measuring connection…"
+                        "Measuring connectionâ€¦"
                     } else if failed {
                         "Test unavailable"
                     } else if state.capacity.download_bps.is_some() {
@@ -1116,7 +1176,7 @@ impl PublisherUi {
             ui.label(format!("{}: {}", tr("Encoder"), encoder.codec.label()));
         }
         ui.label(
-            egui::RichText::new(tr("Capacity to this VPS · payload capped at 200 Mbps"))
+            egui::RichText::new(tr("Capacity to this VPS Â· payload capped at 200 Mbps"))
                 .size(12.0)
                 .color(MUTED),
         );
@@ -1170,7 +1230,7 @@ impl PublisherUi {
                 state.metrics.encoder_bitrate as f64 / 1_000_000.0
             ));
             ui.small(format!(
-                "{}: {:.1} FPS · {:.1} Mbps",
+                "{}: {:.1} FPS Â· {:.1} Mbps",
                 tr("Encoded"),
                 state.metrics.fps,
                 state.metrics.encoded_bps as f64 / 1_000_000.0
@@ -1181,7 +1241,7 @@ impl PublisherUi {
                 tr("sent")
             ));
             ui.small(format!(
-                "{}: {:.0} ms · {}: {:.0} ms",
+                "{}: {:.0} ms Â· {}: {:.0} ms",
                 tr("Audio capture age"),
                 state.audio.capture_age_ms,
                 tr("Audio submit wait"),
@@ -1508,9 +1568,9 @@ impl PublisherUi {
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
                     if tile.watching {
-                        tr("Starting live playback…")
+                        tr("Starting live playbackâ€¦")
                     } else {
-                        tr("Loading preview…")
+                        tr("Loading previewâ€¦")
                     },
                     egui::FontId::proportional(14.0),
                     MUTED,
@@ -1580,7 +1640,7 @@ impl PublisherUi {
                 ui.painter().text(
                     caption.left_center() + egui::vec2(10.0, 0.0),
                     egui::Align2::LEFT_CENTER,
-                    tr("Still preview · updates up to once a minute"),
+                    tr("Still preview Â· updates up to once a minute"),
                     egui::FontId::proportional(11.0),
                     TEXT,
                 );
@@ -1654,12 +1714,12 @@ impl PublisherUi {
             return;
         }
         let label = match status.phase {
-            Phase::Checking => "Checking for updates…",
+            Phase::Checking => "Checking for updatesâ€¦",
             Phase::Current => "Up to date",
             Phase::Available => "Download update",
-            Phase::Downloading => "Downloading update…",
+            Phase::Downloading => "Downloading updateâ€¦",
             Phase::Ready => "Restart to update",
-            Phase::Restarting => "Restarting…",
+            Phase::Restarting => "Restartingâ€¦",
             Phase::Error => "Retry update check",
             Phase::Disabled => unreachable!(),
         };
@@ -1668,7 +1728,7 @@ impl PublisherUi {
                 status.phase,
                 Phase::Checking | Phase::Downloading | Phase::Restarting
             ),
-            egui::Button::new("↻").fill(
+            egui::Button::new("â†»").fill(
                 if matches!(status.phase, Phase::Available | Phase::Ready) {
                     egui::Color32::from_rgb(33, 91, 85)
                 } else {
@@ -1776,6 +1836,16 @@ impl eframe::App for PublisherUi {
         {
             self.begin_close();
         }
+        if self.closing_since.is_none() {
+            ctx.request_repaint_after(Duration::from_millis(250));
+            if let Some(event) = self.activation.poll() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                if let Some(link) = event.link {
+                    self.open_activation(&link, ctx);
+                }
+            }
+        }
         self.handle_close(ctx);
     }
 
@@ -1811,8 +1881,8 @@ impl eframe::App for PublisherUi {
                 ui.vertical_centered(|ui| {
                     ui.add_space(48.0);
                     ui.spinner();
-                    ui.heading(tr("Closing…"));
-                    ui.label(tr("Stopping your stream and leaving the room…"));
+                    ui.heading(tr("Closingâ€¦"));
+                    ui.label(tr("Stopping your stream and leaving the roomâ€¦"));
                     if started.elapsed() >= Duration::from_secs(10)
                         && ui.button(tr("Force close")).clicked()
                     {
@@ -1891,6 +1961,8 @@ impl eframe::App for PublisherUi {
             self.set_fullscreen(&ctx, None);
         }
         if state.connection == "connected"
+            && !state.busy
+            && !self.browser_invitation_open
             && !self.forgetting
             && self.attempted_profile.as_ref().is_none_or(|profile| {
                 profile.invitation != self.invitation.trim() || profile.name != self.name.trim()
@@ -2009,7 +2081,11 @@ impl eframe::App for PublisherUi {
                             ui.separator();
                             ui.label(
                                 skin::strong(
-                                    format!("{} · {}", tr("In room"), state.participants.len() + 1),
+                                    format!(
+                                        "{} Â· {}",
+                                        tr("In room"),
+                                        state.participants.len() + 1
+                                    ),
                                     11.0,
                                 )
                                 .color(MUTED),
@@ -2065,7 +2141,7 @@ impl eframe::App for PublisherUi {
                 ui.horizontal(|ui| {
                     ui.heading(if self.focused.is_some(){tr("Focused stream")}else{tr("Streams")});
                     ui.add_space(8.0);
-                    ui.label(egui::RichText::new(format!("{} {} · {} {}",state.tiles.len(),tr("live"),state.tiles.iter().filter(|t|t.watching).count(),tr("watching"))).size(13.0).color(MUTED));
+                    ui.label(egui::RichText::new(format!("{} {} Â· {} {}",state.tiles.len(),tr("live"),state.tiles.iter().filter(|t|t.watching).count(),tr("watching"))).size(13.0).color(MUTED));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| {
                         let watched=state.tiles.iter().find(|tile|tile.watching);
                         ui.add_enabled_ui(watched.is_some(),|ui| {
@@ -2334,7 +2410,7 @@ fn quality_controls(
                 };
                 let mode = source.and_then(|s| candidate.resolve(s, encoder.codec).ok());
                 let text = mode
-                    .map(|m| format!("{} · {}×{}", tr(resolution.label()), m.width, m.height))
+                    .map(|m| format!("{} Â· {}Ã—{}", tr(resolution.label()), m.width, m.height))
                     .unwrap_or_else(|| resolution.label().into());
                 ui.add_enabled_ui(mode.is_some_and(|m| encoder.supports(m)), |ui| {
                     ui.selectable_value(&mut settings.resolution, resolution, text);
@@ -2383,7 +2459,7 @@ fn quality_controls(
         match settings.resolve(source, encoder.codec) {
             Ok(mode) if encoder.supports(mode) => {
                 ui.small(format!(
-                    "{}×{} · {} FPS · SDR",
+                    "{}Ã—{} Â· {} FPS Â· SDR",
                     mode.width, mode.height, mode.fps
                 ));
             }
@@ -2402,7 +2478,7 @@ fn bitrate_controls(ui: &mut egui::Ui, settings: &mut Settings) {
         ui,
         tr("Bitrate"),
         tr(
-            "Automatic follows resolution, FPS and content, up to 35 Mbps. Manual: 1–100 Mbps. Connection limits still apply.",
+            "Automatic follows resolution, FPS and content, up to 35 Mbps. Manual: 1â€“100 Mbps. Connection limits still apply.",
         ),
     );
     egui::ComboBox::from_id_salt("video-bitrate")
@@ -2484,9 +2560,9 @@ fn stream_metrics_text(codec: &str, bps: u64) -> String {
         "video/h265" | "h265" | "hevc" => "HEVC",
         "video/h264" | "h264" => "H.264",
         "video/av1" | "av1" => "AV1",
-        _ => "—",
+        _ => "â€”",
     };
-    format!("{codec}  ·  {:.1} Mbps", bps as f64 / 1_000_000.0)
+    format!("{codec}  Â·  {:.1} Mbps", bps as f64 / 1_000_000.0)
 }
 
 fn avatar(ui: &mut egui::Ui, name: &str, size: f32) {
@@ -2556,7 +2632,7 @@ fn settings_divider(ui: &mut egui::Ui) {
 
 fn source_name(source: &crate::sources::SourceInfo) -> &str {
     if source.id.starts_with("monitor:") {
-        source.label.split(" · ").next().unwrap_or(&source.label)
+        source.label.split(" Â· ").next().unwrap_or(&source.label)
     } else {
         &source.label
     }
@@ -2631,14 +2707,14 @@ mod tests {
             ..Default::default()
         });
         app.updates = client;
-        click(&mut app, &ctx, "↻");
+        click(&mut app, &ctx, "â†»");
         assert_eq!(actions.try_recv().unwrap(), Action::Download);
         let (client, actions) = crate::updates::Client::fixture(Status {
             phase: Phase::Ready,
             ..Default::default()
         });
         app.updates = client;
-        click(&mut app, &ctx, "↻");
+        click(&mut app, &ctx, "â†»");
         assert!(app.update_restart_prompt);
         assert!(actions.try_recv().is_err());
         click(&mut app, &ctx, tr("Later"));
@@ -2652,6 +2728,41 @@ mod tests {
             app.closing_since.is_none(),
             "Wait for launcher acknowledgement before closing"
         );
+    }
+
+    #[test]
+    fn forwarded_invitation_waits_for_trust_and_dismiss_restores_the_current_room() {
+        let mut app = app();
+        let previous = format!(
+            "https://current.test/r/{}#invite={}",
+            "r".repeat(22),
+            "s".repeat(43)
+        );
+        app.invitation = previous.clone();
+        let ctx = egui::Context::default();
+        let link = format!(
+            "freedomstream://join?server=https%3A%2F%2Fother.test#handoff={}",
+            "t".repeat(43)
+        );
+        app.open_activation(&link, &ctx);
+        assert!(app.browser_invitation_open);
+        assert!(app.pending_link.is_some());
+        assert!(
+            app.link_result.is_none(),
+            "An unfamiliar server needs trust before any request"
+        );
+        assert!(
+            !app.controller.snapshot().busy,
+            "Activation must not join or leave by itself"
+        );
+        app.dismiss_browser_invitation();
+        assert_eq!(app.invitation, previous);
+        assert!(!app.browser_invitation_open);
+        // Merely pasting a matching-origin invitation has never established trust.
+        app.invitation = previous.replace("current.test", "other.test");
+        app.open_activation(&link, &ctx);
+        assert!(app.pending_link.is_some());
+        assert!(app.link_result.is_none());
     }
 
     #[test]
@@ -2901,6 +3012,8 @@ mod tests {
         PublisherUi {
             updates: crate::updates::Client::new(),
             update_restart_prompt: false,
+            activation: crate::activation::Inbox::new(),
+            prior_invitation: None,
             controller: Controller::new(),
             invitation: String::new(),
             name: String::new(),
@@ -3131,7 +3244,7 @@ mod tests {
             egui::Event::PointerMoved(egui::pos2(300.0, 180.0)),
             false,
         );
-        assert!(visible.contains("HEVC  ·  15.5 Mbps"), "{visible}");
+        assert!(visible.contains("HEVC  Â·  15.5 Mbps"), "{visible}");
         assert!(!draw(&tile, egui::Event::PointerGone, false).contains("Mbps"));
         tile.watching = false;
         assert!(
@@ -3208,10 +3321,10 @@ mod tests {
     fn codec_labels_follow_the_received_publication_without_inventing_unknown_codecs() {
         assert_eq!(
             stream_metrics_text("video/h264", 2_000_000),
-            "H.264  ·  2.0 Mbps"
+            "H.264  Â·  2.0 Mbps"
         );
-        assert_eq!(stream_metrics_text("video/AV1", 0), "AV1  ·  0.0 Mbps");
-        assert_eq!(stream_metrics_text("", 0), "—  ·  0.0 Mbps");
+        assert_eq!(stream_metrics_text("video/AV1", 0), "AV1  Â·  0.0 Mbps");
+        assert_eq!(stream_metrics_text("", 0), "â€”  Â·  0.0 Mbps");
     }
 
     #[test]
@@ -3258,7 +3371,7 @@ mod tests {
         }
         for hidden in [
             "No microphone",
-            "Automatic follows resolution, FPS and content, up to 35 Mbps. Manual: 1–100 Mbps. Connection limits still apply.",
+            "Automatic follows resolution, FPS and content, up to 35 Mbps. Manual: 1â€“100 Mbps. Connection limits still apply.",
             "Retry watching connection",
         ] {
             assert!(

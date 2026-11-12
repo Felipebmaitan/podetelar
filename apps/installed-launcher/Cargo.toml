@@ -10,7 +10,13 @@ publish = false
 [workspace]
 
 [features]
+link-qualification = []
 update-qualification = []
+
+[[bin]]
+name = "link-fixture"
+path = "src/link_fixture.rs"
+required-features = ["link-qualification"]
 
 [[bin]]
 name = "update-fixture"
@@ -19,14 +25,15 @@ required-features = ["update-qualification"]
 
 [dependencies]
 velopack = "=1.2.161"
+anyhow = "1.0"
+rand = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-rand = "0.10"
 url = "2.5"
 sha2 = "=0.11.1"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry", "Win32_Security", "Win32_UI_WindowsAndMessaging"] }
 
 [build-dependencies]
 winresource = "=0.1.34"

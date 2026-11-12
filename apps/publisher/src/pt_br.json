@@ -247,5 +247,9 @@
   "Later": "Mais tarde",
   "Could not check for updates. Try again.": "Não foi possível buscar atualizações. Tente novamente.",
   "Could not download or verify the update. Try again.": "Não foi possível baixar ou verificar a atualização. Tente novamente.",
-  "The update service is unavailable. Try again.": "O serviço de atualização está indisponível. Tente novamente."
+  "The update service is unavailable. Try again.": "O serviço de atualização está indisponível. Tente novamente.",
+  "Room links open this installed app automatically.": "Links de sala abrem este aplicativo instalado automaticamente.",
+  "Room links are handled by another application or need repair.": "Links de sala abrem outro aplicativo ou precisam de reparo.",
+  "Joining this room will end your current sharing and watching.": "Entrar nesta sala encerrará o compartilhamento e a reprodução atuais.",
+  "Finish or dismiss the current invitation before opening another.": "Conclua ou feche o convite atual antes de abrir outro."
 }

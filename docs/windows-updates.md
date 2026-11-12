@@ -43,6 +43,40 @@ Changing the display title may also change shortcuts. Saved rooms continue to us
 the existing per-user DPAPI settings. Uninstall must preserve those settings unless
 the user explicitly requests erasure; document cache cleanup separately.
 
+## Installed room links
+
+Installing registers `freedomstream://` for the current Windows user. The command
+targets the fixed `current/freedomstream-installed.exe` with a quoted
+`--browser-link "%1"` argument; it does not invoke Update.exe with the ticket.
+Velopack install/update hooks maintain registration and uninstall removes only
+the matching installation's command. Explicit installation can migrate the old
+portable handler. Unrelated handlers are preserved. Standalone portable downloads
+retain their opt-in link registration; installed users no longer enable or refresh
+a content-addressed launcher copy from Room options.
+
+The installed launcher serializes instances. Later links and ordinary launches
+send an activation/focus request to the existing instance, using a random token
+and loopback endpoint discovered in the current user's registry. Only local
+broker credentials and executable paths enter that registry; handoff tickets stay
+in bounded memory queues. Both transport and native URL validation are retained.
+The publisher polls on a worker and requests restore/focus of its existing window.
+
+The website keeps its explicit Join action and one-use short-lived handoff. A
+previously used server origin loads directly into native Join confirmation. An
+unfamiliar origin still asks for trust before contacting it. Joining another room
+warns that sharing/watching will end, and does not happen automatically. Dismissing
+the invitation restores the active room invitation; a pending invitation cannot
+replace the last successful saved room. No capture or subscription starts from a
+link. Browser external-app prompts remain controlled by the browser/Windows.
+
+`node scripts/qualify-installed-links.mjs` builds a test-only launcher/publisher
+substitute with isolated registry keys. It verifies real install/update/uninstall
+hook registration, quoting paths with spaces, focus/link forwarding and one
+publisher process. Local tests also exercise migration, foreign-owner preservation,
+server-origin trust and dismissal. This establishes registry/process behavior,
+not a browser prompt or native foreground-window observation, fresh-machine
+installation or a production media-session switch.
+
 ## Badge, download and restart controls
 
 Set `FREEDOMSTREAM_UPDATE_FEED` **when building the installer bootstrap**, to a

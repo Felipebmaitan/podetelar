@@ -1730,7 +1730,7 @@ impl PublisherUi {
             ui.heading(tr("Restart to update"));
             ui.label(tr("Restarting ends sharing and watching."));
             ui.label(tr(
-                "Your server and name are remembered. Open a fresh invitation after restart.",
+                "After restart, open a fresh invitation and enter your name again.",
             ));
             ui.horizontal(|ui| {
                 later = ui.button(tr("Later")).clicked();

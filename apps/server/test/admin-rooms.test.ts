@@ -139,14 +139,21 @@ test("admin room directory and creation require current admin authority and pers
     assert.equal(new Set(all.map((room) => room.id)).size, 51);
     assert.deepEqual(
       all.find((room) => room.id === body.room.id),
-      { ...body.room, invitationEnabled: true },
+      {
+        ...body.room,
+        invitationEnabled: true,
+        members: [],
+        presence: "unavailable",
+      },
     );
     assert.ok(!JSON.stringify(all).includes(secret));
     assert.deepEqual(Object.keys(all[0]).sort(), [
       "createdAt",
       "id",
       "invitationEnabled",
+      "members",
       "name",
+      "presence",
     ]);
     for (const offset of ["-1", "1.2", "abc", "9999999999"])
       assert.equal(

@@ -1,5 +1,7 @@
 import {
   createHash,
+  createCipheriv,
+  createDecipheriv,
   randomBytes,
   randomUUID,
   timingSafeEqual,
@@ -15,6 +17,7 @@ import type {
 } from "@freedomstream/contracts";
 
 export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+export const EMPTY_ROOM_GRACE_MS = 60_000;
 const digest = (value: string) => createHash("sha256").update(value).digest();
 export const secretsEqual = (left: string, right: string) =>
   timingSafeEqual(digest(left), digest(right));
@@ -43,6 +46,7 @@ export class Rooms {
   constructor(
     path: string,
     private readonly now: () => number = Date.now,
+    private readonly invitationKey?: string,
   ) {
     mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
@@ -52,7 +56,7 @@ export class Rooms {
     const version = this.db.prepare("PRAGMA user_version").get() as {
       user_version: number;
     };
-    if (version.user_version > 3) {
+    if (version.user_version > 4) {
       this.db.close();
       throw new Error(
         "The database was created by a newer FreedomStream version.",
@@ -88,7 +92,20 @@ export class Rooms {
           PRAGMA user_version = 3;
         `);
         });
+      if (version.user_version < 4)
+        this.transaction(() => {
+          this.db.exec(`
+            CREATE TABLE IF NOT EXISTS room_lifecycle (
+              room_id TEXT PRIMARY KEY REFERENCES rooms(id) ON DELETE CASCADE,
+              joined_at INTEGER, empty_since INTEGER, invitation_cipher BLOB
+            );
+            INSERT OR IGNORE INTO room_lifecycle(room_id, joined_at)
+              SELECT id, COALESCE((SELECT MIN(expires_at) - ${SESSION_TTL_MS} FROM sessions WHERE room_id = rooms.id), created_at) FROM rooms;
+            PRAGMA user_version = 4;
+          `);
+        });
       this.expire();
+      this.db.exec("UPDATE room_lifecycle SET empty_since = NULL");
     } catch (error) {
       this.db.close();
       throw error;
@@ -118,6 +135,11 @@ export class Rooms {
         "INSERT INTO rooms(id, name, invitation_hash, created_at) VALUES (?, ?, ?, ?)",
       )
       .run(room.id, room.name, room.invitation_hash, room.created_at);
+    this.db
+      .prepare(
+        "INSERT INTO room_lifecycle(room_id, invitation_cipher) VALUES (?, ?)",
+      )
+      .run(room.id, this.encryptInvitation(room.id, invitation));
     return { room, invitation };
   }
 
@@ -129,15 +151,115 @@ export class Rooms {
   }
 
   createManaged(name: string): { room: Room; invitation: string } {
-    const { room, invitation } = this.insertRoom(name);
-    return {
-      room: {
-        id: room.id,
-        name: room.name,
-        createdAt: new Date(room.created_at).toISOString(),
-      },
-      invitation,
-    };
+    return this.transaction(() => {
+      const { room, invitation } = this.insertRoom(name);
+      return {
+        room: {
+          id: room.id,
+          name: room.name,
+          createdAt: new Date(room.created_at).toISOString(),
+        },
+        invitation,
+      };
+    });
+  }
+
+  /** Ciphertext is recoverable only by the server holding ADMIN_TOKEN. */
+  private encryptInvitation(id: string, invitation: string): Buffer | null {
+    if (!this.invitationKey) return null;
+    const iv = randomBytes(12);
+    const cipher = createCipheriv(
+      "aes-256-gcm",
+      digest(`invitation:${this.invitationKey}`),
+      iv,
+    );
+    cipher.setAAD(Buffer.from(id));
+    return Buffer.concat([
+      iv,
+      cipher.update(invitation, "utf8"),
+      cipher.final(),
+      cipher.getAuthTag(),
+    ]);
+  }
+
+  invitation(id: string): string | null {
+    if (!this.invitationKey || !this.find(id)?.invitation_enabled) return null;
+    const row = this.db
+      .prepare("SELECT invitation_cipher FROM room_lifecycle WHERE room_id = ?")
+      .get(id) as { invitation_cipher: Uint8Array | null } | undefined;
+    if (!row?.invitation_cipher) return null;
+    try {
+      const data = Buffer.from(row.invitation_cipher);
+      const cipher = createDecipheriv(
+        "aes-256-gcm",
+        digest(`invitation:${this.invitationKey}`),
+        data.subarray(0, 12),
+      );
+      cipher.setAAD(Buffer.from(id));
+      cipher.setAuthTag(data.subarray(-16));
+      const invitation = Buffer.concat([
+        cipher.update(data.subarray(12, -16)),
+        cipher.final(),
+      ]).toString("utf8");
+      return this.acceptsInvitation(id, invitation) ? invitation : null;
+    } catch {
+      return null;
+    }
+  }
+
+  lifecycle(id: string): { joined: boolean; emptySince: number | null } | null {
+    const row = this.db
+      .prepare(
+        "SELECT joined_at, empty_since FROM room_lifecycle WHERE room_id = ?",
+      )
+      .get(id) as
+      { joined_at: number | null; empty_since: number | null } | undefined;
+    return row
+      ? { joined: row.joined_at !== null, emptySince: row.empty_since }
+      : null;
+  }
+
+  observePresence(id: string, occupied: boolean): boolean {
+    const state = this.lifecycle(id);
+    if (!state || !state.joined) return false;
+    if (occupied) {
+      this.db
+        .prepare(
+          "UPDATE room_lifecycle SET empty_since = NULL WHERE room_id = ?",
+        )
+        .run(id);
+    } else if (state.emptySince === null) {
+      this.db
+        .prepare("UPDATE room_lifecycle SET empty_since = ? WHERE room_id = ?")
+        .run(this.now(), id);
+    } else if (this.now() - state.emptySince >= EMPTY_ROOM_GRACE_MS) {
+      return this.closeRoom(id);
+    }
+    return false;
+  }
+
+  presenceUnavailable(id: string): void {
+    // Unknown time cannot count toward a continuously observed empty period.
+    this.db
+      .prepare("UPDATE room_lifecycle SET empty_since = NULL WHERE room_id = ?")
+      .run(id);
+  }
+
+  signalingConnected(id: string): void {
+    // SDK reconnects reuse their session. An older empty SFU response must not
+    // expire a connection that has just been admitted upstream.
+    this.db
+      .prepare("UPDATE room_lifecycle SET empty_since = NULL WHERE room_id = ?")
+      .run(id);
+  }
+
+  closeRoom(id: string): boolean {
+    if (!this.find(id)) return false;
+    this.transaction(() => {
+      this.revokeRows("room_id = ?", [id]);
+      this.db.prepare("DELETE FROM rooms WHERE id = ?").run(id);
+    });
+    return true;
   }
 
   list(offset: number): { rooms: ManagedRoom[]; nextOffset: number | null } {
@@ -189,7 +311,7 @@ export class Rooms {
       ).count >= 32
     )
       return null;
-    return this.issue(room, displayName);
+    return this.transaction(() => this.issue(room, displayName));
   }
 
   session(id: string, token: string | undefined): RoomSession | null {
@@ -238,6 +360,11 @@ export class Rooms {
           "UPDATE rooms SET invitation_hash = ?, invitation_enabled = ? WHERE id = ?",
         )
         .run(digest(invitation ?? randomSecret()), invitation ? 1 : 0, id);
+      this.db
+        .prepare(
+          "UPDATE room_lifecycle SET invitation_cipher = ? WHERE room_id = ?",
+        )
+        .run(invitation ? this.encryptInvitation(id, invitation) : null, id);
       if (change.revokeSessions) this.revokeRows("room_id = ?", [id]);
     });
     return invitation ? { invitation } : {};
@@ -345,6 +472,11 @@ export class Rooms {
         session.display_name,
         session.expires_at,
       );
+    this.db
+      .prepare(
+        "UPDATE room_lifecycle SET joined_at = ?, empty_since = NULL WHERE room_id = ?",
+      )
+      .run(this.now(), room.id);
     return { token, snapshot: this.snapshot(room, session) };
   }
 

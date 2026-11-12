@@ -139,7 +139,7 @@ const ready = async (url) => {
   );
 };
 try {
-  start(
+  const sfu = start(
     join(serverDirectory, "livekit-server.exe"),
     ["--config", config],
     process.env,
@@ -172,6 +172,8 @@ try {
     env: {
       ...process.env,
       E2E_BASE_URL: origin,
+      FREEDOMSTREAM_TEST_SFU_PID: String(sfu.pid),
+      FREEDOMSTREAM_TEST_SFU_EXE: serverExecutable,
       FREEDOMSTREAM_NATIVE_EXE: resolve(
         process.env.FREEDOMSTREAM_NATIVE_EXE ??
           "target/debug/freedomstream-publisher.exe",

@@ -1428,6 +1428,13 @@ impl PublisherUi {
             self.set_fullscreen(ui.ctx(), Some(tile.id.clone()));
             ui.close();
         }
+        if skin::menu_row(ui, tr("Advanced information"), None, "", false).clicked() {
+            tile.presentation
+                .diagnostics
+                .open
+                .store(true, Ordering::Relaxed);
+            ui.close();
+        }
         skin::menu_separator(ui);
         if skin::menu_row(ui, tr("Stop watching"), Some(Icon::Stop), "", true).clicked() {
             self.controller.send(Command::Watch {
@@ -1466,6 +1473,10 @@ impl PublisherUi {
                         rect.height().min(rect.width() / aspect),
                     );
                     let target = egui::Rect::from_center_size(rect.center(), size);
+                    if let Ok(mut viewport) = tile.presentation.viewport.lock() {
+                        let ppp = ui.ctx().pixels_per_point();
+                        *viewport = Some((size.x * ppp, size.y * ppp));
+                    }
                     ui.painter().image(
                         texture.id(),
                         target,
@@ -1565,6 +1576,11 @@ impl PublisherUi {
             #[cfg(not(feature = "performance-experiments"))]
             let planar = false;
             if !planar && let Some(texture) = self.textures.get(&tile.id) {
+                if let Ok(mut viewport) = tile.presentation.viewport.lock() {
+                    let target = fit_picture(rect, texture.aspect_ratio());
+                    let ppp = ui.ctx().pixels_per_point();
+                    *viewport = Some((target.width() * ppp, target.height() * ppp));
+                }
                 egui::Image::new((texture.id(), texture.size_vec2()))
                     .corner_radius(8)
                     .paint_at(ui, fit_picture(rect, texture.aspect_ratio()));
@@ -1908,6 +1924,9 @@ impl eframe::App for PublisherUi {
             }
         }
         let state = self.controller.snapshot();
+        for tile in &state.tiles {
+            crate::stream_diagnostics::panel(&ctx, tile);
+        }
         #[cfg(feature = "performance-experiments")]
         self.planar.retain(_frame.gl(), |id| {
             state

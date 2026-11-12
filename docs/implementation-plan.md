@@ -280,11 +280,40 @@ and independent technical/visual review. Synthetic UI captures establish layout
 only. Existing uncommitted media/packaging prerequisites and outstanding physical
 hardware/network acceptance remain separate from this design branch.
 
+## 16. Admin room directory and lifecycle — PR
+
+Implement the approved charcoal/lavender admin concept with a sidebar, a New room
+dialog and expandable room rows. Expanding a room reveals connected members,
+Copy invite and a confirmed Close room action. Preserve the Usage dashboard.
+New managed rooms wait for their first join; admitted rooms close after 60 seconds
+of observed absence from the SFU. Presence failures and server restarts reset the
+grace period. Closed rooms are deleted from the directory and lose invitations,
+sessions, previews and signaling/media access through durable removal retries.
+This intentionally supersedes the original persistent-empty-room behavior.
+On schema-3 migration, existing rooms enter the presence check even if their old
+sessions have already been removed. Successfully observed empty legacy rooms
+close after the same grace period; only newly created managed rooms receive the
+awaiting-first-join exception. Take the existing deployment backup before
+migration; rolling back to schema-3 code requires its matching database backup.
+
+Store recoverable invitations encrypted with a key derived from ADMIN_TOKEN,
+bound to their room ID; retain hashes for admission. Rotation of ADMIN_TOKEN or
+legacy hash-only invitations requires an explicit replacement invitation, without
+disconnecting current members. Never expose invitations in the room directory,
+logs, request URLs or browser storage. Historical usage remains available.
+
+Accept with Node 24 checks, authenticated API lifecycle and migration coverage,
+real HTTP/browser creation, expansion, member presence, clipboard, reload, search,
+close/revocation and mobile checks; Docker smoke and independent high-reasoning
+GPT-6.1-Sol review. No native hardware capability changes or new qualification.
+
 ## Later portability
 
 After the Windows experience meets the above gates, add macOS and Linux in separate PRs. Preserve the room, invitation, subscription and preview contracts; replace platform capture/audio/encoder adapters. No cross-platform promise until each backend is tested on its actual OS.
 
 ## Administrator room directory — independent PR
+
+This earlier directory behavior is superseded by phase 16 above.
 
 Add a Rooms tab to the authenticated administrator dashboard. List persistent
 rooms in bounded pages and create a named room without admitting the administrator
@@ -352,3 +381,19 @@ Windows activation qualification exposed shell URL canonicalization: accept both
 empty and root-slash `join` paths while rejecting other paths. Rebuild the
 portable EXE and update the cached registered launcher; verify native Load/Join
 and live member appearance before marking this correction deployed.
+
+## On-demand stream diagnostics — independent PR (#26)
+
+Add watched-stream Advanced information in both viewing menus, EN/PT-BR. Combine
+sender aggregates relayed by authenticated room APIs with local receive/decode/UI
+submission measurements. Default off; use three-second aggregates, ten-second
+viewer demand leases, one shared publisher worker, bounded memory-only latest
+samples and live track generations. Preserve subscriptions, preview cadence,
+quality controls and compatibility. Expose unavailable/stale facts honestly,
+including physical presentation and end-to-end latency. Keep performance fixes
+separate. See [measurement semantics and verification](verification/stream-diagnostics.md).
+
+Accept with authorization, multi-viewer demand, expiry/revocation/replacement,
+resource/retention bounds, real publisher/API/native-viewer checks, native UI
+interaction and fresh independent review. Compilation and synthetic frames do
+not qualify actual screen refresh, hardware load or network degradation.

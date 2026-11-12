@@ -3,7 +3,7 @@ use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::sync::{
     Arc,
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 pub const MIN_BITRATE: u64 = 1_000_000;
@@ -242,6 +242,10 @@ impl Mode {
 /// Live bitrate edits and congestion feedback share one cap; dimensions/FPS never adapt silently.
 #[derive(Clone)]
 pub struct RateControl {
+    pub diagnostic_enabled: Arc<AtomicBool>,
+    pub capture_frames: Arc<AtomicU64>,
+    pub capture_overruns: Arc<AtomicU64>,
+    pub encoder_inputs: Arc<AtomicU64>,
     requested: Arc<AtomicU64>,
     viewer_cap: Arc<AtomicU64>,
     upload_cap: Arc<AtomicU64>,
@@ -249,6 +253,10 @@ pub struct RateControl {
 impl RateControl {
     pub fn new(requested: u64) -> Self {
         Self {
+            diagnostic_enabled: Arc::default(),
+            capture_frames: Arc::default(),
+            capture_overruns: Arc::default(),
+            encoder_inputs: Arc::default(),
             requested: Arc::new(AtomicU64::new(requested)),
             viewer_cap: Arc::new(AtomicU64::new(MAX_BITRATE)),
             upload_cap: Arc::new(AtomicU64::new(MAX_BITRATE)),
@@ -283,6 +291,9 @@ impl RateControl {
             cap.unwrap_or(MAX_BITRATE).clamp(64_000, MAX_BITRATE),
             Ordering::Release,
         );
+    }
+    pub fn viewer_cap(&self) -> u64 {
+        self.viewer_cap.load(Ordering::Acquire)
     }
     pub fn upload_cap(&self) -> u64 {
         self.upload_cap.load(Ordering::Acquire)

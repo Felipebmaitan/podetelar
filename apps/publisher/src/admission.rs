@@ -4,6 +4,20 @@ use serde::{Deserialize, de::DeserializeOwned};
 use std::time::Duration;
 use url::Url;
 
+pub(crate) fn valid_server(input: &str) -> bool {
+    let Ok(url) = Url::parse(input) else {
+        return false;
+    };
+    let local = matches!(
+        url.host_str(),
+        Some("localhost" | "127.0.0.1" | "[::1]" | "::1")
+    );
+    (url.scheme() == "https" || (local && url.scheme() == "http"))
+        && url.origin().ascii_serialization() == input
+        && url.username().is_empty()
+        && url.password().is_none()
+}
+
 // Credentials stay in this client's in-memory cookie jar. Never derive Debug
 // or pass invitations, cookies or media tokens to a process command line.
 #[derive(Clone)]
@@ -366,7 +380,7 @@ impl Admission {
             }
             let connection: Connection = read_response(connection).await?;
             ensure!(
-                crate::settings::valid_server(&connection.direct_url),
+                valid_server(&connection.direct_url),
                 "Invalid direct room server."
             );
             let direct = Url::parse(&connection.direct_url)?;
@@ -562,6 +576,57 @@ async fn read_response<T: DeserializeOwned>(mut response: Response) -> Result<T>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires two independently running API backends"]
+    async fn invitation_links_select_two_live_backends_without_saved_configuration() {
+        #[derive(Deserialize)]
+        struct Fixture {
+            link: String,
+            origin: String,
+            name: String,
+        }
+        let path =
+            std::env::var_os("FREEDOMSTREAM_MULTI_SERVER_FIXTURE").expect("Local fixture path");
+        let fixtures: Vec<Fixture> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(fixtures.len(), 2);
+        assert_ne!(fixtures[0].origin, fixtures[1].origin);
+        let mut admissions = Vec::new();
+        for fixture in &fixtures {
+            let link = crate::browser_links::Link::parse(&fixture.link).unwrap();
+            let invitation = link
+                .redeem()
+                .await
+                .expect("Redeem this backend's one-use link");
+            let admission = Admission::join(&invitation, "Session-only nickname")
+                .await
+                .expect("Admit on invitation-selected backend");
+            assert_eq!(
+                admission.origin.origin().ascii_serialization(),
+                fixture.origin
+            );
+            assert_eq!(admission.room_name, fixture.name);
+            assert!(link.redeem().await.is_err(), "Handoff remains single-use");
+            admissions.push(admission);
+        }
+        let foreign = admissions[1]
+            .origin
+            .join(&format!("api/rooms/{}/session", admissions[1].room_id))
+            .unwrap();
+        assert_eq!(
+            admissions[0]
+                .client
+                .get(foreign)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            reqwest::StatusCode::UNAUTHORIZED
+        );
+        for admission in admissions {
+            admission.leave().await;
+        }
+    }
 
     #[tokio::test]
     #[ignore = "requires a live split-origin API fixture"]

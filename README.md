@@ -11,7 +11,7 @@ Windows app; the website keeps invitations, access management and downloads.
 Local NVIDIA synthetic checks pass native HEVC/H.264 decode, compatibility fallback,
 explicit A/V subscriptions, reconnects, higher-resolution previews and source-derived
 audio exclusion. The self-contained portable EXE launches without a terminal and
-remembers an encrypted server/name and waits for a fresh room invitation. This is draft PR #10, stacked on portable
+opens without a saved server or nickname; each room invitation selects its backend. This is draft PR #10, stacked on portable
 PR #9, and requires the matching server update. AMD, physical 4K120, fresh-PC/offline
 startup, native TURN, A/V latency and real-game/group qualification remain open.
 See [verification](docs/verification/phase-11.md), [distribution](docs/distribution.md)

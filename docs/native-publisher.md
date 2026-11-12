@@ -29,12 +29,12 @@ and `deploy/native-decoder.json`. Friends use the [self-contained portable EXE](
 the raw Cargo executable still requires its runtime. Both production executables
 use the GUI subsystem. Helper processes run hidden.
 
-Paste an invitation and name once. After a successful join these are encrypted
-for your Windows user. The app remembers only the server origin and display name;
-opening it waits for a fresh room invitation from `/stream` or `/telar` in Discord.
-Existing encrypted saved invitations migrate to server/name only. Sharing and
-watching remain explicit. Room options → Forget saved server removes the saved profile
-and leaves. See [saved access and firewall behavior](distribution.md#saved-room-and-launch-behavior).
+Open a room invitation from `/stream` or `/telar` in Discord, or paste a link and
+enter your nickname. Each invitation selects its backend; no server, nickname,
+room or language preference is restored or saved. Later links reuse the nickname
+only while the app remains open. An active room requires confirmation before
+switching. Sharing and watching remain explicit. See
+[launch and firewall behavior](distribution.md#invitation-selected-server-and-launch-behavior).
 
 The initial 1280×720 viewport has sharing controls on the left and larger native
 stream tiles on the right. Watch sits in the center of each still preview. Stop

@@ -16,19 +16,21 @@ Windows 11 and a current NVIDIA/AMD driver are recommended. Process-loopback aud
 requires Windows build 20348 or newer; publishing requires a hardware encoder.
 Sharing and watching use the native app. No browser is embedded or launched.
 
-## Saved room and launch behavior
+## Invitation-selected server and launch behavior
 
-After a successful join, the app remembers only the server origin and display name
-in `%LOCALAPPDATA%\FreedomStream\settings.json`, encrypted using Windows DPAPI for
-the current user. Reopening waits for a fresh invitation; use `/stream` or `/telar`
-in Discord to create a room, or receive a friend's link. Existing saved invitations
-are migrated to server/name settings without restoring room access. Invitations,
-session cookies and media tokens are never persisted by the new client. Sharing
-and watching require explicit actions. Room options → Forget saved server deletes
-the saved profile and leaves the room; ordinary Leave keeps the server and name.
-Remove this settings file as well as the runtime cache when removing local app data.
-Older app releases can still save invitations: distribute the new client with this
-workflow change and avoid launching old releases after migration.
+The app opens without a default server, nickname or restored room. Use `/stream`
+or `/telar` in Discord and open the resulting invitation, or receive a friend's
+link. Every link selects its own backend, including independently hosted bots.
+Browser links load automatically; the first room asks for your nickname. While
+the app stays open, later links reuse that nickname and join automatically when
+idle. Switching from an active room asks before ending its sharing and watching.
+Sharing and watching still require explicit actions.
+
+Server, nickname, invitations, session cookies, media tokens and language choices
+are kept only in memory. Startup removes obsolete `settings.json` and
+`preferences.json` files from `%LOCALAPPDATA%\FreedomStream` without loading them.
+Runtime extraction, installation and optional browser-link registration still use
+local files. Older app releases can save settings again; use the rebuilt client.
 
 Both launcher and native app use the Windows GUI subsystem and launch without a
 terminal. Development helper subprocesses are hidden too. Windows Firewall can

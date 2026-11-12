@@ -43,9 +43,9 @@ package ID as `PodeTelar`. Its default installation directory is therefore
 `%LOCALAPPDATA%\FreedomStream`. The earlier `FreedomStream` ID was used only for
 local/CI installer previews and collides with that legacy profile directory;
 retire those previews before installing the public package. The fixed launcher
-filename and `freedomstream://` protocol remain compatible. Saved server/name
-settings continue using their existing per-user DPAPI storage. Uninstall must preserve those settings unless
-the user explicitly requests erasure; document cache cleanup separately.
+filename and `freedomstream://` protocol remain compatible. The native app no
+longer saves a server, nickname or language preference and removes obsolete
+profile files on startup. Runtime caches and installation data are separate.
 
 ## Installed room links
 
@@ -65,19 +65,18 @@ broker credentials and executable paths enter that registry; handoff tickets sta
 in bounded memory queues. Both transport and native URL validation are retained.
 The publisher polls on a worker and requests restore/focus of its existing window.
 
-The website keeps its explicit Join action and one-use short-lived handoff. A
-previously used server origin loads directly into native Join confirmation. An
-unfamiliar origin still asks for trust before contacting it. Joining another room
-warns that sharing/watching will end, and does not happen automatically. Dismissing
-the invitation restores the active room invitation; a pending invitation cannot
-replace the last successful saved room. No capture or subscription starts from a
-link. Browser external-app prompts remain controlled by the browser/Windows.
+The website keeps its explicit Join action and one-use short-lived handoff. Each
+link loads its own server automatically, with no remembered-origin gate. The
+first room asks for a nickname; later links may reuse the process's nickname and
+join when idle. Switching from an active room requires confirmation. Dismissing
+restores that room's invitation. No capture or subscription starts from a link.
+Browser external-app prompts remain controlled by the browser/Windows.
 
 `node scripts/qualify-installed-links.mjs` builds a test-only launcher/publisher
 substitute with isolated registry keys. It verifies real install/update/uninstall
 hook registration, quoting paths with spaces, focus/link forwarding and one
 publisher process. Local tests also exercise migration, foreign-owner preservation,
-server-origin trust and dismissal. This establishes registry/process behavior,
+invitation-selected servers and dismissal. This establishes registry/process behavior,
 not a browser prompt or native foreground-window observation, fresh-machine
 installation or a production media-session switch.
 

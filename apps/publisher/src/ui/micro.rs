@@ -25,17 +25,8 @@ pub fn run(report: &Path) -> Result<()> {
         "a".repeat(22),
         "b".repeat(43)
     );
-    let profile = crate::settings::Profile::new(&invitation, "Synthetic benchmark")?;
-    results.push(timed("profile-parse", 50_000, || {
-        black_box(
-            crate::settings::Profile::new(black_box(&invitation), "Synthetic benchmark").unwrap(),
-        );
-    }));
-    results.push(timed("profile-unchanged-check", 50_000, || {
-        black_box(
-            profile.server.as_str() == *black_box(&"https://example.test")
-                && profile.name == "Synthetic benchmark",
-        );
+    results.push(timed("invitation-validate", 50_000, || {
+        black_box(crate::admission::valid_invitation(black_box(&invitation)));
     }));
     let jpeg = crate::preview::Frame {
         sequence: 1,

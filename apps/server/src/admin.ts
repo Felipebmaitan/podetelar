@@ -1,9 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Config } from "./config.js";
-import { adminCreateRoomSchema } from "@freedomstream/contracts";
+import { adminCreateRoomSchema, roomIdSchema } from "@freedomstream/contracts";
 import { Rooms, secretsEqual } from "./rooms.js";
 import type { Usage } from "./usage.js";
+import type { Access } from "./access.js";
+import type { RoomLifecycle } from "./room-lifecycle.js";
 
 const COOKIE = "fs_admin";
 const TTL = 8 * 60 * 60 * 1000;
@@ -16,6 +18,8 @@ export async function adminRoutes(
   config: Config,
   usage: Usage,
   rooms: Rooms,
+  access: Access,
+  lifecycle: RoomLifecycle,
   now = Date.now,
 ) {
   const sessions = new Map<string, number>();
@@ -79,7 +83,65 @@ export async function adminRoutes(
         return reply
           .code(400)
           .send({ error: "Invalid room directory offset." });
-      return rooms.list(Number(offset));
+      const page = rooms.list(Number(offset));
+      const result = {
+        ...page,
+        rooms: await lifecycle.describePage(page.rooms),
+      };
+      if (!authenticated(request))
+        return reply.code(401).send({ error: "Sign in as administrator." });
+      return result;
+    },
+  );
+  app.post<{ Params: { roomId: string } }>(
+    "/api/admin/rooms/:roomId/invitation",
+    async (request, reply) => {
+      if (!authenticated(request))
+        return reply.code(401).send({ error: "Sign in as administrator." });
+      const id = roomIdSchema.safeParse(request.params.roomId);
+      if (!id.success || !rooms.lifecycle(id.data))
+        return reply.code(404).send({ error: "Room unavailable." });
+      const invitation = rooms.invitation(id.data);
+      if (!invitation)
+        return reply.code(409).send({
+          error:
+            "This older invitation cannot be recovered. Create a new invite to replace it.",
+        });
+      return {
+        invitationUrl: `${config.publicUrl}/r/${id.data}#invite=${invitation}`,
+      };
+    },
+  );
+  app.post<{ Params: { roomId: string } }>(
+    "/api/admin/rooms/:roomId/invitation/rotate",
+    async (request, reply) => {
+      if (!authenticated(request))
+        return reply.code(401).send({ error: "Sign in as administrator." });
+      const id = roomIdSchema.safeParse(request.params.roomId);
+      if (!id.success)
+        return reply.code(404).send({ error: "Room unavailable." });
+      const changed = rooms.change(id.data, {
+        invitation: "rotate",
+        revokeSessions: false,
+      });
+      if (!changed) return reply.code(404).send({ error: "Room unavailable." });
+      return {
+        invitationUrl: `${config.publicUrl}/r/${id.data}#invite=${changed.invitation}`,
+      };
+    },
+  );
+  app.delete<{ Params: { roomId: string } }>(
+    "/api/admin/rooms/:roomId",
+    async (request, reply) => {
+      if (!authenticated(request))
+        return reply.code(401).send({ error: "Sign in as administrator." });
+      const id = roomIdSchema.safeParse(request.params.roomId);
+      if (!id.success || !rooms.closeRoom(id.data))
+        return reply.code(404).send({ error: "Room unavailable." });
+      void access.settle();
+      return reply
+        .code(rooms.pending(id.data) ? 202 : 200)
+        .send({ pendingDisconnects: rooms.pending(id.data) });
     },
   );
   app.post(

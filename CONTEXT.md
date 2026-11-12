@@ -5,7 +5,7 @@ A private place for friends to share screens and cameras and choose what to watc
 ## Language
 
 **Room**:
-A persistent private gathering place that can be revisited using the same invitation, including when nobody is sharing.
+A private gathering place that stays open while friends are connected, including when nobody is sharing. It awaits its first join, then closes after everyone leaves, allowing a short reconnect grace period.
 _Avoid_: Stream, call
 
 **Invitation**:

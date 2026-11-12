@@ -32,12 +32,16 @@ export function verifyBackup(path: string) {
     if (
       integrity.length !== 1 ||
       integrity[0]?.integrity_check !== "ok" ||
-      version?.user_version !== 3 ||
+      ![3, 4].includes(Number(version?.user_version)) ||
       db.prepare("PRAGMA foreign_key_check").all().length
     )
-      throw new Error("Not a healthy schema-3 FreedomStream backup.");
+      throw new Error("Not a healthy schema-3/4 FreedomStream backup.");
     for (const table of ["rooms", "sessions", "removals"])
       db.prepare(`SELECT count(*) FROM ${table}`).get();
+    if (version?.user_version === 4)
+      db.prepare(
+        "SELECT room_id, joined_at, empty_since, invitation_cipher FROM room_lifecycle LIMIT 1",
+      ).get();
   } finally {
     db.close();
   }

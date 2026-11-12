@@ -46,6 +46,7 @@ pub fn encoders() -> Vec<Encoder> {
 
 #[derive(Default, Clone, Serialize)]
 pub struct Metrics {
+    pub elapsed_seconds: f64,
     pub frames: u64,
     pub accepted: u64,
     pub bytes: u64,
@@ -55,6 +56,9 @@ pub struct Metrics {
     pub requested_bitrate: u64,
     pub encoded_bps: u64,
     pub encoder_bitrate_changes: u64,
+    pub congestion_bps: Option<u64>,
+    pub capture_queue_frames: Option<u32>,
+    pub encoder_queue_frames: Option<u32>,
 }
 
 // Owns the native pipeline. Every return/error path transitions it to NULL.
@@ -146,7 +150,7 @@ impl Encoding {
             ""
         };
         let processing = format!(
-            "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! {cadence}videorate drop-only=true max-rate={} ! d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width={},height={},framerate={}/1 ! clocksync ! tee name=raw raw. ! queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! {} name=hardware bitrate={} gop-size={} ! {media_type},profile={profile} ! {framing} ! appsink name=encoded max-buffers=2 sync=false raw. ! queue name=preview_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=NV12,width=960,height=540 ! d3d11download ! video/x-raw,format=NV12 ! videoconvert ! video/x-raw,format=I420 ! jpegenc quality=85 ! appsink name=preview max-buffers=1 drop=true sync=false async=false wait-on-eos=false",
+            "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! {cadence}videorate drop-only=true max-rate={} ! d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width={},height={},framerate={}/1 ! clocksync ! tee name=raw raw. ! queue name=encoder_queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! {} name=hardware bitrate={} gop-size={} ! {media_type},profile={profile} ! {framing} ! appsink name=encoded max-buffers=2 sync=false raw. ! queue name=preview_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=NV12,width=960,height=540 ! d3d11download ! video/x-raw,format=NV12 ! videoconvert ! video/x-raw,format=I420 ! jpegenc quality=85 ! appsink name=preview max-buffers=1 drop=true sync=false async=false wait-on-eos=false",
             mode.fps,
             mode.width,
             mode.height,
@@ -202,6 +206,14 @@ impl Encoding {
             input.link(&entry)
         }
         .context("Capture source could not connect to GPU conversion.")?;
+        let enabled = rate.diagnostic_enabled.clone();
+        let overruns = rate.capture_overruns.clone();
+        entry.connect("overrun", false, move |_| {
+            if enabled.load(Ordering::Relaxed) {
+                overruns.fetch_add(1, Ordering::Relaxed);
+            }
+            None
+        });
         let hardware = pipeline
             .by_name("hardware")
             .context("Missing hardware encoder.")?;
@@ -221,6 +233,21 @@ impl Encoding {
                 },
             );
             hardware.set_property_from_str("rate-control", "cbr");
+        }
+        for (pad, count) in [
+            (input.static_pad("src"), rate.capture_frames.clone()),
+            (hardware.static_pad("sink"), rate.encoder_inputs.clone()),
+        ] {
+            let enabled = rate.diagnostic_enabled.clone();
+            pad.context("Missing diagnostic pad.")?.add_probe(
+                gst::PadProbeType::BUFFER,
+                move |_, _| {
+                    if enabled.load(Ordering::Relaxed) {
+                        count.fetch_add(1, Ordering::Relaxed);
+                    }
+                    gst::PadProbeReturn::Ok
+                },
+            );
         }
         let sink = pipeline
             .by_name("encoded")
@@ -379,6 +406,7 @@ impl Encoding {
                     feedback = Some(target.target_bitrate_bps);
                 }
             }
+            counters.congestion_bps = feedback;
             let requested = self.rate.requested();
             let user_changed =
                 counters.requested_bitrate != 0 && requested != counters.requested_bitrate;
@@ -469,6 +497,7 @@ impl Encoding {
                     counters.accepted += 1;
                 }
             }
+            counters.elapsed_seconds = started.elapsed().as_secs_f64();
             counters.fps = counters.frames as f64 / started.elapsed().as_secs_f64().max(0.001);
             if last_report.elapsed() >= Duration::from_millis(500) {
                 ensure!(
@@ -480,6 +509,19 @@ impl Encoding {
                     / last_report.elapsed().as_secs_f64())
                     as u64;
                 reported_bytes = counters.bytes;
+                if self.rate.diagnostic_enabled.load(Ordering::Relaxed) {
+                    counters.capture_queue_frames = self
+                        .pipeline
+                        .by_name("entry")
+                        .map(|q| q.property::<u32>("current-level-buffers"));
+                    counters.encoder_queue_frames = self
+                        .pipeline
+                        .by_name("encoder_queue")
+                        .map(|q| q.property::<u32>("current-level-buffers"));
+                } else {
+                    counters.capture_queue_frames = None;
+                    counters.encoder_queue_frames = None;
+                }
                 if let Ok(mut snapshot) = metrics.lock() {
                     *snapshot = counters.clone();
                 }

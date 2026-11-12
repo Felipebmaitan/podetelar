@@ -1,4 +1,5 @@
 fn main() {
+    println!("cargo:rerun-if-env-changed=FREEDOMSTREAM_UPDATE_FEED");
     println!("cargo:rerun-if-changed=../../assets/windows/freedomstream.ico");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         winresource::WindowsResource::new()

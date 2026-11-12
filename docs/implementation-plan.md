@@ -11,6 +11,13 @@ Public GitHub release access, rebrand identity, signing, helper notices and real
 two-version/fresh-Windows acceptance remain gates before shipping auto-updates.
 Private repository visibility does not block implementation or local testing.
 
+Follow-up `feat/update-badge-controls` adds a per-launch local update bridge,
+background checks, hover notes, explicit download/progress/retry and Restart/Later
+controls. The existing media/picker shutdown must complete before the outer
+launcher applies an update. Verify real Velopack package/helper behavior with a
+private local feed and distinguish fixture verification from actual installed
+publisher, fresh-machine and signed-distribution gates. Keep this dependent PR
+separate from the installer foundation; no public feed or automatic publishing.
 The installer also owns per-user room-link registration. Install/update hooks
 point `freedomstream://` at the stable installed launcher; uninstall removes only
 that installation's handler. Migrate the old portable handler on explicit install,

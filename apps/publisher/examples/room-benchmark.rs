@@ -71,6 +71,12 @@ mod ui;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/ui_style.rs"]
 mod ui_style;
+#[path = "../../update_protocol.rs"]
+#[cfg(feature = "performance-experiments")]
+mod update_protocol;
+#[path = "../src/updates.rs"]
+#[cfg(feature = "performance-experiments")]
+mod updates;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/video_image.rs"]
 mod video_image;

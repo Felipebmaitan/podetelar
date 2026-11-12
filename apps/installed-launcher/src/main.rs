@@ -2,8 +2,11 @@
 mod activation;
 #[path = "../../activation_protocol.rs"]
 mod activation_protocol;
+#[path = "../../update_protocol.rs"]
+mod protocol;
 #[cfg(windows)]
 mod registration;
+mod updates;
 
 fn main() {
     // Hooks must run before runtime extraction, media initialization or room restore.
@@ -77,6 +80,7 @@ fn main() {
     {
         let _ = registration::register(false);
     }
+    let bridge = updates::Bridge::start().ok();
     let result = std::env::current_exe().and_then(|exe| {
         let mut child = std::process::Command::new(exe.with_file_name("FreedomStream.exe"));
         child
@@ -87,6 +91,15 @@ fn main() {
             )
             .env(activation_protocol::ENDPOINT, &instance.address)
             .env(activation_protocol::TOKEN, &instance.token);
+        if let Some(bridge) = &bridge {
+            child
+                .env(protocol::ENDPOINT_ENV, &bridge.address)
+                .env(protocol::TOKEN_ENV, &bridge.token);
+        } else {
+            child
+                .env_remove(protocol::ENDPOINT_ENV)
+                .env_remove(protocol::TOKEN_ENV);
+        }
         child.args(std::env::args_os().skip(1));
         #[cfg(windows)]
         {
@@ -95,6 +108,11 @@ fn main() {
         }
         child.status()
     });
+    if let Some(bridge) = bridge
+        && !bridge.child_exited()
+    {
+        notice("The update could not start. Reopen FreedomStream and try again.");
+    }
     // Never log arguments: browser launch arguments can contain invitations.
     drop(instance);
     std::process::exit(result.ok().and_then(|status| status.code()).unwrap_or(1));

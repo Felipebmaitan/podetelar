@@ -61,6 +61,8 @@ pub fn qualify_planar_transitions(
     let mut app = PublisherUi {
         activation: crate::activation::Inbox::new(),
         prior_room: None,
+        updates: crate::updates::Client::new(),
+        update_restart_prompt: false,
         controller: Controller::new(),
         invitation: String::new(),
         name: String::new(),

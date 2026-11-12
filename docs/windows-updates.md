@@ -1,7 +1,9 @@
 # Installed Windows builds and update rollout
 
-The installer foundation is available for **unsigned local/CI previews**. It does
-not check for updates or publish a feed yet. The portable EXE remains available.
+The installed app supports an update badge, hover changelog, explicit download,
+progress/retry and Restart to update/Later. It is available for **unsigned local/CI
+qualification**; no public feed is configured or published. Standalone portable
+downloads have no automatic updater and remain available separately.
 See [upstream research](research/windows-updates.md) for T3 Code's implementation,
 Velopack licensing, runtime constraints and source citations.
 
@@ -28,8 +30,8 @@ No PAT is embedded and the workflow has no release-write permission.
 Velopack installs per user, provides shortcuts and an uninstall entry. A small
 GUI bootstrap handles Velopack startup before launching the portable application.
 The existing portable application still extracts its licensed runtime and sources;
-its cleanup job remains intact. The outer bootstrap is outside that job, providing
-a place for a future updater handoff. It does not itself implement that handoff.
+its cleanup job remains intact. The outer bootstrap is outside that job and owns
+checking, downloading and handoff to Update.exe after the portable child exits.
 The separate bootstrap Cargo workspace avoids coupling installer startup to media
 SDK initialization. Neither .NET nor a shared CRT should be needed by users;
 offline/fresh-machine verification remains required before advertising that result.
@@ -75,21 +77,47 @@ server-origin trust and dismissal. This establishes registry/process behavior,
 not a browser prompt or native foreground-window observation, fresh-machine
 installation or a production media-session switch.
 
-## Next implementation: update badge and delivery
+## Badge, download and restart controls
 
-1. Add an outer-launcher update controller with bounded authenticated local IPC
-   to the publisher UI. Never invoke the updater from inside the portable job.
-   Bind messages to this launch, avoid invitation/token-bearing restart arguments,
-   and test concurrent launches and publisher crashes.
-2. Check in the background on startup and every 30 minutes with jitter/backoff;
-   add a manual check. Stable uses stable releases only; nightly is opt-in.
-   No automatic download or install on quit. Network failure leaves the app usable.
-3. Show an update icon in both onboarding and room headers. Hover/focus reveals
-   version and a short bounded plain-text changelog; clicking downloads. Show
-   progress, retry and cancel. After verification offer **Restart to update** and
-   **Later**. Warn that restart ends sharing/watching; gracefully leave and stop
-   capture/playback before handoff. Reopen using DPAPI settings without restarting
-   capture or subscriptions. Never interpret release-note HTML or execute links.
+Set `FREEDOMSTREAM_UPDATE_FEED` **when building the installer bootstrap**, to a
+trusted HTTPS feed directory, public GitHub repository URL, or absolute local
+feed directory for qualification. It is compiled into the launcher; room data,
+IPC requests and runtime environment cannot select an arbitrary update source.
+The workflow reads repository variable `WINDOWS_UPDATE_FEED`; leaving it empty
+keeps updates disabled. No public visibility is needed to use a local directory.
+
+The publisher receives a per-launch loopback endpoint and random 256-bit token
+through its environment. Length-prefixed JSON is limited to 16 KiB, connections
+have short timeouts and the command queue is bounded. No room invitation/session
+authority crosses that connection. Normal activation arguments are excluded from
+Velopack startup logging and restart arguments are empty. Installed launchers
+serialize instances with a Windows file handle outside the replaced `current`
+directory. The publisher GUI only polls in a worker, never on its render thread.
+
+Onboarding and room headers show update status. Hover reveals bounded plain-text
+notes and the version; Download starts a worker transfer and reports percentage.
+Ready opens a restart confirmation explaining that sharing/watching will end.
+Later keeps the downloaded package without applying it on ordinary exit/startup.
+Only an acknowledged Restart triggers the existing picker/admission/media shutdown
+path; Update.exe is launched outside the cleanup job after the portable child exits.
+The saved-room behavior is unchanged, and no media restarts automatically.
+
+Checks run on startup and at roughly 30-minute intervals with jitter while current
+or retryable. Downgrades, cross-application packages, unsafe filenames, missing
+SHA-256 and packages over 1 GiB are refused. Stable versions refuse prereleases.
+Downloads explicitly discard SDK delta strategies and use full packages. The
+launcher checks SHA-256/size itself before Ready and again before applying; invalid
+cached packages are removed and downloaded again on an explicit download action.
+This does not establish independent publisher authenticity. In-flight cancellation,
+opt-in nightly switching and delta optimization remain follow-up work.
+
+## Remaining delivery work
+
+1. Qualify the actual publisher/portable media shutdown during an installed update;
+   test concurrent launches, stale connections and publisher crashes. Add a native
+   visual/interaction acceptance pass for the badge and restart dialog.
+2. Add transfer cancellation and qualify timeout/backoff behavior for each provider.
+3. Qualify saved-room continuity, offline startup and uninstall on fresh Windows.
 4. Publish public GitHub Release assets after the rename/repository transition.
    No need to make source public to implement/test: a local feed or separate
    public binary repository also works. Never ship a private GitHub token.
@@ -117,8 +145,8 @@ installation or a production media-session switch.
 - Run actual Windows installation/update/uninstall on a fresh machine; report
   firewall/SmartScreen observations separately from build checks.
 
-These are pending acceptance gates. The foundation must not be advertised as a
-working automatic updater. Merge only after appropriate checks and a fresh
+These are pending acceptance gates. Local implementation and fixture results must
+not be advertised as production/fresh-machine updater qualification. Merge only after appropriate checks and a fresh
 GPT-6.1-Sol high-reasoning review; external verification stays explicitly open.
 
 Follow-up tracking: [automatic update delivery, badge and release rollout #29](https://github.com/Felipebmaitan/freedomstream/issues/29).
@@ -133,3 +161,25 @@ in a separate local smoke directory using an existing portable release plus the
 new bootstrap. This checks package assembly only: the old portable payload is
 not a build of this branch and those files must not be distributed. No actual
 installation, two-version update, signing or fresh-machine acceptance is claimed.
+
+## Update-controls qualification
+
+`node scripts/qualify-update-controls.mjs` builds two actual Velopack packages
+against a private local file feed. It uses a small publisher substitute to drive
+the real launcher/transport, reject a bad token and a premature restart, download
+the package, choose Later and verify version one stays unchanged, then explicitly
+restart through the real Update.exe and observe version two relaunch. Evidence is
+kept under `.local/update-controls-*`. The substitute is behind a Cargo feature
+and is never staged by the production installer packager. The workflow runs this
+test on Windows. It also offers an unsafe delta alongside a real base package and
+verifies that delta is ignored, then corrupts the downloaded cache after Later and
+requires the next download to repair it. This verifies helper lifetime and update application with a
+fixture process; it does not establish actual media cleanup, fresh installation,
+signed provenance or saved-room continuity. Those remain separate gates above.
+
+Local 2026-11-11 results: Node 24 `npm run check` passed; launcher Clippy and
+protocol tests passed; the real two-package fixture qualified download, Later and
+Update.exe apply/restart. The native suite passed 70 tests (three live-environment
+tests skipped), including pointer interactions for Download/Restart/Later and
+existing shutdown checks. These automated egui interactions are not a rendered
+native-window visual acceptance pass or a production media-update run.

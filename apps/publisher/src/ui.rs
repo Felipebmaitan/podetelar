@@ -86,6 +86,8 @@ pub fn configure_theme(ctx: &egui::Context) {
 }
 
 pub struct PublisherUi {
+    updates: crate::updates::Client,
+    update_restart_prompt: bool,
     activation: crate::activation::Inbox,
     prior_room: Option<(String, String)>,
     controller: Controller,
@@ -126,6 +128,15 @@ pub struct PublisherUi {
     force_close: bool,
 }
 impl PublisherUi {
+    fn begin_close(&mut self) {
+        self.closing_since = Some(Instant::now());
+        self.clear_picker();
+        self.picker.begin_shutdown();
+        if let Some(load) = &mut self.link_result {
+            load.cancel();
+        }
+        self.controller.begin_shutdown();
+    }
     fn open_activation(&mut self, value: &str, ctx: &egui::Context) {
         if !crate::activation_protocol::valid(value) {
             return;
@@ -205,6 +216,8 @@ impl PublisherUi {
             profile.as_ref()
         };
         let app = Self {
+            updates: crate::updates::Client::new(),
+            update_restart_prompt: false,
             activation: crate::activation::Inbox::new(),
             prior_room: None,
             controller: Controller::new(),
@@ -330,6 +343,7 @@ impl PublisherUi {
                     }
                 });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                self.update_badge(ui);
                 let mut pt = crate::locale::portuguese();
                 egui::ComboBox::from_id_salt("ui-language")
                     .selected_text(if pt { "PT-BR" } else { "EN" })
@@ -1714,18 +1728,106 @@ impl PublisherUi {
 }
 
 impl PublisherUi {
+    fn update_badge(&mut self, ui: &mut egui::Ui) {
+        use crate::update_protocol::{Action, Phase};
+        let status = self.updates.snapshot();
+        if status.phase == Phase::Disabled {
+            return;
+        }
+        let label = match status.phase {
+            Phase::Checking => "Checking for updates…",
+            Phase::Current => "Up to date",
+            Phase::Available => "Download update",
+            Phase::Downloading => "Downloading update…",
+            Phase::Ready => "Restart to update",
+            Phase::Restarting => "Restarting…",
+            Phase::Error => "Retry update check",
+            Phase::Disabled => unreachable!(),
+        };
+        let response = ui.add_enabled(
+            !matches!(
+                status.phase,
+                Phase::Checking | Phase::Downloading | Phase::Restarting
+            ),
+            egui::Button::new("↻").fill(
+                if matches!(status.phase, Phase::Available | Phase::Ready) {
+                    egui::Color32::from_rgb(33, 91, 85)
+                } else {
+                    CARD
+                },
+            ),
+        );
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tr(label)));
+        response.clone().on_disabled_hover_text(tr(label));
+        response.clone().on_hover_ui(|ui| {
+            ui.set_max_width(340.0);
+            ui.strong(tr(label));
+            if !status.version.is_empty() {
+                ui.label(format!("{} {}", tr("New version"), status.version));
+            }
+            if status.notes.is_empty() {
+                ui.label(tr("No release notes provided."));
+            } else {
+                ui.label(&status.notes);
+            }
+            if !status.message.is_empty() {
+                ui.label(tr(&status.message));
+            }
+            if status.phase == Phase::Downloading {
+                ui.add(
+                    egui::ProgressBar::new(f32::from(status.progress) / 100.0).show_percentage(),
+                );
+            }
+            if status.phase == Phase::Ready {
+                ui.label(tr("Restarting ends sharing and watching."));
+            }
+        });
+        if status.phase == Phase::Downloading {
+            ui.label(format!("{}%", status.progress));
+        }
+        if response.clicked() {
+            match status.phase {
+                Phase::Current | Phase::Error => self.updates.send(Action::Check),
+                Phase::Available => self.updates.send(Action::Download),
+                Phase::Ready => self.update_restart_prompt = true,
+                _ => {}
+            }
+        }
+    }
+
+    fn update_restart_dialog(&mut self, ctx: &egui::Context) {
+        if !self.update_restart_prompt {
+            return;
+        }
+        let mut restart = false;
+        let mut later = false;
+        egui::Modal::new(egui::Id::unique("restart-update")).show(ctx, |ui| {
+            ui.set_max_width(360.0);
+            ui.heading(tr("Restart to update"));
+            ui.label(tr("Restarting ends sharing and watching."));
+            ui.label(tr(
+                "Your saved room will reopen. Sharing and watching stay off.",
+            ));
+            ui.horizontal(|ui| {
+                later = ui.button(tr("Later")).clicked();
+                restart = ui.button(tr("Restart to update")).clicked();
+            });
+        });
+        if later {
+            self.update_restart_prompt = false;
+        }
+        if restart {
+            self.updates.send(crate::update_protocol::Action::Restart);
+            self.update_restart_prompt = false;
+        }
+    }
+
     fn handle_close(&mut self, ctx: &egui::Context) {
         if self.force_close {
             return;
         }
         if ctx.input(|i| i.viewport().close_requested()) && self.closing_since.is_none() {
-            self.closing_since = Some(Instant::now());
-            self.clear_picker();
-            self.picker.begin_shutdown();
-            if let Some(load) = &mut self.link_result {
-                load.cancel();
-            }
-            self.controller.begin_shutdown();
+            self.begin_close();
         }
         if self.closing_since.is_some() {
             if self.controller.shutdown_finished()
@@ -1750,6 +1852,11 @@ impl eframe::App for PublisherUi {
         self.planar.destroy(gl);
     }
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.updates.snapshot().phase == crate::update_protocol::Phase::Restarting
+            && self.closing_since.is_none()
+        {
+            self.begin_close();
+        }
         if self.closing_since.is_none() {
             ctx.request_repaint_after(Duration::from_millis(250));
             if let Some(event) = self.activation.poll() {
@@ -1788,6 +1895,8 @@ impl eframe::App for PublisherUi {
             }
         }
         let ctx = root.ctx().clone();
+        ctx.request_repaint_after(Duration::from_secs(1));
+        self.update_restart_dialog(&ctx);
         if let Some(started) = self.closing_since {
             egui::CentralPanel::default().show(root, |ui| {
                 ui.vertical_centered(|ui| {
@@ -2555,6 +2664,94 @@ mod tests {
     use super::*;
 
     #[test]
+    fn update_controls_download_but_require_explicit_restart_confirmation() {
+        use crate::update_protocol::{Action, Phase, Status};
+        fn draw(
+            app: &mut PublisherUi,
+            ctx: &egui::Context,
+            events: Vec<egui::Event>,
+        ) -> egui::FullOutput {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(960.0, 540.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |root| {
+                    egui::CentralPanel::default().show(root, |ui| {
+                        app.update_badge(ui);
+                    });
+                    app.update_restart_dialog(root.ctx());
+                },
+            );
+            output.textures_delta.clear();
+            output
+        }
+        fn click(app: &mut PublisherUi, ctx: &egui::Context, text: &str) {
+            draw(app, ctx, vec![]);
+            let output = draw(app, ctx, vec![]);
+            let pos = output
+                .shapes
+                .iter()
+                .rev()
+                .find_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text_shape) if text_shape.galley.text() == text => {
+                        Some(text_shape.pos + text_shape.galley.size() / 2.0)
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("Missing button: {text}"));
+            for pressed in [true, false] {
+                draw(
+                    app,
+                    ctx,
+                    vec![
+                        egui::Event::PointerMoved(pos),
+                        egui::Event::PointerButton {
+                            pos,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: Default::default(),
+                        },
+                    ],
+                );
+            }
+        }
+        let mut app = app();
+        let ctx = egui::Context::default();
+        let (client, actions) = crate::updates::Client::fixture(Status {
+            phase: Phase::Available,
+            version: "0.1.1".into(),
+            ..Default::default()
+        });
+        app.updates = client;
+        click(&mut app, &ctx, "↻");
+        assert_eq!(actions.try_recv().unwrap(), Action::Download);
+        let (client, actions) = crate::updates::Client::fixture(Status {
+            phase: Phase::Ready,
+            ..Default::default()
+        });
+        app.updates = client;
+        click(&mut app, &ctx, "↻");
+        assert!(app.update_restart_prompt);
+        assert!(actions.try_recv().is_err());
+        click(&mut app, &ctx, tr("Later"));
+        assert!(!app.update_restart_prompt);
+        assert!(app.closing_since.is_none());
+        assert!(actions.try_recv().is_err());
+        app.update_restart_prompt = true;
+        click(&mut app, &ctx, tr("Restart to update"));
+        assert_eq!(actions.try_recv().unwrap(), Action::Restart);
+        assert!(
+            app.closing_since.is_none(),
+            "Wait for launcher acknowledgement before closing"
+        );
+    }
+
+    #[test]
     fn forwarded_invitation_waits_for_trust_and_dismiss_restores_the_current_room() {
         let mut app = app();
         let previous = format!(
@@ -2837,6 +3034,8 @@ mod tests {
     fn app() -> PublisherUi {
         gstreamer::init().expect("Test media runtime");
         PublisherUi {
+            updates: crate::updates::Client::new(),
+            update_restart_prompt: false,
             activation: crate::activation::Inbox::new(),
             prior_room: None,
             controller: Controller::new(),
@@ -3095,6 +3294,11 @@ mod tests {
     #[test]
     fn long_room_names_preserve_header_actions_at_the_minimum_window_width() {
         let mut app = app();
+        let (client, _actions) = crate::updates::Client::fixture(crate::update_protocol::Status {
+            phase: crate::update_protocol::Phase::Ready,
+            ..Default::default()
+        });
+        app.updates = client;
         let ctx = egui::Context::default();
         configure_theme(&ctx);
         let state = Snapshot {

@@ -2,13 +2,13 @@
 use anyhow::{Context, Result, ensure};
 use std::path::Path;
 use windows_sys::Win32::{Foundation::ERROR_SUCCESS, System::Registry::*};
-#[cfg(not(feature = "link-qualification"))]
+#[cfg(not(any(feature = "link-qualification", feature = "update-qualification")))]
 const SCHEME: &str = "Software\\Classes\\freedomstream";
-#[cfg(feature = "link-qualification")]
+#[cfg(any(feature = "link-qualification", feature = "update-qualification"))]
 const SCHEME: &str = env!("FREEDOMSTREAM_LINK_TEST_SCHEME");
-#[cfg(not(feature = "link-qualification"))]
+#[cfg(not(any(feature = "link-qualification", feature = "update-qualification")))]
 const ACTIVE: &str = "Software\\FreedomStream\\InstalledActivation";
-#[cfg(feature = "link-qualification")]
+#[cfg(any(feature = "link-qualification", feature = "update-qualification"))]
 const ACTIVE: &str = env!("FREEDOMSTREAM_LINK_TEST_ACTIVE");
 const OWNER: &str = "FreedomStreamInstalled";
 struct Key(HKEY);

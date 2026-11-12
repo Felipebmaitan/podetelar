@@ -111,7 +111,13 @@ export async function buildApp(
 
   app.addHook("onRequest", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
-    reply.header("Referrer-Policy", "no-referrer");
+    // A same-origin form POST on the direct download page must retain Origin;
+    // Chromium sends Origin: null with no-referrer for this navigation. The
+    // ticket is removed from the fragment and never occurs in a Referer URL.
+    reply.header(
+      "Referrer-Policy",
+      request.url === "/download" ? "same-origin" : "no-referrer",
+    );
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("X-Frame-Options", "DENY");
     reply.header(
@@ -125,7 +131,8 @@ export async function buildApp(
         request.method === "POST" &&
         request.url === "/api/discord/interactions"
       ) &&
-      request.headers.origin !== config.publicUrl
+      request.headers.origin !== config.publicUrl &&
+      request.headers.origin !== config.directUrl
     ) {
       return reply.code(403).send({ error: "Request origin is not allowed." });
     }
@@ -152,6 +159,23 @@ export async function buildApp(
 
   await discordRoutes(app, config, rooms, options.now);
   app.get("/api/health", async () => ({ status: "ok", phase: 8 }));
+  // No credentials or cookies are needed to discover the operator's direct origin.
+  app.get("/api/connection", async () => ({ directUrl: config.directUrl }));
+  app.addHook("onRequest", async (request, reply) => {
+    if (config.directUrl === config.publicUrl) return;
+    // Do not redirect authenticated probes: cookies must be issued on the direct
+    // origin at admission. Also keep old clients from testing the CDN route.
+    const path = request.url.split("?")[0]!;
+    if (
+      (/^\/api\/rooms\/[^/]+\/network-test(?:\/|$)/.test(path) ||
+        path === "/api/publisher/download") &&
+      request.headers.host?.toLowerCase() !== new URL(config.directUrl).host
+    ) {
+      return reply
+        .code(421)
+        .send({ error: "Use the direct server connection for this request." });
+    }
+  });
   await adminRoutes(app, config, usage, rooms, access, lifecycle, options.now);
   appLinkRoutes(app, config, rooms, directory, options.now);
   streamDiagnosticsRoutes(app, rooms, directory, options.now);
@@ -313,7 +337,7 @@ export async function buildApp(
 
   await previewRoutes(app, rooms, previews);
   await networkTestRoutes(app, rooms);
-  publisherRoutes(app, publisher, rooms);
+  await publisherRoutes(app, publisher, rooms, config, options.now);
   await accessRoutes(app, config, rooms, access);
   await signaling.register(app, config);
 
@@ -326,7 +350,8 @@ export async function buildApp(
   app.setNotFoundHandler((request, reply) => {
     if (
       request.method === "GET" &&
-      /^\/(?:r|manage)\/[A-Za-z0-9_-]{22}(?:\?.*)?$/.test(request.url) &&
+      (/^\/(?:r|manage)\/[A-Za-z0-9_-]{22}(?:\?.*)?$/.test(request.url) ||
+        request.url === "/download") &&
       existsSync(config.webRoot)
     )
       return reply.sendFile("index.html");

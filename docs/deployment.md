@@ -162,11 +162,102 @@ this application marker pending, so subsequent timer runs retry it even when the
 certificate bytes have not changed. The `check` action is read-only and fails for
 an unapplied certificate.
 
-When a domain is available, point its DNS directly at the VPS (media must not be
-sent through an ordinary HTTP-only CDN proxy), regenerate the host configuration
-with the same secrets, issue its certificate and restart app, SFU and relay. Plan invitation
-URL changes with the group. A dedicated domain could use 443 if it does not collide
-with an existing listener; this release deliberately keeps 8443 separate.
+When a domain is available, use the split-domain configuration below or retain a
+single DNS-only hostname. Plan invitation URL changes with the group. Regenerate
+with the existing secrets, issue certificates, then restart only this stack.
+
+## Cloudflare website and direct service domains
+
+The optional `DIRECT_URL` defaults to `PUBLIC_URL`, preserving existing installs.
+For this deployment use:
+
+- `stream.maitan.me`: Cloudflare **Proxied**, public HTTPS website on 443.
+- `stream-direct.maitan.me`: Cloudflare **DNS only**, direct HTTPS on 8443.
+- `turn.maitan.me`: Cloudflare **DNS only**, existing TURN/TLS on 5349.
+
+Point all three A records to the VPS IPv4. Add AAAA only after IPv6 routing,
+listeners and firewall policy are separately verified. DNS-only hostnames expose
+the VPS address; media protection remains the hosting provider's responsibility.
+Keep media UDP 7882 and TCP 7881 direct. The SFU must advertise the public VPS IP,
+never Cloudflare's proxy IPs. Changing DNS does not turn Cloudflare into a relay.
+
+Generate the split layout, preserving the existing `shared/secrets.json`:
+
+```sh
+node scripts/prepare-production.mjs /opt/freedomstream PUBLIC_IPV4 stream.maitan.me turn.maitan.me stream-direct.maitan.me
+```
+
+This writes `PUBLIC_URL=https://stream.maitan.me` and
+`DIRECT_URL=https://stream-direct.maitan.me:8443`. The generated nginx snippet adds
+only this website's 443 vhost and a direct 8443 vhost. Existing business vhosts,
+their Cloudflare real-IP rules and their 443 firewall restrictions stay intact.
+Keep 8443 reachable directly. A future direct 443 listener needs a separately
+reviewed shared-host firewall/SNI setup or a dedicated address; changing the port
+in DNS alone cannot achieve that. Port-443-only networks remain an open gate with
+the existing TURN 5349 layout.
+
+Install both generated nginx snippets, run `nginx -t`, and follow the existing
+staging/issue/renew procedure. The certificate now covers the website, direct and
+TURN names, and renewal checks every name before installing it. Use a public CA
+certificate, not a Cloudflare Origin CA certificate, for direct/native endpoints.
+For first issuance keep the website DNS-only until the origin certificate is
+installed; then enable proxying with **Full (strict)** TLS. Preserve HTTP-01 access
+on port 80 for all names. ACME requests must bypass challenges, authentication and
+cache/redirect rules if issued through Cloudflare.
+
+Invitation creation, including Discord replies and administrator actions, always
+uses `PUBLIC_URL`; invitation secrets stay in the fragment. The small app handoff
+also redeems on the public website, retaining canonical public invitations for
+native Invite actions and remembered-server trust. Current native clients discover
+`DIRECT_URL` through `/api/connection` before joining any public invitation, so their
+host-only session cookies, preview uploads, diagnostics and bandwidth probes all
+use the direct origin. Discovery is a credential-free request to the selected
+server; its response can delegate native admission to an operator-chosen HTTPS
+origin. Existing installations without discovery retain their single-origin flow.
+Old clients must be updated before the split: their public bandwidth tests return
+421 rather than silently measuring the CDN. Signaling still passes `/media` room
+admission and revocation; raw SFU HTTP remains private.
+
+Downloads retain room authority. Clicking an authenticated website download
+issues a single-use 60-second ticket and redirects to the direct `/download`
+page with that ticket in a fragment. The page removes the fragment and submits
+the ticket in a POST body to receive the attachment. No website cookie or permanent
+invitation is copied across domains, and session expiry/revocation is rechecked
+before serving bytes. At most 128 pending tickets are kept in memory; expired
+entries are swept every 15 seconds and restart discards all tickets. Cloudflare
+can see website TLS traffic, including response bodies and redirect headers;
+fragments prevent secrets appearing in request URLs, not disclosure to a service
+that terminates the website's TLS.
+
+Use Cloudflare cache bypass rules for `/api/*`, `/media/*`, `/r/*`, `/manage/*`
+and `/download`, respecting the application's `Cache-Control: no-store`. Do not
+enable Cache Everything for authenticated paths. Do not capture bodies, cookies,
+authorization, signaling query strings or handoff redirect headers in edge
+logging/Workers. Keep native and signed Discord endpoints free of interactive
+browser challenges. No broad cross-origin credential sharing or wildcard CORS is
+needed. Bulk probes and download redemption return 421 on the public host, and
+the generated website vhost also rejects them before reading upload bodies.
+
+The nginx proxy overwrites forwarded identities with `$realip_remote_addr`, the
+actual TCP peer. Behind Cloudflare this conservatively groups website rate limits
+by edge IP; do not trust arbitrary `CF-Connecting-IP` headers to change that. Any
+future client-IP forwarding needs a verified Cloudflare-only ingress boundary.
+Direct native clients retain their own source IP for limits.
+
+Cloudflare's [CDN terms](https://www.cloudflare.com/service-specific-terms-application-services/#content-delivery-network-free-pro-or-business)
+restrict video and large-file delivery through the ordinary CDN. This split sends
+bulk media, probes and binaries outside that CDN; it does not assert a legal
+approval or a supported traffic-percentage threshold. See also
+[Cloudflare proxy status](https://developers.cloudflare.com/dns/proxy-status/)
+and [LiveKit ports](https://docs.livekit.io/transport/self-hosting/ports-firewall/).
+
+Before rollout, test actual DNS/proxy status, trusted certificates and renewal,
+Discord invitations, native Load/Join/reconnect/revocation, direct bandwidth tests
+and downloads, and forced TURN while UDP is unavailable. Confirm selected media
+candidates reach the VPS and Cloudflare carries no media/bulk probe traffic.
+Local tests establish routing and authority, not production TLS, CDN behavior or
+restrictive-network qualification. No DNS or production configuration is changed
+merely by merging the source PR.
 
 ## Backups, restore and rollback
 

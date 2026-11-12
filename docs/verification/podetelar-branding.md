@@ -13,9 +13,16 @@ package, cache and settings identifiers remain compatible with earlier versions.
 - `docker compose up -d --build` and `npm run smoke -- --restart-app`: actual
   built HTTP assets, admission, authorization, persisted sessions and SFU access
   passed. The image includes the source artwork before compiling the web app.
+- All nine browser acceptance tests passed against the real isolated API/SFU,
+  including administrator, room lifecycle, invitation and download workflows.
 - Native workspace Clippy, build and tests passed: ten portable tests and 73
   publisher tests, with four pre-existing ignored publisher tests. The extra
   runtime registry test and three installed-launcher tests passed as well.
+- Committed-source portable and unsigned preview installer builds passed.
+  Portable qualification verified isolated startup, concurrent extraction,
+  runtime probing, source/payload integrity, cache preservation and damage
+  rejection. Actual executable resources and the installer package title use
+  PodeTelar; the extracted Windows icons use the supplied PT artwork.
 - Independent GPT-6.1-Sol high-reasoning review approved the permanent change
   after Docker asset inclusion and renamed smoke/resource expectations were fixed.
 

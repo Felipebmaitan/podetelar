@@ -103,6 +103,8 @@ run(
     config.mainExe,
     "--packTitle",
     config.title,
+    "--packAuthors",
+    "PodeTelar contributors",
     "--channel",
     "preview",
     "--icon",

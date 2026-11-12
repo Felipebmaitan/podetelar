@@ -93,6 +93,7 @@ pub struct PublisherUi {
     controller: Controller,
     invitation: String,
     name: String,
+    session_name: Option<String>,
     source_id: String,
     encoder: String,
     quality: Settings,
@@ -102,11 +103,8 @@ pub struct PublisherUi {
     stream_menu: Option<String>,
     fullscreen: Option<String>,
     fullscreen_controls_until: Instant,
-    store: Option<crate::settings::Store>,
-    attempted_profile: Option<crate::settings::Profile>,
-    saved_server: String,
     settings_error: String,
-    forgetting: bool,
+    auto_join_ready: bool,
     copied_until: Option<Instant>,
     remembered_volume: HashMap<String, u32>,
     advanced_open: bool,
@@ -147,20 +145,10 @@ impl PublisherUi {
                 "Invalid browser invitation. Open a fresh invitation from your browser.".into();
             return;
         };
-        if self.link_result.is_some() {
-            self.settings_error =
-                "Finish or dismiss the current invitation before opening another.".into();
-            return;
+        if !self.browser_invitation_open {
+            self.prior_room = Some((self.invitation.clone(), self.name.clone()));
         }
-        if self.browser_invitation_open {
-            self.dismiss_browser_invitation();
-        }
-        let previous = self.invitation.clone();
-        let known = self
-            .attempted_profile
-            .as_ref()
-            .is_some_and(|p| link.known_server(&p.server));
-        self.prior_room = Some((previous, self.name.clone()));
+        self.auto_join_ready = false;
         self.invitation.clear();
         self.settings_error.clear();
         self.show_invitation = false;
@@ -169,48 +157,26 @@ impl PublisherUi {
         if self.controller.snapshot().connection == "connecting" {
             self.controller.send(Command::Leave);
         }
-        if known {
-            self.link_result = Some(crate::browser_links::Load::start(link));
-        } else {
+        if let Some(load) = &mut self.link_result {
+            load.cancel();
             self.pending_link = Some(link);
+        } else {
+            self.link_result = Some(crate::browser_links::Load::start(link));
         }
     }
     pub fn with_browser_link(browser_link: Option<String>) -> Self {
-        crate::locale::load();
-        let store = crate::settings::Store::open();
+        crate::settings::remove_legacy();
         let mut settings_error = String::new();
-        let store = store
-            .map_err(|_| settings_error = "Saved server storage is unavailable.".into())
-            .ok();
-        let profile = store.as_ref().and_then(|store| match store.load() {
-            Ok(profile) => profile,
+        let is_browser_launch = browser_link.is_some();
+        let link = browser_link.and_then(|value| match crate::browser_links::Link::parse(&value) {
+            Ok(link) => Some(link),
             Err(_) => {
-                settings_error = "Could not unlock saved settings. Paste a fresh invitation, or forget saved settings.".into();
+                settings_error =
+                    "Invalid browser invitation. Open a fresh invitation from your browser.".into();
                 None
             }
         });
-        let is_browser_launch = browser_link.is_some();
-        let mut pending_link =
-            browser_link.and_then(|value| match crate::browser_links::Link::parse(&value) {
-                Ok(link) => Some(link),
-                Err(_) => {
-                    settings_error =
-                        "Invalid browser invitation. Open a fresh invitation from your browser."
-                            .into();
-                    None
-                }
-            });
-        let link_result = if pending_link.as_ref().is_some_and(|link| {
-            profile
-                .as_ref()
-                .is_some_and(|profile| link.known_server(&profile.server))
-        }) {
-            Some(crate::browser_links::Load::start(
-                pending_link.take().unwrap(),
-            ))
-        } else {
-            None
-        };
+        let link_result = link.map(crate::browser_links::Load::start);
         Self {
             updates: crate::updates::Client::new(),
             update_restart_prompt: false,
@@ -218,7 +184,8 @@ impl PublisherUi {
             prior_room: None,
             controller: Controller::new(),
             invitation: String::new(),
-            name: profile.as_ref().map(|p| p.name.clone()).unwrap_or_default(),
+            name: String::new(),
+            session_name: None,
             source_id: String::new(),
             encoder: String::new(),
             quality: Settings::default(),
@@ -228,21 +195,15 @@ impl PublisherUi {
             stream_menu: None,
             fullscreen: None,
             fullscreen_controls_until: Instant::now(),
-            store,
-            saved_server: profile
-                .as_ref()
-                .map(|p| p.server.clone())
-                .unwrap_or_default(),
-            attempted_profile: profile.clone(),
             settings_error,
-            forgetting: false,
+            auto_join_ready: false,
             copied_until: None,
             remembered_volume: HashMap::new(),
             advanced_open: false,
             diagnostics_open: false,
             show_invitation: false,
             browser_invitation_open: is_browser_launch,
-            pending_link,
+            pending_link: None,
             link_result,
             browser_links_enabled: std::env::var("FREEDOMSTREAM_BROWSER_LINKS").as_deref()
                 == Ok("1"),
@@ -261,35 +222,16 @@ impl PublisherUi {
     }
 
     fn join(&mut self) {
+        self.session_name = Some(self.name.trim().to_owned());
         self.prior_room = None;
         self.browser_invitation_open = false;
         self.show_invitation = false;
-        self.forgetting = false;
+        self.auto_join_ready = false;
         self.controller.send(Command::Join {
             invitation: self.invitation.trim().to_owned(),
             name: self.name.trim().to_owned(),
             route: Route::Auto,
         });
-    }
-
-    fn forget(&mut self) {
-        let Some(store) = &self.store else {
-            return;
-        };
-        match store.forget() {
-            Ok(()) => {
-                self.forgetting = true;
-                self.controller.send(Command::Leave);
-                self.invitation.clear();
-                self.show_invitation = false;
-                self.name.clear();
-                self.attempted_profile = None;
-                self.saved_server.clear();
-                self.settings_error.clear();
-                self.textures.clear();
-            }
-            Err(_) => self.settings_error = "Could not forget saved settings. Try again.".into(),
-        }
     }
 
     fn room_header(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
@@ -342,8 +284,8 @@ impl PublisherUi {
                         ui.selectable_value(&mut pt, true, "Português (Brasil)");
                         ui.selectable_value(&mut pt, false, "English");
                     });
-                if pt != crate::locale::portuguese() && crate::locale::select(pt).is_err() {
-                    self.settings_error = "Language preference could not be saved.".into();
+                if pt != crate::locale::portuguese() {
+                    crate::locale::select(pt);
                 }
                 if state.connection == "connecting" {
                     if ui.button(tr("Cancel join")).clicked() {
@@ -359,16 +301,6 @@ impl PublisherUi {
                     .show(|ui| {
                         if ui.button(tr("Advanced settings")).clicked() {
                             self.advanced_open = true;
-                            ui.close();
-                        }
-                        if ui
-                            .add_enabled(
-                                self.store.is_some(),
-                                egui::Button::new(tr("Forget saved server")),
-                            )
-                            .clicked()
-                        {
-                            self.forget();
                             ui.close();
                         }
                         ui.separator();
@@ -413,6 +345,7 @@ impl PublisherUi {
     }
 
     fn dismiss_browser_invitation(&mut self) {
+        self.auto_join_ready = false;
         self.browser_invitation_open = false;
         self.pending_link = None;
         if let Some(load) = &mut self.link_result {
@@ -429,12 +362,17 @@ impl PublisherUi {
 
     fn browser_invitation_modal(&mut self, ctx: &egui::Context, state: &Snapshot) {
         let mut dismiss = false;
-        let trust_confirmation = self.pending_link.is_some();
         let width = (ctx.content_rect().width() - 80.0).clamp(240.0, 440.0);
         let modal = egui::Modal::new(egui::Id::unique("browser-invitation"))
             .backdrop_color(egui::Color32::from_black_alpha(155))
-            .frame(egui::Frame::new().fill(CARD).stroke(egui::Stroke::new(1.0, BORDER))
-                .corner_radius(16).inner_margin(28).shadow(skin::menu_frame().shadow))
+            .frame(
+                egui::Frame::new()
+                    .fill(CARD)
+                    .stroke(egui::Stroke::new(1.0, BORDER))
+                    .corner_radius(16)
+                    .inner_margin(28)
+                    .shadow(skin::menu_frame().shadow),
+            )
             .show(ctx, |ui| {
                 ui.set_width(width);
                 ui.spacing_mut().item_spacing.y = 12.0;
@@ -445,31 +383,24 @@ impl PublisherUi {
                     });
                 });
                 ui.add_space(4.0);
-                if let Some(link) = &self.pending_link {
-                    ui.label(egui::RichText::new(link.origin.origin().ascii_serialization()).strong());
-                    ui.label(tr("Load this invitation only if you trust this server. Loading does not join a room or start sharing."));
-                    if ui.add(primary(tr("Load invitation"), width)).clicked() {
-                        let link = self.pending_link.take().expect("Displayed browser link");
-                        self.link_result = Some(crate::browser_links::Load::start(link));
-                    }
-                } else if self.link_result.is_some() {
-                    ui.horizontal(|ui| { ui.spinner(); ui.label(tr("Loading browser invitation…")); });
+                if self.link_result.is_some() {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(tr("Loading browser invitation…"));
+                    });
                     ctx.request_repaint_after(Duration::from_millis(50));
                 } else if !self.invitation.is_empty() {
                     if matches!(state.connection, "connected" | "reconnecting") {
-                        ui.label(tr("Joining this room will end your current sharing and watching."));
+                        ui.label(tr(
+                            "Joining this room will end your current sharing and watching.",
+                        ));
                     }
                     self.join_form(ui, state);
                 }
                 if !self.settings_error.is_empty() {
                     ui.colored_label(ERROR, tr(&self.settings_error));
                 }
-                dismiss |= if trust_confirmation {
-                    ui.vertical_centered(|ui| ui.button(tr("Dismiss browser invitation")))
-                        .inner.clicked()
-                } else {
-                    ui.button(tr("Dismiss browser invitation")).clicked()
-                };
+                dismiss |= ui.button(tr("Dismiss browser invitation")).clicked();
             });
         if dismiss || modal.should_close() {
             self.dismiss_browser_invitation();
@@ -479,9 +410,6 @@ impl PublisherUi {
     fn join_form(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
         if self.browser_invitation_open {
             ui.heading(tr("Join your room"));
-            if !self.saved_server.is_empty() {
-                ui.label(format!("{}: {}", tr("Saved server"), self.saved_server));
-            }
             if let Ok(invitation) = url::Url::parse(&self.invitation) {
                 ui.label(invitation.origin().ascii_serialization());
             }
@@ -506,13 +434,12 @@ impl PublisherUi {
             {
                 self.join();
             }
-            ui.small(tr("Your server and name are remembered. Use /stream or /telar in Discord for a new room."));
+            ui.small(tr(
+                "This invitation selects the server. Your name is kept only while the app is open.",
+            ));
             return;
         }
         ui.heading(tr("Join your room"));
-        if !self.saved_server.is_empty() {
-            ui.label(format!("{}: {}", tr("Saved server"), self.saved_server));
-        }
         ui.label(
             egui::RichText::new(tr(
                 "Paste an invitation from a friend, then choose your name.",
@@ -577,11 +504,7 @@ impl PublisherUi {
             self.join();
         }
         ui.small(tr(
-            "Your server and name are remembered. Use /stream or /telar in Discord for a new room.",
-        ));
-        ui.add_space(8.0);
-        ui.small(tr(
-            "Saved server and name can be removed in Room options above.",
+            "Open a room link from /stream or /telar in Discord, or paste an invitation. Nothing is restored from a previous launch.",
         ));
     }
 
@@ -1807,7 +1730,7 @@ impl PublisherUi {
             ui.heading(tr("Restart to update"));
             ui.label(tr("Restarting ends sharing and watching."));
             ui.label(tr(
-                "Your server and name are remembered. Open a fresh invitation after restart.",
+                "After restart, open a fresh invitation and enter your name again.",
             ));
             ui.horizontal(|ui| {
                 later = ui.button(tr("Later")).clicked();
@@ -1872,6 +1795,13 @@ impl eframe::App for PublisherUi {
     }
 
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.poll_browser_invitation();
+        self.render(root, _frame);
+    }
+}
+
+impl PublisherUi {
+    fn poll_browser_invitation(&mut self) {
         if self.closing_since.is_none()
             && self
                 .link_result
@@ -1883,6 +1813,10 @@ impl eframe::App for PublisherUi {
                 .as_mut()
                 .and_then(crate::browser_links::Load::poll);
             self.link_result = None;
+            if let Some(link) = self.pending_link.take() {
+                self.link_result = Some(crate::browser_links::Load::start(link));
+                return;
+            }
             if self.browser_invitation_open
                 && let Some(result) = result
             {
@@ -1890,11 +1824,29 @@ impl eframe::App for PublisherUi {
                     Ok(invitation) => {
                         self.invitation = invitation;
                         self.settings_error.clear();
+                        let state = self.controller.snapshot();
+                        self.auto_join_ready = self.session_name.is_some()
+                            && !matches!(state.connection, "connected" | "reconnecting");
+                        if self.auto_join_ready {
+                            self.name = self.session_name.clone().unwrap();
+                        }
                     }
                     Err(error) => self.settings_error = error,
                 }
             }
         }
+        let state = self.controller.snapshot();
+        if self.closing_since.is_none()
+            && self.browser_invitation_open
+            && self.auto_join_ready
+            && !state.busy
+            && !matches!(state.connection, "connected" | "reconnecting")
+        {
+            self.join();
+        }
+    }
+
+    fn render(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
         ctx.request_repaint_after(Duration::from_secs(1));
         self.update_restart_dialog(&ctx);
@@ -1984,23 +1936,6 @@ impl eframe::App for PublisherUi {
                 return;
             }
             self.set_fullscreen(&ctx, None);
-        }
-        if state.connection == "connected"
-            && state.error.is_empty()
-            && !state.busy
-            && !self.browser_invitation_open
-            && !self.forgetting
-            && let Ok(profile) = crate::settings::Profile::new(&self.invitation, &self.name)
-            && self.attempted_profile.as_ref() != Some(&profile)
-        {
-            self.saved_server = profile.server.clone();
-            self.attempted_profile = Some(profile.clone());
-            if let Some(store) = &self.store {
-                self.settings_error = match store.save(&profile) {
-                    Ok(()) => String::new(),
-                    Err(_) => "Joined, but could not save this server for the next launch.".into(),
-                };
-            }
         }
         if self.source_id.is_empty() {
             self.source_id = state
@@ -2752,7 +2687,7 @@ mod tests {
     }
 
     #[test]
-    fn forwarded_invitation_waits_for_trust_and_dismiss_restores_the_current_room() {
+    fn forwarded_invitation_loads_any_server_and_dismiss_restores_the_current_room() {
         let mut app = app();
         let previous = format!(
             "https://current.test/r/{}#invite={}",
@@ -2768,10 +2703,10 @@ mod tests {
         );
         app.open_activation(&link, &ctx);
         assert!(app.browser_invitation_open);
-        assert!(app.pending_link.is_some());
+        assert!(app.pending_link.is_none());
         assert!(
-            app.link_result.is_none(),
-            "An unfamiliar server needs trust before any request"
+            app.link_result.is_some(),
+            "Every invitation loads its own server without a saved profile"
         );
         assert!(
             !app.controller.snapshot().busy,
@@ -2782,25 +2717,121 @@ mod tests {
         assert_eq!(app.name, "Current nickname");
         assert_eq!(app.invitation, previous);
         assert!(!app.browser_invitation_open);
-        // Merely pasting a matching-origin invitation has never established trust.
+        // A new invitation replaces a cancelled worker only once it terminates.
         app.invitation = previous.replace("current.test", "other.test");
         app.open_activation(&link, &ctx);
         assert!(app.pending_link.is_some());
-        assert!(app.link_result.is_none());
+        assert!(app.link_result.is_some());
+    }
+
+    fn finish_link(app: &mut PublisherUi, invitation: &str) {
+        let invitation = invitation.to_owned();
+        app.browser_invitation_open = true;
+        app.link_result = Some(crate::browser_links::Load::with_request(async move {
+            Ok(invitation)
+        }));
+        let started = Instant::now();
+        while !app.link_result.as_ref().unwrap().shutdown_finished() {
+            assert!(started.elapsed() < Duration::from_secs(3));
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        app.poll_browser_invitation();
     }
 
     #[test]
-    fn browser_confirmation_is_centered_and_enter_cannot_skip_server_trust() {
+    fn fresh_process_asks_for_name_and_idle_session_reuses_name_on_each_server() {
+        let mut app = app();
+        let (controller, mut command) = Controller::recording_for_test(Snapshot::default());
+        app.controller = controller;
+        finish_link(&mut app, "https://first.test/synthetic");
+        assert!(app.browser_invitation_open);
+        assert!(command().is_none());
+        // Typing does not silently submit a partially entered nickname.
+        app.name = "F".into();
+        app.poll_browser_invitation();
+        assert!(command().is_none());
+        finish_link(&mut app, "https://second.test/synthetic");
+        assert!(app.browser_invitation_open);
+        assert!(
+            command().is_none(),
+            "Another server must not submit a partial nickname"
+        );
+        app.name = "Friend".into();
+        app.join();
+        assert!(matches!(command(), Some(Command::Join { name, .. }) if name == "Friend"));
+        let (controller, mut command) = Controller::recording_for_test(Snapshot::default());
+        app.controller = controller;
+        finish_link(&mut app, "https://second.test/synthetic");
+        assert!(!app.browser_invitation_open);
+        assert!(
+            matches!(command(), Some(Command::Join { invitation, name, .. }) if invitation == "https://second.test/synthetic" && name == "Friend")
+        );
+        assert!(
+            command().is_none(),
+            "Activation never starts capture or watching"
+        );
+    }
+
+    #[test]
+    fn active_room_requires_confirmation_before_switching_servers() {
+        for connection in ["connected", "reconnecting"] {
+            let mut app = app();
+            app.name = "Friend".into();
+            app.session_name = Some("Friend".into());
+            let (controller, mut command) = Controller::recording_for_test(Snapshot {
+                connection,
+                ..Default::default()
+            });
+            app.controller = controller;
+            finish_link(&mut app, "https://other.test/synthetic");
+            assert!(app.browser_invitation_open);
+            assert!(command().is_none());
+            app.join();
+            assert!(matches!(command(), Some(Command::Join { .. })));
+        }
+    }
+
+    #[test]
+    fn latest_link_supersedes_pending_load_without_detaching_worker() {
+        let mut app = app();
+        app.link_result = Some(crate::browser_links::Load::with_request(
+            std::future::pending(),
+        ));
+        app.browser_invitation_open = true;
+        app.prior_room = Some(("original".into(), "original nickname".into()));
+        let ctx = egui::Context::default();
+        for server in ["first.test", "second.test"] {
+            app.open_activation(
+                &format!(
+                    "freedomstream://join?server=https%3A%2F%2F{server}#handoff={}",
+                    "t".repeat(43)
+                ),
+                &ctx,
+            );
+            assert!(
+                app.link_result.is_some(),
+                "Retain the cancelled worker until it terminates"
+            );
+        }
+        assert_eq!(
+            app.pending_link.as_ref().unwrap().origin.host_str(),
+            Some("second.test")
+        );
+        app.dismiss_browser_invitation();
+        assert!(app.pending_link.is_none());
+        assert_eq!(app.invitation, "original");
+        assert_eq!(app.name, "original nickname");
+        assert!(!app.auto_join_ready);
+    }
+
+    #[test]
+    fn browser_loading_is_centered_and_enter_cannot_join_before_redemption() {
         for size in [egui::vec2(1280.0, 720.0), egui::vec2(960.0, 540.0)] {
             let mut app = app();
             app.browser_invitation_open = true;
-            app.pending_link = Some(
-                crate::browser_links::Link::parse(&format!(
-                    "freedomstream://join?server=https%3A%2F%2Fexample.test#handoff={}",
-                    "t".repeat(43)
-                ))
-                .unwrap(),
-            );
+            app.link_result = Some(crate::browser_links::Load::with_request(
+                std::future::pending(),
+            ));
             let ctx = egui::Context::default();
             let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
             for pass in 0..3 {
@@ -2828,7 +2859,7 @@ mod tests {
                     painted_text(&shape.shape, &mut text);
                 }
                 if pass == 2 {
-                    assert!(text.contains("https://example.test"));
+                    assert!(text.contains(tr("Loading browser invitation…")));
                 }
             }
             let rect = ctx
@@ -2836,8 +2867,8 @@ mod tests {
                 .unwrap();
             assert!((rect.center() - screen.center()).length() < 2.0);
             assert!(screen.contains_rect(rect));
-            assert!(app.pending_link.is_some());
-            assert!(app.link_result.is_none());
+            assert!(app.pending_link.is_none());
+            assert!(app.link_result.is_some());
             assert!(app.invitation.is_empty());
             assert!(!app.controller.snapshot().busy);
         }
@@ -3041,6 +3072,7 @@ mod tests {
             controller: Controller::new(),
             invitation: String::new(),
             name: String::new(),
+            session_name: None,
             source_id: String::new(),
             encoder: String::new(),
             quality: Settings::default(),
@@ -3050,11 +3082,8 @@ mod tests {
             stream_menu: None,
             fullscreen: None,
             fullscreen_controls_until: Instant::now(),
-            store: None,
-            attempted_profile: None,
-            saved_server: String::new(),
             settings_error: String::new(),
-            forgetting: false,
+            auto_join_ready: false,
             copied_until: None,
             remembered_volume: HashMap::new(),
             advanced_open: false,

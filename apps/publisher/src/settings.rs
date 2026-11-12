@@ -1,283 +1,32 @@
-//! Only the last successful server/name are persisted. Room invitations and
-//! session/media authority stay in memory. DPAPI binds settings to this Windows user.
-use anyhow::{Context, Result, ensure};
-use serde::{Deserialize, Serialize};
-use std::{io::Read, path::PathBuf};
-
-const MAX_FILE: u64 = 16 * 1024;
-
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Profile {
-    pub server: String,
-    pub name: String,
-}
-
-impl Profile {
-    pub fn new(invitation: &str, name: &str) -> Result<Self> {
-        let profile = Self {
-            server: {
-                ensure!(
-                    crate::admission::valid_invitation(invitation),
-                    "Invalid room invitation."
-                );
-                url::Url::parse(invitation.trim())?
-                    .origin()
-                    .ascii_serialization()
-            },
-            name: name.trim().to_owned(),
-        };
-        profile.validate()?;
-        Ok(profile)
-    }
-
-    fn validate(&self) -> Result<()> {
-        ensure!(valid_server(&self.server), "Invalid saved server.");
-        ensure!(
-            !self.name.is_empty()
-                && self.name == self.name.trim()
-                && self.name.encode_utf16().count() <= 60
-                && !self.name.chars().any(char::is_control),
-            "Invalid saved name."
-        );
-        Ok(())
-    }
-}
-
-pub(crate) fn valid_server(input: &str) -> bool {
-    let Ok(url) = url::Url::parse(input) else {
-        return false;
-    };
-    let local = matches!(
-        url.host_str(),
-        Some("localhost" | "127.0.0.1" | "[::1]" | "::1")
-    );
-    (url.scheme() == "https" || (local && url.scheme() == "http"))
-        && url.origin().ascii_serialization() == input
-        && url.username().is_empty()
-        && url.password().is_none()
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Envelope {
-    version: u8,
-    protected: Vec<u8>,
-}
-
-pub struct Store {
-    path: PathBuf,
-}
-
-impl Store {
-    pub fn open() -> Result<Self> {
-        let root = std::env::var_os("LOCALAPPDATA")
-            .filter(|s| !s.is_empty())
-            .context("Windows profile storage is unavailable.")?;
-        let root = PathBuf::from(root);
-        ensure!(
-            root.is_absolute(),
-            "Windows profile storage is unavailable."
-        );
-        Ok(Self {
-            path: root.join("FreedomStream").join("settings.json"),
-        })
-    }
-
-    pub fn load(&self) -> Result<Option<Profile>> {
-        let file = match std::fs::File::open(&self.path) {
-            Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(_) => anyhow::bail!("Could not read the saved room."),
-        };
-        let mut bytes = Vec::new();
-        file.take(MAX_FILE + 1)
-            .read_to_end(&mut bytes)
-            .context("Could not read the saved room.")?;
-        ensure!(
-            bytes.len() as u64 <= MAX_FILE,
-            "Saved room data is too large."
-        );
-        // Do not propagate serde errors: malformed input can contain authority.
-        let envelope: Envelope = serde_json::from_slice(&bytes)
-            .map_err(|_| anyhow::anyhow!("Could not read the saved room."))?;
-        ensure!(
-            matches!(envelope.version, 1 | 2),
-            "Unsupported saved settings version."
-        );
-        let plain = protect(&envelope.protected, false)?;
-        let profile: Profile = if envelope.version == 1 {
-            #[derive(Deserialize)]
-            #[serde(deny_unknown_fields)]
-            struct Legacy {
-                invitation: String,
-                name: String,
-            }
-            let legacy: Legacy = serde_json::from_slice(&plain)
-                .map_err(|_| anyhow::anyhow!("Could not read saved settings."))?;
-            let profile = Profile::new(&legacy.invitation, &legacy.name)?;
-            // Replace the legacy ciphertext before returning; never restore its invitation to UI.
-            self.save(&profile)?;
-            profile
-        } else {
-            serde_json::from_slice(&plain)
-                .map_err(|_| anyhow::anyhow!("Could not read saved settings."))?
-        };
-        profile.validate()?;
-        Ok(Some(profile))
-    }
-
-    pub fn save(&self, profile: &Profile) -> Result<()> {
-        profile.validate()?;
-        let envelope = Envelope {
-            version: 2,
-            protected: protect(&serde_json::to_vec(profile)?, true)?,
-        };
-        let parent = self
-            .path
-            .parent()
-            .context("Saved room path is unavailable.")?;
-        std::fs::create_dir_all(parent).context("Could not create saved room storage.")?;
-        // A temporary file in this directory and the final file contain only
-        // ciphertext. Persist atomically replaces the previous successful room.
-        let mut file =
-            tempfile::NamedTempFile::new_in(parent).context("Could not write the saved room.")?;
-        serde_json::to_writer(file.as_file_mut(), &envelope)
-            .context("Could not write the saved room.")?;
-        file.as_file()
-            .sync_all()
-            .context("Could not write the saved room.")?;
-        file.persist(&self.path)
-            .map_err(|_| anyhow::anyhow!("Could not replace the saved room."))?;
-        Ok(())
-    }
-
-    pub fn forget(&self) -> Result<()> {
-        match std::fs::remove_file(&self.path) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(_) => anyhow::bail!("Could not forget the saved room."),
+//! Remove obsolete profiles without reading or restoring their contents.
+pub fn remove_legacy() {
+    if let Some(root) = std::env::var_os("LOCALAPPDATA") {
+        let root = std::path::PathBuf::from(root);
+        if root.is_absolute() {
+            remove_at(&root.join("FreedomStream"));
         }
     }
 }
 
-#[cfg(windows)]
-fn protect(input: &[u8], encrypt: bool) -> Result<Vec<u8>> {
-    use windows::Win32::{
-        Foundation::{HLOCAL, LocalFree},
-        Security::Cryptography::{
-            CRYPT_INTEGER_BLOB, CRYPTPROTECT_UI_FORBIDDEN, CryptProtectData, CryptUnprotectData,
-        },
-    };
-    ensure!(
-        !input.is_empty() && input.len() as u64 <= MAX_FILE,
-        "Invalid saved room data."
-    );
-    let source = CRYPT_INTEGER_BLOB {
-        cbData: input.len() as u32,
-        pbData: input.as_ptr().cast_mut(),
-    };
-    let mut output = CRYPT_INTEGER_BLOB::default();
-    unsafe {
-        let result = if encrypt {
-            CryptProtectData(
-                &source,
-                None,
-                None,
-                None,
-                None,
-                CRYPTPROTECT_UI_FORBIDDEN,
-                &mut output,
-            )
-        } else {
-            CryptUnprotectData(
-                &source,
-                None,
-                None,
-                None,
-                None,
-                CRYPTPROTECT_UI_FORBIDDEN,
-                &mut output,
-            )
-        };
-        result.map_err(|_| {
-            anyhow::anyhow!("Windows could not unlock or save this room for your user.")
-        })?;
-        let bytes = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
-        let _ = LocalFree(Some(HLOCAL(output.pbData.cast())));
-        Ok(bytes)
+fn remove_at(root: &std::path::Path) {
+    // Leave runtime caches, protocol registration and unrelated files alone.
+    for name in ["settings.json", "preferences.json"] {
+        let _ = std::fs::remove_file(root.join(name));
     }
 }
 
-#[cfg(not(windows))]
-fn protect(_: &[u8], _: bool) -> Result<Vec<u8>> {
-    anyhow::bail!("Secure saved rooms require Windows.")
-}
-
-#[cfg(all(test, windows))]
+#[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
-    fn legacy_profile_migrates_without_retaining_room_authority() -> Result<()> {
-        let directory = tempfile::tempdir()?;
-        let store = Store {
-            path: directory.path().join("settings.json"),
-        };
-        let invitation = format!(
-            "https://example.test:8443/r/{}#invite={}",
-            "a".repeat(22),
-            "b".repeat(43)
-        );
-        let legacy = serde_json::json!({"invitation": invitation, "name": "Friend"});
-        let envelope = Envelope {
-            version: 1,
-            protected: protect(&serde_json::to_vec(&legacy)?, true)?,
-        };
-        std::fs::write(&store.path, serde_json::to_vec(&envelope)?)?;
-        let profile = store.load()?.unwrap();
-        assert_eq!(profile.server, "https://example.test:8443");
-        assert_eq!(profile.name, "Friend");
-        let saved: Envelope = serde_json::from_slice(&std::fs::read(&store.path)?)?;
-        assert_eq!(saved.version, 2);
-        let plain = String::from_utf8(protect(&saved.protected, false)?)?;
-        assert!(!plain.contains("invite") && !plain.contains(&"b".repeat(43)));
-        assert!(store.load()?.as_ref() == Some(&profile));
-        Ok(())
-    }
-
-    #[test]
-    fn windows_profile_round_trip_replacement_tampering_and_forgetting() -> Result<()> {
-        let directory = tempfile::tempdir()?;
-        let store = Store {
-            path: directory.path().join("profile.json"),
-        };
-        assert!(store.load()?.is_none());
-        let mut profile = Profile::new(
-            &format!(
-                "https://example.test/r/{}#invite={}",
-                "a".repeat(22),
-                "b".repeat(43)
-            ),
-            "Saved user",
-        )?;
-        store.save(&profile)?;
-        assert!(store.load()?.as_ref() == Some(&profile));
-        let text = std::fs::read_to_string(&store.path)?;
-        assert!(!text.contains(&profile.server) && !text.contains(&profile.name));
-        profile.name = "Replacement user".into();
-        store.save(&profile)?;
-        assert!(store.load()?.as_ref() == Some(&profile));
-        let mut envelope: Envelope = serde_json::from_str(&std::fs::read_to_string(&store.path)?)?;
-        let last = envelope.protected.len() - 1;
-        envelope.protected[last] ^= 0xff;
-        std::fs::write(&store.path, serde_json::to_vec(&envelope)?)?;
-        assert!(store.load().is_err());
-        std::fs::write(&store.path, vec![b' '; MAX_FILE as usize + 1])?;
-        assert!(store.load().is_err());
-        store.forget()?;
-        store.forget()?;
-        assert!(store.load()?.is_none());
-        Ok(())
+    fn removes_only_legacy_preferences_without_parsing_them() {
+        let directory = tempfile::tempdir().unwrap();
+        for name in ["settings.json", "preferences.json", "runtime.dat"] {
+            std::fs::write(directory.path().join(name), b"malformed legacy bytes").unwrap();
+        }
+        super::remove_at(directory.path());
+        super::remove_at(directory.path());
+        assert!(!directory.path().join("settings.json").exists());
+        assert!(!directory.path().join("preferences.json").exists());
+        assert!(directory.path().join("runtime.dat").exists());
     }
 }

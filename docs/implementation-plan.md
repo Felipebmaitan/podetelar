@@ -461,3 +461,18 @@ media-update and public update-feed limitations explicit. Locally verified build
 artifacts may be used while GitHub runner billing is blocked; never call blocked
 hosted jobs passing. Obtain an independent GPT-6.1-Sol high source review before
 merging and record native source/artifact provenance separately.
+
+## Invitation-selected native backend — corrective PR before v0.1 rebuild
+
+Remove default/saved native server, nickname and language persistence. Each
+Discord/browser handoff selects and loads its own backend without a saved-origin
+gate. A fresh process asks for a nickname; an idle running app may reuse its
+in-memory nickname. Confirm before switching an active room, never start capture
+or subscriptions from activation, and cancel superseded handoffs without losing
+worker ownership. Ignore and remove obsolete profile/preferences files.
+
+Accept with native startup/link/cancellation checks, two independently hosted
+backend origins, actual portable and installed protocol flows, Node 24 checks
+and a fresh GPT-6.1-Sol high review. Rebuild and qualify both v0.1.0 Windows assets
+from the merged source and verify downloaded bytes and provenance. Preserve the
+installer's disabled public update feed and existing media qualification limits.

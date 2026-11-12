@@ -394,6 +394,24 @@ impl Controller {
     }
 
     #[cfg(test)]
+    pub(crate) fn recording_for_test(state: Snapshot) -> (Self, impl FnMut() -> Option<Command>) {
+        let (commands, mut receiver) = mpsc::channel::<QueuedCommand>(8);
+        let shutdown = Arc::new(Shutdown::default());
+        shutdown.finished.store(true, Ordering::Release);
+        (
+            Self {
+                commands,
+                snapshot: Arc::new(Mutex::new(state)),
+                cancellation: Arc::default(),
+                join_cancellation: JoinCancellation::new(),
+                shutdown,
+                worker: None,
+            },
+            move || receiver.try_recv().ok().map(|queued| queued.command),
+        )
+    }
+
+    #[cfg(test)]
     pub(crate) fn pending_shutdown_for_test() -> (Self, impl Fn()) {
         let (commands, _) = mpsc::channel(8);
         let shutdown = Arc::new(Shutdown::default());

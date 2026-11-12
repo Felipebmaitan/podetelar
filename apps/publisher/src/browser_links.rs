@@ -77,10 +77,6 @@ pub struct Link {
     ticket: String,
 }
 impl Link {
-    pub fn known_server(&self, server: &str) -> bool {
-        crate::settings::valid_server(server)
-            && Url::parse(server).is_ok_and(|url| url.origin() == self.origin.origin())
-    }
     pub fn parse(input: &str) -> Result<Self> {
         ensure!(input.len() <= 4096, "Invalid browser invitation.");
         let url = Url::parse(input).context("Invalid browser invitation.")?;
@@ -352,25 +348,23 @@ mod tests {
     }
 
     #[test]
-    fn saved_server_trust_requires_the_same_canonical_origin() {
-        let link = Link::parse(&format!(
-            "freedomstream://join?server=https%3A%2F%2Fexample.test#handoff={}",
-            "t".repeat(43)
-        ))
-        .unwrap();
-        let invitation = format!(
-            "https://example.test/r/{}#invite={}",
-            "r".repeat(22),
-            "s".repeat(43)
-        );
-        assert!(!link.known_server(&invitation));
-        assert!(link.known_server("https://example.test"));
-        assert!(!link.known_server(&invitation.replace("example.test", "another.test")));
-        assert!(!link.known_server(&invitation.replace("example.test", "example.test:8443")));
-        assert!(!link.known_server("https://another.test"));
-        assert!(!link.known_server("https://example.test:8443"));
-        assert!(!link.known_server("https://user@example.test"));
-        assert!(!link.known_server("https://example.test?secret=bad"));
-        assert!(!link.known_server("https://example.test#secret"));
+    fn each_link_selects_its_own_origin_without_a_profile() {
+        for server in [
+            "https://example.test",
+            "https://another.test:8443",
+            "http://127.0.0.1:3000",
+        ] {
+            let mut link = Url::parse("freedomstream://join").unwrap();
+            link.query_pairs_mut().append_pair("server", server);
+            link.set_fragment(Some(&format!("handoff={}", "t".repeat(43))));
+            assert_eq!(
+                Link::parse(link.as_str())
+                    .unwrap()
+                    .origin
+                    .origin()
+                    .ascii_serialization(),
+                server
+            );
+        }
     }
 }

@@ -144,11 +144,10 @@ impl PublisherUi {
             self.dismiss_browser_invitation();
         }
         let previous = self.invitation.clone();
-        let known = link.known_server(&previous)
-            || self
-                .attempted_profile
-                .as_ref()
-                .is_some_and(|p| link.known_server(&p.invitation));
+        let known = self
+            .attempted_profile
+            .as_ref()
+            .is_some_and(|p| link.known_server(&p.invitation));
         self.prior_invitation = Some(previous);
         self.invitation.clear();
         self.settings_error.clear();
@@ -2558,6 +2557,11 @@ mod tests {
         app.dismiss_browser_invitation();
         assert_eq!(app.invitation, previous);
         assert!(!app.browser_invitation_open);
+        // Merely pasting a matching-origin invitation has never established trust.
+        app.invitation = previous.replace("current.test", "other.test");
+        app.open_activation(&link, &ctx);
+        assert!(app.pending_link.is_some());
+        assert!(app.link_result.is_none());
     }
 
     #[test]

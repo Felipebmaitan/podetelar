@@ -57,6 +57,14 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Check desktop administrator UI
         run: npm run test:admin
+      - name: Retain browser failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-screenshots-${{ github.run_attempt }}
+          path: test-results/**/test-failed-*.png
+          if-no-files-found: ignore
+          retention-days: 3
       - if: always()
         run: docker compose down
   native-windows:

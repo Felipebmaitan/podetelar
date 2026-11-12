@@ -61,6 +61,7 @@ test("a browser downloads authorized bytes directly without sharing cookies or s
     const metadata = await page.request.get(
       `${config.publicUrl}/api/rooms/${room}/publisher`,
     );
+    expect(metadata.status()).toBe(200);
     const urls: string[] = [];
     let directCookie: string | undefined;
     page.on("request", (request) => {
@@ -71,17 +72,31 @@ test("a browser downloads authorized bytes directly without sharing cookies or s
     await page.goto(config.publicUrl);
     // Exercise the real authenticated old download URL, redirect, fragment-only
     // handoff, SPA fragment erasure and direct POST attachment response.
-    const downloaded = page.waitForEvent("download");
+    // A download starts from a real user click in the room UI. Scripted
+    // location.assign lacks that activation and can be blocked by Chromium.
     await page.evaluate(
       (url) => {
-        window.location.assign(url);
+        const link = document.createElement("a");
+        link.href = url;
+        link.textContent = "Download browser fixture";
+        document.body.append(link);
       },
       (await metadata.json()).downloadUrl,
     );
-    const download = await downloaded;
+    const [download] =
+      await test.step("click the authenticated download link", () =>
+        Promise.all([
+          page.waitForEvent("download"),
+          page
+            .getByRole("link", {
+              name: "Download browser fixture",
+              exact: true,
+            })
+            .click(),
+        ]));
     expect(download.suggestedFilename()).toBe(filename);
     expect(readFileSync((await download.path())!)).toEqual(bytes);
-    expect(directCookie).toBe("");
+    expect(Boolean(directCookie)).toBe(false);
     await expect(page).toHaveURL(`${config.directUrl}/download`);
     expect(
       urls.every(

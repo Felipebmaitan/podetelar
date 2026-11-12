@@ -28,7 +28,7 @@ for (const guild of guilds) {
           body: JSON.stringify({
             name,
             type: 1,
-            description: "Create a private FreedomStream room for friends",
+            description: "Create a private PodeTelar room for friends",
             options: [],
           }),
           signal: AbortSignal.timeout(10000),

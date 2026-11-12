@@ -1,6 +1,6 @@
 # Bundled runtime
 
-Original FreedomStream code is MIT licensed. Dependency notices remain under
+Original PodeTelar code is MIT licensed. Dependency notices remain under
 their respective licenses; this file does not relicense any library or codec.
 
 The media payload is an explicit allowlist of the official GStreamer 1.28.8

@@ -5,6 +5,7 @@ import { ApiError, request } from "./api";
 import { dataSize, periodRange, speed, type Period } from "./usage";
 import "./admin.css";
 import { AdminRooms } from "./AdminRooms";
+import { BrandMark } from "./BrandMark";
 
 const periods: Period[] = [
   "Real time",
@@ -78,10 +79,8 @@ export function Admin() {
     >
       <header className="admin-header">
         <a href="/" className="admin-brand">
-          <span className="admin-brand-mark" aria-hidden="true">
-            F
-          </span>
-          FreedomStream
+          <BrandMark className="admin-brand-mark" />
+          PodeTelar
         </a>
         {auth === "ready" && (
           <div>

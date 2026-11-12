@@ -6,6 +6,17 @@ test("administrator login, filters, charts, reload and logout", async ({
   baseURL,
 }) => {
   await page.goto("/");
+  await expect(page).toHaveTitle("PodeTelar");
+  await expect(
+    page.getByRole("link", { name: "PodeTelar", exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page
+        .locator(".admin-brand-mark")
+        .evaluate((image: HTMLImageElement) => image.naturalWidth),
+    )
+    .toBeGreaterThan(0);
   await expect(
     page.getByRole("heading", { name: "Administrator login" }),
   ).toBeVisible();

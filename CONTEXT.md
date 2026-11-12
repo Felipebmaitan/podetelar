@@ -1,4 +1,4 @@
-# FreedomStream
+# PodeTelar
 
 A private place for friends to share screens and cameras and choose what to watch together.
 

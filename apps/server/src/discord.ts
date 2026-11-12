@@ -107,7 +107,7 @@ export async function discordRoutes(
           return message("Too many rooms created. Try again in a minute.");
         // Angle brackets and SUPPRESS_EMBEDS prevent link unfurling. The secret is fragment-only.
         return message(
-          `Join a new FreedomStream room: <${config.publicUrl}/r/${created.room.id}#invite=${created.invitation}>\nAnyone with this link can join. Share it only with friends.`,
+          `Join a new PodeTelar room: <${config.publicUrl}/r/${created.room.id}#invite=${created.invitation}>\nAnyone with this link can join. Share it only with friends.`,
           false,
         );
       },

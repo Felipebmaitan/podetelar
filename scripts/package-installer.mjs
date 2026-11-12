@@ -106,7 +106,7 @@ run(
     "--channel",
     "preview",
     "--icon",
-    join(root, "assets/windows/freedomstream.ico"),
+    join(root, "assets/windows/podetelar.ico"),
     "--outputDir",
     output,
   ],

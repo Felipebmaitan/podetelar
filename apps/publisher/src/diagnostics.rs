@@ -19,7 +19,7 @@ impl log::Log for ConnectionLog {
         if self.enabled(record.metadata())
             && let Some(message) = connection_message(&record.args().to_string())
         {
-            eprintln!("FreedomStream diagnostic: {message}");
+            eprintln!("PodeTelar diagnostic: {message}");
         }
     }
     fn flush(&self) {}

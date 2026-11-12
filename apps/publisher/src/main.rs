@@ -52,7 +52,7 @@ fn main() {
     if let Err(error) = run() {
         // Only application errors reach here; network/token-bearing SDK errors
         // are deliberately replaced with bounded messages at admission/publication.
-        eprintln!("FreedomStream: {error}");
+        eprintln!("PodeTelar: {error}");
         #[cfg(windows)]
         if std::env::args_os().nth(1).is_none() {
             // A normal GUI launch has no stderr console. Keep authority-bearing
@@ -65,9 +65,9 @@ fn main() {
                 let _ = MessageBoxW(
                     None,
                     w!(
-                        "FreedomStream could not start. Check your graphics driver and app files, then try again."
+                        "PodeTelar could not start. Check your graphics driver and app files, then try again."
                     ),
-                    w!("FreedomStream"),
+                    w!("PodeTelar"),
                     MB_OK | MB_ICONERROR,
                 );
             }
@@ -284,8 +284,7 @@ fn run() -> Result<()> {
             let options = eframe::NativeOptions {
                 viewport: eframe::egui::ViewportBuilder::default()
                     .with_icon(eframe::egui::IconData {
-                        rgba: include_bytes!("../../../assets/windows/freedomstream-64.rgba")
-                            .to_vec(),
+                        rgba: include_bytes!("../../../assets/windows/podetelar-64.rgba").to_vec(),
                         width: 64,
                         height: 64,
                     })
@@ -295,7 +294,7 @@ fn run() -> Result<()> {
                 ..Default::default()
             };
             eframe::run_native(
-                "FreedomStream",
+                "PodeTelar",
                 options,
                 Box::new(move |context| {
                     ui::configure_theme(&context.egui_ctx);

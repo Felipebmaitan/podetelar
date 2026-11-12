@@ -133,7 +133,7 @@ fn register_at(path: &str, exe: &Path, migrate: bool) -> Result<()> {
     )?;
     let shell = create(&format!("{path}\\shell\\open\\command"))?;
     set(&shell, "", &expected)?;
-    set(&key, "", "URL:FreedomStream room invitation")?;
+    set(&key, "", "URL:PodeTelar room invitation")?;
     set(&key, "URL Protocol", "")?;
     unsafe {
         RegDeleteValueW(key.0, wide("FreedomStreamPortable").as_ptr());

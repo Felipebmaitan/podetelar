@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $env:PSModulePath = "$PSHOME\Modules;$env:PSModulePath"
 $ProgressPreference = 'SilentlyContinue'
 . (Join-Path $PSScriptRoot 'Ownership.ps1')
-if (-not [Environment]::Is64BitOperatingSystem -or [Environment]::OSVersion.Version.Build -lt 20348) { throw 'FreedomStream needs Windows x64 build 20348 or later (Windows 11 recommended).' }
+if (-not [Environment]::Is64BitOperatingSystem -or [Environment]::OSVersion.Version.Build -lt 20348) { throw 'PodeTelar needs Windows x64 build 20348 or later (Windows 11 recommended).' }
 $release = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'release.json') -Raw | ConvertFrom-Json
 if ($release.id -notmatch '^\d+\.\d+\.\d+-[a-f0-9]{12}$') { throw 'Invalid release identifier.' }
 foreach ($entry in $release.files.PSObject.Properties) {
@@ -74,4 +74,4 @@ if (-not $NoShortcut) {
     $shortcut.Save()
     Set-Content -LiteralPath (Join-Path $InstallRoot '.start-menu-shortcut') -Value 'FreedomStream.lnk' -Encoding ASCII
 }
-Write-Output "Installed FreedomStream $($release.id). Open it from the Start menu. To remove it, run $InstallRoot\Uninstall.ps1."
+Write-Output "Installed PodeTelar $($release.id). Open it from the Start menu. To remove it, run $InstallRoot\Uninstall.ps1."

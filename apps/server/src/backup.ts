@@ -35,7 +35,7 @@ export function verifyBackup(path: string) {
       ![3, 4].includes(Number(version?.user_version)) ||
       db.prepare("PRAGMA foreign_key_check").all().length
     )
-      throw new Error("Not a healthy schema-3/4 FreedomStream backup.");
+      throw new Error("Not a healthy schema-3/4 PodeTelar backup.");
     for (const table of ["rooms", "sessions", "removals"])
       db.prepare(`SELECT count(*) FROM ${table}`).get();
     if (version?.user_version === 4)

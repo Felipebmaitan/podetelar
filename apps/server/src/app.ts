@@ -300,7 +300,7 @@ export async function buildApp(
             request.headers["sec-fetch-site"])
         )
           return reply.code(403).send({
-            error: "Use the FreedomStream desktop app to share and watch.",
+            error: "Use the PodeTelar desktop app to share and watch.",
           });
         const session = rooms.session(
           request.params.roomId,

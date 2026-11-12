@@ -107,7 +107,7 @@ export function appLinkRoutes(
       )
         return reply
           .code(403)
-          .send({ error: "Open this invitation in FreedomStream." });
+          .send({ error: "Open this invitation in PodeTelar." });
       const input = invitationSchema.safeParse(
         (request.body as { ticket?: unknown } | null)?.ticket,
       );

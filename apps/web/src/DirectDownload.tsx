@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { CardBrand } from "./BrandMark";
 
 /** Redeem in a POST body on the direct host, without sharing website cookies. */
 export function DirectDownload({ ticket }: { ticket: string | null }) {
@@ -17,6 +18,7 @@ export function DirectDownload({ ticket }: { ticket: string | null }) {
   return (
     <main className="invitation-page">
       <section className="panel invitation-card">
+        <CardBrand />
         <h1>Windows app download</h1>
         {valid ? (
           <>

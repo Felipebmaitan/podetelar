@@ -81,7 +81,7 @@ export function OpenInApp({
             setGeneration((value) => value + 1);
           }}
         >
-          {appUrl ? "Join room in FreedomStream" : "Preparing..."}
+          {appUrl ? "Join room in PodeTelar" : "Preparing..."}
         </a>
       )}
     </>

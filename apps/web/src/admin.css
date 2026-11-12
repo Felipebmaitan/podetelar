@@ -558,13 +558,12 @@
   font-size: 21px;
 }
 .admin-brand-mark {
-  display: grid;
-  place-items: center;
+  display: block;
+  flex-shrink: 0;
+  object-fit: contain;
   width: 34px;
   height: 34px;
   border-radius: 7px;
-  background: #b4a0fa;
-  color: #191526;
 }
 .admin-authenticated {
   padding-left: 244px;

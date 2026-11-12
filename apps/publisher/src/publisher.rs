@@ -28,8 +28,8 @@ use tokio::{
     task::JoinHandle,
 };
 
-const TRACK_NAME: &str = "FreedomStream screen";
-const AUDIO_TRACK_NAME: &str = "FreedomStream application audio";
+const TRACK_NAME: &str = "PodeTelar screen";
+const AUDIO_TRACK_NAME: &str = "PodeTelar application audio";
 #[derive(Default)]
 pub(crate) struct CaptureCancellation(Mutex<Vec<Weak<AtomicBool>>>);
 

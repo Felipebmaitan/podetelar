@@ -11,6 +11,19 @@ Public GitHub release access, rebrand identity, signing, helper notices and real
 two-version/fresh-Windows acceptance remain gates before shipping auto-updates.
 Private repository visibility does not block implementation or local testing.
 
+The installer also owns per-user room-link registration. Install/update hooks
+point `freedomstream://` at the stable installed launcher; uninstall removes only
+that installation's handler. Migrate the old portable handler on explicit install,
+then keep portable registration controls separate. Forward later links/focus to
+the existing instance using bounded per-launch authenticated local IPC. Never
+persist handoff tickets or invoke Update.exe with invitation arguments. Previously
+used server origins may load straight into native Join confirmation; unfamiliar
+origins still need trust. Room changes/sharing/watching stay explicit, dismissing
+a link restores the current room invitation, and pending links must not overwrite
+the last successful saved room. Qualify hooks/registry/real-process forwarding
+with an isolated test scheme; actual browser prompts/native focus and production
+installation remain separate acceptance gates.
+
 Each phase is an acceptance gate. Phase 1 is the initial commit on `main`; every later phase gets its own branch and PR. Felipe authorized autonomous implementation and merging: each PR must pass its acceptance checks and a new GPT-6.1-Sol review at high reasoning before merge. Address review findings before proceeding. Code can be MIT licensed while third-party runtimes retain their own licenses; qualify distribution licenses before bundling native media dependencies. Report external hardware/deployment verification separately and do not waive it merely to finish the sequence.
 
 **Current checkpoint:** Phases 1–8 and clipboard PR #8 are merged. Portable

@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - apps/installed-launcher/**
+      - apps/activation_protocol.rs
+      - scripts/qualify-installed-links.mjs
       - scripts/*installer*
       - deploy/windows/installer.json
       - .config/dotnet-tools.json
@@ -28,6 +30,8 @@ jobs:
       - run: node --test scripts/installer-input.test.mjs
       - run: cargo fmt --manifest-path apps/installed-launcher/Cargo.toml --check
       - run: cargo clippy --locked --manifest-path apps/installed-launcher/Cargo.toml -- -D warnings
+      - run: cargo test --locked --manifest-path apps/installed-launcher/Cargo.toml
+      - run: node scripts/qualify-installed-links.mjs
       - run: cargo build --locked --release --manifest-path apps/installed-launcher/Cargo.toml --target x86_64-pc-windows-msvc
   installer:
     if: github.event_name == 'workflow_dispatch'

@@ -86,6 +86,8 @@ pub fn configure_theme(ctx: &egui::Context) {
 }
 
 pub struct PublisherUi {
+    activation: crate::activation::Inbox,
+    prior_invitation: Option<String>,
     controller: Controller,
     invitation: String,
     name: String,
@@ -124,6 +126,44 @@ pub struct PublisherUi {
     force_close: bool,
 }
 impl PublisherUi {
+    fn open_activation(&mut self, value: &str, ctx: &egui::Context) {
+        if !crate::activation_protocol::valid(value) {
+            return;
+        }
+        let Ok(link) = crate::browser_links::Link::parse(value) else {
+            self.settings_error =
+                "Invalid browser invitation. Open a fresh invitation from your browser.".into();
+            return;
+        };
+        if self.link_result.is_some() {
+            self.settings_error =
+                "Finish or dismiss the current invitation before opening another.".into();
+            return;
+        }
+        if self.browser_invitation_open {
+            self.dismiss_browser_invitation();
+        }
+        let previous = self.invitation.clone();
+        let known = link.known_server(&previous)
+            || self
+                .attempted_profile
+                .as_ref()
+                .is_some_and(|p| link.known_server(&p.invitation));
+        self.prior_invitation = Some(previous);
+        self.invitation.clear();
+        self.settings_error.clear();
+        self.show_invitation = false;
+        self.browser_invitation_open = true;
+        self.set_fullscreen(ctx, None);
+        if self.controller.snapshot().connection == "connecting" {
+            self.controller.send(Command::Leave);
+        }
+        if known {
+            self.link_result = Some(crate::browser_links::Load::start(link));
+        } else {
+            self.pending_link = Some(link);
+        }
+    }
     pub fn with_browser_link(browser_link: Option<String>) -> Self {
         crate::locale::load();
         let store = crate::settings::Store::open();
@@ -139,7 +179,7 @@ impl PublisherUi {
             }
         });
         let is_browser_launch = browser_link.is_some();
-        let pending_link =
+        let mut pending_link =
             browser_link.and_then(|value| match crate::browser_links::Link::parse(&value) {
                 Ok(link) => Some(link),
                 Err(_) => {
@@ -149,12 +189,25 @@ impl PublisherUi {
                     None
                 }
             });
+        let link_result = if pending_link.as_ref().is_some_and(|link| {
+            profile
+                .as_ref()
+                .is_some_and(|profile| link.known_server(&profile.invitation))
+        }) {
+            Some(crate::browser_links::Load::start(
+                pending_link.take().unwrap(),
+            ))
+        } else {
+            None
+        };
         let profile_invitation = if is_browser_launch {
             None
         } else {
             profile.as_ref()
         };
         let app = Self {
+            activation: crate::activation::Inbox::new(),
+            prior_invitation: None,
             controller: Controller::new(),
             invitation: profile_invitation
                 .map(|p| p.invitation.clone())
@@ -180,7 +233,7 @@ impl PublisherUi {
             show_invitation: false,
             browser_invitation_open: is_browser_launch,
             pending_link,
-            link_result: None,
+            link_result,
             browser_links_enabled: std::env::var("FREEDOMSTREAM_BROWSER_LINKS").as_deref()
                 == Ok("1"),
             self_preview_revision: None,
@@ -206,6 +259,7 @@ impl PublisherUi {
     }
 
     fn join(&mut self) {
+        self.prior_invitation = None;
         self.browser_invitation_open = false;
         self.show_invitation = false;
         self.forgetting = false;
@@ -314,6 +368,9 @@ impl PublisherUi {
                             ui.close();
                         }
                         ui.separator();
+                    if std::env::var_os(crate::activation_protocol::INSTALLED).is_some() {
+                        ui.label(tr(if self.browser_links_enabled { "Room links open this installed app automatically." } else { "Room links are handled by another application or need repair." }));
+                    } else {
                     let label = if self.browser_links_enabled { "Disable browser links" } else { "Enable browser links" };
                     if ui.button(tr(label)).on_hover_text(tr("Allow invitation pages to open this app for your Windows user. A launcher copy is kept in Local AppData.")).clicked() {
                         match crate::browser_links::set_enabled(!self.browser_links_enabled) {
@@ -328,6 +385,7 @@ impl PublisherUi {
                             Err(error) => self.settings_error = error.to_string(),
                         }
                         ui.close();
+                    }
                     }
                         open_licenses(ui);
                     });
@@ -356,7 +414,7 @@ impl PublisherUi {
         if let Some(load) = &mut self.link_result {
             load.cancel();
         }
-        self.invitation.clear();
+        self.invitation = self.prior_invitation.take().unwrap_or_default();
         self.settings_error.clear();
     }
 
@@ -389,6 +447,9 @@ impl PublisherUi {
                     ui.horizontal(|ui| { ui.spinner(); ui.label(tr("Loading browser invitation…")); });
                     ctx.request_repaint_after(Duration::from_millis(50));
                 } else if !self.invitation.is_empty() {
+                    if matches!(state.connection, "connected" | "reconnecting") {
+                        ui.label(tr("Joining this room will end your current sharing and watching."));
+                    }
                     self.join_form(ui, state);
                 }
                 if !self.settings_error.is_empty() {
@@ -1669,6 +1730,16 @@ impl eframe::App for PublisherUi {
         self.planar.destroy(gl);
     }
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.closing_since.is_none() {
+            ctx.request_repaint_after(Duration::from_millis(250));
+            if let Some(event) = self.activation.poll() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                if let Some(link) = event.link {
+                    self.open_activation(&link, ctx);
+                }
+            }
+        }
         self.handle_close(ctx);
     }
 
@@ -1782,6 +1853,8 @@ impl eframe::App for PublisherUi {
             self.set_fullscreen(&ctx, None);
         }
         if state.connection == "connected"
+            && !state.busy
+            && !self.browser_invitation_open
             && !self.forgetting
             && self.attempted_profile.as_ref().is_none_or(|profile| {
                 profile.invitation != self.invitation.trim() || profile.name != self.name.trim()
@@ -2458,6 +2531,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn forwarded_invitation_waits_for_trust_and_dismiss_restores_the_current_room() {
+        let mut app = app();
+        let previous = format!(
+            "https://current.test/r/{}#invite={}",
+            "r".repeat(22),
+            "s".repeat(43)
+        );
+        app.invitation = previous.clone();
+        let ctx = egui::Context::default();
+        let link = format!(
+            "freedomstream://join?server=https%3A%2F%2Fother.test#handoff={}",
+            "t".repeat(43)
+        );
+        app.open_activation(&link, &ctx);
+        assert!(app.browser_invitation_open);
+        assert!(app.pending_link.is_some());
+        assert!(
+            app.link_result.is_none(),
+            "An unfamiliar server needs trust before any request"
+        );
+        assert!(
+            !app.controller.snapshot().busy,
+            "Activation must not join or leave by itself"
+        );
+        app.dismiss_browser_invitation();
+        assert_eq!(app.invitation, previous);
+        assert!(!app.browser_invitation_open);
+    }
+
+    #[test]
     fn browser_confirmation_is_centered_and_enter_cannot_skip_server_trust() {
         for size in [egui::vec2(1280.0, 720.0), egui::vec2(960.0, 540.0)] {
             let mut app = app();
@@ -2702,6 +2805,8 @@ mod tests {
     fn app() -> PublisherUi {
         gstreamer::init().expect("Test media runtime");
         PublisherUi {
+            activation: crate::activation::Inbox::new(),
+            prior_invitation: None,
             controller: Controller::new(),
             invitation: String::new(),
             name: String::new(),

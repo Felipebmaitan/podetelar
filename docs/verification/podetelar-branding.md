@@ -6,6 +6,11 @@ The display name is **PodeTelar**, with uppercase P and T. The supplied
 Existing web and native palettes are preserved. Internal protocol, executable,
 package, cache and settings identifiers remain compatible with earlier versions.
 
+The supplied black/navy backing was removed at Felipe's request. Direct pixel
+extraction preserves every original RGB pixel while adding transparency to the
+dark background; the PNG, Windows ICO and native RGBA share that transparent
+artwork. The app surfaces and controls retain their original colors.
+
 ## Checks
 
 - Node 24.11.1 `npm run check`: formatting, types, 61 server tests, two web tests,

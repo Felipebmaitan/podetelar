@@ -1,9 +1,10 @@
 # Installed Windows builds and update rollout
 
 The installed app supports an update badge, hover changelog, explicit download,
-progress/retry and Restart to update/Later. It is available for **unsigned local/CI
-qualification**; no public feed is configured or published. Standalone portable
-downloads have no automatic updater and remain available separately.
+progress/retry and Restart to update/Later. The v0.1.0 release offers an **unsigned
+installer preview** as a separate Setup download. No public update feed is enabled
+in this preview. Standalone portable downloads remain available separately and
+have no automatic updater. See [installer qualification](verification/global-bot-installer.md).
 See [upstream research](research/windows-updates.md) for T3 Code's implementation,
 Velopack licensing, runtime constraints and source citations.
 
@@ -36,11 +37,14 @@ The separate bootstrap Cargo workspace avoids coupling installer startup to medi
 SDK initialization. Neither .NET nor a shared CRT should be needed by users;
 offline/fresh-machine verification remains required before advertising that result.
 
-`deploy/windows/installer.json` separates display title from the permanent package
-ID and executable identity. Preserve `FreedomStream` as the package ID after the
-planned rebrand, or explicitly implement migration before the first public install.
-Changing the display title may also change shortcuts. Saved rooms continue to use
-the existing per-user DPAPI settings. Uninstall must preserve those settings unless
+Before the first public installer, `deploy/windows/installer.json` fixes the
+package ID as `PodeTelar`. Its default installation directory is therefore
+`%LOCALAPPDATA%\PodeTelar`, separate from existing encrypted profiles in
+`%LOCALAPPDATA%\FreedomStream`. The earlier `FreedomStream` ID was used only for
+local/CI installer previews and collides with that legacy profile directory;
+retire those previews before installing the public package. The fixed launcher
+filename and `freedomstream://` protocol remain compatible. Saved server/name
+settings continue using their existing per-user DPAPI storage. Uninstall must preserve those settings unless
 the user explicitly requests erasure; document cache cleanup separately.
 
 ## Installed room links

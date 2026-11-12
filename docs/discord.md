@@ -2,7 +2,7 @@
 
 Discord HTTP interactions can create rooms directly inside FreedomStream: there
 is no gateway connection, message-content intent or Discord SDK dependency.
-`/stream` and `/telar` each create a new room and reply in the invoking channel.
+`/stream` and `/telar` are global, server-installed commands. They each create a new room and reply in the invoking channel.
 Anyone who can read or forward the invitation can join; use a private channel.
 Embeds and automatic mentions are suppressed. Discord necessarily receives and
 stores the invitation in that message. It is not end-to-end secret from Discord.
@@ -23,9 +23,11 @@ controls continue to work while waiting for a room.
 
 1. Create a dedicated application in the Discord Developer Portal. Record its
    Application ID and Public Key. Enable server installation with the
-   `applications.commands` scope. Install it only in the intended friend server.
+   `applications.commands` scope. Global commands become available in every server
+   where the app is installed; DMs and user-only installations are excluded.
 2. Set `DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY` (64 hexadecimal characters),
-   and `DISCORD_GUILD_IDS` (comma-separated server IDs) in the server environment.
+   and `DISCORD_GUILD_IDS=*` in the server environment. Use an explicit
+   comma-separated ID list only when intentionally restricting a private deployment.
    Production Compose passes these optional values through. All three are required
    together; leave all unset to disable the endpoint. Restart the app.
 3. Set the application's Interactions Endpoint URL to
@@ -44,7 +46,7 @@ controls continue to work while waiting for a room.
    invitation is refused. Confirm room closure after all members leave.
 
 The live server needs only the application ID, public verification key and guild
-allowlist, never the bot token or FreedomStream administrator key. Request
+policy, never the bot token or FreedomStream administrator key. Request
 signatures cover the timestamp plus exact raw bytes; accepted timestamps are within
 five minutes. Successful interaction IDs are recorded transactionally with room
 creation and retained ten minutes. A retry returns an ephemeral already-handled
@@ -52,13 +54,23 @@ notice without recreating or redisclosing the invitation, including after restar
 Creation is limited to five rooms per minute for a guild or invoking user. Invalid
 configuration fails startup. Other POST routes still enforce browser Origin.
 
-## Verification status
+## Server authorization and verification
 
-Automated signed requests exercise the actual Fastify endpoint and SQLite room
-store. These do not establish a working Discord installation or external HTTPS
-reachability. No bot has been installed, token supplied, command registered or
-channel message sent as part of implementation. Real Discord and native UI
-acceptance must be recorded before merging/releasing this feature.
+With `DISCORD_GUILD_IDS=*`, a signed interaction must identify the same guild as
+its guild installation owner (`authorizing_integration_owners["0"]`). A user-only
+installation, mismatched owner or DM cannot create rooms. The same existing
+application/signature/timestamp/replay and per-guild/user quotas still apply.
+Adding the bot to another server needs no server configuration change in this
+mode. An explicit ID list retains the earlier restricted behavior.
+
+Global commands can take time to refresh in Discord clients. Legacy guild-scoped
+commands may shadow the global commands in servers used for earlier testing; they
+use the same handler. Remove only PodeTelar's own legacy commands when retiring
+the old guild-specific registrations; preserve unrelated app commands.
+
+Live trials of both aliases, public HTTPS validation and native invitation
+admission are recorded in [verification](verification/discord.md). Production
+needs a permanent endpoint; stopping a temporary development tunnel stops its bot.
 
 Primary references:
 [Discord interactions](https://docs.discord.com/developers/interactions/receiving-and-responding)

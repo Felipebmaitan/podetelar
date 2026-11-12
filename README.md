@@ -19,6 +19,13 @@ and [quality](docs/quality.md).
 
 See the [phase plan](docs/implementation-plan.md), [domain glossary](CONTEXT.md) and [research](docs/research/design-notes.md). Phase 1 is the initial commit; subsequent phases are separate PRs, each requiring acceptance checks and a GPT-6.1-Sol review at high reasoning before merge.
 
+## Windows downloads
+
+Use [PodeTelar Setup](https://github.com/Felipebmaitan/podetelar/releases/download/v0.1.0/PodeTelar-v0.1.0-Setup.exe)
+for a per-user installation with shortcuts and room links. The unsigned installer
+preview and the separate portable EXE are on the [release page](https://github.com/Felipebmaitan/podetelar/releases/tag/v0.1.0).
+Verify the published checksums. Automatic update delivery is not enabled yet.
+
 ## Local development
 
 Use Node.js 24 LTS (Node 25 is also accepted), npm and Docker Desktop or Docker Engine for the media server.

@@ -443,3 +443,21 @@ Accept with Node 24 checks, real HTTP/browser download and cookie-isolation chec
 native discovery and direct upload/download measurement, nginx validation, Docker
 smoke and independent GPT-6.1-Sol high review. Actual DNS/Cloudflare/TLS renewal,
 WAN media and forced TURN remain deployment gates until exercised on the VPS.
+
+## Global Discord commands and first public installer — corrective PR
+
+Register /stream and /telar globally with guild-installation and guild-only
+contexts. Support explicit `DISCORD_GUILD_IDS=*` admission only when Discord's
+signed guild-installation owner matches the invoking guild. Preserve restricted
+ID-list deployments, DM denial, signature/replay checks and creation quotas.
+Configure a permanent production endpoint; a temporary tunnel is not deployment.
+
+Before the first public Windows installer, fix package ID `PodeTelar` so the
+installation folder cannot collide with legacy DPAPI settings in `FreedomStream`.
+Preserve the fixed launcher/protocol, qualify real install/startup/shortcuts/room
+handler/uninstall and profile preservation, then publish a clearly named Setup
+asset alongside the portable release. Keep unsigned-preview, fresh-machine,
+media-update and public update-feed limitations explicit. Locally verified build
+artifacts may be used while GitHub runner billing is blocked; never call blocked
+hosted jobs passing. Obtain an independent GPT-6.1-Sol high source review before
+merging and record native source/artifact provenance separately.

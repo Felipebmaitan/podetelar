@@ -30,8 +30,13 @@ test("Discord configuration fails closed", () => {
     { DISCORD_PUBLIC_KEY: "wrong" },
     { DISCORD_GUILD_IDS: "" },
     { DISCORD_APPLICATION_ID: "wrong" },
+    { DISCORD_GUILD_IDS: "*,222222222222222222" },
   ])
     assert.throws(() => loadConfig({ ...env, ...invalid }), /DISCORD/);
+  assert.deepEqual(
+    loadConfig({ ...env, DISCORD_GUILD_IDS: "*" }).discord?.guildIds,
+    ["*"],
+  );
   assert.equal(
     loadConfig({
       ...env,
@@ -196,4 +201,72 @@ test("signed Discord interactions create independent, admitted rooms without bro
     ((await http.json()) as { data: { flags: number } }).data.flags,
     4,
   );
+});
+
+test("all-server mode requires the signed guild-installation owner and still rejects DMs", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "podetelar-global-discord-"));
+  const config = loadConfig({
+    ...env,
+    DISCORD_GUILD_IDS: "*",
+    DATABASE_PATH: join(directory, "rooms.db"),
+  });
+  config.webRoot = join(directory, "no-web");
+  const app = await buildApp(config, { usagePolling: false });
+  t.after(async () => {
+    await app.close();
+  });
+  let id = 555555555555555555n;
+  const command = (extra = {}) => ({
+    id: String(id++),
+    application_id: application,
+    type: 2,
+    context: 0,
+    guild_id: guild,
+    member: { user: { id: actor } },
+    authorizing_integration_owners: { "0": guild },
+    data: { type: 1, name: "stream" },
+    ...extra,
+  });
+  const send = async (input: unknown) => {
+    const payload = JSON.stringify(input);
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signature = sign(
+      null,
+      Buffer.from(timestamp + payload),
+      keys.privateKey,
+    ).toString("hex");
+    return app.inject({
+      method: "POST",
+      url: "/api/discord/interactions",
+      headers: {
+        "content-type": "application/json",
+        "x-signature-ed25519": signature,
+        "x-signature-timestamp": timestamp,
+      },
+      payload,
+    });
+  };
+  for (const invalid of [
+    { authorizing_integration_owners: undefined },
+    { authorizing_integration_owners: { "1": actor } },
+    { authorizing_integration_owners: { "0": actor } },
+    { guild_id: undefined, member: undefined, context: 1 },
+    { context: 2 },
+  ]) {
+    const body = (await send(command(invalid))).json();
+    assert.equal(body.data.flags, 64);
+    assert.ok(!body.data.content.includes("#invite="));
+  }
+  const first = (await send(command())).json();
+  assert.equal(first.data.flags, 4);
+  const second = (
+    await send(
+      command({
+        guild_id: actor,
+        authorizing_integration_owners: { "0": actor },
+      }),
+    )
+  ).json();
+  assert.equal(second.data.flags, 4);
+  assert.notEqual(first.data.content, second.data.content);
 });

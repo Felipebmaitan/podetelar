@@ -111,7 +111,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       !/^[a-fA-F0-9]{64}$/.test(env.DISCORD_PUBLIC_KEY ?? "") ||
       !guildIds.length ||
       guildIds.length > 100 ||
-      !guildIds.every((id) => /^\d{17,20}$/.test(id))
+      (!(guildIds.length === 1 && guildIds[0] === "*") &&
+        !guildIds.every((id) => /^\d{17,20}$/.test(id)))
     )
       throw new Error(
         "Set valid DISCORD_APPLICATION_ID, DISCORD_PUBLIC_KEY and DISCORD_GUILD_IDS together.",

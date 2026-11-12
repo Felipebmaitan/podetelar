@@ -1,9 +1,10 @@
 # Installed Windows builds and update rollout
 
 The installed app supports an update badge, hover changelog, explicit download,
-progress/retry and Restart to update/Later. It is available for **unsigned local/CI
-qualification**; no public feed is configured or published. Standalone portable
-downloads have no automatic updater and remain available separately.
+progress/retry and Restart to update/Later. The v0.1.0 release offers an **unsigned
+installer preview** as a separate Setup download. No public update feed is enabled
+in this preview. Standalone portable downloads remain available separately and
+have no automatic updater. See [installer qualification](verification/global-bot-installer.md).
 See [upstream research](research/windows-updates.md) for T3 Code's implementation,
 Velopack licensing, runtime constraints and source citations.
 

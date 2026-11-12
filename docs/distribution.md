@@ -1,9 +1,11 @@
 # Windows distribution
 
-An additional installed distribution is being prepared. See the
-[installer preview and automatic-update rollout](windows-updates.md). The preview
-supports installed-app update controls when a feed is configured at build time;
-public/signed and actual media-update qualification remain pending.
+The v0.1.0 GitHub release provides **PodeTelar-v0.1.0-Setup.exe**, an unsigned
+per-user installer preview with shortcuts, an uninstall entry and managed room
+links. Portable users may continue using the separate portable EXE. Automatic
+update delivery is not enabled in this first installer preview. See
+[installer and update rollout](windows-updates.md) and its
+[actual lifecycle qualification](verification/global-bot-installer.md).
 
 Download the **portable Windows app** from an admitted room and open the EXE.
 Paste the private room invitation, enter your name and join. No installation,

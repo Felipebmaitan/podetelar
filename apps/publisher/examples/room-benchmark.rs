@@ -63,6 +63,9 @@ mod source_picker;
 #[path = "../src/sources.rs"]
 mod sources;
 #[cfg(feature = "performance-experiments")]
+#[path = "../src/stream_diagnostics.rs"]
+mod stream_diagnostics;
+#[cfg(feature = "performance-experiments")]
 #[path = "../src/ui.rs"]
 mod ui;
 #[cfg(feature = "performance-experiments")]

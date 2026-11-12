@@ -308,7 +308,7 @@ impl PublisherUi {
             ui.label(skin::strong("FreedomStream", 20.0));
             ui.separator();
             let room_label = format!(
-                "{}  Â·  {} {}",
+                "{}  ·  {} {}",
                 if state.room_name.is_empty() {
                     tr("Your private room")
                 } else {
@@ -348,7 +348,7 @@ impl PublisherUi {
                 egui::ComboBox::from_id_salt("ui-language")
                     .selected_text(if pt { "PT-BR" } else { "EN" })
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut pt, true, "PortuguÃªs (Brasil)");
+                        ui.selectable_value(&mut pt, true, "Português (Brasil)");
                         ui.selectable_value(&mut pt, false, "English");
                     });
                 if pt != crate::locale::portuguese() && crate::locale::select(pt).is_err() {
@@ -462,7 +462,7 @@ impl PublisherUi {
                         self.link_result = Some(crate::browser_links::Load::start(link));
                     }
                 } else if self.link_result.is_some() {
-                    ui.horizontal(|ui| { ui.spinner(); ui.label(tr("Loading browser invitationâ€¦")); });
+                    ui.horizontal(|ui| { ui.spinner(); ui.label(tr("Loading browser invitation…")); });
                     ctx.request_repaint_after(Duration::from_millis(50));
                 } else if !self.invitation.is_empty() {
                     if matches!(state.connection, "connected" | "reconnecting") {
@@ -690,7 +690,7 @@ impl PublisherUi {
             ui.scope_id().with("source-preview"),
             egui::Sense::hover(),
         )
-        .on_hover_text(tr("Source confirmation Â· updates once a minute"));
+        .on_hover_text(tr("Source confirmation · updates once a minute"));
     }
 
     fn clear_picker(&mut self) {
@@ -870,7 +870,7 @@ impl PublisherUi {
                             );
                             ui.label(
                                 egui::RichText::new(format!(
-                                    "{} Ã— {}",
+                                    "{} × {}",
                                     source.width, source.height
                                 ))
                                 .size(12.0)
@@ -891,7 +891,7 @@ impl PublisherUi {
                         let message = if self.picker_failed.as_deref() == Some(&source.id) {
                             tr("Preview unavailable. Refresh sources to try again.")
                         } else {
-                            tr("Loading previewâ€¦")
+                            tr("Loading preview…")
                         };
                         let text = ui.painter().layout(
                             message.to_owned(),
@@ -907,9 +907,9 @@ impl PublisherUi {
                     }
                     ui.label(
                         egui::RichText::new(tr(if sharing {
-                            "Local preview Â· only visible to you"
+                            "Local preview · only visible to you"
                         } else {
-                            "Local preview Â· not broadcasting"
+                            "Local preview · not broadcasting"
                         }))
                         .size(12.0)
                         .color(MUTED),
@@ -985,20 +985,20 @@ impl PublisherUi {
                 ui.colored_label(
                     ACCENT,
                     skin::strong(
-                        format!("{}Ã—{} Â· {} FPS", mode.width, mode.height, mode.fps),
+                        format!("{}×{} · {} FPS", mode.width, mode.height, mode.fps),
                         12.0,
                     ),
                 )
                 .on_hover_text(tr("Sharing"));
                 ui.small(format!(
-                    "{}: {:.0} FPS Â· {:.1} Mbps {}",
+                    "{}: {:.0} FPS · {:.1} Mbps {}",
                     tr("Live"),
                     state.metrics.fps,
                     state.delivery.bitrate_bps as f64 / 1_000_000.0,
                     tr("sent")
                 ));
             } else {
-                ui.colored_label(WARNING, tr("Starting your streamâ€¦"));
+                ui.colored_label(WARNING, tr("Starting your stream…"));
             }
             let selection = self.selection();
             let dirty = state
@@ -1042,9 +1042,9 @@ impl PublisherUi {
                 ui.colored_label(
                     WARNING,
                     if live {
-                        tr("Changes pending Â· applies live")
+                        tr("Changes pending · applies live")
                     } else {
-                        tr("Changes pending Â· restarts stream")
+                        tr("Changes pending · restarts stream")
                     },
                 );
             }
@@ -1103,7 +1103,7 @@ impl PublisherUi {
             let label=skin::help_label(ui,tr("Watching allowance"),tr("Automatic uses measured download capacity with headroom, or 30 Mbps if unavailable. Shared across everything you watch."));
             let before=self.download_budget;
             egui::ComboBox::from_id_salt("watching-allowance").width(ui.available_width())
-                .selected_text(self.download_budget.map(|bps|format!("{} Mbps",bps/1_000_000)).unwrap_or_else(||format!("{} Â· {:.0} Mbps",tr("Automatic"),state.capacity.watching_allowance().unwrap_or(crate::network::DEFAULT_DOWNLOAD_BPS) as f64/1_000_000.0)))
+                .selected_text(self.download_budget.map(|bps|format!("{} Mbps",bps/1_000_000)).unwrap_or_else(||format!("{} · {:.0} Mbps",tr("Automatic"),state.capacity.watching_allowance().unwrap_or(crate::network::DEFAULT_DOWNLOAD_BPS) as f64/1_000_000.0)))
                 .show_ui(ui,|ui| {
                     ui.selectable_value(&mut self.download_budget,None,tr("Automatic"));
                     for mbps in [1,3,5,10,25,30,50,100,200]{ui.selectable_value(&mut self.download_budget,Some(mbps*1_000_000),format!("{mbps} Mbps"));}
@@ -1135,7 +1135,7 @@ impl PublisherUi {
             ui.vertical(|ui| {
                 ui.label(skin::strong(
                     tr(if state.testing_connection {
-                        "Measuring connectionâ€¦"
+                        "Measuring connection…"
                     } else if failed {
                         "Test unavailable"
                     } else if state.capacity.download_bps.is_some() {
@@ -1181,7 +1181,7 @@ impl PublisherUi {
             ui.label(format!("{}: {}", tr("Encoder"), encoder.codec.label()));
         }
         ui.label(
-            egui::RichText::new(tr("Capacity to this VPS Â· payload capped at 200 Mbps"))
+            egui::RichText::new(tr("Capacity to this VPS · payload capped at 200 Mbps"))
                 .size(12.0)
                 .color(MUTED),
         );
@@ -1235,7 +1235,7 @@ impl PublisherUi {
                 state.metrics.encoder_bitrate as f64 / 1_000_000.0
             ));
             ui.small(format!(
-                "{}: {:.1} FPS Â· {:.1} Mbps",
+                "{}: {:.1} FPS · {:.1} Mbps",
                 tr("Encoded"),
                 state.metrics.fps,
                 state.metrics.encoded_bps as f64 / 1_000_000.0
@@ -1246,7 +1246,7 @@ impl PublisherUi {
                 tr("sent")
             ));
             ui.small(format!(
-                "{}: {:.0} ms Â· {}: {:.0} ms",
+                "{}: {:.0} ms · {}: {:.0} ms",
                 tr("Audio capture age"),
                 state.audio.capture_age_ms,
                 tr("Audio submit wait"),
@@ -1573,9 +1573,9 @@ impl PublisherUi {
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
                     if tile.watching {
-                        tr("Starting live playbackâ€¦")
+                        tr("Starting live playback…")
                     } else {
-                        tr("Loading previewâ€¦")
+                        tr("Loading preview…")
                     },
                     egui::FontId::proportional(14.0),
                     MUTED,
@@ -1645,7 +1645,7 @@ impl PublisherUi {
                 ui.painter().text(
                     caption.left_center() + egui::vec2(10.0, 0.0),
                     egui::Align2::LEFT_CENTER,
-                    tr("Still preview Â· updates up to once a minute"),
+                    tr("Still preview · updates up to once a minute"),
                     egui::FontId::proportional(11.0),
                     TEXT,
                 );
@@ -1719,12 +1719,12 @@ impl PublisherUi {
             return;
         }
         let label = match status.phase {
-            Phase::Checking => "Checking for updatesâ€¦",
+            Phase::Checking => "Checking for updates…",
             Phase::Current => "Up to date",
             Phase::Available => "Download update",
-            Phase::Downloading => "Downloading updateâ€¦",
+            Phase::Downloading => "Downloading update…",
             Phase::Ready => "Restart to update",
-            Phase::Restarting => "Restartingâ€¦",
+            Phase::Restarting => "Restarting…",
             Phase::Error => "Retry update check",
             Phase::Disabled => unreachable!(),
         };
@@ -1733,7 +1733,7 @@ impl PublisherUi {
                 status.phase,
                 Phase::Checking | Phase::Downloading | Phase::Restarting
             ),
-            egui::Button::new("â†»").fill(
+            egui::Button::new("↻").fill(
                 if matches!(status.phase, Phase::Available | Phase::Ready) {
                     egui::Color32::from_rgb(33, 91, 85)
                 } else {
@@ -1886,8 +1886,8 @@ impl eframe::App for PublisherUi {
                 ui.vertical_centered(|ui| {
                     ui.add_space(48.0);
                     ui.spinner();
-                    ui.heading(tr("Closingâ€¦"));
-                    ui.label(tr("Stopping your stream and leaving the roomâ€¦"));
+                    ui.heading(tr("Closing…"));
+                    ui.label(tr("Stopping your stream and leaving the room…"));
                     if started.elapsed() >= Duration::from_secs(10)
                         && ui.button(tr("Force close")).clicked()
                     {
@@ -2088,7 +2088,7 @@ impl eframe::App for PublisherUi {
                             ui.label(
                                 skin::strong(
                                     format!(
-                                        "{} Â· {}",
+                                        "{} · {}",
                                         tr("In room"),
                                         state.participants.len() + 1
                                     ),
@@ -2147,7 +2147,7 @@ impl eframe::App for PublisherUi {
                 ui.horizontal(|ui| {
                     ui.heading(if self.focused.is_some(){tr("Focused stream")}else{tr("Streams")});
                     ui.add_space(8.0);
-                    ui.label(egui::RichText::new(format!("{} {} Â· {} {}",state.tiles.len(),tr("live"),state.tiles.iter().filter(|t|t.watching).count(),tr("watching"))).size(13.0).color(MUTED));
+                    ui.label(egui::RichText::new(format!("{} {} · {} {}",state.tiles.len(),tr("live"),state.tiles.iter().filter(|t|t.watching).count(),tr("watching"))).size(13.0).color(MUTED));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| {
                         let watched=state.tiles.iter().find(|tile|tile.watching);
                         ui.add_enabled_ui(watched.is_some(),|ui| {
@@ -2416,7 +2416,7 @@ fn quality_controls(
                 };
                 let mode = source.and_then(|s| candidate.resolve(s, encoder.codec).ok());
                 let text = mode
-                    .map(|m| format!("{} Â· {}Ã—{}", tr(resolution.label()), m.width, m.height))
+                    .map(|m| format!("{} · {}×{}", tr(resolution.label()), m.width, m.height))
                     .unwrap_or_else(|| resolution.label().into());
                 ui.add_enabled_ui(mode.is_some_and(|m| encoder.supports(m)), |ui| {
                     ui.selectable_value(&mut settings.resolution, resolution, text);
@@ -2465,7 +2465,7 @@ fn quality_controls(
         match settings.resolve(source, encoder.codec) {
             Ok(mode) if encoder.supports(mode) => {
                 ui.small(format!(
-                    "{}Ã—{} Â· {} FPS Â· SDR",
+                    "{}×{} · {} FPS · SDR",
                     mode.width, mode.height, mode.fps
                 ));
             }
@@ -2484,7 +2484,7 @@ fn bitrate_controls(ui: &mut egui::Ui, settings: &mut Settings) {
         ui,
         tr("Bitrate"),
         tr(
-            "Automatic follows resolution, FPS and content, up to 35 Mbps. Manual: 1â€“100 Mbps. Connection limits still apply.",
+            "Automatic follows resolution, FPS and content, up to 35 Mbps. Manual: 1–100 Mbps. Connection limits still apply.",
         ),
     );
     egui::ComboBox::from_id_salt("video-bitrate")
@@ -2566,9 +2566,9 @@ fn stream_metrics_text(codec: &str, bps: u64) -> String {
         "video/h265" | "h265" | "hevc" => "HEVC",
         "video/h264" | "h264" => "H.264",
         "video/av1" | "av1" => "AV1",
-        _ => "â€”",
+        _ => "—",
     };
-    format!("{codec}  Â·  {:.1} Mbps", bps as f64 / 1_000_000.0)
+    format!("{codec}  ·  {:.1} Mbps", bps as f64 / 1_000_000.0)
 }
 
 fn avatar(ui: &mut egui::Ui, name: &str, size: f32) {
@@ -2638,7 +2638,7 @@ fn settings_divider(ui: &mut egui::Ui) {
 
 fn source_name(source: &crate::sources::SourceInfo) -> &str {
     if source.id.starts_with("monitor:") {
-        source.label.split(" Â· ").next().unwrap_or(&source.label)
+        source.label.split(" · ").next().unwrap_or(&source.label)
     } else {
         &source.label
     }
@@ -2713,14 +2713,14 @@ mod tests {
             ..Default::default()
         });
         app.updates = client;
-        click(&mut app, &ctx, "â†»");
+        click(&mut app, &ctx, "↻");
         assert_eq!(actions.try_recv().unwrap(), Action::Download);
         let (client, actions) = crate::updates::Client::fixture(Status {
             phase: Phase::Ready,
             ..Default::default()
         });
         app.updates = client;
-        click(&mut app, &ctx, "â†»");
+        click(&mut app, &ctx, "↻");
         assert!(app.update_restart_prompt);
         assert!(actions.try_recv().is_err());
         click(&mut app, &ctx, tr("Later"));
@@ -3253,7 +3253,7 @@ mod tests {
             egui::Event::PointerMoved(egui::pos2(300.0, 180.0)),
             false,
         );
-        assert!(visible.contains("HEVC  Â·  15.5 Mbps"), "{visible}");
+        assert!(visible.contains("HEVC  ·  15.5 Mbps"), "{visible}");
         assert!(!draw(&tile, egui::Event::PointerGone, false).contains("Mbps"));
         tile.watching = false;
         assert!(
@@ -3330,10 +3330,10 @@ mod tests {
     fn codec_labels_follow_the_received_publication_without_inventing_unknown_codecs() {
         assert_eq!(
             stream_metrics_text("video/h264", 2_000_000),
-            "H.264  Â·  2.0 Mbps"
+            "H.264  ·  2.0 Mbps"
         );
-        assert_eq!(stream_metrics_text("video/AV1", 0), "AV1  Â·  0.0 Mbps");
-        assert_eq!(stream_metrics_text("", 0), "â€”  Â·  0.0 Mbps");
+        assert_eq!(stream_metrics_text("video/AV1", 0), "AV1  ·  0.0 Mbps");
+        assert_eq!(stream_metrics_text("", 0), "—  ·  0.0 Mbps");
     }
 
     #[test]
@@ -3380,7 +3380,7 @@ mod tests {
         }
         for hidden in [
             "No microphone",
-            "Automatic follows resolution, FPS and content, up to 35 Mbps. Manual: 1â€“100 Mbps. Connection limits still apply.",
+            "Automatic follows resolution, FPS and content, up to 35 Mbps. Manual: 1–100 Mbps. Connection limits still apply.",
             "Retry watching connection",
         ] {
             assert!(

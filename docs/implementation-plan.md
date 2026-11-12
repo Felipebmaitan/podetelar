@@ -1,6 +1,6 @@
 # Implementation phases
 
-## Installed Windows distribution and update rollout â€” separate PR
+## Installed Windows distribution and update rollout — separate PR
 
 Add an unsigned preview installer using a pinned native Rust Velopack bootstrap
 and the existing qualified portable payload. Keep installer/update ownership
@@ -33,7 +33,7 @@ installation remain separate acceptance gates.
 
 Each phase is an acceptance gate. Phase 1 is the initial commit on `main`; every later phase gets its own branch and PR. Felipe authorized autonomous implementation and merging: each PR must pass its acceptance checks and a new GPT-6.1-Sol review at high reasoning before merge. Address review findings before proceeding. Code can be MIT licensed while third-party runtimes retain their own licenses; qualify distribution licenses before bundling native media dependencies. Report external hardware/deployment verification separately and do not waive it merely to finish the sequence.
 
-**Current checkpoint:** Phases 1â€“8 and clipboard PR #8 are merged. Portable
+**Current checkpoint:** Phases 1–8 and clipboard PR #8 are merged. Portable
 packaging PR #9 remains a separate phase. Native room PR #10 is stacked on it as
 a draft, with local native/media/DPAPI/portable checks and independent review
 recorded in [Phase 11 verification](verification/phase-11.md). Remaining physical
@@ -48,62 +48,62 @@ workflows. API admission, session, signaling, preview and download authorization
 required by the native app. See [test scope and commands](testing.md). Earlier phase
 browser acceptance records below describe historical verification.
 
-## 1. Persistent private-room foundation â€” initial commit
+## 1. Persistent private-room foundation — initial commit
 
 Deliver a runnable TypeScript workspace, MIT license, configuration generation, persistent private rooms, hashed invitations, room-scoped browser sessions, authenticated LiveKit token issuance, a responsive room interface, local-only Docker Compose, and CI.
 
 Accept when an administrator can create a room, another browser can join using its invitation, unauthenticated requests cannot read the room or obtain a media token, room/session state survives a process restart, and the container build and checks pass. This phase does not publish/play media or claim presence tracking. Do not expose this local stack on the VPS yet.
 
-## 2. Live rooms and selective watching â€” PR
+## 2. Live rooms and selective watching — PR
 
 Connect the custom interface to LiveKit. Add real participant/publisher presence, browser camera/screen publication as a transport baseline, explicit Watch/Stop watching subscriptions, focus/grid layouts, independent volume/mute, leave/cleanup, late-join and reconnect behavior. Keep invitations and tokens behind the room admission interface. Temporary browser capture validates transport; native game capture remains Phase 3.
 
 Accept with two real publishers and an independent viewer. Verify stopping a subscription stops its incoming video/audio bytes, room members see current state, joining/leaving does not leak media elements or tracks, and reload/reconnect works. Reject unauthenticated signaling access.
 
-## 3. Native Windows capture and hardware publication â€” PR
+## 3. Native Windows capture and hardware publication — PR
 
 Add a native Windows publisher behind a capture/encoder interface that can later gain macOS/Linux adapters. Qualify a mature engine (prefer an MIT-compatible integration with separately licensed runtime dependencies) before committing to bindings. Implement source enumeration/selection, monitor/window/game capture, runtime encoder capability probing, NVIDIA and AMD hardware HEVC, timestamps/keyframes/pacing, native participant authentication and publication into the same rooms. Keep browser H.264 fallback explicit.
 
 Accept with an actual NVIDIA and AMD machine, game performance measurements, window/fullscreen/alt-tab handling, hardware-encoder evidence and browser decode verification. CI compile checks cannot substitute for those hardware results; report unavailable hardware qualification as incomplete.
 
-## 4. Audio isolation â€” PR
+## 4. Audio isolation — PR
 
 Implement selected-application audio and desktop capture with Discord exclusion. Keep our own watched-stream playback out of the captured mix. Follow process restarts, route/mix audio deliberately when excluding multiple process trees, and keep microphone controls separate. Do not apply voice noise suppression to game/music audio.
 
 Accept when friends hear the intended game audio without their Discord voices or watched-stream audio feeding back, including while a publisher watches another stream and Discord restarts.
 
-## 5. Compressed previews â€” PR
+## 5. Compressed previews — PR
 
-Generate a preview at the publisher on stream start and then no more than once every **60 seconds**. Proposed size: 320Ã—180 with source aspect ratio preserved. Distribute through authenticated room access, maintain only the latest preview, expire/remove stopped streams, and keep full media unsubscribed until Watch is selected. Bound image dimensions and upload size. No server decoding/transcoding just to make previews.
+Generate a preview at the publisher on stream start and then no more than once every **60 seconds**. Proposed size: 320×180 with source aspect ratio preserved. Distribute through authenticated room access, maintain only the latest preview, expire/remove stopped streams, and keep full media unsubscribed until Watch is selected. Bound image dimensions and upload size. No server decoding/transcoding just to make previews.
 
 Accept that unwatched tiles update at the configured minute interval, never carry full stream traffic, respect room access, and remove stale content after stop/leave. New viewers may receive the current preview immediately without causing extra captures.
 
-## 6. Quality and resource controls â€” PR
+## 6. Quality and resource controls — PR
 
-Expose bitrate presets spanning 3â€“100 Mbps, resolution choices limited by the selected source with a 4K ceiling, and frame-rate choices up to 120 fps. Auto mode recalculates bitrate recommendations from resolution/FPS/codec/content profile; manual bitrate edits preserve resolution and FPS. Show measured delivery separately from requested settings. Integrate congestion feedback and explicit adaptation policy; never promise a manual target can override network capacity.
+Expose bitrate presets spanning 3–100 Mbps, resolution choices limited by the selected source with a 4K ceiling, and frame-rate choices up to 120 fps. Auto mode recalculates bitrate recommendations from resolution/FPS/codec/content profile; manual bitrate edits preserve resolution and FPS. Show measured delivery separately from requested settings. Integrate congestion feedback and explicit adaptation policy; never promise a manual target can override network capacity.
 
 Accept independent controls, encoder reconfiguration/source switches, hardware-aware mode availability, no silent setting rewrites, and a tested compatibility fallback. Qualify 4K120 end-to-end on capable hardware; do not mark it complete merely because the UI offers the option.
 
-## 7. Durable access management and restrictive-network recovery â€” PR
+## 7. Durable access management and restrictive-network recovery — PR
 
 Add invitation rotation/revocation and defined effects on API sessions and existing media access, publisher/viewer grants where useful, connection diagnostics, reconnection limits, and authenticated TURN/TLS fallback. Scope preview access consistently with media. Test TCP/TLS fallback with UDP deliberately unavailable, and resource limits on the shared VPS.
 
 Accept denial at page, token, preview and media access paths; verify rotation/session behavior, no anonymous relay, and recovery during real interruptions. Phase 1 access controls remain required throughout; this phase adds lifecycle/revocation and network fallbacks.
 
-## 8. Windows distribution and production deployment â€” PR
+## 8. Windows distribution and production deployment — PR
 
 Package the native publisher with documented dependency notices, versioning and installation/uninstallation. Add the production Docker configuration, HTTPS/domain/TURN configuration, persistent data/backup/restore instructions, health checks and diagnostics. Configure the Canada VPS only with supplied access and concrete deployment settings. Budget live outbound traffic against the 1 Gbps port, despite unlimited monthly transfer; leave CPU/RAM for other workloads.
 
 Accept fresh-machine installation, reproducible builds, a restore test, a private production room, and a full evening with four/five publishers using the expected subscriptions. Record latency, actual encoder/decoder performance, loss/retransmissions, CPU/RAM, and network load. Deployment and hardware qualification must be reported separately from automated test success.
 
-## 9. Native clipboard integration â€” corrective PR
+## 9. Native clipboard integration — corrective PR
 
 Enable the UI framework's operating-system clipboard backend. Verify paste from
 another Windows application and copying an invitation back out, then update the
 local test build. This corrects the minimal feature configuration discovered in
 the first real user trial; an internal-only fallback clipboard is insufficient.
 
-## 10. Fully bundled portable Windows application â€” PR
+## 10. Fully bundled portable Windows application — PR
 
 Replace the PowerShell installer ZIP with one portable EXE containing its media
 runtime and notices. First launch may extract a private runtime cache, but must
@@ -114,7 +114,7 @@ Qualify the shipped DLL/plugin set, matching source availability and licenses.
 Test offline startup, invocation from a fresh directory, actual capture/audio and
 room download behavior, then review and deploy the replacement artifact.
 
-## 11. Native room experience â€” PR
+## 11. Native room experience — PR
 
 Replace the external Chrome viewer with native video decoding/rendering and native
 audio playback in the Windows app. The website admits participants, manages access
@@ -131,10 +131,10 @@ Preserve watch intent across that transition. Do not silently change resolution/
 Derive audio from the video source: application process-tree audio for a window,
 approved desktop application mix for a monitor. Always exclude Discord and our own
 playback; never acquire the microphone. Keep existing fail-closed process policies.
-Increase previews to 960Ã—540 at improved JPEG quality with bounded upload/storage,
+Increase previews to 960×540 at improved JPEG quality with bounded upload/storage,
 preserving the initial capture and at-most-once-per-minute cadence.
 
-Use a 1280Ã—720 initial native viewport, a left sharing menu with the FPS slider
+Use a 1280×720 initial native viewport, a left sharing menu with the FPS slider
 visible, and larger right-side 16:9 stream tiles with centered Watch buttons.
 Replace aggressive bitrate estimates with source-informed lower targets and a
 bounded aggregate receiver allowance. Receiver feedback may cap the one shared
@@ -164,7 +164,7 @@ fresh GPT-6.1-Sol high-reasoning review. AMD, fresh-machine, real-game/Discord a
 4K120 qualification remain external until actually exercised. No embedded browser,
 server transcoding, HDR, or new platform promise.
 
-## 12. Friends feedback, measured bandwidth and localization â€” PR
+## 12. Friends feedback, measured bandwidth and localization — PR
 
 Build on the native-room beta in a separate dependent branch/PR. Add a bounded,
 authenticated VPS down/up measurement capped at 100 Mbps on connect and an Advanced
@@ -182,7 +182,7 @@ device queues. Do not substitute an arbitrary delay or compilation for actual
 audio/video timing acceptance. Verify a synchronized audiovisual fixture and
 record any remaining device/network limitations before claiming the fix.
 
-## 13. Fullscreen viewing, bandwidth headroom and game performance â€” PR
+## 13. Fullscreen viewing, bandwidth headroom and game performance — PR
 
 Build on the feedback beta in a separate dependent branch. Add native borderless
 fullscreen for a selected watched stream, explicit controls and Escape/F11 exit,
@@ -197,7 +197,7 @@ and 25 Mbps. Remove proven unnecessary rendering/reconfiguration work, preserve
 explicit resolution/FPS/bitrate controls, and report AMD hardware qualification
 separately. Local NVIDIA tests cannot establish an RX 7600/Siege fix.
 
-## 14. Hardware AV1 publication and native decoding â€” PR
+## 14. Hardware AV1 publication and native decoding — PR
 
 Add runtime-probed NVIDIA NVENC and AMD AMF AV1 publication, SDR Main-profile
 8-bit framing and native Direct3D11 AV1 decoding. Retain the SDK dav1d CPU
@@ -211,7 +211,7 @@ Record NVIDIA and AMD hardware results independently; quantify CPU/game impact
 for multiple software-decoded streams before promising low CPU usage. Existing
 packaging, AMD, fresh-machine and 4K120 gates remain open.
 
-## Administrator usage dashboard â€” independent PR
+## Administrator usage dashboard — independent PR
 
 Replace the public home page with a single-administrator login and the approved
 usage dashboard. Use the existing administrator credential to issue bounded,
@@ -229,7 +229,7 @@ independent GPT-6.1-Sol high-reasoning review. Coordinate the deployment base wi
 the parallel friends-beta/fullscreen release before activation; do not overwrite
 its network-test/proxy changes or existing invitations.
 
-## 15. Stream-first native UI â€” design branch
+## 15. Stream-first native UI — design branch
 
 Implement the approved ImageGen concept on `feat/stream-first-ui`: charcoal
 surfaces, a compact sharing/member sidebar, and large 16:9 stream surfaces.
@@ -274,7 +274,7 @@ await stream unpublication and session departure, then allow window destruction.
 Keep a responsive closing screen; offer explicit forced exit after ten seconds if
 driver or network cleanup stalls. Repeated close requests must not skip cleanup.
 
-Accept with native-renderer captures at 1280Ã—720 and 960Ã—540, open stream menus,
+Accept with native-renderer captures at 1280×720 and 960×540, open stream menus,
 sharing, onboarding/error and focus states; native Clippy/tests and Node 24 checks;
 and independent technical/visual review. Synthetic UI captures establish layout
 only. Existing uncommitted media/packaging prerequisites and outstanding physical
@@ -284,7 +284,7 @@ hardware/network acceptance remain separate from this design branch.
 
 After the Windows experience meets the above gates, add macOS and Linux in separate PRs. Preserve the room, invitation, subscription and preview contracts; replace platform capture/audio/encoder adapters. No cross-platform promise until each backend is tested on its actual OS.
 
-## Administrator room directory â€” independent PR
+## Administrator room directory — independent PR
 
 Add a Rooms tab to the authenticated administrator dashboard. List persistent
 rooms in bounded pages and create a named room without admitting the administrator
@@ -297,7 +297,7 @@ mutation checks, restart persistence and invitation admission, bounded paginatio
 Node 24 checks, desktop/mobile browser workflows and a fresh independent review.
 Simpler native onboarding (app links or short-lived pairing) remains a proposal.
 
-## Portable browser invitations â€” independent PR
+## Portable browser invitations — independent PR
 
 Add optional per-user `freedomstream://` registration from Room options. Save a
 content-addressed launcher copy in Local AppData so moving/deleting the downloaded

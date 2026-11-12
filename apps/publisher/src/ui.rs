@@ -2106,11 +2106,7 @@ impl eframe::App for PublisherUi {
                             ui.separator();
                             ui.label(
                                 skin::strong(
-                                    format!(
-                                        "{} · {}",
-                                        tr("In room"),
-                                        state.participants.len() + 1
-                                    ),
+                                    format!("{} · {}", tr("In room"), state.participants.len() + 1),
                                     11.0,
                                 )
                                 .color(MUTED),

@@ -100,6 +100,7 @@ pub struct PublisherUi {
     source_id: String,
     encoder: String,
     quality: Settings,
+    custom_bitrate: bool,
     download_budget: Option<u64>,
     textures: HashMap<String, egui::TextureHandle>,
     focused: Option<String>,
@@ -192,6 +193,7 @@ impl PublisherUi {
             source_id: String::new(),
             encoder: String::new(),
             quality: Settings::default(),
+            custom_bitrate: false,
             download_budget: None,
             textures: HashMap::new(),
             focused: None,
@@ -1027,7 +1029,7 @@ impl PublisherUi {
                     })
                     .response
                     .labelled_by(label.id);
-                bitrate_controls(&mut columns[1], &mut self.quality);
+                bitrate_controls(&mut columns[1], &mut self.quality, &mut self.custom_bitrate);
             });
         });
         settings_divider(ui);
@@ -2492,10 +2494,7 @@ fn quality_controls(
     if let Some(source) = source {
         match settings.resolve(source, encoder.codec) {
             Ok(mode) if encoder.supports(mode) => {
-                ui.small(format!(
-                    "{}×{} · {} FPS · SDR",
-                    mode.width, mode.height, mode.fps
-                ));
+                ui.small(format!("{}×{} · {} FPS", mode.width, mode.height, mode.fps));
             }
             _ => {
                 ui.colored_label(
@@ -2507,7 +2506,19 @@ fn quality_controls(
     }
 }
 
-fn bitrate_controls(ui: &mut egui::Ui, settings: &mut Settings) {
+fn bitrate_controls(ui: &mut egui::Ui, settings: &mut Settings, custom: &mut bool) {
+    // Keep Custom selected while editing, even if its value matches a preset.
+    match settings.bitrate {
+        Bitrate::Auto => *custom = false,
+        Bitrate::Manual(bps)
+            if !quality::BITRATE_PRESETS
+                .iter()
+                .any(|mbps| bps == mbps * 1_000_000) =>
+        {
+            *custom = true
+        }
+        _ => {}
+    }
     let label = skin::help_label(
         ui,
         tr("Bitrate"),
@@ -2517,23 +2528,45 @@ fn bitrate_controls(ui: &mut egui::Ui, settings: &mut Settings) {
     );
     egui::ComboBox::from_id_salt("video-bitrate")
         .width(ui.available_width())
-        .selected_text(match settings.bitrate {
-            Bitrate::Auto => tr("Automatic").into(),
-            Bitrate::Manual(bps) => format!("{} Mbps", bps / 1_000_000),
+        .selected_text(if *custom {
+            tr("Custom").into()
+        } else {
+            match settings.bitrate {
+                Bitrate::Auto => tr("Automatic").into(),
+                Bitrate::Manual(bps) => format!("{} Mbps", bps / 1_000_000),
+            }
         })
         .show_ui(ui, |ui| {
-            ui.selectable_value(&mut settings.bitrate, Bitrate::Auto, tr("Automatic"));
+            if ui
+                .selectable_label(settings.bitrate == Bitrate::Auto, tr("Automatic"))
+                .clicked()
+            {
+                *custom = false;
+                settings.bitrate = Bitrate::Auto;
+            }
             for mbps in quality::BITRATE_PRESETS {
-                ui.selectable_value(
-                    &mut settings.bitrate,
-                    Bitrate::Manual(mbps * 1_000_000),
-                    format!("{mbps} Mbps"),
-                );
+                let bitrate = Bitrate::Manual(mbps * 1_000_000);
+                if ui
+                    .selectable_label(
+                        !*custom && settings.bitrate == bitrate,
+                        format!("{mbps} Mbps"),
+                    )
+                    .clicked()
+                {
+                    *custom = false;
+                    settings.bitrate = bitrate;
+                }
+            }
+            if ui.selectable_label(*custom, tr("Custom")).clicked() {
+                *custom = true;
+                if settings.bitrate == Bitrate::Auto {
+                    settings.bitrate = Bitrate::Manual(quality::BITRATE_PRESETS[0] * 1_000_000);
+                }
             }
         })
         .response
         .labelled_by(label.id);
-    if let Bitrate::Manual(bps) = settings.bitrate {
+    if *custom && let Bitrate::Manual(bps) = settings.bitrate {
         let label = ui.label(tr("Custom bitrate"));
         let mut mbps = bps / 1_000_000;
         if ui
@@ -3155,6 +3188,7 @@ mod tests {
             source_id: String::new(),
             encoder: String::new(),
             quality: Settings::default(),
+            custom_bitrate: false,
             download_budget: None,
             textures: HashMap::new(),
             focused: None,

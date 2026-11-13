@@ -70,6 +70,7 @@ pub fn qualify_planar_transitions(
         source_id: String::new(),
         encoder: String::new(),
         quality: Settings::default(),
+        custom_bitrate: false,
         download_budget: None,
         textures: HashMap::new(),
         focused: None,

@@ -8,7 +8,7 @@ use std::sync::{
 
 pub const MIN_BITRATE: u64 = 1_000_000;
 pub const MAX_BITRATE: u64 = 100_000_000;
-pub const BITRATE_PRESETS: [u64; 16] = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 25, 35, 50, 75, 100];
+pub const BITRATE_PRESETS: [u64; 11] = [6, 8, 10, 12, 16, 20, 25, 35, 50, 75, 100];
 pub const FRAME_RATES: [u32; 6] = [15, 24, 30, 60, 90, 120];
 const AUTO_CEILING: u64 = 35_000_000;
 

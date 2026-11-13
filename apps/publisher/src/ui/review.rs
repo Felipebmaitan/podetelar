@@ -53,7 +53,7 @@ pub fn run() -> Result<()> {
         let (controller, commands) = Controller::recording_for_test(state);
         inner.controller = controller;
         inner.advanced_open = mode == "settings";
-        if mode == "settings" { inner.quality.bitrate = Bitrate::Manual(25_000_000); }
+        if mode == "settings" { inner.quality.bitrate = Bitrate::Manual(25_000_000); inner.custom_bitrate = std::env::args().any(|arg| arg == "--custom"); }
         Ok(Box::new(Capture { inner, _commands: Box::new(commands), output, started: Instant::now(), requested: false, finished: Arc::new(std::sync::atomic::AtomicBool::new(false)) }))
     })).map_err(|error| anyhow::anyhow!("Native layout capture failed: {error}"))
 }

@@ -6,25 +6,27 @@
 
 Private screen and camera sharing for friends. Native Windows capture, server-forwarded media, a Discord-like room interface and selective watching are the intended product. Licensed under [MIT](LICENSE).
 
-**Current branch: native Windows rooms.** Sharing and watching move into the
-Windows app; the website keeps invitations, access management and downloads.
-Local NVIDIA synthetic checks pass native HEVC/H.264 decode, compatibility fallback,
-explicit A/V subscriptions, reconnects, higher-resolution previews and source-derived
-audio exclusion. The self-contained portable EXE launches without a terminal and
-opens without a saved server or nickname; each room invitation selects its backend. This is draft PR #10, stacked on portable
-PR #9, and requires the matching server update. AMD, physical 4K120, fresh-PC/offline
-startup, native TURN, A/V latency and real-game/group qualification remain open.
-See [verification](docs/verification/phase-11.md), [distribution](docs/distribution.md)
+**Windows x64 preview.** Screen/window sharing and watching run in the native app;
+the website provides invitations, access management and downloads. Sharing and
+Watch/Stop watching are explicit. Rooms adapt AV1 → HEVC → H.264 within the
+selected encoder preference and connected devices' capabilities. Native WebRTC
+audio is the default playback path, with per-stream volume/mute and output recovery.
+Each invitation selects its backend; the app does not restore a saved room,
+server or nickname. Current qualification uses NVIDIA hardware on the development
+PC. AMD, fresh-PC/offline startup, physical 4K120 and physical display/speaker
+synchronization retain their documented limitations.
+See [release notes](docs/releases/v0.1.1.md), [distribution](docs/distribution.md)
 and [quality](docs/quality.md).
 
 See the [phase plan](docs/implementation-plan.md), [domain glossary](CONTEXT.md) and [research](docs/research/design-notes.md). Phase 1 is the initial commit; subsequent phases are separate PRs, each requiring acceptance checks and a GPT-6.1-Sol review at high reasoning before merge.
 
 ## Windows downloads
 
-Use [PodeTelar Setup](https://github.com/Felipebmaitan/podetelar/releases/download/v0.1.0/PodeTelar-v0.1.0-Setup.exe)
-for a per-user installation with shortcuts and room links. The unsigned installer
-preview and the separate portable EXE are on the [release page](https://github.com/Felipebmaitan/podetelar/releases/tag/v0.1.0).
-Verify the published checksums. Automatic update delivery is not enabled yet.
+Use [PodeTelar Setup](https://github.com/Felipebmaitan/podetelar/releases/latest)
+for a per-user installation with shortcuts and room links. Public releases offer
+only Setup, its installer manifest and checksums. The installer is unsigned;
+verify the published checksums. Run the newer Setup to upgrade an existing
+installation. Automatic update delivery is not enabled yet.
 
 ## Local development
 

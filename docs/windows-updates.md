@@ -1,8 +1,8 @@
 # Installed Windows builds and update rollout
 
 The installed app supports an update badge, hover changelog, explicit download,
-progress/retry and Restart to update/Later. The v0.1.0 release offers an **unsigned
-installer preview** as a separate Setup download. No public update feed is enabled
+progress/retry and Restart to update/Later. Windows releases offer an **unsigned
+installer preview** as a Setup download. No public update feed is enabled
 in this preview. Public releases offer only Setup with its manifest and checksums.
 The portable executable remains an internal installer payload and qualification
 tool; do not publish it separately. See [installer qualification](verification/global-bot-installer.md).

@@ -2,8 +2,14 @@
 // It neither changes Docker/Windows settings nor deploys anything to the VPS.
 import { createHash, randomUUID } from "node:crypto";
 import { spawn, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { networkInterfaces } from "node:os";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
+import { networkInterfaces, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -14,19 +20,24 @@ if (
   throw new Error("Use Windows and Node 24 for the native room smoke test.");
 const root = resolve(import.meta.dirname, "..");
 process.chdir(root);
-const appPort = Number(process.env.FREEDOMSTREAM_SMOKE_APP_PORT ?? 3010);
-const sfuPort = Number(process.env.FREEDOMSTREAM_SMOKE_SFU_PORT ?? 17880);
+const soak = process.argv.includes("--soak");
+const appPort = Number(
+  process.env.FREEDOMSTREAM_SMOKE_APP_PORT ?? (soak ? 13010 : 3010),
+);
+const mediaPort = Number(
+  process.env.FREEDOMSTREAM_SMOKE_SFU_PORT ?? (soak ? 18880 : 17880),
+);
 if (
-  ![appPort, sfuPort].every(
+  ![appPort, mediaPort].every(
     (port) => Number.isInteger(port) && port >= 1024 && port <= 65533,
   ) ||
-  Math.abs(appPort - sfuPort) <= 2
+  Math.abs(appPort - mediaPort) <= 2
 )
   throw new Error("Choose distinct unprivileged native smoke port ranges.");
 const origin = `http://localhost:${appPort}`;
-const sfuOrigin = `http://127.0.0.1:${sfuPort}`;
+const mediaOrigin = `http://127.0.0.1:${mediaPort}`;
 const occupied = await Promise.all(
-  [`${origin}/api/health`, sfuOrigin].map(async (url) => {
+  [`${origin}/api/health`, mediaOrigin].map(async (url) => {
     try {
       await fetch(url, { signal: AbortSignal.timeout(1000) });
       return true;
@@ -109,11 +120,12 @@ const config = join(run, "livekit.yaml");
 writeFileSync(
   config,
   JSON.stringify({
-    port: sfuPort,
+    port: mediaPort,
+    room: { sync_streams: true },
     bind_addresses: ["127.0.0.1"],
     rtc: {
-      tcp_port: sfuPort + 1,
-      udp_port: sfuPort + 2,
+      tcp_port: mediaPort + 1,
+      udp_port: mediaPort + 2,
       node_ip: nodeIp,
       use_external_ip: false,
     },
@@ -144,7 +156,7 @@ const ready = async (url) => {
     await delay(250);
   }
   throw new Error(
-    "Isolated native smoke service did not start. Check the selected app/SFU ports are free.",
+    `Isolated native smoke did not start on app ${appPort}, SFU ${mediaPort}–${mediaPort + 2}.`,
   );
 };
 try {
@@ -153,14 +165,14 @@ try {
     ["--config", config],
     process.env,
   );
-  await ready(sfuOrigin);
+  await ready(mediaOrigin);
   start(process.execPath, ["apps/server/dist/main.js"], {
     ...process.env,
     PUBLIC_URL: origin,
     HOST: "127.0.0.1",
     PORT: String(appPort),
     DATABASE_PATH: join(run, "rooms.db"),
-    LIVEKIT_INTERNAL_URL: sfuOrigin,
+    LIVEKIT_INTERNAL_URL: mediaOrigin,
   });
   await ready(`${origin}/api/health`);
   const gst = resolve(
@@ -170,8 +182,12 @@ try {
     "node_modules/@playwright/test/cli.js",
     "test",
     "-c",
-    "playwright.native.config.ts",
-    ...process.argv.slice(2),
+    process.argv.includes("--soak")
+      ? "playwright.soak.config.ts"
+      : "playwright.native.config.ts",
+    ...process.argv.slice(2).filter((arg) => arg !== "--soak"),
+    "--output",
+    mkdtempSync(join(tmpdir(), "PodeTelar-native-")),
   ];
   const tests = spawn(process.execPath, args, {
     cwd: root,

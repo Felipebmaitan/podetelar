@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import { patchNativeOutput } from "./patch-native-output.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const base = join(root, ".local/native-sdk");
@@ -34,6 +35,18 @@ const treeHash = (directory) => {
   return digest.digest("hex");
 };
 const destination = join(base, "webrtc-sys");
+const outputGuard = join(root, "apps/publisher/decoder/native_output_guard.h");
+const outputMixer = join(root, "apps/publisher/decoder/native_output_mixer.h");
+if (
+  hash(readFileSync(outputMixer, "utf8").replaceAll("\r\n", "\n")) !==
+  pin.outputMixerSha256
+)
+  throw new Error("Native output mixer differs from its pin.");
+if (
+  hash(readFileSync(outputGuard, "utf8").replaceAll("\r\n", "\n")) !==
+  pin.outputGuardSha256
+)
+  throw new Error("Native output guard differs from its pin.");
 const patch = readFileSync(
   join(root, "apps/publisher/decoder/freedomstream_decoder.h"),
   "utf8",
@@ -52,6 +65,7 @@ const readback = readFileSync(
 ).replaceAll("\r\n", "\n");
 if (hash(readback) !== pin.readbackSha256)
   throw new Error("Bounded readback differs from its pin.");
+await import("./setup-native-audio.mjs");
 if (existsSync(destination)) {
   if (treeHash(destination) !== pin.treeSha256)
     throw new Error("Generated decoder SDK differs from its pin.");
@@ -151,6 +165,7 @@ if (existsSync(destination)) {
   writeFileSync(join(source, "src/freedomstream_decoder.h"), patch);
   writeFileSync(join(source, "src/deferred_i420.h"), deferred);
   writeFileSync(join(source, "src/bounded_readback.h"), readback);
+  patchNativeOutput(source, outputGuard);
   const actual = treeHash(source);
   if (actual !== pin.treeSha256)
     throw new Error(`Decoder patched tree mismatch: ${actual}`);

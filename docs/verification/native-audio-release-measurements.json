@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "recorded": "2026-11-13",
+  "platform": "Windows / NVIDIA RTX 5080",
+  "method": "Actual window capture, encoding, isolated local LiveKit SFU, native decoding/output, video mailbox and process-loopback event detection. Source 640x360@60, manual 3 Mbps, simultaneous independent codec rooms.",
+  "sourceMarkers": "Deterministic nonrepeating intervals 1.1-2.3 seconds; equal 100-ms white/1kHz markers; mutual nearest pairing within 400ms; both timelines retained.",
+  "soakCommit": "e4a26efcd34020af871ccbd852825e37cde0b15e",
+  "soakPublisherSha256": "3a26fa0dc8bc0d404ef847be8b9a0f6f8a53ad72d28a40b2e41e60b31d74d104",
+  "mergedArtifact": {
+    "filename": "freedomstream-windows-x64-0.1.0-32d74a37f572.exe",
+    "version": "0.1.0",
+    "commit": "32d74a37f572e76d9f9d8fead3870e8ee3fc8fc6",
+    "sha256": "1a99921190a67dd0ec91e4bf01238944c2f2bfffd8bf1fa5fa656fbc3d0469ae",
+    "size": 82653979,
+    "publisherSha256": "c5a78344b96b4f7934e58eada1b983c6ad82197f490bd7e64c8b4e6521f64789",
+    "installerBuild": "0.1.0-preview.20261115",
+    "installerSha256": "413a2c10ee3106e0216ff890c1fe6813caadc54e1d71b1749665381f4dc27e46",
+    "published": false,
+    "installed": false
+  },
+  "mediaSourceUnchangedAfterMerge": [
+    "native_output.rs",
+    "playback.rs",
+    "av_qualification.rs",
+    "decoder adapters/pins"
+  ],
+  "runs": [
+    {
+      "codec": "h264",
+      "seconds": 1800,
+      "accepted": true,
+      "gates": {
+        "observerAvailable": true,
+        "videoMarkers": true,
+        "audioMarkers": true,
+        "countAgreement": true,
+        "pairing": true,
+        "drift": true,
+        "endingVideo": true,
+        "endingAudio": true,
+        "samples": true,
+        "rendererStable": true,
+        "progress": true,
+        "teardown": true
+      },
+      "videoEvents": 1057,
+      "audioEvents": 1056,
+      "pairedEvents": 1056,
+      "startMedianMs": 89.002,
+      "endMedianMs": 69.8197,
+      "driftMs": -19.182299999999998,
+      "overallMedianMs": 69.0027,
+      "loopbackCaptureAgeMedianMs": 12.495,
+      "outputStarts": [1],
+      "maxOutputFailures": 0,
+      "outputDelayMs": [42],
+      "recordingEnabled": false,
+      "finalVideoTimeSeconds": 1799.4502409,
+      "finalAudioTimeSeconds": 1799.519048
+    },
+    {
+      "codec": "av1",
+      "seconds": 1800,
+      "accepted": true,
+      "gates": {
+        "observerAvailable": true,
+        "videoMarkers": true,
+        "audioMarkers": true,
+        "countAgreement": true,
+        "pairing": true,
+        "drift": true,
+        "endingVideo": true,
+        "endingAudio": true,
+        "samples": true,
+        "rendererStable": true,
+        "progress": true,
+        "teardown": true
+      },
+      "videoEvents": 1056,
+      "audioEvents": 1056,
+      "pairedEvents": 1055,
+      "startMedianMs": 77.2157,
+      "endMedianMs": 82.60770000000001,
+      "driftMs": 5.39200000000001,
+      "overallMedianMs": 53.8174,
+      "loopbackCaptureAgeMedianMs": 18.2409,
+      "outputStarts": [1],
+      "maxOutputFailures": 0,
+      "outputDelayMs": [42],
+      "recordingEnabled": false,
+      "finalVideoTimeSeconds": 1799.9618125,
+      "finalAudioTimeSeconds": 1800.0451882
+    }
+  ],
+  "limits": {
+    "physicalDisplaySpeakerOffset": "unavailable",
+    "physical15msLead45msLagCompliance": "unverified",
+    "productionVpsWan": "unverified",
+    "physicalCableRemoval": "not exercised; controlled renderer suspension and real alternate endpoint selection exercised"
+  },
+  "initialRun": {
+    "acceptedForTiming": false,
+    "reason": "Repeating source, unequal video/audio marker lengths, unequal event counts and no retained audio timeline.",
+    "h264": {
+      "videoEvents": 1095,
+      "audioEvents": 1080,
+      "driftMs": 12.6552
+    },
+    "av1": {
+      "videoEvents": 1096,
+      "audioEvents": 1080,
+      "driftMs": -4.5488
+    }
+  }
+}

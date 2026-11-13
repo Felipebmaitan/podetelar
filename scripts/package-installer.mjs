@@ -5,6 +5,10 @@ import { installerInput } from "./installer-input.mjs";
 import { installerNotices } from "./installer-notices.mjs";
 
 const root = resolve(import.meta.dirname, "..");
+const launcherTarget = resolve(
+  root,
+  process.env.CARGO_TARGET_DIR ?? "apps/installed-launcher/target",
+);
 const run = (file, args, options = {}) =>
   execFileSync(file, args, { cwd: root, windowsHide: true, ...options });
 if (process.platform !== "win32")
@@ -54,11 +58,7 @@ run(
   },
 );
 copyFileSync(
-  join(
-    root,
-    "apps/installed-launcher/target/x86_64-pc-windows-msvc/release",
-    config.mainExe,
-  ),
+  join(launcherTarget, "x86_64-pc-windows-msvc/release", config.mainExe),
   join(stage, config.mainExe),
 );
 copyFileSync(

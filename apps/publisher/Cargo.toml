@@ -19,6 +19,7 @@ gstreamer = { version = "=0.25.4", features = ["v1_28"] }
 gstreamer-app = { version = "=0.25.2", features = ["v1_28"] }
 gstreamer-video = { version = "=0.25.4", features = ["v1_28"] }
 livekit = { version = "=0.10.1", features = ["rustls-tls-native-roots"] }
+webrtc-sys = "=0.3.53"
 reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "rustls-tls-native-roots", "stream"] }
 regex = "1.13"
 log = "0.4"

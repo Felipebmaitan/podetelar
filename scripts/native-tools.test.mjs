@@ -76,7 +76,57 @@ const decoderHeaders = [
   "freedomstream_decoder.h",
   "deferred_i420.h",
   "bounded_readback.h",
+  "native_output_guard.h",
+  "native_output_mixer.h",
 ];
+
+for (const state of ["archive", "source"]) {
+  test(`Native audio adapter rejects tampered ${state} before reuse`, () => {
+    const root = mkdtempSync(join(tmpdir(), "FreedomStream native audio "));
+    try {
+      mkdirSync(join(root, "scripts"));
+      mkdirSync(join(root, "deploy"));
+      copyFileSync(
+        new URL("./setup-native-audio.mjs", import.meta.url),
+        join(root, "scripts/setup-native-audio.mjs"),
+      );
+      copyFileSync(
+        new URL("../deploy/native-audio.json", import.meta.url),
+        join(root, "deploy/native-audio.json"),
+      );
+      if (state === "archive") {
+        mkdirSync(join(root, ".local/downloads"), { recursive: true });
+        writeFileSync(
+          join(root, ".local/downloads/libwebrtc-0.4.0.crate"),
+          "Changed archive",
+        );
+      } else {
+        mkdirSync(join(root, ".local/native-sdk/libwebrtc"), {
+          recursive: true,
+        });
+        writeFileSync(
+          join(root, ".local/native-sdk/libwebrtc/tampered.rs"),
+          "Changed source",
+        );
+      }
+      const result = spawnSync(
+        process.execPath,
+        [join(root, "scripts/setup-native-audio.mjs")],
+        { encoding: "utf8", windowsHide: true, timeout: 15_000 },
+      );
+      assert.ifError(result.error);
+      assert.notEqual(result.status, 0);
+      assert.match(
+        result.stderr,
+        state === "archive"
+          ? /Audio SDK archive checksum mismatch/
+          : /Generated audio SDK differs from its pin/,
+      );
+    } finally {
+      removeFixture(root);
+    }
+  });
+}
 for (const tampered of decoderHeaders) {
   test(`Native decoder setup rejects changed ${tampered} before SDK reuse`, () => {
     const root = mkdtempSync(join(tmpdir(), "FreedomStream native decoder "));
@@ -90,6 +140,10 @@ for (const tampered of decoderHeaders) {
       copyFileSync(
         new URL("./setup-native-decoder.mjs", import.meta.url),
         join(root, "scripts/setup-native-decoder.mjs"),
+      );
+      copyFileSync(
+        new URL("./patch-native-output.mjs", import.meta.url),
+        join(root, "scripts/patch-native-output.mjs"),
       );
       copyFileSync(
         new URL("../deploy/native-decoder.json", import.meta.url),
@@ -118,7 +172,11 @@ for (const tampered of decoderHeaders) {
           ? /Decoder adapter differs from its pin/
           : tampered === "deferred_i420.h"
             ? /Deferred I420 buffer differs from its pin/
-            : /Bounded readback differs from its pin/,
+            : tampered === "bounded_readback.h"
+              ? /Bounded readback differs from its pin/
+              : tampered === "native_output_guard.h"
+                ? /Native output guard differs from its pin/
+                : /Native output mixer differs from its pin/,
       );
     } finally {
       removeFixture(root);

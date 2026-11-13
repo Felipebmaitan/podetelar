@@ -1,4 +1,5 @@
 {
+  "Audio output is unavailable. Retrying automatically.": "A saída de áudio está indisponível. Tentando novamente automaticamente.",
   "This invitation selects the server. Your name is kept only while the app is open.": "Este convite seleciona o servidor. Seu nome é mantido apenas enquanto o aplicativo está aberto.",
   "Open a room link from /stream or /telar in Discord, or paste an invitation. Nothing is restored from a previous launch.": "Abra o link de uma sala criada com /stream ou /telar no Discord, ou cole um convite. Nada é restaurado de uma execução anterior.",
   "Your private room": "Sua sala privada",

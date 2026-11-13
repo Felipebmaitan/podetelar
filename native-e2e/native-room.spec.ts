@@ -1,7 +1,11 @@
 import { writeFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { createTestRoom } from "../scripts/test-room.js";
-import { nativeRequest, toneFixtures } from "./fixtures.js";
+import {
+  backgroundAudioExclusions,
+  nativeRequest,
+  toneFixtures,
+} from "./fixtures.js";
 
 type Stream = {
   codec: string;
@@ -160,6 +164,7 @@ test("native playback receives stereo game audio while rejecting Discord", async
   const created = await createTestRoom(request, baseURL!, "Native stereo");
   const { invitationUrl } = await created.json();
   const tones = toneFixtures(testInfo.outputPath("tones"));
+  const exclusions = await backgroundAudioExclusions();
   const sender = nativeRequest("--publish-fixture", {
     invitationUrl,
     displayName: "Publisher",
@@ -167,6 +172,7 @@ test("native playback receives stereo game audio while rejecting Discord", async
     seconds: 18,
     quality,
     audio: { mode: "desktop" },
+    exclusions,
   });
   await sender.reported;
   const receiver = nativeRequest("--watch-fixture", {

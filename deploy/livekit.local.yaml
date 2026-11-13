@@ -1,4 +1,6 @@
 port: 7880
+room:
+  sync_streams: true
 prometheus:
   port: 6789
 bind_addresses:

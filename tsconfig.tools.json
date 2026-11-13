@@ -11,6 +11,8 @@
     "e2e",
     "native-e2e",
     "playwright.config.ts",
-    "playwright.native.config.ts"
+    "playwright.native.config.ts",
+    "native-soak",
+    "playwright.soak.config.ts"
   ]
 }

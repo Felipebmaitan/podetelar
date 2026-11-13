@@ -34,7 +34,8 @@
     "native:qualify": "node scripts/native.mjs qualify",
     "native:run": "node scripts/native.mjs run",
     "native:room-smoke": "node --env-file=.env scripts/native-room-smoke.mjs",
-    "native:e2e": "node --env-file=.env node_modules/@playwright/test/cli.js test -c playwright.native.config.ts"
+    "native:e2e": "node --env-file=.env node_modules/@playwright/test/cli.js test -c playwright.native.config.ts",
+    "native:soak": "node --env-file=.env scripts/native-room-smoke.mjs --soak"
   },
   "devDependencies": {
     "@playwright/test": "1.65.0",

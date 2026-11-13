@@ -131,6 +131,39 @@ if (existsSync(destination)) {
   if (hash(patched) !== pin.patchedSourceSha256)
     throw new Error("The native SDK patch checksum did not match the pin.");
   writeFileSync(target, patched);
+  // Read-only association used by opt-in local qualification. Never log IDs.
+  for (const [file, kind] of [
+    ["remote_audio_track.rs", "RtcAudioTrack"],
+    ["remote_video_track.rs", "RtcVideoTrack"],
+  ]) {
+    const path = join(source, "src/room/track", file);
+    const original = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+    const marker = `    pub fn rtc_track(&self) -> ${kind} {`;
+    if (original.split(marker).length !== 2)
+      throw new Error("Native sync association marker changed.");
+    const audioGeneration =
+      kind === "RtcAudioTrack"
+        ? `    /// Native receiver generation, never resolved from a reused SSRC here.
+    pub fn native_playback_generation(&self) -> u64 {
+        self.transceiver().map_or(0, |t| t.playback_generation())
+    }
+
+`
+        : "";
+    writeFileSync(
+      path,
+      original.replace(
+        marker,
+        audioGeneration +
+          `    /// PodeTelar qualification adapter: negotiated receiver stream associations.
+    pub fn sync_stream_ids(&self) -> Vec<String> {
+        self.transceiver().map_or_else(Vec::new, |t| t.receiver().stream_ids())
+    }
+
+${marker}`,
+      ),
+    );
+  }
   const actualTree = treeHash(source);
   if (actualTree !== pin.treeSha256)
     throw new Error(

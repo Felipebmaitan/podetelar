@@ -1346,10 +1346,33 @@ impl PublisherUi {
             } else {
                 Some(tile.id.clone())
             };
+            if self.fullscreen.is_some() {
+                self.set_fullscreen(ui.ctx(), None);
+            }
             ui.close();
         }
-        if skin::menu_row(ui, tr("Full screen"), Some(Icon::Fullscreen), "F11", false).clicked() {
-            self.set_fullscreen(ui.ctx(), Some(tile.id.clone()));
+        let fullscreen = self.fullscreen.as_ref() == Some(&tile.id);
+        if skin::menu_row(
+            ui,
+            tr(if fullscreen {
+                "Exit full screen"
+            } else {
+                "Full screen"
+            }),
+            Some(Icon::Fullscreen),
+            "F11",
+            false,
+        )
+        .clicked()
+        {
+            self.set_fullscreen(
+                ui.ctx(),
+                if fullscreen {
+                    None
+                } else {
+                    Some(tile.id.clone())
+                },
+            );
             ui.close();
         }
         if skin::menu_row(ui, tr("Advanced information"), None, "", false).clicked() {
@@ -1366,6 +1389,9 @@ impl PublisherUi {
                 enabled: false,
             });
             self.textures.remove(&tile.id);
+            if fullscreen {
+                self.set_fullscreen(ui.ctx(), None);
+            }
             ui.close();
         }
     }
@@ -1382,6 +1408,7 @@ impl PublisherUi {
             self.fullscreen_controls_until = Instant::now() + Duration::from_secs(3);
         }
         let controls_visible = Instant::now() < self.fullscreen_controls_until;
+        let mut menu_open = false;
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(egui::Color32::BLACK))
             .show(root, |ui| {
@@ -1408,16 +1435,19 @@ impl PublisherUi {
                         egui::Color32::WHITE,
                     );
                 }
-                if ui
-                    .interact(
-                        rect,
-                        ui.scope_id().with("fullscreen-video"),
-                        egui::Sense::click(),
-                    )
-                    .double_clicked()
-                {
+                let response = ui.interact(
+                    rect,
+                    ui.scope_id().with("fullscreen-video"),
+                    egui::Sense::click(),
+                );
+                if response.double_clicked() {
                     self.set_fullscreen(&ctx, None);
                 }
+                menu_open = egui::Popup::context_menu(&response)
+                    .frame(skin::menu_frame())
+                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                    .show(|ui| self.watch_menu(ui, tile))
+                    .is_some();
                 if controls_visible {
                     if ui.input(|i| i.pointer.hover_pos().is_some_and(|pos| rect.contains(pos))) {
                         Self::stream_metrics(ui, rect, tile);
@@ -1468,7 +1498,7 @@ impl PublisherUi {
                     );
                 }
             });
-        if !controls_visible && self.fullscreen.is_some() {
+        if !controls_visible && !menu_open && self.fullscreen.is_some() {
             ctx.set_cursor_icon(egui::CursorIcon::None);
         }
     }
@@ -3244,6 +3274,116 @@ mod tests {
         let replacement = state.self_preview.lock().unwrap().clone();
         state.self_preview = std::sync::Arc::new(std::sync::Mutex::new(replacement));
         assert!(draw(&state));
+    }
+
+    #[test]
+    fn fullscreen_right_click_menu_survives_idle_and_applies_actions() {
+        for action in [
+            "Mute",
+            "Exit full screen",
+            "Focus stream",
+            "Stop watching",
+            "Advanced information",
+        ] {
+            let mut app = app();
+            let ctx = egui::Context::default();
+            configure_theme(&ctx);
+            let tile = Tile {
+                id: "fullscreen-menu-test".into(),
+                name: "Friend".into(),
+                codec: "video/h264".into(),
+                watching: true,
+                picture: std::sync::Arc::default(),
+                presentation: std::sync::Arc::default(),
+                frames: std::sync::Arc::default(),
+                received_bps: std::sync::Arc::default(),
+                volume: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(75)),
+                audio: std::sync::Arc::default(),
+                status: String::new(),
+            };
+            app.set_fullscreen(&ctx, Some(tile.id.clone()));
+            let draw = |app: &mut PublisherUi, events: Vec<egui::Event>| {
+                let mut output = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(800.0, 600.0),
+                        )),
+                        events,
+                        ..Default::default()
+                    },
+                    |root| app.fullscreen_view(root, &tile),
+                );
+                output.textures_delta.clear();
+                output
+            };
+            let click = |pos, button, pressed| egui::Event::PointerButton {
+                pos,
+                button,
+                pressed,
+                modifiers: Default::default(),
+            };
+            // Open from the video, including when the HUD has already faded.
+            draw(&mut app, vec![]);
+            app.fullscreen_controls_until = Instant::now() - Duration::from_secs(1);
+            let idle = draw(&mut app, vec![]);
+            assert_eq!(idle.platform_output.cursor_icon, egui::CursorIcon::None);
+            let position = egui::pos2(400.0, 180.0);
+            for pressed in [true, false] {
+                draw(
+                    &mut app,
+                    vec![
+                        egui::Event::PointerMoved(position),
+                        click(position, egui::PointerButton::Secondary, pressed),
+                    ],
+                );
+            }
+            // egui measures the popup on its first pass; let it settle.
+            draw(&mut app, vec![]);
+            app.fullscreen_controls_until = Instant::now() - Duration::from_secs(1);
+            let output = draw(&mut app, vec![]);
+            assert!(egui::Popup::is_any_open(&ctx));
+            assert_ne!(output.platform_output.cursor_icon, egui::CursorIcon::None);
+            let point = output
+                .shapes
+                .iter()
+                .find_map(|shape| {
+                    if let egui::epaint::Shape::Text(text) = &shape.shape {
+                        (text.galley.text() == tr(action))
+                            .then_some(text.pos + egui::vec2(8.0, 6.0))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| panic!("Missing fullscreen menu action: {action}"));
+            for pressed in [true, false] {
+                draw(
+                    &mut app,
+                    vec![
+                        egui::Event::PointerMoved(point),
+                        click(point, egui::PointerButton::Primary, pressed),
+                    ],
+                );
+            }
+            match action {
+                "Mute" => {
+                    assert_eq!(tile.volume.load(Ordering::Relaxed), 0);
+                    assert_eq!(app.remembered_volume.get(&tile.id), Some(&75));
+                    assert!(egui::Popup::is_any_open(&ctx));
+                    assert!(app.fullscreen.is_some());
+                }
+                "Advanced information" => {
+                    assert!(tile.presentation.diagnostics.open.load(Ordering::Relaxed));
+                    assert!(app.fullscreen.is_some());
+                }
+                _ => {
+                    assert!(app.fullscreen.is_none(), "{action} must exit fullscreen");
+                    if action == "Focus stream" {
+                        assert_eq!(app.focused.as_ref(), Some(&tile.id));
+                    }
+                }
+            }
+        }
     }
 
     #[test]

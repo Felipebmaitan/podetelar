@@ -3,8 +3,9 @@
 The installed app supports an update badge, hover changelog, explicit download,
 progress/retry and Restart to update/Later. The v0.1.0 release offers an **unsigned
 installer preview** as a separate Setup download. No public update feed is enabled
-in this preview. Standalone portable downloads remain available separately and
-have no automatic updater. See [installer qualification](verification/global-bot-installer.md).
+in this preview. Public releases offer only Setup with its manifest and checksums.
+The portable executable remains an internal installer payload and qualification
+tool; do not publish it separately. See [installer qualification](verification/global-bot-installer.md).
 See [upstream research](research/windows-updates.md) for T3 Code's implementation,
 Velopack licensing, runtime constraints and source citations.
 
@@ -54,7 +55,7 @@ targets the fixed `current/freedomstream-installed.exe` with a quoted
 `--browser-link "%1"` argument; it does not invoke Update.exe with the ticket.
 Velopack install/update hooks maintain registration and uninstall removes only
 the matching installation's command. Explicit installation can migrate the old
-portable handler. Unrelated handlers are preserved. Standalone portable downloads
+portable handler. Unrelated handlers are preserved. Legacy standalone builds
 retain their opt-in link registration; installed users no longer enable or refresh
 a content-addressed launcher copy from Room options.
 

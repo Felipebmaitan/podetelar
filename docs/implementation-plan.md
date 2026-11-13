@@ -1,5 +1,20 @@
 # Implementation phases
 
+## Fullscreen stream menu and installer-only releases — corrective PR
+
+Open the existing viewing menu on right-click anywhere in the fullscreen video.
+Preserve audio settings, diagnostics and explicit subscriptions; keep the cursor
+usable while the menu is open after HUD inactivity. Exit fullscreen when choosing
+Exit full screen, Focus stream/Back to grid or Stop watching. Verify egui
+pointer/menu behavior, native checks and a fresh GPT-6.1-Sol high review.
+
+Public GitHub releases now offer only Setup, its installer manifest and checksums.
+Remove the standalone EXE and its release manifest from the existing v0.1.0
+release, update its notes/checksums, and retain the installer bytes and tag.
+Do not make a new release for this correction. The portable payload stays an
+internal installer input and qualification tool. This supersedes earlier plans
+to offer a standalone download alongside Setup.
+
 ## Installed Windows distribution and update rollout — separate PR
 
 Add an unsigned preview installer using a pinned native Rust Velopack bootstrap

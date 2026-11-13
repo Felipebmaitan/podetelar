@@ -2,15 +2,17 @@
 
 The v0.1.0 GitHub release provides **PodeTelar-v0.1.0-Setup.exe**, an unsigned
 per-user installer preview with shortcuts, an uninstall entry and managed room
-links. Portable users may continue using the separate portable EXE. Automatic
+links. Public releases offer only the installer, its manifest and checksums;
+do not upload a standalone EXE or a portable release manifest. Keep the portable
+payload as an internal installer build input and maintainer qualification tool.
+Existing standalone users can migrate by running Setup. Automatic
 update delivery is not enabled in this first installer preview. See
 [installer and update rollout](windows-updates.md) and its
 [actual lifecycle qualification](verification/global-bot-installer.md).
 
-Download the **portable Windows app** from an admitted room and open the EXE.
-Paste the private room invitation, enter your name and join. No installation,
-PowerShell, elevation, shared runtime installation or first-launch dependency
-transfer is required. The executable contains the publisher, its curated media
+Download **PodeTelar Setup** from the GitHub release and run it for a per-user
+installation. Then open a room invitation, enter your name and join. The installer
+contains the publisher, its curated media
 runtime, app-local Visual C++ DLLs, notices and corresponding library sources.
 Windows 11 and a current NVIDIA/AMD driver are recommended. Process-loopback audio
 requires Windows build 20348 or newer; publishing requires a hardware encoder.
@@ -42,7 +44,7 @@ prompt again, as can different network profiles or administrator policy. The app
 does not create firewall rules, request elevation or disable firewall protection.
 See [Microsoft's firewall rule behavior](https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/rules).
 
-## Portable behavior
+## Internal portable payload and legacy standalone builds
 
 First launch extracts into `%LOCALAPPDATA%\FreedomStreamPortable\<payload-sha256>`.
 Concurrent first launches serialize extraction; a cache appears only after complete

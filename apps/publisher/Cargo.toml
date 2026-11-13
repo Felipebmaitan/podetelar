@@ -8,6 +8,7 @@ publish = false
 
 [features]
 performance-experiments = []
+ui-review = []
 
 [dependencies]
 image = { version = "=0.25.10", default-features = false, features = ["jpeg"] }
@@ -36,3 +37,7 @@ windows = { version = "0.62", features = ["System_Profile", "Storage_Streams", "
 
 [build-dependencies]
 winresource = "=0.1.34"
+
+[[example]]
+name = "ui-review"
+required-features = ["ui-review"]

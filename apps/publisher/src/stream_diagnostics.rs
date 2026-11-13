@@ -322,60 +322,178 @@ pub async fn viewer(
 }
 
 pub fn panel(ctx: &eframe::egui::Context, tile: &crate::playback::Tile) {
-    use crate::locale::tr;
+    use crate::{locale::tr, ui_style as skin};
+    use eframe::egui;
     let state = &tile.presentation.diagnostics;
     let mut open = state.open.load(Ordering::Relaxed) && tile.watching;
     if !open {
         return;
     }
-    eframe::egui::Window::new(tr("Advanced information")).id(eframe::egui::Id::unique(("stats", &tile.id))).open(&mut open).default_width(490.0).max_height(620.0).vscroll(true).show(ctx, |ui| {
-        ui.label(&tile.name);
-        ui.label(tr("Local window: 3 s; sender window and age below. Clocks are independent."));
-        if let Ok(rates) = state.rates.lock() {
-            if let Some((decoded, submitted, overwritten)) = *rates {
-                ui.label(format!("{}: {decoded:.1} / {submitted:.1} FPS; {}: {overwritten:.1}/s", tr("Decoded output / UI texture submissions"), tr("Presentation overwrites")));
-            } else { ui.label(tr("Waiting for a complete sample window…")); }
-        }
-        ui.label(tr("UI submissions are not measured screen refresh. Physical presentation FPS unavailable."));
-        ui.label(format!("{}: {} × {}; {}: {:.2} Mbps; {}", tr("Decoder output (may include padding)"), tile.presentation.width.load(Ordering::Relaxed), tile.presentation.height.load(Ordering::Relaxed), tr("Received video payload"), tile.received_bps.load(Ordering::Relaxed) as f64/1e6, tile.codec));
-        if let Ok(viewport) = tile.presentation.viewport.lock() && let Some((w,h)) = *viewport {
-            let width = tile.presentation.width.load(Ordering::Relaxed);
-            let scale = if width>0 { format!("{:.3}×", w/width as f32) } else { tr("Unavailable").into() };
-            ui.label(format!("{}: {w:.0} × {h:.0} px; {}: {scale}",tr("Rendered viewport"),tr("Scale")));
-        }
-        if state.rtc_at.lock().is_ok_and(|time| time.is_some_and(|t|t.elapsed()<Duration::from_secs(7))) && let Ok(rtc) = state.rtc.lock() { for (label,value) in rtc.iter() { ui.label(format!("{}: {value}",tr(label))); } }
-        ui.label(tr("SDK counters: omitted zero/default fields are unavailable or no reported events."));
-        ui.separator();
-        let sender = state.sender.lock().ok();
-        if let Some(Some((received, value))) = sender.as_deref() {
-            let age = value["age_ms"].as_u64().map(|age| age + received.elapsed().as_millis() as u64);
-            ui.label(format!("{}: {} ms", tr("Sender sample age"), age.map(|a|a.to_string()).unwrap_or_else(||tr("Unavailable").into())));
-            if value["stale"].as_bool().unwrap_or(true) || age.is_none_or(|a|a>7000) { ui.label(tr("Sender statistics unavailable or stale")); }
-            else {
-                let sample = &value["sample"];
-                ui.label(format!("{}: {} ms; #{}; {} / {}", tr("Sender window"), sample["window_ms"], sample["sequence"], sample["codec"].as_str().unwrap_or("?"), sample["encoder"].as_str().unwrap_or("?")));
-                for (key, label, divisor, unit) in [
-                    ("encoded_window_ms", "Encoder counter window", 1.0, "ms"), ("capture_queue_frames", "Capture queue", 1.0, "frames"), ("encoder_queue_frames", "Encoder input queue", 1.0, "frames"), ("capture_queue_overruns", "Capture queue overruns", 1.0, "events/window"),
-                    ("requested_bps", "Requested bitrate", 1e6, "Mbps"), ("effective_bps", "Effective encoder target", 1e6, "Mbps"), ("encoded_bps", "Encoded payload", 1e6, "Mbps"), ("sent_bps", "Sent video payload", 1e6, "Mbps"), ("upload_cap_bps", "Upload cap", 1e6, "Mbps"), ("watcher_cap_bps", "Watcher cap", 1e6, "Mbps"), ("capture_fps", "Capture output FPS", 1.0, "FPS"),
-                    ("encoder_input_fps", "Encoder input FPS", 1.0, "FPS"),
-                    ("congestion_bps", "Congestion estimate", 1e6, "Mbps"),
-                    ("requested_fps", "Requested FPS", 1.0, "FPS"), ("encoded_fps", "Encoded FPS", 1.0, "FPS"), ("accepted_fps", "SDK accepted FPS", 1.0, "FPS"), ("sent_fps", "Sent FPS", 1.0, "FPS"), ("handoff_rejections", "Handoff skips or rejections", 1.0, "frames"), ("encoder_reconfigurations", "Encoder target changes", 1.0, "events"), ("rtt_ms", "Transport RTT (not end-to-end)", 1.0, "ms")
-                ] {
-                    let metric = sample["metrics"][key].as_f64().map(|n|format!("{:.2} {unit}",n/divisor)).unwrap_or_else(||tr("Unavailable").into());
-                    ui.label(format!("{}: {metric}", tr(label)));
-                }
-                ui.label(format!("{}: {} × {}; {}: {} × {}",tr("Source"),sample["metrics"]["source_width"],sample["metrics"]["source_height"],tr("Encoder input dimensions"),sample["metrics"]["encoded_width"],sample["metrics"]["encoded_height"]));
-                let requested = sample["metrics"]["requested_bps"].as_f64();
-                for (key,label) in [("watcher_cap_bps","Watcher cap"),("upload_cap_bps","Upload cap"),("congestion_bps","Congestion estimate")] {
-                    if let (Some(requested),Some(cap)) = (requested,sample["metrics"][key].as_f64()) && cap < requested {
-                        ui.label(format!("{}: {}",tr("Limiting input"),tr(label)));
-                    }
-                }
-                ui.label(tr("Caps explain configured limits; congestion and encoder ramp may also lower the target."));
+    egui::Window::new(tr("Advanced information"))
+        .id(egui::Id::unique(("stats", &tile.id)))
+        .open(&mut open).default_width(560.0)
+        .default_height((ctx.viewport_rect().height() - 100.0).clamp(260.0, 620.0))
+        .max_height((ctx.viewport_rect().height() - 80.0).clamp(260.0, 640.0))
+        .default_pos(eframe::egui::pos2(((ctx.viewport_rect().width() - 580.0) / 2.0).max(8.0), 32.0))
+        .vscroll(true)
+        .show(ctx, |ui| {
+            ui.spacing_mut().item_spacing.y = 8.0;
+            ui.label(skin::strong(&tile.name, 18.0));
+            ui.label(egui::RichText::new(tr("Live measurements · refresh every 3 seconds")).size(12.0).color(skin::SECONDARY));
+            section(ui, "Reception");
+            metric(ui, "Codec", &tile.codec);
+            metric(ui, "Received video payload", &format!("{:.2} Mbps", tile.received_bps.load(Ordering::Relaxed) as f64 / 1e6));
+            metric(ui, "Decoder output (may include padding)", &format!("{} × {}", tile.presentation.width.load(Ordering::Relaxed), tile.presentation.height.load(Ordering::Relaxed)));
+            if let Ok(rates) = state.rates.lock() {
+                if let Some((decoded, _, _)) = *rates {
+                    metric(ui, "Decoded output", &format!("{decoded:.1} FPS"));
+                } else { note(ui, "Waiting for a complete sample window…"); }
             }
-        } else { ui.label(tr("Sender statistics unavailable or stale")); }
-        ui.separator();
-        ui.label(tr("Unavailable: capture drops, internal encoder timing/overload, visible crop, unrecognized decoder, render queue and physical end-to-end latency."));
-    });
+            egui::CollapsingHeader::new(tr("Playback details")).show(ui, |ui| {
+                if let Ok(rates) = state.rates.lock() && let Some((_, submitted, overwritten)) = *rates {
+                    metric(ui, "UI texture submissions", &format!("{submitted:.1} FPS"));
+                    metric(ui, "Presentation overwrites", &format!("{overwritten:.1}/s"));
+                }
+                if let Ok(viewport) = tile.presentation.viewport.lock() && let Some((w,h)) = *viewport {
+                    metric(ui, "Rendered viewport", &format!("{w:.0} × {h:.0} px"));
+                    let width = tile.presentation.width.load(Ordering::Relaxed);
+                    let scale = if width > 0 { format!("{:.3}×", w / width as f32) } else { tr("Unavailable").into() };
+                    metric(ui, "Scale", &scale);
+                }
+            });
+            if state.rtc_at.lock().is_ok_and(|time| time.is_some_and(|t| t.elapsed() < Duration::from_secs(7))) && let Ok(rtc) = state.rtc.lock() && !rtc.is_empty() {
+                section(ui, "Network and decoding");
+                for (label, value) in rtc.iter() { metric(ui, label, value); }
+            }
+            section(ui, "Sender");
+            let sender = state.sender.lock().ok();
+            if let Some(Some((received, value))) = sender.as_deref() {
+                let age = value["age_ms"].as_u64().map(|age| age.saturating_add(received.elapsed().as_millis() as u64));
+                metric(ui, "Sender sample age", &age.map(|age| format!("{age} ms")).unwrap_or_else(|| tr("Unavailable").into()));
+                if value["stale"].as_bool().unwrap_or(true) || age.is_none_or(|a| a > 7000) {
+                    note(ui, "Sender statistics unavailable or stale");
+                } else {
+                    let sample = &value["sample"];
+                    metric(ui, "Encoder", sample["encoder"].as_str().unwrap_or(tr("Unavailable")));
+                    for (key, label, divisor, unit) in [
+                        ("requested_bps", "Requested bitrate", 1e6, "Mbps"),
+                        ("effective_bps", "Effective encoder target", 1e6, "Mbps"),
+                        ("sent_bps", "Sent video payload", 1e6, "Mbps"),
+                        ("requested_fps", "Requested FPS", 1.0, "FPS"),
+                        ("encoded_fps", "Encoded FPS", 1.0, "FPS"),
+                        ("sent_fps", "Sent FPS", 1.0, "FPS"),
+                    ] { sender_metric(ui, sample, key, label, divisor, unit); }
+                    let requested = sample["metrics"]["requested_bps"].as_f64();
+                    for (key,label) in [("watcher_cap_bps","Watcher cap"),("upload_cap_bps","Upload cap"),("congestion_bps","Congestion estimate")] {
+                        if let (Some(requested),Some(cap)) = (requested,sample["metrics"][key].as_f64()) && cap < requested {
+                            metric(ui, "Limiting input", tr(label));
+                        }
+                    }
+                    ui.add_space(6.0);
+                    egui::CollapsingHeader::new(tr("Encoder and transport details")).show(ui, |ui| {
+                        metric(ui, "Sender window", &format!("{} ms · #{} · {}", sample["window_ms"], sample["sequence"], sample["codec"].as_str().unwrap_or("?")));
+                        for (key, label, divisor, unit) in [
+                            ("encoded_window_ms", "Encoder counter window", 1.0, "ms"),
+                            ("capture_queue_frames", "Capture queue", 1.0, "frames"),
+                            ("encoder_queue_frames", "Encoder input queue", 1.0, "frames"),
+                            ("capture_queue_overruns", "Capture queue overruns", 1.0, "events/window"),
+                            ("encoded_bps", "Encoded payload", 1e6, "Mbps"),
+                            ("upload_cap_bps", "Upload cap", 1e6, "Mbps"),
+                            ("watcher_cap_bps", "Watcher cap", 1e6, "Mbps"),
+                            ("capture_fps", "Capture output FPS", 1.0, "FPS"),
+                            ("encoder_input_fps", "Encoder input FPS", 1.0, "FPS"),
+                            ("congestion_bps", "Congestion estimate", 1e6, "Mbps"),
+                            ("accepted_fps", "SDK accepted FPS", 1.0, "FPS"),
+                            ("handoff_rejections", "Handoff skips or rejections", 1.0, "frames"),
+                            ("encoder_reconfigurations", "Encoder target changes", 1.0, "events"),
+                            ("rtt_ms", "Transport RTT (not end-to-end)", 1.0, "ms"),
+                        ] { sender_metric(ui, sample, key, label, divisor, unit); }
+                        for (label, width, height) in [("Source", "source_width", "source_height"), ("Encoder input dimensions", "encoded_width", "encoded_height")] {
+                            let dimensions = sample["metrics"][width].as_u64().zip(sample["metrics"][height].as_u64()).map(|(w,h)| format!("{w} × {h}")).unwrap_or_else(|| tr("Unavailable").into());
+                            metric(ui, label, &dimensions);
+                        }
+                    });
+                }
+            } else { note(ui, "Sender statistics unavailable or stale"); }
+            ui.add_space(12.0);
+            ui.separator();
+            note(ui, "UI submissions are not measured screen refresh. Physical presentation FPS unavailable.");
+            egui::CollapsingHeader::new(tr("About these measurements")).show(ui, |ui| {
+                for text in [
+                    "Local window: 3 s; sender window and age below. Clocks are independent.",
+                    "SDK counters: omitted zero/default fields are unavailable or no reported events.",
+                    "Caps explain configured limits; congestion and encoder ramp may also lower the target.",
+                    "Unavailable: capture drops, internal encoder timing/overload, visible crop, unrecognized decoder, render queue and physical end-to-end latency.",
+                ] { note(ui, text); }
+            });
+        });
     state.open.store(open, Ordering::Relaxed);
+}
+
+fn section(ui: &mut eframe::egui::Ui, label: &str) {
+    ui.add_space(10.0);
+    ui.separator();
+    ui.add_space(4.0);
+    ui.label(crate::ui_style::strong(crate::locale::tr(label), 15.0).color(crate::ui_style::MINT));
+}
+
+fn note(ui: &mut eframe::egui::Ui, text: &str) {
+    ui.label(
+        eframe::egui::RichText::new(crate::locale::tr(text))
+            .size(12.0)
+            .color(crate::ui_style::SECONDARY),
+    );
+}
+
+fn metric(ui: &mut eframe::egui::Ui, label: &str, value: &str) {
+    use eframe::egui;
+    let width = ui.available_width();
+    ui.scope(|ui| {
+        ui.spacing_mut().interact_size.y = 20.0;
+        ui.horizontal(|ui| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(width * 0.60, 20.0),
+                egui::Layout::top_down(egui::Align::LEFT),
+                |ui| {
+                    ui.set_width(width * 0.60);
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(crate::locale::tr(label))
+                                .size(12.0)
+                                .color(crate::ui_style::SECONDARY),
+                        )
+                        .wrap(),
+                    );
+                },
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add(
+                    egui::Label::new(crate::ui_style::strong(
+                        if value.is_empty() {
+                            crate::locale::tr("Unavailable")
+                        } else {
+                            value
+                        },
+                        14.0,
+                    ))
+                    .wrap(),
+                );
+            });
+        });
+    });
+}
+
+fn sender_metric(
+    ui: &mut eframe::egui::Ui,
+    sample: &Value,
+    key: &str,
+    label: &str,
+    divisor: f64,
+    unit: &str,
+) {
+    let value = sample["metrics"][key]
+        .as_f64()
+        .map(|n| format!("{:.2} {unit}", n / divisor))
+        .unwrap_or_else(|| crate::locale::tr("Unavailable").into());
+    metric(ui, label, &value);
 }

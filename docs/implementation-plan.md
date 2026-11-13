@@ -21,6 +21,33 @@ exercise negotiation on the local GPU; AMD and physical device failures remain
 separate hardware gates.
 See [verification](verification/ranked-room-codecs.md).
 
+## Native settings, stream information and Discord room names — corrective PR
+
+Repair the locally drawn sidebar gear and anchor it at the sidebar's right edge.
+Keep the room label left-aligned next to the brand, translate only the legacy
+`Friends` placeholder in PT-BR, and preserve user-provided room names. Advanced
+confirmation must dispatch the existing validated Apply command for changed live
+settings; idle confirmation must never start publication. Keep busy and invalid
+selections disabled. Preserve existing in-place bitrate/profile updates and
+stream restart behavior for source, encoder, resolution and frame-rate changes.
+
+Group watched-stream measurements into reception, network/decoding and sender
+sections. Distinguish muted labels from stronger values, collapse detailed
+counters and measurement notes, and retain freshness, unavailable values and the
+physical-presentation limitations. Preserve demand leases, subscriptions and the
+start/minute preview gate.
+
+Name Discord /stream and /telar rooms from the invoking member's guild nickname,
+global display name or username, with an ID fallback for older payloads. Bound
+room names without splitting Unicode pairs or retaining control characters.
+Preserve signatures, authorization, replay protection and quotas.
+
+Accept with Node 24 checks, native Clippy/tests, signed HTTP name/admission cases,
+real native publication bitrate changes, renderer captures at 1280×720 and
+960×540, and independent GPT-6.1-Sol high review. Renderer fixture screenshots
+establish layout only; native desktop automation and a production Discord command
+remain separate checks. See [verification](verification/native-ui-room-fixes.md).
+
 ## Native audio output latency — corrective PR
 
 Follow-up authorized scope: add an opt-in synchronized flash/click source and

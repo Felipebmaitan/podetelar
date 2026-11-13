@@ -1,3 +1,6 @@
+#[cfg(feature = "ui-review")]
+#[path = "ui/review.rs"]
+pub mod review;
 use crate::locale::tr;
 #[cfg(feature = "performance-experiments")]
 #[allow(dead_code)]
@@ -244,6 +247,8 @@ impl PublisherUi {
                 "{}  ·  {} {}",
                 if state.room_name.is_empty() {
                     tr("Your private room")
+                } else if state.room_name == "Friends" {
+                    tr("Friends")
                 } else {
                     &state.room_name
                 },
@@ -257,7 +262,8 @@ impl PublisherUi {
             let room_button = ui
                 .add_sized(
                     [260.0, 32.0],
-                    egui::Button::new(skin::strong(&room_label, 14.0))
+                    egui::Button::new("")
+                        .left_text(skin::strong(&room_label, 14.0))
                         .truncate()
                         .frame(false),
                 )
@@ -884,8 +890,8 @@ impl PublisherUi {
         }
     }
 
-    fn sharing_actions(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
-        let valid = state
+    fn valid_selection(&self, state: &Snapshot) -> bool {
+        state
             .encoders
             .iter()
             .find(|e| e.factory == self.encoder)
@@ -894,7 +900,11 @@ impl PublisherUi {
                 self.quality
                     .resolve(s, e.codec)
                     .is_ok_and(|mode| e.supports(mode))
-            });
+            })
+    }
+
+    fn sharing_actions(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+        let valid = self.valid_selection(state);
         ui.add_space(6.0);
         ui.separator();
         ui.horizontal(|ui| {
@@ -1092,6 +1102,74 @@ impl PublisherUi {
         if self.diagnostics_open {
             ui.add_space(8.0);
             self.diagnostics(ui, state);
+        }
+    }
+
+    fn advanced_modal(&mut self, ctx: &egui::Context, state: &Snapshot) {
+        if self.advanced_open && !self.browser_invitation_open {
+            self.clear_picker();
+            let mut done = false;
+            let width = (ctx.viewport_rect().width() - 72.0).clamp(420.0, 620.0);
+            let modal = egui::Modal::new(egui::Id::unique("advanced-settings"))
+                .backdrop_color(egui::Color32::from_black_alpha(150))
+                .frame(
+                    egui::Frame::new()
+                        .fill(CARD)
+                        .stroke(egui::Stroke::new(1.0, BORDER))
+                        .corner_radius(12)
+                        .inner_margin(24),
+                )
+                .show(ctx, |ui| {
+                    ui.set_width(width);
+                    ui.spacing_mut().item_spacing.y = 12.0;
+                    ui.horizontal(|ui| {
+                        ui.label(skin::strong(tr("Advanced settings"), 24.0));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if skin::icon_button(ui, Icon::Close, tr("Close")).clicked() {
+                                done = true;
+                            }
+                        });
+                    });
+                    ui.add_space(8.0);
+                    egui::ScrollArea::vertical()
+                        .id_salt("advanced-scroll")
+                        .max_height((ctx.viewport_rect().height() - 230.0).clamp(180.0, 560.0))
+                        .show(ui, |ui| self.advanced(ui, state));
+                    settings_divider(ui);
+                    ui.horizontal(|ui| {
+                        let dirty = state.sharing
+                            && state
+                                .active_selection
+                                .as_ref()
+                                .is_some_and(|active| active != &self.selection());
+                        ui.add_sized(
+                            [width - 186.0, 44.0],
+                            egui::Label::new(
+                                egui::RichText::new(tr(if dirty {
+                                    "Updates your current stream."
+                                } else {
+                                    "Ready for your next stream."
+                                }))
+                                .size(12.0)
+                                .color(MUTED),
+                            )
+                            .wrap(),
+                        );
+                        if ui
+                            .add_enabled(
+                                !state.busy && (!dirty || self.valid_selection(state)),
+                                primary(tr(if dirty { "Apply and close" } else { "Done" }), 170.0),
+                            )
+                            .clicked()
+                        {
+                            if dirty {
+                                self.send_settings(true);
+                            }
+                            done = true;
+                        }
+                    });
+                });
+            self.advanced_open = !done && !modal.should_close();
         }
     }
 
@@ -2089,29 +2167,48 @@ impl PublisherUi {
                         self.sharing_actions(ui, &state);
                     }
                     ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                        ui.horizontal(|ui| {
-                            avatar(ui, &self.name, 30.0);
-                            ui.vertical(|ui| {
-                                ui.label(skin::strong(&self.name, 14.0));
-                                ui.colored_label(
-                                    if state.connection == "connected" {
-                                        ACCENT
-                                    } else {
-                                        WARNING
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(ui.available_width(), 44.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                avatar(ui, &self.name, 30.0);
+                                let info_width = (ui.available_width() - 40.0).max(20.0);
+                                ui.allocate_ui_with_layout(
+                                    egui::vec2(info_width, 38.0),
+                                    egui::Layout::top_down(egui::Align::LEFT),
+                                    |ui| {
+                                        ui.set_width(info_width);
+                                        ui.spacing_mut().item_spacing.y = 3.0;
+                                        ui.add(
+                                            egui::Label::new(skin::strong(&self.name, 14.0))
+                                                .truncate(),
+                                        );
+                                        ui.label(
+                                            egui::RichText::new(tr(
+                                                if state.connection == "connected" {
+                                                    "Connected"
+                                                } else {
+                                                    "Reconnecting"
+                                                },
+                                            ))
+                                            .size(12.0)
+                                            .color(
+                                                if state.connection == "connected" {
+                                                    ACCENT
+                                                } else {
+                                                    WARNING
+                                                },
+                                            ),
+                                        );
                                     },
-                                    tr(if state.connection == "connected" {
-                                        "Connected"
-                                    } else {
-                                        "Reconnecting"
-                                    }),
                                 );
-                            });
-                            if skin::icon_button(ui, Icon::Settings, tr("Advanced settings"))
-                                .clicked()
-                            {
-                                self.advanced_open = true;
-                            }
-                        });
+                                if skin::icon_button(ui, Icon::Settings, tr("Advanced settings"))
+                                    .clicked()
+                                {
+                                    self.advanced_open = true;
+                                }
+                            },
+                        );
                         ui.separator();
                     });
                 } else {
@@ -2230,55 +2327,7 @@ impl PublisherUi {
                         });
                     });
             });
-        if self.advanced_open && !self.browser_invitation_open {
-            self.clear_picker();
-            let mut done = false;
-            let width = (ctx.viewport_rect().width() - 72.0).clamp(420.0, 620.0);
-            let modal = egui::Modal::new(egui::Id::unique("advanced-settings"))
-                .backdrop_color(egui::Color32::from_black_alpha(150))
-                .frame(
-                    egui::Frame::new()
-                        .fill(CARD)
-                        .stroke(egui::Stroke::new(1.0, BORDER))
-                        .corner_radius(12)
-                        .inner_margin(24),
-                )
-                .show(&ctx, |ui| {
-                    ui.set_width(width);
-                    ui.spacing_mut().item_spacing.y = 12.0;
-                    ui.horizontal(|ui| {
-                        ui.label(skin::strong(tr("Advanced settings"), 24.0));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if skin::icon_button(ui, Icon::Close, tr("Close")).clicked() {
-                                done = true;
-                            }
-                        });
-                    });
-                    ui.add_space(8.0);
-                    egui::ScrollArea::vertical()
-                        .id_salt("advanced-scroll")
-                        .max_height((ctx.viewport_rect().height() - 230.0).clamp(180.0, 560.0))
-                        .show(ui, |ui| self.advanced(ui, &state));
-                    settings_divider(ui);
-                    ui.horizontal(|ui| {
-                        ui.add_sized(
-                            [width - 142.0, 44.0],
-                            egui::Label::new(
-                                egui::RichText::new(tr(
-                                    "Apply changes when starting or updating your stream.",
-                                ))
-                                .size(12.0)
-                                .color(MUTED),
-                            )
-                            .wrap(),
-                        );
-                        if ui.add(primary(tr("Done"), 126.0)).clicked() {
-                            done = true;
-                        }
-                    });
-                });
-            self.advanced_open = !done && !modal.should_close();
-        }
+        self.advanced_modal(&ctx, &state);
         if self.browser_invitation_open {
             defocus_invitation_background(root);
             self.browser_invitation_modal(&ctx, &state);
@@ -3797,6 +3846,118 @@ mod tests {
                     }
                 ]),
                 "Preview click reached an underlying control"
+            );
+        }
+    }
+    #[test]
+    fn advanced_confirmation_applies_live_changes_and_never_starts_an_idle_stream() {
+        for (sharing, changed, busy, valid) in [
+            (true, true, false, true),
+            (true, false, false, true),
+            (false, true, false, true),
+            (true, true, true, true),
+            (true, true, false, false),
+        ] {
+            let mut app = app();
+            app.source_id = "fixture".into();
+            // Identity accepts arbitrary raw caps; no hardware publication is created.
+            app.encoder = "identity".into();
+            let state = Snapshot {
+                connection: "connected",
+                sharing,
+                busy,
+                sources: if valid {
+                    vec![crate::sources::fixture().info]
+                } else {
+                    vec![]
+                },
+                encoders: vec![crate::encoding::Encoder {
+                    factory: app.encoder.clone(),
+                    label: "Test encoder".into(),
+                    codec: crate::encoding::Codec::H264,
+                }],
+                active_selection: sharing.then(|| app.selection()),
+                ..Default::default()
+            };
+            let (controller, mut commands) = Controller::recording_for_test(state.clone());
+            app.controller = controller;
+            app.advanced_open = true;
+            if changed {
+                app.quality.bitrate = Bitrate::Manual(12_000_000);
+            }
+            let ctx = egui::Context::default();
+            configure_theme(&ctx);
+            let draw = |app: &mut PublisherUi, events| {
+                let mut output = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(1280.0, 720.0),
+                        )),
+                        events,
+                        ..Default::default()
+                    },
+                    |root| {
+                        app.advanced_modal(root.ctx(), &state);
+                    },
+                );
+                output.textures_delta.clear();
+                output
+            };
+            draw(&mut app, vec![]);
+            let output = draw(&mut app, vec![]);
+            let label = tr(if sharing && changed {
+                "Apply and close"
+            } else {
+                "Done"
+            });
+            let pos = output
+                .shapes
+                .iter()
+                .find_map(|shape| match &shape.shape {
+                    egui::epaint::Shape::Text(text) if text.galley.text() == label => {
+                        Some(text.pos + text.galley.size() / 2.0)
+                    }
+                    _ => None,
+                })
+                .expect("Advanced confirmation button");
+            for pressed in [true, false] {
+                draw(
+                    &mut app,
+                    vec![
+                        egui::Event::PointerMoved(pos),
+                        egui::Event::PointerButton {
+                            pos,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: Default::default(),
+                        },
+                    ],
+                );
+            }
+            let should_apply = sharing && changed && !busy && valid;
+            let command = commands();
+            if should_apply {
+                assert!(matches!(
+                    command,
+                    Some(Command::Apply {
+                        quality: Settings {
+                            bitrate: Bitrate::Manual(12_000_000),
+                            ..
+                        },
+                        ..
+                    })
+                ));
+            } else {
+                assert!(
+                    command.is_none(),
+                    "Advanced must not publish or apply a disabled/unchanged selection"
+                );
+            }
+            assert_eq!(app.advanced_open, busy || (sharing && changed && !valid));
+            assert!(
+                commands().is_none(),
+                "Only one Apply command per confirmation"
             );
         }
     }

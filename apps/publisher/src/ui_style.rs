@@ -176,13 +176,16 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
             line((5.0, -5.0), (5.0, -9.0));
         }
         Icon::Settings => {
-            p.circle_stroke(c, 5.5, stroke);
-            p.circle_stroke(c, 2.0, stroke);
-            for i in 0..8 {
-                let a = i as f32 * std::f32::consts::TAU / 8.0;
-                let v = egui::vec2(a.cos(), a.sin());
-                p.line_segment([c + v * 6.0, c + v * 8.5], stroke);
-            }
+            // One connected gear outline, scaled with the icon rectangle.
+            let points = (0..48)
+                .map(|i| {
+                    let a = i as f32 * std::f32::consts::TAU / 48.0;
+                    let radius = if matches!(i % 6, 1..=3) { 8.0 } else { 6.2 };
+                    point(a.cos() * radius, a.sin() * radius)
+                })
+                .collect();
+            p.add(egui::Shape::closed_line(points, stroke));
+            p.circle_stroke(c, rect.width() * 0.15, stroke);
         }
     }
 }

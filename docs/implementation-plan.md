@@ -1,5 +1,29 @@
 # Implementation phases
 
+## Public built-in Windows updater — v0.1.2
+
+Enable the existing check/download/restart updater in shipped installers by
+defaulting the compiled feed to the public PodeTelar GitHub repository. Reject
+missing/invalid feeds during packaging instead of silently producing a disabled
+badge. Preserve explicit Download, Later and confirmed Restart, full-package
+integrity checks, launcher ownership outside the portable media cleanup job, and
+the existing media shutdown path. Include release notes in update metadata.
+
+Prepare Setup, full `.nupkg`, `releases.preview.json`, source/payload manifest and
+checksums together. Public updater support assets supersede the earlier
+installer-only asset rule; portable EXEs/ZIPs remain internal. Preserve published
+v0.1.0/v0.1.1 bytes. A one-time manual Setup upgrade is required because those
+launchers were compiled without a feed. Keep the existing preview channel and
+increasing internal versions; do not introduce automatic download or nightly feeds.
+
+Accept with Node 24 checks, installer metadata/integrity tests, bootstrap
+formatting/Clippy/tests, real Velopack download/Later/corruption/restart fixture
+checks and independent GPT-6.1-Sol high review before merge. Before publishing,
+verify the actual packaged feed/notes/assets and public anonymous discovery and
+download. Record installed native media-shutdown and desktop interaction results
+separately from fixture results; unavailable desktop/fresh-PC/hardware checks
+remain explicit limitations rather than inferred successes.
+
 ## v0.1.1 Windows release
 
 Publish the merged native audio, ranked codec, device usage and native UI/Discord

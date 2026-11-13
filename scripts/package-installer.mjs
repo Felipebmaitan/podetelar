@@ -3,6 +3,8 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { installerInput } from "./installer-input.mjs";
 import { installerNotices } from "./installer-notices.mjs";
+import { installerUpdateFeed } from "./installer-feed.mjs";
+import { installerRelease } from "./installer-release.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const launcherTarget = resolve(
@@ -23,6 +25,12 @@ const { executable, manifest } = installerInput(
 const config = JSON.parse(
   readFileSync(join(root, "deploy/windows/installer.json")),
 );
+const updateFeed = installerUpdateFeed(
+  config,
+  process.env.FREEDOMSTREAM_UPDATE_FEED,
+);
+const releaseNotes = join(root, "docs/releases", `v${manifest.version}.md`);
+if (!existsSync(releaseNotes)) throw new Error("Release notes are required.");
 // CI run numbers make distinct preview builds monotonic without editing source.
 const build = process.env.INSTALLER_BUILD_NUMBER;
 if (!/^[1-9]\d{0,8}$/.test(build ?? ""))
@@ -52,6 +60,7 @@ run(
     stdio: "inherit",
     env: {
       ...process.env,
+      FREEDOMSTREAM_UPDATE_FEED: updateFeed,
       CARGO_ENCODED_RUSTFLAGS:
         "-C\x1ftarget-feature=+crt-static\x1f-C\x1flink-arg=/DEPENDENTLOADFLAG:0x800",
     },
@@ -107,6 +116,10 @@ run(
     "PodeTelar contributors",
     "--channel",
     "preview",
+    "--delta",
+    "None",
+    "--releaseNotes",
+    releaseNotes,
     "--icon",
     join(root, "assets/windows/podetelar.ico"),
     "--outputDir",
@@ -114,4 +127,13 @@ run(
   ],
   { stdio: "inherit" },
 );
-console.log(`Unsigned preview installer: ${output}. No release was published.`);
+const publicAssets = installerRelease(
+  output,
+  config,
+  manifest,
+  version,
+  updateFeed,
+);
+console.log(
+  `Unsigned installer and update assets: ${publicAssets}. No release was published.`,
+);

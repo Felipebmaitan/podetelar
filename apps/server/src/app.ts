@@ -204,6 +204,7 @@ export async function buildApp(
         issued.snapshot.room.id,
         issued.snapshot.participant.id,
         issued.snapshot.participant.displayName,
+        input.data.deviceId,
       );
       reply.setCookie(
         COOKIE,
@@ -241,6 +242,7 @@ export async function buildApp(
         issued.snapshot.room.id,
         issued.snapshot.participant.id,
         issued.snapshot.participant.displayName,
+        input.data.deviceId,
       );
       const previous = rooms.session(id.data, request.cookies[COOKIE]);
       if (previous) previews.removeOwner(id.data, previous.participant.id);

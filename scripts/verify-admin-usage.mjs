@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { chromium, request } from "@playwright/test";
@@ -32,11 +33,13 @@ const json = async (response, status = 200) => {
   return response.json();
 };
 const start = Date.now() - 60000;
+// Synthetic PC identity for this transport fixture; no real hardware identifier.
+const deviceId = `pc1_${randomBytes(32).toString("hex")}`;
 try {
   const room = await json(
     await sender.post("/api/rooms", {
       headers: { Authorization: `Bearer ${process.env.ADMIN_TOKEN}` },
-      data: { name: "Usage acceptance", displayName: "Usage sender" },
+      data: { name: "Usage acceptance", displayName: "Usage sender", deviceId },
     }),
     201,
   );
@@ -45,6 +48,7 @@ try {
       data: {
         invitation: new URL(room.invitationUrl).hash.slice(8),
         displayName: "Usage receiver",
+        deviceId,
       },
     }),
   );
@@ -119,7 +123,14 @@ try {
   let measured;
   for (let i = 0; i < 18; i++) {
     measured = await report();
-    if (measured.uploadedBytes > 10000 && measured.downloadedBytes > 10000)
+    const current = measured.users.find((u) => u.id === deviceId);
+    if (
+      current?.sessionCount === 2 &&
+      current.sessions.find((s) => s.displayName === "Usage sender")
+        ?.uploadedBytes > 10000 &&
+      current.sessions.find((s) => s.displayName === "Usage receiver")
+        ?.downloadedBytes > 10000
+    )
       break;
     await wait(2500);
   }
@@ -132,8 +143,12 @@ try {
     measured.downloadedBytes > 10000,
     "Actual subscription bytes required",
   );
-  const sent = measured.users.find((u) => u.displayName === "Usage sender"),
-    received = measured.users.find((u) => u.displayName === "Usage receiver");
+  const pc = measured.users.find((u) => u.id === deviceId);
+  assert.ok(pc, "One PC must aggregate distinct sending/receiving sessions");
+  assert.equal(pc.identityKind, "device");
+  assert.equal(pc.sessionCount, 2);
+  const sent = pc.sessions.find((u) => u.displayName === "Usage sender"),
+    received = pc.sessions.find((u) => u.displayName === "Usage receiver");
   assert.ok(sent?.uploadedBytes > 10000);
   assert.ok(received?.downloadedBytes > 10000);
   assert.equal(
@@ -144,10 +159,15 @@ try {
     measured.downloadedBytes,
     measured.users.reduce((n, u) => n + u.downloadedBytes, 0),
   );
-  assert.ok(sent.points.some((p) => p.uploadedBytes > 0));
-  assert.ok(received.points.some((p) => p.downloadedBytes > 0));
+  assert.ok(pc.points.some((p) => p.uploadedBytes > 0));
+  assert.ok(pc.points.some((p) => p.downloadedBytes > 0));
+  assert.equal(pc.uploadedBytes, sent.uploadedBytes + received.uploadedBytes);
+  assert.equal(
+    pc.downloadedBytes,
+    sent.downloadedBytes + received.downloadedBytes,
+  );
   console.log(
-    "Actual SFU publication/subscription counters and per-user graphs passed.",
+    "Actual SFU publication/subscription counters aggregate distinct sessions under one PC.",
   );
   const dashboard = await web.newPage();
   await dashboard.goto(origin);
@@ -158,12 +178,23 @@ try {
       throw new Error("Local credential entry failed");
     });
   await dashboard.getByRole("button", { name: "Sign in", exact: true }).click();
+  await dashboard.getByRole("button", { name: "Usage", exact: true }).click();
   await dashboard
-    .getByRole("heading", { name: "Usage sender", exact: true })
+    .getByRole("heading", { name: "Usage by PC", exact: true })
     .waitFor();
-  await dashboard
-    .getByRole("heading", { name: "Usage receiver", exact: true })
+  const card = dashboard.locator(".admin-user").filter({
+    has: dashboard.locator(`[title="${deviceId}"]`),
+  });
+  await card.getByText("2 sessions in this period", { exact: true }).click();
+  await card
+    .getByRole("list")
+    .getByText("Usage sender", { exact: true })
     .waitFor();
+  await card
+    .getByRole("list")
+    .getByText("Usage receiver", { exact: true })
+    .waitFor();
+  await card.locator("code").filter({ hasText: deviceId }).waitFor();
   mkdirSync(".local/admin-test", { recursive: true });
   await dashboard.screenshot({
     path: ".local/admin-test/dashboard-desktop.png",

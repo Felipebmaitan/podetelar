@@ -25,13 +25,21 @@ const now = Date.UTC(2026, 10, 10, 12),
 const usage = new Usage(file, "http://127.0.0.1:1/unused", () => now);
 const seed = new DatabaseSync(file);
 seed.exec("BEGIN");
-const user = seed.prepare("INSERT INTO usage_users VALUES (?,?,?,?)");
+const user = seed.prepare(
+  "INSERT INTO usage_users(id,room,name,admitted_at,device_id) VALUES (?,?,?,?,?)",
+);
 const row = seed.prepare("INSERT INTO usage_minutes VALUES (?,?,?,?)");
 const cov = seed.prepare("INSERT OR IGNORE INTO usage_coverage VALUES (?,?)");
 let rows = 0;
 for (let u = 0; u < 30; u++) {
   const id = `synthetic-${String(u).padStart(2, "0")}`;
-  user.run(id, `room-${u % 3}`, `Repeated name ${u % 4}`, now - 400 * day);
+  user.run(
+    id,
+    `room-${u % 3}`,
+    `Repeated name ${u % 4}`,
+    now - 400 * day + u,
+    u < 4 ? `pc1_${String((u % 2) + 1).padStart(64, "0")}` : null,
+  );
   for (let d = 0; d < (u < 5 ? 400 : 7); d++)
     for (let m = 0; m < 240; m++) {
       const at = now - (d + 1) * day + m * minute;
@@ -95,7 +103,16 @@ writeFileSync(
   JSON.stringify(
     {
       schema: 1,
-      fixture: { synthetic: true, file, now, rows, users: 30, days: 400 },
+      fixture: {
+        synthetic: true,
+        file,
+        now,
+        rows,
+        sessions: 30,
+        devices: 2,
+        unidentifiedSessions: 26,
+        days: 400,
+      },
       baselineSourceSha256: createHash("sha256")
         .update(readFileSync(source))
         .digest("hex"),

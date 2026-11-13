@@ -359,6 +359,12 @@ impl Admission {
     }
     pub async fn join(invitation: &str, display_name: &str) -> Result<Self> {
         let mut invitation = Invitation::parse(invitation)?;
+        // Scope to the invitation's public origin, before direct-server discovery,
+        // so changing the direct transport hostname does not split device history.
+        let scope = invitation.origin.origin().ascii_serialization();
+        let device_id = tokio::task::spawn_blocking(move || crate::device::for_server(&scope))
+            .await
+            .map_err(|_| anyhow::anyhow!("PC identity unavailable."))??;
         let client = Client::builder()
             .cookie_store(true)
             .redirect(Policy::none())
@@ -398,7 +404,7 @@ impl Admission {
             )
             .header("Origin", invitation.origin.origin().ascii_serialization())
             .json(
-                &serde_json::json!({"invitation": invitation.secret, "displayName": display_name}),
+                &serde_json::json!({"invitation": invitation.secret, "displayName": display_name, "deviceId": device_id}),
             )
             .send()
             .await
@@ -576,6 +582,59 @@ async fn read_response<T: DeserializeOwned>(mut response: Response) -> Result<T>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires a local HTTP device-usage qualification fixture"]
+    async fn qualifies_device_identity_and_admission_in_an_independent_process() {
+        #[derive(Deserialize)]
+        struct Fixture {
+            invitation: String,
+            output: String,
+        }
+        let path = std::env::var_os("FREEDOMSTREAM_DEVICE_FIXTURE").expect("Local fixture path");
+        let fixture: Fixture = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let invitation = Invitation::parse(&fixture.invitation).unwrap();
+        let origin = invitation.origin.origin().ascii_serialization();
+        assert!(matches!(
+            invitation.origin.host_str(),
+            Some("localhost" | "127.0.0.1")
+        ));
+        let scope = origin.clone();
+        let device_id = tokio::task::spawn_blocking(move || crate::device::for_server(&scope))
+            .await
+            .unwrap()
+            .unwrap();
+        let admission = Admission::join(&fixture.invitation, "Native PC qualification")
+            .await
+            .expect("Actual native admission");
+        let session: serde_json::Value = read_response(
+            admission
+                .client
+                .get(
+                    admission
+                        .origin
+                        .join(&format!("api/rooms/{}/session", admission.room_id))
+                        .unwrap(),
+                )
+                .send()
+                .await
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert!(session.get("deviceId").is_none());
+        admission.leave().await;
+        // Private local fixture only, never stdout or an application log. The
+        // driver compares independent processes/copies and server-side binding.
+        std::fs::write(
+            fixture.output,
+            serde_json::to_vec(&serde_json::json!({
+                "deviceId": device_id, "participant": session["participant"]["id"]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
 
     #[tokio::test]
     #[ignore = "requires two independently running API backends"]

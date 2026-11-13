@@ -7,16 +7,19 @@ function statements(db) {
       "SELECT CAST((minute-?)/? AS INTEGER) AS bucket, SUM(milliseconds) AS duration FROM usage_coverage WHERE minute>=? AND minute<? GROUP BY bucket",
     ),
     total: db.prepare(
-      "SELECT COALESCE(SUM(uploaded),0) AS uploadedBytes, COALESCE(SUM(downloaded),0) AS downloadedBytes, COUNT(DISTINCT user) AS userCount FROM usage_minutes WHERE minute>=? AND minute<?",
+      "SELECT COALESCE(SUM(uploaded),0) AS uploadedBytes, COALESCE(SUM(downloaded),0) AS downloadedBytes, COUNT(DISTINCT COALESCE(u.device_id,u.id)) AS userCount FROM usage_minutes m JOIN usage_users u ON u.id=m.user WHERE minute>=? AND minute<?",
     ),
     users: db.prepare(
-      "SELECT u.id, u.room AS roomId, u.name AS displayName, SUM(m.uploaded) AS uploadedBytes, SUM(m.downloaded) AS downloadedBytes FROM usage_minutes m JOIN usage_users u ON u.id=m.user WHERE minute>=? AND minute<? GROUP BY u.id ORDER BY SUM(m.uploaded+m.downloaded) DESC, u.id LIMIT 24 OFFSET ?",
+      "SELECT COALESCE(u.device_id,u.id) AS id, CASE WHEN u.device_id IS NULL THEN 'session' ELSE 'device' END AS identityKind, COUNT(DISTINCT u.id) AS sessionCount, SUM(m.uploaded) AS uploadedBytes, SUM(m.downloaded) AS downloadedBytes FROM usage_minutes m JOIN usage_users u ON u.id=m.user WHERE minute>=? AND minute<? GROUP BY COALESCE(u.device_id,u.id) ORDER BY SUM(m.uploaded+m.downloaded) DESC, COALESCE(u.device_id,u.id) LIMIT 24 OFFSET ?",
     ),
     global: db.prepare(
-      "SELECT CAST((minute-?)/? AS INTEGER) AS bucket, SUM(uploaded) AS uploaded, SUM(downloaded) AS downloaded FROM usage_minutes WHERE minute>=? AND minute<? GROUP BY bucket",
+      "SELECT CAST((minute-?)/? AS INTEGER) AS bucket, SUM(uploaded) AS uploaded, SUM(downloaded) AS downloaded FROM usage_minutes m JOIN usage_users u ON u.id=m.user WHERE minute>=? AND minute<? GROUP BY bucket",
     ),
     page: db.prepare(
-      `SELECT user, CAST((minute-?)/? AS INTEGER) AS bucket, SUM(uploaded) AS uploaded, SUM(downloaded) AS downloaded FROM usage_minutes WHERE minute>=? AND minute<? AND user IN (${Array(24).fill("?").join(",")}) GROUP BY user,bucket`,
+      `SELECT COALESCE(u.device_id,u.id) AS identity, CAST((minute-?)/? AS INTEGER) AS bucket, SUM(uploaded) AS uploaded, SUM(downloaded) AS downloaded FROM usage_minutes m JOIN usage_users u ON u.id=m.user WHERE minute>=? AND minute<? AND COALESCE(u.device_id,u.id) IN (${Array(24).fill("?").join(",")}) GROUP BY COALESCE(u.device_id,u.id),bucket`,
+    ),
+    sessions: db.prepare(
+      "SELECT u.id, u.room AS roomId, u.name AS displayName, u.admitted_at AS admittedAt, SUM(m.uploaded) AS uploadedBytes, SUM(m.downloaded) AS downloadedBytes FROM usage_minutes m JOIN usage_users u ON u.id=m.user WHERE minute>=? AND minute<? AND COALESCE(u.device_id,u.id)=? GROUP BY u.id ORDER BY u.admitted_at DESC,u.id DESC LIMIT 50",
     ),
   };
   prepared.set(db, value);
@@ -44,8 +47,8 @@ export function reportBatched(usage, from, to, page = 0) {
     const ids = users.map((u) => u.id);
     while (ids.length < 24) ids.push(null);
     for (const r of q.page.all(from, width, from, to, ...ids)) {
-      if (!byUser.has(r.user)) byUser.set(r.user, []);
-      byUser.get(r.user).push(r);
+      if (!byUser.has(r.identity)) byUser.set(r.identity, []);
+      byUser.get(r.identity).push(r);
     }
   }
   const points = (rows) => {
@@ -71,7 +74,15 @@ export function reportBatched(usage, from, to, page = 0) {
       usage.now() - usage.lastSample < 15000,
     ...sum,
     points: points(all),
-    users: users.map((u) => ({ ...u, points: points(byUser.get(u.id) ?? []) })),
+    users: users.map((u) => {
+      const sessions = q.sessions.all(from, to, u.id);
+      return {
+        ...u,
+        displayName: sessions[0].displayName,
+        sessions: sessions.map((session) => ({ ...session })),
+        points: points(byUser.get(u.id) ?? []),
+      };
+    }),
     page,
     retentionDays: 400,
   };

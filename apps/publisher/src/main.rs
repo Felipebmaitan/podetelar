@@ -8,6 +8,7 @@ mod av_qualification;
 mod browser_links;
 mod connection;
 mod delivery;
+mod device;
 mod diagnostics;
 mod encoding;
 mod locale;

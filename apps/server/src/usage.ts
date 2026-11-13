@@ -1,5 +1,9 @@
 import { DatabaseSync } from "node:sqlite";
-import type { UsageReport, UsagePoint } from "@freedomstream/contracts";
+import {
+  deviceIdSchema,
+  type UsageReport,
+  type UsagePoint,
+} from "@freedomstream/contracts";
 
 const MINUTE = 60_000;
 const RETENTION = 400 * 86400000;
@@ -78,14 +82,25 @@ export class Usage {
       CREATE TABLE IF NOT EXISTS usage_minutes (minute INTEGER NOT NULL, user TEXT NOT NULL, uploaded REAL NOT NULL, downloaded REAL NOT NULL, PRIMARY KEY(minute,user));
       CREATE TABLE IF NOT EXISTS usage_coverage (minute INTEGER PRIMARY KEY, milliseconds INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS usage_user_minutes ON usage_minutes(user,minute);`);
+    // Keep byte buckets and SFU baselines keyed by session. Only reporting groups
+    // sessions, so concurrent instances and counter resets cannot overwrite data.
+    const columns = this.db.prepare("PRAGMA table_info(usage_users)").all();
+    if (!columns.some((column) => column.name === "device_id"))
+      this.db.exec("ALTER TABLE usage_users ADD COLUMN device_id TEXT");
+    this.db.exec(
+      "CREATE INDEX IF NOT EXISTS usage_identity ON usage_users(COALESCE(device_id,id),admitted_at)",
+    );
     this.db.exec(
       "INSERT OR IGNORE INTO usage_users(id,room,name) SELECT participant_id, room_id, display_name FROM sessions;",
     );
   }
-  remember(room: string, participant: string, name: string) {
+  remember(room: string, participant: string, name: string, deviceId?: string) {
+    if (deviceId !== undefined) deviceIdSchema.parse(deviceId);
     this.db
-      .prepare("INSERT OR IGNORE INTO usage_users VALUES (?,?,?,?)")
-      .run(participant, room, name, this.now());
+      .prepare(
+        "INSERT OR IGNORE INTO usage_users(id,room,name,admitted_at,device_id) VALUES (?,?,?,?,?)",
+      )
+      .run(participant, room, name, this.now(), deviceId ?? null);
     this.clearReports();
   }
   start() {
@@ -245,7 +260,7 @@ export class Usage {
     const points = (user?: string): UsagePoint[] => {
       const rows = this.db
         .prepare(
-          `SELECT CAST((minute-?)/? AS INTEGER) AS bucket, SUM(uploaded) AS uploaded, SUM(downloaded) AS downloaded FROM usage_minutes WHERE minute>=? AND minute<? ${user ? "AND user=?" : ""} GROUP BY bucket`,
+          `SELECT CAST((minute-?)/? AS INTEGER) AS bucket, SUM(uploaded) AS uploaded, SUM(downloaded) AS downloaded FROM usage_minutes m JOIN usage_users u ON u.id=m.user WHERE minute>=? AND minute<? ${user ? "AND COALESCE(u.device_id,u.id)=?" : ""} GROUP BY bucket`,
         )
         .all(from, width, from, to, ...(user ? [user] : [])) as {
         bucket: number;
@@ -265,7 +280,7 @@ export class Usage {
     };
     const sum = this.db
       .prepare(
-        "SELECT COALESCE(SUM(uploaded),0) AS uploadedBytes, COALESCE(SUM(downloaded),0) AS downloadedBytes, COUNT(DISTINCT user) AS userCount FROM usage_minutes WHERE minute>=? AND minute<?",
+        "SELECT COALESCE(SUM(uploaded),0) AS uploadedBytes, COALESCE(SUM(downloaded),0) AS downloadedBytes, COUNT(DISTINCT COALESCE(u.device_id,u.id)) AS userCount FROM usage_minutes m JOIN usage_users u ON u.id=m.user WHERE minute>=? AND minute<?",
       )
       .get(from, to) as {
       uploadedBytes: number;
@@ -274,12 +289,12 @@ export class Usage {
     };
     const users = this.db
       .prepare(
-        "SELECT u.id, u.room AS roomId, u.name AS displayName, SUM(m.uploaded) AS uploadedBytes, SUM(m.downloaded) AS downloadedBytes FROM usage_minutes m JOIN usage_users u ON u.id=m.user WHERE minute>=? AND minute<? GROUP BY u.id ORDER BY SUM(m.uploaded+m.downloaded) DESC, u.id LIMIT 24 OFFSET ?",
+        "SELECT COALESCE(u.device_id,u.id) AS id, CASE WHEN u.device_id IS NULL THEN 'session' ELSE 'device' END AS identityKind, COUNT(DISTINCT u.id) AS sessionCount, SUM(m.uploaded) AS uploadedBytes, SUM(m.downloaded) AS downloadedBytes FROM usage_minutes m JOIN usage_users u ON u.id=m.user WHERE minute>=? AND minute<? GROUP BY COALESCE(u.device_id,u.id) ORDER BY SUM(m.uploaded+m.downloaded) DESC, COALESCE(u.device_id,u.id) LIMIT 24 OFFSET ?",
       )
       .all(from, to, page * 24) as {
       id: string;
-      roomId: string;
-      displayName: string;
+      identityKind: "device" | "session";
+      sessionCount: number;
       uploadedBytes: number;
       downloadedBytes: number;
     }[];
@@ -294,7 +309,21 @@ export class Usage {
         this.now() - this.lastSample < 15000,
       ...sum,
       points: points(),
-      users: users.map((u) => ({ ...u, points: points(u.id) })),
+      users: users.map((u) => {
+        // Bound drill-down size independently of lifetime session churn. All
+        // totals and graphs include every session, including those beyond 50.
+        const sessions = this.db
+          .prepare(
+            "SELECT u.id, u.room AS roomId, u.name AS displayName, u.admitted_at AS admittedAt, SUM(m.uploaded) AS uploadedBytes, SUM(m.downloaded) AS downloadedBytes FROM usage_minutes m JOIN usage_users u ON u.id=m.user WHERE minute>=? AND minute<? AND COALESCE(u.device_id,u.id)=? GROUP BY u.id ORDER BY u.admitted_at DESC,u.id DESC LIMIT 50",
+          )
+          .all(from, to, u.id) as UsageReport["users"][number]["sessions"];
+        return {
+          ...u,
+          displayName: sessions[0]!.displayName,
+          sessions: sessions.map((session) => ({ ...session })),
+          points: points(u.id),
+        };
+      }),
       page,
       retentionDays: 400,
     };

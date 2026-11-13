@@ -20,6 +20,10 @@ _Avoid_: Account, host
 One browser or native publisher's time-limited authority to join a room. A person can have several sessions; ending one does not ban them from a still-valid invitation.
 _Avoid_: Account, device identity
 
+**Device**:
+A PC recognized across room sessions for usage aggregation. A device is not an authenticated person or an admission credential.
+_Avoid_: Account, session, verified user
+
 **Publisher**:
 A participant contributing a live screen or camera stream.
 _Avoid_: Room owner, host

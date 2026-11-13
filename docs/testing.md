@@ -48,6 +48,9 @@ run does not mean native hardware/media qualification ran.
 The opt-in `scripts/verify-admin-usage.mjs` probe uses browser-generated synthetic
 media to measure the server's usage accounting. It does not exercise participant
 browser-room UI or qualify native capture, and is retained for that server purpose.
+It also checks PC aggregation and expandable session details using actual SFU
+traffic. For independent-process Windows identity/native HTTP qualification, see
+[PC usage identity](device-usage-identity.md#repeatable-qualification).
 
 ## Qualification limits
 

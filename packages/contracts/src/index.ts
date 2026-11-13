@@ -34,11 +34,20 @@ const nameSchema = z
   .refine((value) => !/[\p{Cc}\p{Cf}]/u.test(value));
 
 export const adminCreateRoomSchema = z.object({ name: nameSchema }).strict();
+export const deviceIdSchema = z.string().regex(/^pc1_[0-9a-f]{64}$/);
 export const createRoomSchema = z
-  .object({ name: nameSchema, displayName: nameSchema })
+  .object({
+    name: nameSchema,
+    displayName: nameSchema,
+    deviceId: deviceIdSchema.optional(),
+  })
   .strict();
 export const joinRoomSchema = z
-  .object({ invitation: invitationSchema, displayName: nameSchema })
+  .object({
+    invitation: invitationSchema,
+    displayName: nameSchema,
+    deviceId: deviceIdSchema.optional(),
+  })
   .strict();
 export const accessChangeSchema = z
   .object({
@@ -106,8 +115,17 @@ export type UsageReport = {
   points: UsagePoint[];
   users: {
     id: string;
-    roomId: string;
+    identityKind: "device" | "session";
     displayName: string;
+    sessionCount: number;
+    sessions: {
+      id: string;
+      roomId: string;
+      displayName: string;
+      admittedAt: number;
+      uploadedBytes: number;
+      downloadedBytes: number;
+    }[];
     uploadedBytes: number;
     downloadedBytes: number;
     points: UsagePoint[];

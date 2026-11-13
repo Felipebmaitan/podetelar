@@ -1,5 +1,20 @@
 # Implementation phases
 
+## Persistent PC usage identity — independent PR
+
+Derive an app-and-server-scoped identifier from Windows SystemIdentification,
+without transmitting its raw value or collecting IP addresses. Aggregate measured
+SFU usage by device across concurrent instances, rooms and later admissions; retain
+session details and separate unidentified history/older clients. Keep invitations,
+session authorization and SFU identities independent of device recognition.
+
+Accept with actual Windows identity reads across independent processes and app
+copies, native admission over HTTP, database migration/restart and grouped usage
+tests, real SFU traffic and administrator UI checks, Node 24 and native checks,
+and a fresh GPT-6.1-Sol high review. Document the registry fallback's clean-Windows
+reinstall limit and client-spoofing limit. Do not claim fresh-Windows/hardware
+replacement persistence from local-process checks. No account/login work.
+
 ## Fullscreen stream menu and installer-only releases — corrective PR
 
 Open the existing viewing menu on right-click anywhere in the fullscreen video.

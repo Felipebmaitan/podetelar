@@ -309,5 +309,19 @@
   "Saved server storage is unavailable.": "O armazenamento do servidor salvo está indisponível.",
   "Could not unlock saved settings. Paste a fresh invitation, or forget saved settings.": "Não foi possível abrir as configurações salvas. Cole um novo convite ou esqueça as configurações.",
   "Could not forget saved settings. Try again.": "Não foi possível esquecer as configurações. Tente novamente.",
-  "Joined, but could not save this server for the next launch.": "Conectado, mas não foi possível salvar o servidor para a próxima abertura."
+  "Joined, but could not save this server for the next launch.": "Conectado, mas não foi possível salvar o servidor para a próxima abertura.",
+  "Friends": "Amigos",
+  "Apply and close": "Aplicar e concluir",
+  "Updates your current stream.": "Atualiza sua transmissão ao vivo.",
+  "Ready for your next stream.": "Pronto para sua próxima transmissão.",
+  "Live measurements · refresh every 3 seconds": "Medições ao vivo · atualização a cada 3 segundos",
+  "Codec": "Codec",
+  "Decoded output": "Saída do decodificador",
+  "UI texture submissions": "Envios de textura à interface",
+  "Network and decoding": "Rede e decodificação",
+  "Sender": "Transmissor",
+  "Encoder and transport details": "Detalhes do codificador e transporte",
+  "About these measurements": "Sobre estas medições",
+  "Playback details": "Detalhes da reprodução",
+  "Custom": "Personalizada"
 }

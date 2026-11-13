@@ -155,6 +155,7 @@ export class Rooms {
     id: string,
     guildId: string,
     actorId: string,
+    roomName: string,
   ): { room: Room; invitation: string } | "duplicate" | "limited" {
     return this.transaction(() => {
       const now = this.now();
@@ -178,7 +179,7 @@ export class Rooms {
       this.db
         .prepare("INSERT INTO discord_interactions VALUES (?, ?, ?, ?)")
         .run(id, guildId, actorId, now);
-      const { room, invitation } = this.insertRoom("Friends");
+      const { room, invitation } = this.insertRoom(roomName);
       return {
         room: {
           id: room.id,

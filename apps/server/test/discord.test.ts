@@ -270,3 +270,97 @@ test("all-server mode requires the signed guild-installation owner and still rej
   assert.equal(second.data.flags, 4);
   assert.notEqual(first.data.content, second.data.content);
 });
+
+test("signed HTTP commands name rooms after the invoking person's visible Discord name", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "podetelar-discord-names-"));
+  const config = loadConfig({
+    ...env,
+    DATABASE_PATH: join(directory, "rooms.db"),
+  });
+  config.webRoot = join(directory, "no-web");
+  let now = Date.now();
+  let nextId = 555555555555555555n;
+  for (const [member, expected] of [
+    [
+      {
+        nick: "Felipe",
+        user: { id: actor, username: "felipe123", global_name: "Felipão" },
+      },
+      "Felipe's room",
+    ],
+    [
+      {
+        nick: null,
+        user: { id: actor, username: "felipe123", global_name: "Felipão" },
+      },
+      "Felipão's room",
+    ],
+    [
+      {
+        nick: "  ",
+        user: { id: actor, username: "felipe123", global_name: null },
+      },
+      "felipe123's room",
+    ],
+    [{ user: { id: actor } }, `${actor}'s room`],
+    [
+      { nick: "😀".repeat(27), user: { id: actor } },
+      `${"😀".repeat(26)}'s room`,
+    ],
+    [
+      { nick: "\u202eFelipe\n", user: { id: actor, username: "fallback" } },
+      "Felipe's room",
+    ],
+    [
+      { nick: "F".repeat(100), user: { id: actor } },
+      `${"F".repeat(53)}'s room`,
+    ],
+  ] as const) {
+    now += 61_000;
+    config.databasePath = join(directory, `${nextId}.db`);
+    const app = await buildApp(config, { now: () => now, usagePolling: false });
+    t.after(() => app.close());
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    for (const name of ["stream", "telar"]) {
+      const input = {
+        id: String(nextId++),
+        application_id: application,
+        type: 2,
+        guild_id: guild,
+        member,
+        data: { type: 1, name },
+      };
+      const payload = JSON.stringify(input);
+      const timestamp = String(Math.floor(now / 1000));
+      const signature = sign(
+        null,
+        Buffer.from(timestamp + payload),
+        keys.privateKey,
+      ).toString("hex");
+      const response = await fetch(`${address}/api/discord/interactions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-signature-ed25519": signature,
+          "x-signature-timestamp": timestamp,
+        },
+        body: payload,
+      });
+      assert.equal(response.status, 200);
+      const body = (await response.json()) as {
+        data: { content: string; allowed_mentions: unknown };
+      };
+      assert.deepEqual(body.data.allowed_mentions, { parse: [] });
+      const url = new URL(body.data.content.match(/<(https:[^>]+)>/)![1]!);
+      const roomId = url.pathname.split("/").pop();
+      const joined = await app.inject({
+        method: "POST",
+        url: `/api/rooms/${roomId}/join`,
+        headers: { origin: config.publicUrl },
+        payload: { invitation: url.hash.slice(8), displayName: "Viewer" },
+      });
+      assert.equal(joined.statusCode, 200);
+      assert.equal(joined.json().room.name, expected);
+    }
+  }
+});

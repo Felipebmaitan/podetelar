@@ -14,7 +14,16 @@ const interaction = z.object({
   authorizing_integration_owners: z
     .object({ "0": snowflake.optional() })
     .optional(),
-  member: z.object({ user: z.object({ id: snowflake }) }).optional(),
+  member: z
+    .object({
+      nick: z.string().max(128).nullable().optional(),
+      user: z.object({
+        id: snowflake,
+        username: z.string().max(128).optional(),
+        global_name: z.string().max(128).nullable().optional(),
+      }),
+    })
+    .optional(),
   data: z
     .object({
       name: z.enum(["stream", "telar"]),
@@ -107,6 +116,7 @@ export async function discordRoutes(
           input.id,
           input.guild_id,
           input.member.user.id,
+          discordRoomName(input.member),
         );
         if (created === "duplicate")
           return message(
@@ -122,4 +132,19 @@ export async function discordRoutes(
       },
     );
   });
+}
+
+/** Prefer the name shown in the invoking guild. Never use a shared placeholder. */
+function discordRoomName(
+  member: NonNullable<z.infer<typeof interaction>["member"]>,
+) {
+  const name = [
+    member.nick,
+    member.user.global_name,
+    member.user.username,
+    member.user.id,
+  ]
+    .map((value) => value?.replace(/[\p{Cc}\p{Cf}]/gu, "").trim())
+    .find((value) => value);
+  return `${name!.slice(0, 53).replace(/[\uD800-\uDBFF]$/u, "")}'s room`;
 }

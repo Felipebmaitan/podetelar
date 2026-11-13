@@ -393,7 +393,7 @@ impl Controller {
         )
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "ui-review"))]
     pub(crate) fn recording_for_test(state: Snapshot) -> (Self, impl FnMut() -> Option<Command>) {
         let (commands, mut receiver) = mpsc::channel::<QueuedCommand>(8);
         let shutdown = Arc::new(Shutdown::default());

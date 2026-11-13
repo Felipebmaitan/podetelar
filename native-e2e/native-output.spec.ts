@@ -251,7 +251,13 @@ test("muted late subscriptions and replacement stay silent beside an audible str
           samples: number;
         }[];
       };
-      samples: { second: number; nativeAudio: { outputUsers: number } }[];
+      samples: {
+        second: number;
+        nativeAudio: { outputUsers: number };
+        streams: {
+          audio: { tones: number[]; channel_difference_peak: number };
+        }[];
+      }[];
     };
     const sent = await Promise.all(senders.map((sender) => sender.result));
     writeFileSync(
@@ -266,9 +272,23 @@ test("muted late subscriptions and replacement stay silent beside an audible str
     // Inspect every captured buffer's channel difference and each spectral
     // window, including transition seconds; steady-state sampling misses bursts.
     expect(Math.max(...windows.map((w) => w.tones[0]!))).toBeLessThan(0.0004);
+    // Opus can give the audible mono control a small channel difference before
+    // mixing. Compare output against that measured reference, allowing four
+    // S16 quantization steps for loopback conversion. Keep an absolute ceiling
+    // so a bad reference cannot conceal the muted source's stereo signal.
+    const controlDifference = Math.max(
+      ...report.samples.flatMap((s) =>
+        s.streams
+          .map((stream) => stream.audio)
+          .filter((audio) => audio.tones[1]! > 0.01)
+          .map((audio) => audio.channel_difference_peak),
+      ),
+    );
+    expect(Number.isFinite(controlDifference)).toBe(true);
+    expect(controlDifference).toBeLessThan(0.001);
     expect(
       Math.max(...windows.map((w) => w.channel_difference_peak)),
-    ).toBeLessThan(0.0005);
+    ).toBeLessThan(Math.min(0.001, controlDifference + 4 / 32768));
     expect(
       windows
         .filter(

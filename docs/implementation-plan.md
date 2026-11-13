@@ -2,6 +2,31 @@
 
 ## Native audio output latency — corrective PR
 
+Follow-up authorized scope: add an opt-in synchronized flash/click source and
+receiver event measurement across actual window capture, encoding, SFU decode
+and Windows process-loopback output. Use those results to qualify smaller,
+bounded audio queues; preserve uncertainty about physical display/speaker timing.
+Aim at zero relative offset, with 15 ms audio-leading / 45 ms audio-lagging
+reference limits and a tighter normal-operation audio-lag target around 20 ms.
+Do not confuse audio-only output latency with A/V offset. In parallel, research
+receiver synchronization using the existing WebRTC audio clock/native ADM;
+report feasibility before implementing that larger architecture. The user has
+approved the output-only native WebRTC playback pilot after that investigation.
+Keep it opt-in with `FREEDOMSTREAM_NATIVE_AUDIO=1` while qualifying per-track gain,
+initial silence, Stop/rewatch/reconnect, shared-device teardown and the pinned
+SDK's guards against recording and microphone initialization. Retain LiveKit and
+existing codecs. Use the actual track factory's output device and preserve its
+lifetime. Qualify actual process-loopback output, not only pre-gain PCM taps.
+Close mixer admission before receive-channel activation; a track callback alone
+is too late to guarantee initial silence. Bind gain to source generations so
+removed or reused channels cannot inherit authorization. Verify a muted late
+subscription and replacement while another stream is audible. Enable LiveKit
+`room.sync_streams` in local/test/generated deployment configuration and verify
+negotiated audio/video association per publisher; production rollout remains an
+explicit deployment gate until the actual VPS is exercised.
+Full physical synchronization, output-device changes and sustained drift remain
+acceptance gates; compile success cannot establish any of those properties.
+
 Investigate reported audio-after-video across AV1/H.264 capture, transport,
 decode and native output. Bound the demonstrated GStreamer audio sink ring
 buffer independently of WASAPI's low-latency device-period option. Add an

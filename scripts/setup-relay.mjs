@@ -44,6 +44,8 @@ export function relayConfiguration(env, secret) {
     );
   return {
     livekit: `port: 7880
+room:
+  sync_streams: true
 prometheus:
   port: 6789
 bind_addresses: [0.0.0.0]

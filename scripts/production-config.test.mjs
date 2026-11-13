@@ -36,6 +36,7 @@ test("split domains retain the gateway and keep bulk traffic off the website lis
     /server_name stream.maitan.me stream-direct.maitan.me turn.maitan.me/,
   );
   assert.match(config.livekit, /host: turn.maitan.me/);
+  assert.match(config.livekit, /room:\n  sync_streams: true\n/);
   for (const host of [
     "stream.maitan.me",
     "203.0.113.9",

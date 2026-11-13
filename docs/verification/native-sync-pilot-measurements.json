@@ -1,0 +1,149 @@
+{
+  "date": "2026-11-13",
+  "physicalAvSync": "unavailable",
+  "notes": [
+    "Windows process-loopback callback versus converted-video mailbox publication; includes capture/polling delay, not physical display/speaker timing.",
+    "Native initial runs overlapped checks and predate room.sync_streams correction; not a controlled ranking.",
+    "20ms GStreamer was experimental; default remains 40ms."
+  ],
+  "runs": [
+    {
+      "mode": "gstreamer40-h264",
+      "videoEvents": 15,
+      "audioEvents": 14,
+      "pairedEvents": 14,
+      "rawStageOffsetsMs": [
+        110.4969, 113.3175, 91.3053, 115.0694, 101.1216, 100.5323, 116.473,
+        99.6657, 99.8908, 99.6656, 115.1987, 100.229, 100.2555, 100.6266
+      ],
+      "loopbackCaptureAgeRangeMs": [16.4886, 41.9497],
+      "medianMs": 100.57945000000001
+    },
+    {
+      "mode": "gstreamer40-av1",
+      "videoEvents": 14,
+      "audioEvents": 14,
+      "pairedEvents": 14,
+      "rawStageOffsetsMs": [
+        136.05339999999998, 136.10829999999999, 136.15109999999999,
+        137.33790000000002, 138.6485, 137.55100000000002, 137.4877, 137.405,
+        138.01330000000002, 136.6589, 137.7232, 137.51459999999997, 154.1319,
+        138.3519
+      ],
+      "loopbackCaptureAgeRangeMs": [16.3925, 38.6675],
+      "medianMs": 137.50115
+    },
+    {
+      "mode": "experimental20-h264",
+      "videoEvents": 15,
+      "audioEvents": 15,
+      "pairedEvents": 15,
+      "rawStageOffsetsMs": [
+        97.75880000000001, 75.43039999999999, 92.66499999999999,
+        77.41770000000001, 77.6417, 78.189, 94.58160000000001,
+        79.90469999999999, 78.59530000000001, 96.3081, 78.8233,
+        78.53659999999999, 96.4279, 79.0316, 79.2829
+      ],
+      "loopbackCaptureAgeRangeMs": [20.4364, 43.2657],
+      "medianMs": 79.0316
+    },
+    {
+      "mode": "experimental20-av1",
+      "videoEvents": 15,
+      "audioEvents": 15,
+      "pairedEvents": 15,
+      "rawStageOffsetsMs": [
+        5.394, 115.0607, 106.4979, 107.2317, 106.1617, 106.14450000000001,
+        106.39750000000001, 105.22059999999999, 106.2824, 105.7163, 105.7569,
+        123.5446, 106.17229999999999, 106.0089, 123.00529999999999
+      ],
+      "loopbackCaptureAgeRangeMs": [20.0841, 40.0223],
+      "medianMs": 106.17229999999999
+    },
+    {
+      "mode": "nativeBeforeGrouping-h264",
+      "videoEvents": 14,
+      "audioEvents": 13,
+      "pairedEvents": 13,
+      "rawStageOffsetsMs": [
+        128.7923, 55.385, 55.785000000000004, 123.4705, 111.7788, 95.9613,
+        112.0071, 94.63390000000001, 94.52810000000001, 94.55959999999999,
+        111.1961, 94.87650000000001, 110.5646
+      ],
+      "loopbackCaptureAgeRangeMs": [23.1551, 50.1267],
+      "medianMs": 95.9613
+    },
+    {
+      "mode": "nativeBeforeGrouping-av1",
+      "videoEvents": 15,
+      "audioEvents": 15,
+      "pairedEvents": 15,
+      "rawStageOffsetsMs": [
+        -53.9614, 100.4036, 80.7432, 108.4997, 92.74839999999999, 92.4427,
+        92.1319, 91.0702, 90.29679999999999, 91.3081, 106.3023, 91.345, 89.5466,
+        90.7463, 89.9165
+      ],
+      "loopbackCaptureAgeRangeMs": [19.1268, 51.9063],
+      "medianMs": 91.3081
+    },
+    {
+      "mode": "nativeAfterGrouping-av1",
+      "videoEvents": 14,
+      "audioEvents": 15,
+      "pairedEvents": 14,
+      "rawStageOffsetsMs": [
+        86.9615, 101.6988, 76.9053, 110.7806, 92.241, 78.3338, 78.3667, 77.954,
+        76.3647, 77.5685, 76.35379999999999, 77.7764, 78.00219999999999, 67.8853
+      ],
+      "loopbackCaptureAgeRangeMs": [21.6621, 53.4448],
+      "medianMs": 77.97809999999998
+    },
+    {
+      "mode": "nativeAfterGrouping-h264",
+      "videoEvents": 14,
+      "audioEvents": 15,
+      "pairedEvents": 14,
+      "rawStageOffsetsMs": [
+        122.9953, 87.98010000000001, 117.5269, 98.6215, 98.8531, 99.2438,
+        98.7229, 116.2723, 116.9158, 98.5724, 98.8484, 98.2473, 114.688, 98.7894
+      ],
+      "loopbackCaptureAgeRangeMs": [25.1691, 56.967],
+      "medianMs": 98.85075
+    }
+  ],
+  "gain": {
+    "fullScale440": 0.020021185699490275,
+    "quarter440": 0.005006735437474393,
+    "quarterRatio": 0.2500718744945191,
+    "otherStream880": [
+      0.01999947910638889, 0.019982901014896387, 0.019944697151306565,
+      0.01998670632114767
+    ],
+    "maxStereoChannelDifference": 0.0421142578125,
+    "groups": {
+      "distinctGroups": 2,
+      "mismatchedPublishers": 0,
+      "pairedPublishers": 2
+    },
+    "afterClose": {
+      "blockedInputOperations": 3,
+      "enabled": true,
+      "outputDelayMs": null,
+      "outputUsers": 0,
+      "platformOutputStarts": 6,
+      "platformOutputStops": 10,
+      "recordingEnabled": false,
+      "recordingInitialized": false
+    }
+  },
+  "transitions": {
+    "capturedWindows": 26,
+    "maxMuted440": 0.00006281434506538135,
+    "maxChannelDifference": 0.000152587890625,
+    "minOther880": 0.019962617331267838,
+    "sourceReplaced": true,
+    "recoveries": 2,
+    "thresholdMuted440": 0.0004,
+    "thresholdChannelDifference": 0.0005
+  }
+}

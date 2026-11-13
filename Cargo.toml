@@ -1,9 +1,10 @@
 [workspace]
 members = ["apps/publisher", "apps/portable"]
 resolver = "3"
-exclude = [".local/native-sdk/livekit", ".local/native-sdk/webrtc-sys"]
+exclude = [".local/native-sdk/livekit", ".local/native-sdk/webrtc-sys", ".local/native-sdk/libwebrtc"]
 
 [patch.crates-io]
+libwebrtc = { path = ".local/native-sdk/libwebrtc" }
 livekit = { path = ".local/native-sdk/livekit" }
 webrtc-sys = { path = ".local/native-sdk/webrtc-sys" }
 

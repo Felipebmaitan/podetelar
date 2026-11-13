@@ -4,12 +4,14 @@ mod activation;
 mod activation_protocol;
 mod admission;
 mod audio;
+mod av_qualification;
 mod browser_links;
 mod connection;
 mod delivery;
 mod diagnostics;
 mod encoding;
 mod locale;
+mod native_output;
 mod network;
 #[cfg(feature = "performance-experiments")]
 #[allow(dead_code)]
@@ -93,6 +95,7 @@ fn run() -> Result<()> {
     gstreamer::init()
         .context("GStreamer could not initialize. Check the native runtime installation.")?;
     match std::env::args().nth(1).as_deref() {
+        Some("--av-timing-source") => av_qualification::source()?,
         Some("--qualify-playback") => {
             let legacy = match std::env::args().nth(2).as_deref() {
                 None => false,
@@ -369,6 +372,16 @@ struct AudioRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct WatchRequest {
     #[serde(default)]
+    continuous_watch: bool,
+    #[serde(default)]
+    watch_schedule: Vec<FixtureWatch>,
+    #[serde(default)]
+    measure_output_audio: bool,
+    #[serde(default)]
+    volume_schedule: Vec<FixtureVolume>,
+    #[serde(default)]
+    audiovisual_timing: bool,
+    #[serde(default)]
     diagnostics: bool,
     invitation_url: String,
     seconds: u64,
@@ -386,7 +399,73 @@ struct WatchRequest {
     reconnect_after_seconds: Option<u64>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct FixtureVolume {
+    second: u64,
+    percent: u32,
+    #[serde(default)]
+    display_name: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct FixtureWatch {
+    second: u64,
+    enabled: bool,
+    display_name: String,
+}
+
+fn fixture_sync_groups(room: &Room) -> serde_json::Value {
+    let mut groups = Vec::new();
+    let mut mismatched = 0;
+    for participant in room.remote_participants().values() {
+        let tracks = participant.track_publications();
+        let video = tracks
+            .values()
+            .find(|p| p.source() == TrackSource::Screenshare)
+            .and_then(|p| p.track());
+        let audio = tracks
+            .values()
+            .find(|p| p.source() == TrackSource::ScreenshareAudio)
+            .and_then(|p| p.track());
+        if let (Some(RemoteTrack::Video(video)), Some(RemoteTrack::Audio(audio))) = (video, audio) {
+            let audio_ids = audio.sync_stream_ids();
+            if let Some(group) = video
+                .sync_stream_ids()
+                .into_iter()
+                .find(|id| audio_ids.contains(id))
+            {
+                groups.push(group);
+            } else {
+                mismatched += 1;
+            }
+        }
+    }
+    let distinct = groups
+        .iter()
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    serde_json::json!({"pairedPublishers": groups.len(), "mismatchedPublishers": mismatched, "distinctGroups":distinct})
+}
+
 async fn watch_fixture(request: WatchRequest) -> Result<()> {
+    ensure!(
+        request.watch_schedule.len() <= 32
+            && request
+                .watch_schedule
+                .iter()
+                .all(|step| step.second <= request.seconds),
+        "Invalid fixture watch schedule."
+    );
+    ensure!(
+        request.volume_schedule.len() <= 32
+            && request
+                .volume_schedule
+                .iter()
+                .all(|step| step.percent <= 100 && step.second <= request.seconds),
+        "Invalid fixture volume schedule."
+    );
     ensure!(
         (10..=120).contains(&request.seconds),
         "Watcher duration must be 10–120 seconds."
@@ -418,6 +497,16 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     });
     playback.compatibility_only(request.h264_only);
     playback.measure_audio();
+    let timing = (request.audiovisual_timing || request.measure_output_audio)
+        .then(av_qualification::Events::new);
+    if let Some(timing) = &timing {
+        playback.measure_av(timing.clone());
+    }
+    let observer = if let Some(timing) = &timing {
+        Some(av_qualification::Observer::start(timing.clone())?)
+    } else {
+        None
+    };
     ensure!(
         request
             .download_limit_mbps
@@ -438,8 +527,6 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     let mut received = std::collections::HashMap::<String, RemoteTrack>::new();
     let mut byte_totals = std::collections::HashMap::<String, u64>::new();
     let mut previous_bytes = std::collections::HashMap::<String, u64>::new();
-    let mut known = std::collections::HashSet::new();
-    let mut previous_watching = false;
     let result: Result<()> = async {
         while started.elapsed().as_secs() < request.seconds {
             let elapsed = started.elapsed().as_secs();
@@ -449,19 +536,21 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                     .map_err(|_| anyhow::anyhow!("Could not exercise watcher recovery."))?;
             }
             let tiles = playback.reconcile(&room, &admission).await?;
+            ensure!(!request.audiovisual_timing || tiles.len() <= 1, "A/V timing qualification requires one isolated publisher.");
             if watch_after.is_none() {
                 let preview_ready = tiles.iter().any(|tile| !tile.watching && tile.picture.lock().is_ok_and(|picture| picture.is_some()));
                 if preview_ready || elapsed >= 8 { watch_after = Some(elapsed); preview_before_watching = preview_ready; }
             }
             let phase = watch_after.filter(|after| elapsed >= *after).map(|after| elapsed - after);
-            let watching = !request.preview_only && phase.is_some_and(|phase| !(5..8).contains(&phase));
+            let watching = !request.preview_only && phase.is_some_and(|phase| request.continuous_watch || !(5..8).contains(&phase));
             for tile in &tiles {
                 if tile.watching { tile.presentation.request(); }
                 if request.diagnostics { tile.presentation.diagnostics.open.store(tile.watching, Ordering::Relaxed); }
-                if watching != previous_watching || (watching && !known.contains(&tile.id)) { playback.watch(tile.id.clone(), watching)?; }
-                known.insert(tile.id.clone());
+                let tile_watching = request.watch_schedule.iter().filter(|step| step.second <= elapsed && step.display_name == tile.name).max_by_key(|step| step.second).map_or(watching, |step| step.enabled);
+                if tile_watching != tile.watching { playback.watch(tile.id.clone(), tile_watching)?; }
+                let requested_volume = request.volume_schedule.iter().filter(|step| step.second <= elapsed && step.display_name.as_ref().is_none_or(|name| name == &tile.name)).max_by_key(|step| step.second).map_or(100, |step| step.percent);
+                playback.set_volume(&tile.id, requested_volume);
             }
-            previous_watching = watching;
             if elapsed >= next_sample {
                 let mut decoders = Vec::new();
                 let mut media_timing = Vec::new();
@@ -500,7 +589,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                         }
                     }
                 }
-                samples.push(serde_json::json!({"second": elapsed, "mediaTiming":media_timing, "recoveries": recovery.load(Ordering::Acquire), "connected": room.connection_state() == ConnectionState::Connected, "phaseSecond": phase, "watching": watching,"receivedBytes":byte_totals.values().sum::<u64>(), "decoders":decoders, "streams": tiles.iter().map(|tile| serde_json::json!({"diagnosticRates":tile.presentation.diagnostics.rates.lock().ok().and_then(|v|*v),"diagnosticAttempts":tile.presentation.diagnostics.attempts.load(Ordering::Relaxed),"diagnosticSuccesses":tile.presentation.diagnostics.successes.load(Ordering::Relaxed),"diagnosticSender":tile.presentation.diagnostics.sender.lock().ok().and_then(|value|value.as_ref().map(|(_,value)|value.clone())),"codec":tile.codec,"frames":tile.frames.load(Ordering::Relaxed),"watching":tile.watching,"pictureSize":tile.picture.lock().ok().and_then(|p|p.as_ref().map(|image|image.size)),"audio":tile.audio.lock().map(|m|m.clone()).unwrap_or_default()})).collect::<Vec<_>>() }));
+                samples.push(serde_json::json!({"second": elapsed, "nativeAudio":native_output::audit(),"syncGroups":fixture_sync_groups(&room), "mediaTiming":media_timing, "recoveries": recovery.load(Ordering::Acquire), "connected": room.connection_state() == ConnectionState::Connected, "phaseSecond": phase, "watching": watching,"receivedBytes":byte_totals.values().sum::<u64>(), "decoders":decoders, "streams": tiles.iter().map(|tile| serde_json::json!({"diagnosticRates":tile.presentation.diagnostics.rates.lock().ok().and_then(|v|*v),"diagnosticAttempts":tile.presentation.diagnostics.attempts.load(Ordering::Relaxed),"diagnosticSuccesses":tile.presentation.diagnostics.successes.load(Ordering::Relaxed),"diagnosticSender":tile.presentation.diagnostics.sender.lock().ok().and_then(|value|value.as_ref().map(|(_,value)|value.clone())),"codec":tile.codec,"frames":tile.frames.load(Ordering::Relaxed),"watching":tile.watching,"pictureSize":tile.picture.lock().ok().and_then(|p|p.as_ref().map(|image|image.size)),"audio":tile.audio.lock().map(|m|m.clone()).unwrap_or_default()})).collect::<Vec<_>>() }));
                 if request.consume_pictures { for tile in &tiles { if let Ok(mut picture) = tile.picture.lock() { picture.take(); } } }
                 next_sample = elapsed + 1;
             }
@@ -516,8 +605,9 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     result?;
     println!(
         "{}",
-        serde_json::json!({"samples":samples,"closed":true,"previewBeforeWatching":preview_before_watching})
+        serde_json::json!({"samples":samples,"closed":true,"nativeAudioAfterClose":native_output::audit(),"previewBeforeWatching":preview_before_watching,"audiovisualTiming":timing.as_ref().map(|timing|timing.report())})
     );
+    drop(observer);
     Ok(())
 }
 

@@ -101,6 +101,7 @@ writeFileSync(
   config,
   JSON.stringify({
     port: 17880,
+    room: { sync_streams: true },
     bind_addresses: ["127.0.0.1"],
     rtc: {
       tcp_port: 17881,

@@ -1173,6 +1173,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "url",
+ "webrtc-sys",
  "windows",
  "winresource",
 ]
@@ -2156,8 +2157,6 @@ dependencies = [
 [[package]]
 name = "libwebrtc"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65444d0d6a96c9574bfaefb49829ef8cb112d611d77e888cf4e0081486084e8f"
 dependencies = [
  "cxx",
  "jni 0.21.1",

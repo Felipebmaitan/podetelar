@@ -68,6 +68,13 @@ for (const file of [
   "apps/publisher/decoder/freedomstream_decoder.h",
   "apps/publisher/decoder/deferred_i420.h",
   "apps/publisher/decoder/bounded_readback.h",
+  "apps/publisher/decoder/native_output_guard.h",
+  "apps/publisher/decoder/native_output_mixer.h",
+  "scripts/patch-native-output.mjs",
+  "scripts/setup-native-audio.mjs",
+  "scripts/setup-native-sdk.mjs",
+  "deploy/native-sdk.json",
+  "deploy/native-audio.json",
   "scripts/setup-native-decoder.mjs",
   "deploy/native-decoder.json",
 ]) {
@@ -75,7 +82,7 @@ for (const file of [
 }
 writeFileSync(
   join(decoderPatch, "README.txt"),
-  "PodeTelar modifies webrtc-sys 0.3.53 (Apache-2.0) to use native Direct3D11 decoders through the dynamically linked GStreamer runtime and prune expired weak track entries. The adapter, deferred I420 and bounded readback helpers are MIT licensed. All three headers, the setup script and checksum pin reproduce the change from the original crate. No browser runtime is included.\n",
+  "PodeTelar modifies webrtc-sys 0.3.53 (Apache-2.0) for native Direct3D11 decoders through dynamically linked GStreamer, expired weak track pruning, output-only Windows audio, remote track gain and output delay qualification. The five adapter/helper headers and patch script are MIT licensed. The included headers, setup/patch scripts and checksum pins reproduce the adapters from the original crates. libwebrtc 0.4.0 exposes a typed audio handle; LiveKit 0.10.1 adds read-only negotiated stream association accessors for qualification. Existing WebRTC runtime and third-party licenses still apply. No browser runtime is included.\n",
 );
 const { dumpbin } = await preparePortableRuntime(root, output, notices);
 const sha256 = (path) =>

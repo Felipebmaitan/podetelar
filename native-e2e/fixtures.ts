@@ -50,7 +50,7 @@ export function toneFixtures(directory: string) {
   };
   return {
     application: game.toLowerCase(),
-    game: () => start(game, 440),
+    game: (frequency = 440) => start(game, frequency),
     discord: () => start(discord, 880),
     stop: () => {
       for (const child of children) if (child.exitCode === null) child.kill();
@@ -77,7 +77,9 @@ export function nativeRequest(
     reportFailed = reject;
   });
   child.stdout.on("data", (data: Buffer) => {
-    output = (output + data.toString()).slice(-64_000);
+    // Two-stream timing/gain qualification exceeds 64 KB. Retain one bounded
+    // numeric report without truncating its JSON during the real-media check.
+    output = (output + data.toString()).slice(-512_000);
     const line = output.trim().split("\n").at(-1);
     if (line?.startsWith("{")) {
       try {

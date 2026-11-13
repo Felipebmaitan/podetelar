@@ -1,5 +1,20 @@
 # Implementation phases
 
+## v0.1.1 Windows release
+
+Publish the merged native audio, ranked codec, device usage and native UI/Discord
+room naming corrections as v0.1.1. Keep Node/workspace, publisher/portable and
+installed bootstrap versions consistent. Preserve installer-only public assets,
+unsigned preview status and the disabled public automatic update feed. Use a
+monotonic 0.1.1 preview build internally; do not modify the existing v0.1.0 assets.
+
+Accept with Node 24/native checks, independent GPT-6.1-Sol high review, committed
+source provenance, payload/runtime/source-integrity qualification and actual
+packaged media checks. Verify the Setup embedded payload and uploaded bytes.
+Carry forward development-PC/NVIDIA scope and explicit fresh-PC, AMD, physical
+A/V sync, signing and update-feed limitations. Record actual installer lifecycle
+results separately; never substitute archive inspection for an observed install.
+
 ## Ranked room codec adaptation — corrective PR
 
 Replace direct AV1/HEVC-to-H.264 fallback with AV1 → HEVC → H.264, using

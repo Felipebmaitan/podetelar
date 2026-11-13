@@ -809,7 +809,7 @@ impl Playback {
     }
 }
 
-pub(crate) struct AudioPipeline(gst::Pipeline);
+pub(crate) struct AudioPipeline(pub(crate) gst::Pipeline);
 impl Drop for AudioPipeline {
     fn drop(&mut self) {
         let _ = self.0.set_state(gst::State::Null);
@@ -822,9 +822,7 @@ async fn audio(
     metrics: Arc<Mutex<crate::audio::Metrics>>,
     measure: bool,
 ) -> Result<()> {
-    let pipeline = gst::parse::launch("appsrc name=pcm is-live=true format=time do-timestamp=true block=false max-bytes=38400 ! audio/x-raw,format=S16LE,rate=48000,channels=2,layout=interleaved ! queue name=backlog max-size-time=100000000 max-size-bytes=38400 max-size-buffers=10 leaky=downstream ! audioconvert ! audioresample ! volume name=level ! wasapi2sink low-latency=true sync=false")?
-        .downcast::<gst::Pipeline>().map_err(|_| anyhow::anyhow!("Invalid native playback pipeline."))?;
-    let pipeline = AudioPipeline(pipeline);
+    let pipeline = audio_pipeline()?;
     let input = pipeline
         .0
         .by_name("pcm")
@@ -892,6 +890,16 @@ async fn audio(
         input.push_buffer(audio_buffer(frame.data.into_owned()))?;
     }
     Ok(())
+}
+
+// low-latency optimizes the WASAPI device period, but does not bound the
+// GstAudioBaseSink ring buffer. Its 200 ms default is additional to NetEQ and
+// the appsrc/backlog queues and is invisible to playback_queue_ms. Keep a
+// modest scheduling cushion without retaining that default-sized audio tail.
+pub(crate) fn audio_pipeline() -> Result<AudioPipeline> {
+    let pipeline = gst::parse::launch("appsrc name=pcm is-live=true format=time do-timestamp=true block=false max-bytes=38400 ! audio/x-raw,format=S16LE,rate=48000,channels=2,layout=interleaved ! queue name=backlog max-size-time=100000000 max-size-bytes=38400 max-size-buffers=10 leaky=downstream ! audioconvert ! audioresample ! volume name=level ! wasapi2sink name=device low-latency=true buffer-time=40000 sync=false")?
+        .downcast::<gst::Pipeline>().map_err(|_| anyhow::anyhow!("Invalid native playback pipeline."))?;
+    Ok(AudioPipeline(pipeline))
 }
 
 pub(crate) fn audio_buffer(samples: Vec<i16>) -> gst::Buffer {

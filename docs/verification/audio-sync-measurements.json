@@ -1,0 +1,66 @@
+{
+  "measurement": "PCM submission to same-process Windows loopback detection; includes capture overhead; physical output unavailable",
+  "legacy": {
+    "captureAgesMs": [
+      19.5685, 19.179, 19.5327, 19.6128, 19.2668, 19.1303, 19.1142, 19.3588,
+      19.4085, 19.4284, 19.2084
+    ],
+    "captureBufferUs": 500000,
+    "capturePeriodUs": 20000,
+    "delaysMs": [
+      260.2841, 259.7178, 260.2732, 260.4149, 259.96950000000004, 260.0693,
+      259.9169, 259.91389999999996, 260.21250000000003, 260.24629999999996,
+      259.8722
+    ],
+    "maxInputBytes": 1920,
+    "physicalSpeakerTiming": "unavailable",
+    "sinkBufferUs": 200000
+  },
+  "corrected": {
+    "captureAgesMs": [
+      20.6617, 20.7469, 20.3626, 20.5411, 20.755, 20.5468, 20.7081, 20.5798,
+      20.3933, 20.5167, 20.5924
+    ],
+    "captureBufferUs": 500000,
+    "capturePeriodUs": 20000,
+    "delaysMs": [
+      100.2471, 100.3466, 99.9506, 100.1593, 100.3108, 100.23129999999999,
+      99.93639999999999, 99.9481, 100.048, 99.3276, 100.28049999999999
+    ],
+    "maxInputBytes": 1920,
+    "physicalSpeakerTiming": "unavailable",
+    "sinkBufferUs": 40000
+  },
+  "finalPairedAcceptance": {
+    "legacy": {
+      "captureAgesMs": [
+        22.2375, 22.3493, 22.2804, 22.3526, 22.1728, 22.2396, 22.2878, 22.0654,
+        22.0278, 22.2059, 22.1042
+      ],
+      "captureBufferUs": 500000,
+      "capturePeriodUs": 20000,
+      "delaysMs": [
+        259.8796, 260.187, 259.8666, 260.1436, 260.2562, 259.90229999999997,
+        259.8936, 259.92150000000004, 259.6133, 260.1173, 259.8474
+      ],
+      "maxInputBytes": 1920,
+      "physicalSpeakerTiming": "unavailable",
+      "sinkBufferUs": 200000
+    },
+    "corrected": {
+      "captureAgesMs": [
+        20.6079, 20.6093, 20.4359, 21.0007, 20.3798, 20.3497, 20.7442, 20.8209,
+        20.6645, 20.6888, 20.7943
+      ],
+      "captureBufferUs": 500000,
+      "capturePeriodUs": 20000,
+      "delaysMs": [
+        99.80709999999999, 100.172, 100.10249999999999, 100.3925, 99.8897,
+        99.836, 100.1606, 100.1152, 100.3229, 99.9341, 100.0082
+      ],
+      "maxInputBytes": 1920,
+      "physicalSpeakerTiming": "unavailable",
+      "sinkBufferUs": 40000
+    }
+  }
+}

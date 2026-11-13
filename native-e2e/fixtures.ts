@@ -58,8 +58,12 @@ export function toneFixtures(directory: string) {
   };
 }
 
-export function nativeRequest(option: string, request: unknown) {
-  const child = spawn(nativeExecutable(), [option], {
+export function nativeRequest(
+  option: string,
+  request: unknown,
+  args: string[] = [],
+) {
+  const child = spawn(nativeExecutable(), [option, ...args], {
     windowsHide: true,
     stdio: ["pipe", "pipe", "pipe"],
   });

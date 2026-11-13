@@ -1,5 +1,19 @@
 # Implementation phases
 
+## Native audio output latency — corrective PR
+
+Investigate reported audio-after-video across AV1/H.264 capture, transport,
+decode and native output. Bound the demonstrated GStreamer audio sink ring
+buffer independently of WASAPI's low-latency device-period option. Add an
+explicit process-only loopback qualifier using the production playback pipeline,
+and native SFU stage-counter acceptance for both codecs. Never compensate with
+an arbitrary video delay or treat callback/loopback timing as physical lip sync.
+Record measured improvements and unresolved capture-clock/device/network timing
+in `docs/verification/audio-sync-investigation.md`. Run Node 24 checks, native
+Clippy/tests, actual loopback and native media checks, and obtain a fresh
+GPT-6.1-Sol high review. Live-room, physical output, AMD and WAN impairment
+qualification remain explicit; this correction alone cannot close full A/V sync.
+
 ## Fullscreen stream menu and installer-only releases — corrective PR
 
 Open the existing viewing menu on right-click anywhere in the fullscreen video.

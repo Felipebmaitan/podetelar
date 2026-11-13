@@ -15,6 +15,7 @@ mod network;
 #[allow(dead_code)]
 mod planar_experiment;
 mod playback;
+mod playback_qualification;
 mod preview;
 mod publisher;
 mod quality;
@@ -92,6 +93,14 @@ fn run() -> Result<()> {
     gstreamer::init()
         .context("GStreamer could not initialize. Check the native runtime installation.")?;
     match std::env::args().nth(1).as_deref() {
+        Some("--qualify-playback") => {
+            let legacy = match std::env::args().nth(2).as_deref() {
+                None => false,
+                Some("legacy") => true,
+                _ => bail!("Use --qualify-playback [legacy]."),
+            };
+            playback_qualification::run(legacy)?;
+        }
         Some("--probe") => println!(
             "{}",
             serde_json::json!({"encoders": encoding::encoders(), "decoders": playback::decoder_codecs(), "sourceCount": sources::enumerate().len(), "runtime": gstreamer::version_string().to_string()})
@@ -455,6 +464,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
             previous_watching = watching;
             if elapsed >= next_sample {
                 let mut decoders = Vec::new();
+                let mut media_timing = Vec::new();
                 for participant in room.remote_participants().values() {
                     for publication in participant.track_publications().values() {
                         if let Some(track) = publication.track() && received.len() < 64 { received.insert(publication.sid().to_string(), track); }
@@ -464,6 +474,19 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                     let stats = match track { RemoteTrack::Video(track) => track.get_stats().await, RemoteTrack::Audio(track) => track.get_stats().await };
                     if let Ok(stats) = stats {
                         for stat in &stats {
+                            if let livekit::webrtc::stats::RtcStats::InboundRtp(stat) = stat {
+                                media_timing.push(serde_json::json!({
+                                    "kind": stat.stream.kind,
+                                    "bytes": stat.inbound.bytes_received,
+                                    "packets": stat.received.packets_received,
+                                    "lost": stat.received.packets_lost,
+                                    "jitterSeconds": stat.received.jitter,
+                                    "jitterBufferDelaySeconds": stat.inbound.jitter_buffer_delay,
+                                    "jitterBufferEmitted": stat.inbound.jitter_buffer_emitted_count,
+                                    "decodeSeconds": stat.inbound.total_decode_time,
+                                    "decodedFrames": stat.inbound.frames_decoded,
+                                }));
+                            }
                             if let livekit::webrtc::stats::RtcStats::InboundRtp(stat) = stat
                                 && !stat.inbound.decoder_implementation.is_empty() {
                                 decoders.push(serde_json::json!({"implementation": stat.inbound.decoder_implementation, "hardware": stat.inbound.power_efficient_decoder}));
@@ -477,7 +500,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                         }
                     }
                 }
-                samples.push(serde_json::json!({"second": elapsed, "recoveries": recovery.load(Ordering::Acquire), "connected": room.connection_state() == ConnectionState::Connected, "phaseSecond": phase, "watching": watching,"receivedBytes":byte_totals.values().sum::<u64>(), "decoders":decoders, "streams": tiles.iter().map(|tile| serde_json::json!({"diagnosticRates":tile.presentation.diagnostics.rates.lock().ok().and_then(|v|*v),"diagnosticAttempts":tile.presentation.diagnostics.attempts.load(Ordering::Relaxed),"diagnosticSuccesses":tile.presentation.diagnostics.successes.load(Ordering::Relaxed),"diagnosticSender":tile.presentation.diagnostics.sender.lock().ok().and_then(|value|value.as_ref().map(|(_,value)|value.clone())),"codec":tile.codec,"frames":tile.frames.load(Ordering::Relaxed),"watching":tile.watching,"pictureSize":tile.picture.lock().ok().and_then(|p|p.as_ref().map(|image|image.size)),"audio":tile.audio.lock().map(|m|m.clone()).unwrap_or_default()})).collect::<Vec<_>>() }));
+                samples.push(serde_json::json!({"second": elapsed, "mediaTiming":media_timing, "recoveries": recovery.load(Ordering::Acquire), "connected": room.connection_state() == ConnectionState::Connected, "phaseSecond": phase, "watching": watching,"receivedBytes":byte_totals.values().sum::<u64>(), "decoders":decoders, "streams": tiles.iter().map(|tile| serde_json::json!({"diagnosticRates":tile.presentation.diagnostics.rates.lock().ok().and_then(|v|*v),"diagnosticAttempts":tile.presentation.diagnostics.attempts.load(Ordering::Relaxed),"diagnosticSuccesses":tile.presentation.diagnostics.successes.load(Ordering::Relaxed),"diagnosticSender":tile.presentation.diagnostics.sender.lock().ok().and_then(|value|value.as_ref().map(|(_,value)|value.clone())),"codec":tile.codec,"frames":tile.frames.load(Ordering::Relaxed),"watching":tile.watching,"pictureSize":tile.picture.lock().ok().and_then(|p|p.as_ref().map(|image|image.size)),"audio":tile.audio.lock().map(|m|m.clone()).unwrap_or_default()})).collect::<Vec<_>>() }));
                 if request.consume_pictures { for tile in &tiles { if let Ok(mut picture) = tile.picture.lock() { picture.take(); } } }
                 next_sample = elapsed + 1;
             }

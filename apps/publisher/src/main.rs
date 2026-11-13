@@ -362,6 +362,8 @@ struct AudioRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct WatchRequest {
     #[serde(default)]
+    continuous_watch: bool,
+    #[serde(default)]
     diagnostics: bool,
     invitation_url: String,
     seconds: u64,
@@ -452,7 +454,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                 if preview_ready || elapsed >= 8 { watch_after = Some(elapsed); preview_before_watching = preview_ready; }
             }
             let phase = watch_after.filter(|after| elapsed >= *after).map(|after| elapsed - after);
-            let watching = !request.preview_only && phase.is_some_and(|phase| !(5..8).contains(&phase));
+            let watching = !request.preview_only && phase.is_some_and(|phase| request.continuous_watch || !(5..8).contains(&phase));
             for tile in &tiles {
                 if tile.watching { tile.presentation.request(); }
                 if request.diagnostics { tile.presentation.diagnostics.open.store(tile.watching, Ordering::Relaxed); }

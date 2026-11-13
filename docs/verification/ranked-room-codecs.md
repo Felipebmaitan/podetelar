@@ -1,7 +1,8 @@
 # Ranked room codec adaptation
 
-Implemented on 2026-11-13, based on the native settings correction branch
-(`07ae082`, PR #41). This change remains a separate branch and PR.
+Implemented on 2026-11-13. Originally developed on the native settings correction
+branch, then isolated onto `main` (`506ae97`, persistent PC usage identity) for
+PR #43. The unpublished UI/audio changes from PRs #40/#41 are excluded.
 
 ## Behavior
 
@@ -26,7 +27,7 @@ retains its original capture clock. The cached still can be uploaded against a
 replacement SID without capturing another image. A missing common codec stops
 publication with an explicit error rather than silently rewriting the mode.
 
-## Automated verification
+## Initial stacked-branch verification
 
 - Node **24.11.1**, `npm run check`: formatting, workspace/tool types, API/config
   tests and production builds passed after the implementation and review fixes.
@@ -56,6 +57,21 @@ native-e2e/av1.spec.ts native-e2e/native-room.spec.ts`, with
   strengthening the media test's fresh-frame/capture assertions. Approval is
   contingent on the real SFU acceptance checks passing; all eleven subsequently
   passed on the reviewed implementation.
+
+## Main integration
+
+The main-based version retains main's pinned SDK and playback behavior. The
+earlier audio-pilot SDK cache was preserved separately and regenerated from the
+main SDK/decoder pins before native verification. No SDK pin or runtime dependency
+changes are part of this PR. The smoke harness keeps main's room configuration.
+
+Node 24 checks passed again. Native tests passed with **80 publisher tests,
+6 ignored**, **10 portable tests** and the isolated process fixture. A fresh
+**GPT-6.1-Sol, high** review caught the test fixture's missing `continuousWatch`
+option after rebase; its defaulted field and predicate were restored. The reviewer
+approved the fix with no remaining findings, contingent on acceptance reruns.
+The main-based Clippy and real API/SFU rerun results are recorded in
+[PR #43](https://github.com/Felipebmaitan/podetelar/pull/43) before merge.
 
 ## Qualification limits
 

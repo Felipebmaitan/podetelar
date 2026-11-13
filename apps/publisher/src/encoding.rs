@@ -1,4 +1,4 @@
-use crate::preview::{self, Frame, Gate, Latest};
+use crate::preview::{self, Frame, Latest};
 pub use crate::quality::{Codec, Mode};
 use crate::quality::{EncoderBudget, RateControl, ReinitializingBudget};
 use crate::sources::{self, Source, Target};
@@ -106,6 +106,16 @@ impl Encoding {
         mode: Mode,
         stop: &AtomicBool,
         rate: RateControl,
+    ) -> Result<Self> {
+        Self::start_with_preview(source, encoder, mode, stop, rate, preview::Capture::new())
+    }
+    pub fn start_with_preview(
+        source: &Source,
+        encoder: &Encoder,
+        mode: Mode,
+        stop: &AtomicBool,
+        rate: RateControl,
+        preview: preview::Capture,
     ) -> Result<Self> {
         ensure!(!stop.load(Ordering::Acquire), "Capture was cancelled.");
         ensure!(
@@ -254,7 +264,7 @@ impl Encoding {
             .context("Missing encoded frame sink.")?
             .downcast::<AppSink>()
             .map_err(|_| anyhow::anyhow!("Invalid frame sink."))?;
-        let gate = Gate::new();
+        let gate = preview.gate;
         pipeline
             .by_name("preview_gate")
             .and_then(|element| element.static_pad("sink"))
@@ -285,7 +295,7 @@ impl Encoding {
             epoch_us,
             capture: source.clone(),
             preview_sink,
-            previews: Arc::new(Mutex::new(None)),
+            previews: preview.latest,
             rate,
         };
         ensure!(!stop.load(Ordering::Acquire), "Capture was cancelled.");
@@ -389,7 +399,9 @@ impl Encoding {
             {
                 counters.preview_frames += 1;
                 *latest = Some(Frame {
-                    sequence: counters.preview_frames,
+                    sequence: latest
+                        .as_ref()
+                        .map_or(1, |frame| frame.sequence.saturating_add(1)),
                     bytes: bytes.to_vec(),
                 });
             }

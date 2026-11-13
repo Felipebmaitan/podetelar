@@ -25,6 +25,7 @@ use tokio::task::JoinHandle;
 
 pub const LIMIT_PREFIX: &str = "freedomstream.limit.";
 pub const WATCH_PREFIX: &str = "freedomstream.watch.";
+use crate::codec_policy::{self, Codecs};
 pub type Picture = Arc<Mutex<Option<Arc<egui::ColorImage>>>>;
 
 #[derive(Default)]
@@ -170,11 +171,29 @@ struct Watch {
     audio: Arc<Mutex<crate::audio::Metrics>>,
     error: Arc<Mutex<String>>,
     diagnostic_task: Option<Pump>,
-    h264: bool,
+    rejected: Codecs,
+    admitted: bool,
     video_sid: String,
 }
 
 impl Watch {
+    fn admit(&mut self, admitted: bool) {
+        if admitted
+            && !self.admitted
+            && let Ok(mut last) = self.last_frame.lock()
+        {
+            *last = Instant::now();
+        }
+        self.admitted = admitted;
+    }
+    fn usable(&self, mut decoders: Codecs) -> Codecs {
+        for codec in codec_policy::ORDER {
+            if self.rejected.supports(codec) {
+                decoders.reject(codec);
+            }
+        }
+        decoders
+    }
     fn begin_video(&mut self) -> (Picture, Arc<Presentation>) {
         // Cancellation cannot interrupt a synchronous conversion already in
         // progress. A replacement pump owns a new mailbox so a late old result
@@ -308,6 +327,14 @@ impl Playback {
         }
     }
 
+    pub fn disable_av1(&mut self) {
+        self.av1 = false;
+    }
+
+    fn decoders(&self) -> Codecs {
+        Codecs::new(self.av1, self.hevc, self.h264)
+    }
+
     pub fn watch(&mut self, id: String, enabled: bool) -> Result<()> {
         if enabled {
             if self.watches.is_empty() {
@@ -328,7 +355,8 @@ impl Playback {
                 audio: Arc::default(),
                 error: Arc::default(),
                 diagnostic_task: None,
-                h264: !self.hevc && !self.av1,
+                rejected: Codecs::default(),
+                admitted: false,
                 video_sid: String::new(),
             });
         } else {
@@ -451,8 +479,18 @@ impl Playback {
         let mut tiles = Vec::new();
         let mut pumps = HashSet::new();
         let mut announce = HashMap::new();
+        let decoders = self.decoders();
+        announce.insert(codec_policy::CAPABILITIES.to_owned(), decoders.encode());
         for participant in participants.values() {
             let id = participant.identity().to_string();
+            // Failures constrain this publisher for the whole watch lifetime,
+            // including replacement gaps and pauses imposed by the budget.
+            if let Some(watch) = self.watches.get(&id) {
+                announce.insert(
+                    format!("{}{id}", codec_policy::DECODE_PREFIX),
+                    watch.usable(decoders).encode(),
+                );
+            }
             let publications = participant.track_publications();
             let Some(video) = publications
                 .values()
@@ -482,6 +520,7 @@ impl Playback {
             let hevc = video.mime_type().eq_ignore_ascii_case("video/h265");
             let av1 = video.mime_type().eq_ignore_ascii_case("video/av1");
             if let Some(watch) = self.watches.get_mut(&id) {
+                watch.admit(allowed.contains(&id));
                 if watch.video_sid != video.sid().as_str() {
                     watch.video_sid = video.sid().to_string();
                     watch.since = Instant::now();
@@ -489,23 +528,34 @@ impl Playback {
                         *last = Instant::now();
                     }
                 }
-                if (hevc || av1)
+                if allowed.contains(&id)
+                    && (hevc || av1)
+                    && codec_policy::from_mime(&video.mime_type()).is_some_and(|codec| {
+                        decoders.supports(codec) && !watch.rejected.supports(codec)
+                    })
                     && watch
                         .last_frame
                         .lock()
                         .is_ok_and(|last| last.elapsed() > Duration::from_secs(6))
                 {
-                    watch.h264 = true;
+                    let codec = codec_policy::from_mime(&video.mime_type()).unwrap();
+                    // Accumulate failures across replacement SIDs for this watch.
+                    watch.rejected.insert(codec);
                 }
+                let usable = watch.usable(decoders);
+                announce.insert(
+                    format!("{}{id}", codec_policy::DECODE_PREFIX),
+                    usable.encode(),
+                );
                 if allowed.contains(&id) {
                     announce.insert(
                         format!("{WATCH_PREFIX}{id}"),
-                        if watch.h264 || (av1 && !self.av1) || (hevc && !self.hevc) {
+                        if codec_policy::from_mime(&video.mime_type())
+                            .is_none_or(|codec| !usable.supports(codec))
+                        {
                             "h264"
-                        } else if av1 {
-                            "av1"
                         } else {
-                            "hevc"
+                            codec_policy::name(codec_policy::from_mime(&video.mime_type()).unwrap())
                         }
                         .to_owned(),
                     );
@@ -558,7 +608,8 @@ impl Playback {
             }
             let watching = self.watches.contains_key(&id);
             let compatible = self.watches.get(&id).is_some_and(|w| {
-                (!hevc && !av1) || (!w.h264 && (!av1 || self.av1) && (!hevc || self.hevc))
+                codec_policy::from_mime(&video.mime_type())
+                    .is_some_and(|codec| decoders.supports(codec) && !w.rejected.supports(codec))
             });
             let admitted = allowed.contains(&id);
             for publication in publications.values().filter(|p| {
@@ -762,7 +813,7 @@ impl Playback {
                 status: if watching && !admitted {
                     "Paused by your watching budget. Stop another stream or adjust the connection limit.".into()
                 } else if watching && !compatible {
-                    "Switching to H.264 compatibility…".into()
+                    "Negotiating a compatible codec…".into()
                 } else if let Some(watch) = watch {
                     let error = watch.error.lock().map(|e| e.clone()).unwrap_or_default();
                     if !error.is_empty() { error } else if watch.last_frame.lock().is_ok_and(|last| last.elapsed() > Duration::from_secs(12)) {
@@ -914,12 +965,28 @@ pub(crate) fn audio_buffer(samples: Vec<i16>) -> gst::Buffer {
     )
 }
 
-/// Only a participant actively requesting this publication can trigger fallback.
-pub fn needs_h264(room: &Room) -> bool {
-    let key = format!("{WATCH_PREFIX}{}", room.local_participant().identity());
-    room.remote_participants()
-        .values()
-        .any(|p| p.attributes().get(&key).is_some_and(|v| v == "h264"))
+/// Every connected member constrains decoding, including preview-only members.
+/// Older clients without a capability announcement use conservative H.264.
+pub fn room_codecs(room: &Room) -> Codecs {
+    let id = room.local_participant().identity();
+    let decode = format!("{}{id}", codec_policy::DECODE_PREFIX);
+    let watch = format!("{WATCH_PREFIX}{id}");
+    room.remote_participants().values().fold(
+        Codecs::new(true, true, true),
+        |shared, participant| {
+            let attributes = participant.attributes();
+            let mut supported = attributes
+                .get(codec_policy::CAPABILITIES)
+                .map(|value| Codecs::parse(value))
+                .unwrap_or(Codecs::new(false, false, true));
+            if let Some(value) = attributes.get(&decode) {
+                supported = supported.intersect(Codecs::parse(value));
+            } else if attributes.get(&watch).is_some_and(|value| value == "h264") {
+                supported = supported.intersect(Codecs::new(false, false, true));
+            }
+            shared.intersect(supported)
+        },
+    )
 }
 
 /// A bounded, quiet local fixture exercises exclusion of our native playback process.
@@ -977,7 +1044,8 @@ mod tests {
             audio: Arc::default(),
             error: Arc::default(),
             diagnostic_task: None,
-            h264: true,
+            rejected: Codecs::new(true, false, false),
+            admitted: false,
             video_sid: "synthetic-track".into(),
         };
         let (old_picture, old_presentation) = watch.begin_video();
@@ -1001,7 +1069,11 @@ mod tests {
         );
         assert_eq!(watch.frames.load(Ordering::Relaxed), 7);
         assert_eq!(watch.volume.load(Ordering::Relaxed), 80);
-        assert!(watch.h264);
+        assert!(watch.rejected.supports(crate::quality::Codec::Av1));
+        *watch.last_frame.lock().unwrap() = Instant::now() - Duration::from_secs(20);
+        watch.admit(true);
+        assert!(watch.last_frame.lock().unwrap().elapsed() < Duration::from_secs(1));
+        assert!(watch.rejected.supports(crate::quality::Codec::Av1));
     }
     #[test]
     fn received_bitrate_uses_actual_elapsed_time_and_handles_counter_reset() {

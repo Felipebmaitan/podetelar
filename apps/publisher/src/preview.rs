@@ -17,25 +17,44 @@ pub struct Frame {
 }
 pub type Latest = Arc<Mutex<Option<Frame>>>;
 
+#[derive(Clone)]
+pub struct Capture {
+    pub gate: Arc<Gate>,
+    pub latest: Latest,
+}
+impl Capture {
+    pub fn new() -> Self {
+        Self {
+            gate: Arc::new(Gate::new()),
+            latest: Arc::default(),
+        }
+    }
+}
+
 /// Runs on the tiny preview branch before GPU scaling, download and JPEG encode.
 /// A reconnect/viewer/network retry cannot advance this capture clock.
 pub struct Gate {
     started: Instant,
     next_ms: AtomicU64,
+    captures: AtomicU64,
 }
 impl Gate {
     pub fn new() -> Self {
         Self {
             started: Instant::now(),
             next_ms: AtomicU64::new(0),
+            captures: AtomicU64::new(0),
         }
     }
     pub fn take(&self) -> bool {
         self.take_at(self.started.elapsed().as_millis().min(u64::MAX as u128) as u64)
     }
+    pub fn captures(&self) -> u64 {
+        self.captures.load(Ordering::Acquire)
+    }
     fn take_at(&self, elapsed: u64) -> bool {
         let next = self.next_ms.load(Ordering::Acquire);
-        elapsed >= next
+        let taken = elapsed >= next
             && self
                 .next_ms
                 .compare_exchange(
@@ -44,7 +63,11 @@ impl Gate {
                     Ordering::AcqRel,
                     Ordering::Acquire,
                 )
-                .is_ok()
+                .is_ok();
+        if taken {
+            self.captures.fetch_add(1, Ordering::Release);
+        }
+        taken
     }
 }
 

@@ -448,6 +448,26 @@ pub struct StreamConfig {
     pub exclusions: Vec<String>,
 }
 impl StreamConfig {
+    fn negotiate(&mut self, room: &Room, preferred: &Encoder, available: &[Encoder]) -> Result<()> {
+        let shared = crate::playback::room_codecs(room);
+        let codec = shared.best(preferred.codec, |codec| available.iter().any(|encoder| {
+            encoder.codec == codec && self.quality.resolve(&self.source.info, codec).is_ok_and(|mode| encoder.supports(mode))
+        })).context("No codec can be encoded at this resolution/frame rate and decoded by every room member.")?;
+        self.encoder = available
+            .iter()
+            .filter(|encoder| {
+                encoder.codec == codec
+                    && self
+                        .quality
+                        .resolve(&self.source.info, codec)
+                        .is_ok_and(|mode| encoder.supports(mode))
+            })
+            .min_by_key(|encoder| encoder.factory != preferred.factory)
+            .context("No compatible hardware encoder is available.")?
+            .clone();
+        self.mode()?;
+        Ok(())
+    }
     fn live_mode(&self, current: &Self, mode: Mode) -> Result<Option<Mode>> {
         if current.source.info.id != self.source.info.id
             || current.encoder.factory != self.encoder.factory
@@ -490,6 +510,9 @@ impl StreamConfig {
     }
 }
 pub struct Stream {
+    preferred_encoder: Encoder,
+    available_encoders: Vec<Encoder>,
+    preview_capture: preview::Capture,
     stop: StopOnDrop,
     task: JoinHandle<Result<Metrics>>,
     video: LocalVideoTrack,
@@ -547,14 +570,32 @@ impl Stream {
     pub fn encoder(&self) -> &Encoder {
         &self.config.encoder
     }
+    pub fn preview_captures(&self) -> u64 {
+        self.preview_capture.gate.captures()
+    }
     pub async fn start(room: &Room, config: StreamConfig, stop: Arc<AtomicBool>) -> Result<Self> {
         Self::start_with_upload_cap(room, config, stop, None).await
     }
     pub async fn start_with_upload_cap(
         room: &Room,
+        mut config: StreamConfig,
+        stop: Arc<AtomicBool>,
+        upload_cap: Option<u64>,
+    ) -> Result<Self> {
+        let preferred = config.encoder.clone();
+        config.negotiate(room, &preferred, &crate::encoding::encoders())?;
+        let mut active =
+            Self::start_with_preview(room, config, stop, upload_cap, preview::Capture::new())
+                .await?;
+        active.preferred_encoder = preferred;
+        Ok(active)
+    }
+    async fn start_with_preview(
+        room: &Room,
         config: StreamConfig,
         stop: Arc<AtomicBool>,
         upload_cap: Option<u64>,
+        preview_capture: preview::Capture,
     ) -> Result<Self> {
         let mut lease = StopOnDrop::new(stop.clone());
         let mode = config.mode()?;
@@ -565,8 +606,16 @@ impl Stream {
         rate.set_upload_cap(upload_cap);
         rate.set_viewer_cap(crate::playback::requested_cap(room));
         let encoding_rate = rate.clone();
+        let capture = preview_capture.clone();
         let encoding = tokio::task::spawn_blocking(move || {
-            Encoding::start_controlled(&source, &encoder, mode, &cancelled, encoding_rate)
+            Encoding::start_with_preview(
+                &source,
+                &encoder,
+                mode,
+                &cancelled,
+                encoding_rate,
+                capture,
+            )
         })
         .await
         .context("Capture worker stopped.")??;
@@ -644,6 +693,9 @@ impl Stream {
             previews,
             preview_task: None,
             preview_uploads: Arc::new(AtomicU64::new(0)),
+            preferred_encoder: config.encoder.clone(),
+            available_encoders: crate::encoding::encoders(),
+            preview_capture,
             delivery,
             delivery_task,
             diagnostic_task: None,
@@ -705,14 +757,10 @@ impl Stream {
         Ok(active)
     }
 
-    pub fn fallback_config(&self) -> Result<StreamConfig> {
+    pub fn compatible_config(&self, room: &Room) -> Result<Option<StreamConfig>> {
         let mut config = self.config.clone();
-        config.encoder = crate::encoding::encoders()
-            .into_iter()
-            .find(|e| e.codec == Codec::H264)
-            .context("No H.264 compatibility encoder is available.")?;
-        config.mode()?;
-        Ok(config)
+        config.negotiate(room, &self.preferred_encoder, &self.available_encoders)?;
+        Ok((config.encoder.factory != self.config.encoder.factory).then_some(config))
     }
 
     pub async fn fallback(
@@ -723,9 +771,18 @@ impl Stream {
         config: StreamConfig,
     ) -> Result<Self> {
         let upload_cap = self.rate.upload_cap();
+        let preferred_encoder = self.preferred_encoder.clone();
+        let preview_capture = self.preview_capture.clone();
+        let cached_preview = self.previews.lock().ok().and_then(|latest| latest.clone());
+        let uploads = self.preview_uploads.clone();
         self.stop(room).await?;
+        if let Ok(mut latest) = preview_capture.latest.lock() {
+            *latest = cached_preview;
+        }
         let mut replacement =
-            Self::start_with_upload_cap(room, config, stop, Some(upload_cap)).await?;
+            Self::start_with_preview(room, config, stop, Some(upload_cap), preview_capture).await?;
+        replacement.preferred_encoder = preferred_encoder;
+        replacement.preview_uploads = uploads;
         replacement.start_previews(admission);
         Ok(replacement)
     }
@@ -1063,19 +1120,22 @@ async fn worker(
                         else { playback = crate::playback::Playback::new(); }
                         update(&snapshot, |state| state.tiles.clear());
                     }
-                    let replacement_stop = cancellation.register();
                     if joined.room.connection_state() == ConnectionState::Connected
-                        && stream.as_ref().is_some_and(|s| s.config.encoder.codec != Codec::H264 && !s.cancelled())
-                        && crate::playback::needs_h264(&joined.room) {
-                        match stream.as_ref().unwrap().fallback_config() {
-                            Ok(config) => {
+                        && stream.as_ref().is_some_and(|s| !s.cancelled()) {
+                        match stream.as_ref().unwrap().compatible_config(&joined.room) {
+                            Ok(Some(config)) => {
+                                let replacement_stop = cancellation.register();
                                 let active = stream.take().unwrap();
                                 match active.fallback(&joined.room, joined.admission.clone(), replacement_stop, config).await {
                                     Ok(active) => stream = Some(active),
-                                    Err(_) => update(&snapshot, |state| { state.sharing = false; state.self_preview = Arc::default(); state.mode = None; state.error = "Could not switch to H.264. Choose a supported mode and start again.".into(); }),
+                                    Err(_) => update(&snapshot, |state| { state.sharing = false; state.self_preview = Arc::default(); state.mode = None; state.active_selection = None; state.error = "Could not switch codecs. Choose a supported mode and start again.".into(); }),
                                 }
                             }
-                            Err(_) => update(&snapshot, |state| state.error = "A watcher needs H.264, but this mode is unavailable on its encoder.".into()),
+                            Ok(None) => {},
+                            Err(error) => {
+                                let _ = stream.take().unwrap().stop(&joined.room).await;
+                                update(&snapshot, |state| {state.sharing=false; state.self_preview=Arc::default(); state.mode=None; state.active_selection=None; state.error=error.to_string();});
+                            },
                         }
                     }
                 }
@@ -1184,32 +1244,33 @@ async fn worker(
                         .find(|source| source.info.id == source_id)
                         .context("Refresh and choose a capture source.")?
                         .clone();
-                    let mut encoder = crate::encoding::encoders()
+                    let encoder = crate::encoding::encoders()
                         .into_iter()
                         .find(|candidate| candidate.factory == encoder)
                         .context("Choose an available hardware encoder.")?;
-                    if encoder.codec != Codec::H264 && crate::playback::needs_h264(&joined.room) {
-                        encoder = crate::encoding::encoders()
-                            .into_iter()
-                            .find(|e| e.codec == Codec::H264)
-                            .context("A watcher requires an available H.264 encoder.")?;
-                    }
+                    let preferred_encoder = encoder.clone();
                     let audio = audio::for_source(&source)?;
                     let stop = queued.capture.context("Capture request was cancelled.")?;
                     anyhow::ensure!(
                         !stop.load(Ordering::Acquire),
                         "Capture request was cancelled."
                     );
-                    let config = StreamConfig {
+                    let mut config = StreamConfig {
                         source,
                         encoder,
                         quality,
                         audio: audio.clone(),
                         exclusions,
                     };
+                    config.negotiate(
+                        &joined.room,
+                        &preferred_encoder,
+                        &crate::encoding::encoders(),
+                    )?;
                     if let Some(active) = stream.as_mut()
                         && active.apply_live(&config)?
                     {
+                        active.preferred_encoder = preferred_encoder;
                         update(&snapshot, |state| {
                             state.mode = Some(active.mode);
                             state.active_selection = Some(selection);
@@ -1230,6 +1291,7 @@ async fn worker(
                         capacity.upload_video_cap(),
                     )
                     .await?;
+                    active.preferred_encoder = preferred_encoder;
                     active.rate.set_upload_cap(capacity.upload_video_cap());
                     active.start_previews(joined.admission.clone());
                     if stop.load(Ordering::Acquire) {

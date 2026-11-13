@@ -14,17 +14,26 @@ if (
   throw new Error("Use Windows and Node 24 for the native room smoke test.");
 const root = resolve(import.meta.dirname, "..");
 process.chdir(root);
+const appPort = Number(process.env.FREEDOMSTREAM_SMOKE_APP_PORT ?? 3010);
+const sfuPort = Number(process.env.FREEDOMSTREAM_SMOKE_SFU_PORT ?? 17880);
+if (
+  ![appPort, sfuPort].every(
+    (port) => Number.isInteger(port) && port >= 1024 && port <= 65533,
+  ) ||
+  Math.abs(appPort - sfuPort) <= 2
+)
+  throw new Error("Choose distinct unprivileged native smoke port ranges.");
+const origin = `http://localhost:${appPort}`;
+const sfuOrigin = `http://127.0.0.1:${sfuPort}`;
 const occupied = await Promise.all(
-  ["http://localhost:3010/api/health", "http://127.0.0.1:17880"].map(
-    async (url) => {
-      try {
-        await fetch(url, { signal: AbortSignal.timeout(1000) });
-        return true;
-      } catch {
-        return false;
-      }
-    },
-  ),
+  [`${origin}/api/health`, sfuOrigin].map(async (url) => {
+    try {
+      await fetch(url, { signal: AbortSignal.timeout(1000) });
+      return true;
+    } catch {
+      return false;
+    }
+  }),
 );
 if (occupied.some(Boolean))
   throw new Error(
@@ -100,11 +109,11 @@ const config = join(run, "livekit.yaml");
 writeFileSync(
   config,
   JSON.stringify({
-    port: 17880,
+    port: sfuPort,
     bind_addresses: ["127.0.0.1"],
     rtc: {
-      tcp_port: 17881,
-      udp_port: 17882,
+      tcp_port: sfuPort + 1,
+      udp_port: sfuPort + 2,
       node_ip: nodeIp,
       use_external_ip: false,
     },
@@ -135,7 +144,7 @@ const ready = async (url) => {
     await delay(250);
   }
   throw new Error(
-    "Isolated native smoke service did not start. Check that ports 3010 and 17880–17882 are free.",
+    "Isolated native smoke service did not start. Check the selected app/SFU ports are free.",
   );
 };
 try {
@@ -144,15 +153,14 @@ try {
     ["--config", config],
     process.env,
   );
-  await ready("http://127.0.0.1:17880");
-  const origin = "http://localhost:3010";
+  await ready(sfuOrigin);
   start(process.execPath, ["apps/server/dist/main.js"], {
     ...process.env,
     PUBLIC_URL: origin,
     HOST: "127.0.0.1",
-    PORT: "3010",
+    PORT: String(appPort),
     DATABASE_PATH: join(run, "rooms.db"),
-    LIVEKIT_INTERNAL_URL: "http://127.0.0.1:17880",
+    LIVEKIT_INTERNAL_URL: sfuOrigin,
   });
   await ready(`${origin}/api/health`);
   const gst = resolve(

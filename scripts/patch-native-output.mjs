@@ -135,6 +135,11 @@ export function patchNativeOutput(source, guard) {
     "int32_t SyntheticAudioDevice::PlayoutDelay(uint16_t* delayMS) const {\n  return 0;",
     "int32_t SyntheticAudioDevice::PlayoutDelay(uint16_t* delayMS) const {\n  *delayMS = 0; // Synthetic output has no physical device estimate.\n  return 0;",
   );
+  replace(
+    "src/adm_proxy.cpp",
+    '    RTC_LOG(LS_ERROR) << "AdmProxy: Platform ADM Init() failed with error=" << init_result;',
+    '    platform_adm_->Terminate();\n    platform_adm_ = nullptr;\n    RTC_LOG(LS_ERROR) << "AdmProxy: Platform ADM Init() failed with error=" << init_result;',
+  );
   // Mixer admission is closed before a source is visible on the audio thread.
   writeFileSync(
     join(source, "src/native_output_mixer.h"),
@@ -254,7 +259,7 @@ AudioTrack::~AudioTrack() {`,
   replace(
     "src/audio_device_controller.rs",
     "pub mod ffi {",
-    "pub mod ffi {\n    pub struct OutputOnlyAudit {\n        pub blocked_input_operations: u64,\n        pub platform_output_starts: u64,\n        pub platform_output_stops: u64,\n        pub output_delay_ms: i32,\n    }",
+    "pub mod ffi {\n    pub struct OutputOnlyAudit {\n        pub blocked_input_operations: u64,\n        pub platform_output_starts: u64,\n        pub platform_output_stops: u64,\n        pub output_delay_ms: i32,\n        pub mix_calls: u64,\n    }",
   );
   replace(
     "src/audio_device_controller.rs",
@@ -274,6 +279,6 @@ AudioTrack::~AudioTrack() {`,
   replace(
     "src/audio_device_controller.cpp",
     "namespace livekit_ffi {",
-    "namespace livekit_ffi {\nOutputOnlyAudit output_only_audit() {\n  return OutputOnlyAudit{podetelar::blocked_input_operations.load(), podetelar::platform_output_starts.load(), podetelar::platform_output_stops.load(), podetelar::output_delay_ms.load()};\n}",
+    "namespace livekit_ffi {\nOutputOnlyAudit output_only_audit() {\n  return OutputOnlyAudit{podetelar::blocked_input_operations.load(), podetelar::platform_output_starts.load(), podetelar::platform_output_stops.load(), podetelar::output_delay_ms.load(), podetelar::mix_calls.load()};\n}",
   );
 }

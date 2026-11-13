@@ -7,10 +7,6 @@ test("native output independently controls two received streams across mute, Sto
   request,
   baseURL,
 }, testInfo) => {
-  test.skip(
-    process.env.FREEDOMSTREAM_NATIVE_AUDIO !== "1",
-    "Explicit native playback pilot only.",
-  );
   const created = await createTestRoom(
     request,
     baseURL!,
@@ -185,10 +181,6 @@ test("muted late subscriptions and replacement stay silent beside an audible str
   request,
   baseURL,
 }, testInfo) => {
-  test.skip(
-    process.env.FREEDOMSTREAM_NATIVE_AUDIO !== "1",
-    "Explicit native playback pilot only.",
-  );
   const created = await createTestRoom(
     request,
     baseURL!,

@@ -29,7 +29,10 @@ export async function preparePortableRuntime(root, output, notices) {
     : join(root, ".local/gstreamer");
   mkdirSync(join(output, "bin"), { recursive: true });
   copyFileSync(
-    join(root, "target/release/freedomstream-publisher.exe"),
+    join(
+      resolve(root, process.env.CARGO_TARGET_DIR ?? "target"),
+      "release/freedomstream-publisher.exe",
+    ),
     join(output, "bin/freedomstream-publisher.exe"),
   );
   const inventory = readFileSync(join(runtime, "share/versions.txt"), "utf8");

@@ -9,5 +9,6 @@ inline std::atomic<uint64_t> blocked_input_operations{0};
 inline std::atomic<uint64_t> platform_output_starts{0};
 inline std::atomic<uint64_t> platform_output_stops{0};
 inline std::atomic<int32_t> output_delay_ms{-1};
+inline std::atomic<uint64_t> mix_calls{0};
 inline int32_t BlockInput() { blocked_input_operations.fetch_add(1); return 0; }
 }

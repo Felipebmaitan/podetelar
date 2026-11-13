@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { createTestRoom } from "../scripts/test-room.js";
 import { nativeRequest, toneFixtures } from "./fixtures.js";
 
-test("real playback process-loopback reduces the legacy output delay", async ({}, testInfo) => {
+test("GStreamer comparison reproduces the legacy output buffering", async ({}, testInfo) => {
   type Report = {
     sinkBufferUs: number;
     delaysMs: number[];

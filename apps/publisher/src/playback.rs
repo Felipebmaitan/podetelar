@@ -3,7 +3,6 @@ use anyhow::{Context, Result};
 use eframe::egui;
 use futures_util::StreamExt;
 use gstreamer::{self as gst, prelude::*};
-use gstreamer_app::AppSrc;
 use livekit::{
     prelude::*,
     webrtc::{
@@ -195,7 +194,18 @@ impl Watch {
     }
 }
 
-struct Pump(JoinHandle<()>);
+struct Pump(JoinHandle<()>, Instant);
+impl Pump {
+    fn new(task: JoinHandle<()>) -> Self {
+        Self(task, Instant::now() + Duration::from_secs(1))
+    }
+    fn should_wait(&self, now: Instant) -> bool {
+        !self.0.is_finished() || now < self.1
+    }
+}
+fn retain_subscribed_pumps(pumps: &mut HashMap<String, Pump>, subscribed: &HashSet<String>) {
+    pumps.retain(|sid, _| subscribed.contains(sid));
+}
 impl Drop for Pump {
     fn drop(&mut self) {
         self.0.abort();
@@ -571,7 +581,7 @@ impl Playback {
                         PreviewImage {
                             revision,
                             picture,
-                            job: Pump(job),
+                            job: Pump::new(job),
                             loaded,
                             attempted: Instant::now(),
                         },
@@ -596,7 +606,11 @@ impl Playback {
                     continue;
                 }
                 pumps.insert(sid.clone());
-                if self.pumps.contains_key(&sid) {
+                if self
+                    .pumps
+                    .get(&sid)
+                    .is_some_and(|pump| pump.should_wait(Instant::now()))
+                {
                     continue;
                 }
                 let Some(track) = publication.track() else {
@@ -610,7 +624,7 @@ impl Playback {
                     RemoteTrack::Video(track) => {
                         let (picture, presentation) = watch.begin_video(self.timing.clone());
                         watch.diagnostic_task =
-                            Some(Pump(tokio::spawn(crate::stream_diagnostics::viewer(
+                            Some(Pump::new(tokio::spawn(crate::stream_diagnostics::viewer(
                                 admission.clone(),
                                 id.clone(),
                                 sid.clone(),
@@ -752,20 +766,22 @@ impl Playback {
                         let generation = track.native_playback_generation();
                         let volume = watch.volume.clone();
                         let metrics = watch.audio.clone();
+                        watch.error = Arc::default();
                         let error = watch.error.clone();
                         let measure = self.measure_audio;
                         tokio::spawn(async move {
-                            if audio(track, generation, volume, metrics, measure)
+                            if audio(track, generation, volume, metrics, measure, error.clone())
                                 .await
                                 .is_err()
                                 && let Ok(mut message) = error.lock()
                             {
-                                *message = "Native audio playback failed. Check the output device and rejoin.".into();
+                                *message =
+                                    "Audio output is unavailable. Retrying automatically.".into();
                             }
                         })
                     }
                 };
-                self.pumps.insert(sid, Pump(task));
+                self.pumps.insert(sid, Pump::new(task));
             }
             let watch = self.watches.get(&id);
             tiles.push(Tile {
@@ -798,8 +814,7 @@ impl Playback {
         }
         self.previews.retain(|id, _| live.contains(id));
         self.watches.retain(|id, _| live.contains(id));
-        self.pumps
-            .retain(|sid, pump| pumps.contains(sid) && !pump.0.is_finished());
+        retain_subscribed_pumps(&mut self.pumps, &pumps);
         for watch in self.watches.values_mut() {
             if !self.pumps.contains_key(&watch.video_sid) {
                 watch.diagnostic_task = None;
@@ -847,92 +862,16 @@ async fn audio(
     volume: Arc<AtomicU32>,
     metrics: Arc<Mutex<crate::audio::Metrics>>,
     measure: bool,
+    status: Arc<Mutex<String>>,
 ) -> Result<()> {
-    if crate::native_output::enabled() {
-        return native_audio(track, generation, volume, metrics, measure).await;
-    }
-    let pipeline = audio_pipeline()?;
-    let input = pipeline
-        .0
-        .by_name("pcm")
-        .context("Missing audio playback input.")?
-        .downcast::<AppSrc>()
-        .map_err(|_| anyhow::anyhow!("Invalid playback input."))?;
-    let level = pipeline
-        .0
-        .by_name("level")
-        .context("Missing playback volume.")?;
-    let backlog = pipeline
-        .0
-        .by_name("backlog")
-        .context("Missing playback queue.")?;
-    pipeline.0.set_state(gst::State::Playing)?;
-    let bus = pipeline.0.bus();
-    let mut applied_volume = None;
-    let mut stream = NativeAudioStream::with_options(
-        track.rtc_track(),
-        48000,
-        2,
-        NativeAudioStreamOptions {
-            queue_size_frames: Some(5),
-        },
-    );
-    let mut meter = crate::audio::Meter::default();
-    while let Some(frame) = stream.next().await {
-        if let Some(message) = bus
-            .as_ref()
-            .and_then(|bus| bus.pop_filtered(&[gst::MessageType::Error]))
-        {
-            let _ = message;
-            anyhow::bail!("Audio output failed.");
-        }
-        if let Ok(mut metrics) = metrics.lock() {
-            let queue_ns: u64 = backlog.property("current-level-time");
-            metrics.playback_queue_ms =
-                input.current_level_bytes() as f64 / 192.0 + queue_ns as f64 / 1_000_000.0;
-            metrics.playback_queue_max_ms =
-                metrics.playback_queue_max_ms.max(metrics.playback_queue_ms);
-            if input.current_level_bytes() > 38400 {
-                metrics.playback_dropped_frames += 1;
-            }
-            metrics.frames += frame.samples_per_channel as u64;
-            for channels in frame.data.chunks_exact(2) {
-                metrics.peak = metrics
-                    .peak
-                    .max(channels[0].unsigned_abs() as f64 / 32768.0);
-                metrics.channel_difference_peak = metrics
-                    .channel_difference_peak
-                    .max((channels[0] as f64 - channels[1] as f64).abs() / 32768.0);
-            }
-            if measure {
-                meter.push(&frame.data, &mut metrics.tones);
-            }
-        }
-        let requested_volume = volume.load(Ordering::Relaxed);
-        if applied_volume != Some(requested_volume) {
-            level.set_property("volume", requested_volume as f64 / 100.0);
-            applied_volume = Some(requested_volume);
-        }
-        if input.current_level_bytes() > 38400 {
-            continue;
-        }
-        input.push_buffer(audio_buffer(frame.data.into_owned()))?;
-    }
-    Ok(())
-}
-
-async fn native_audio(
-    track: RemoteAudioTrack,
-    generation: u64,
-    volume: Arc<AtomicU32>,
-    metrics: Arc<Mutex<crate::audio::Metrics>>,
-    measure: bool,
-) -> Result<()> {
-    let playing = crate::native_output::PlayingTrack::new(
+    let Some(playing) = crate::native_output::PlayingTrack::new(
         track.clone(),
         generation,
         volume.load(Ordering::Relaxed),
-    )?;
+    )?
+    else {
+        return Ok(());
+    };
     // A bounded pre-gain tap measures receive PCM only. WebRTC renders directly
     // to Windows; no appsrc or second audio sink exists on this path.
     let mut stream = NativeAudioStream::with_options(
@@ -948,9 +887,13 @@ async fn native_audio(
     loop {
         tokio::select! {
             _ = refresh.tick() => {
-                // Reapply even without PCM: a reconnect may re-announce a source
-                // and the C++ admission guard initially silences every source.
-                playing.set_volume(volume.load(Ordering::Relaxed))?;
+                match playing.refresh(volume.load(Ordering::Relaxed))? {
+                    crate::native_output::OutputState::Ended => break,
+                    state => if let Ok(mut message) = status.lock() {
+                        *message = if state == crate::native_output::OutputState::Playing { String::new() }
+                            else { "Audio output is unavailable. Retrying automatically.".into() };
+                    }
+                }
             }
             frame = stream.next() => {
                 let Some(frame) = frame else { break };
@@ -970,6 +913,7 @@ async fn native_audio(
     Ok(())
 }
 
+// Historical GStreamer comparison fixture; standard stream playback uses WebRTC.
 // low-latency optimizes the WASAPI device period, but does not bound the
 // GstAudioBaseSink ring buffer. Its 200 ms default is additional to NetEQ and
 // the appsrc/backlog queues and is invisible to playback_queue_ms. Keep a
@@ -1052,6 +996,30 @@ pub fn requested_cap(room: &Room) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn completed_subscribed_task_retains_backoff_until_replacement_is_due() {
+        let task = tokio::spawn(async {});
+        let mut tasks = HashMap::from([("audio".to_owned(), Pump::new(task))]);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !tasks["audio"].0.is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("fixture task completes");
+        let id = tasks["audio"].0.id();
+        let deadline = tasks["audio"].1;
+        retain_subscribed_pumps(&mut tasks, &HashSet::from(["audio".to_owned()]));
+        assert_eq!(tasks["audio"].0.id(), id);
+        assert!(tasks["audio"].should_wait(deadline - Duration::from_millis(1)));
+        assert!(!tasks["audio"].should_wait(deadline));
+        retain_subscribed_pumps(&mut tasks, &HashSet::new());
+        assert!(
+            tasks.is_empty(),
+            "unsubscription still discards the task immediately"
+        );
+    }
     #[test]
     fn replacement_video_keeps_late_old_results_out_of_the_current_mailbox() {
         let mut watch = Watch {

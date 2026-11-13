@@ -17,6 +17,7 @@ import { preparePortableRuntime } from "./portable-runtime.mjs";
 if (process.platform !== "win32")
   throw new Error("Build the Windows release on Windows.");
 const root = resolve(import.meta.dirname, "..");
+const cargoTarget = resolve(root, process.env.CARGO_TARGET_DIR ?? "target");
 const commit = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: root,
   encoding: "utf8",
@@ -225,7 +226,7 @@ for (const pkg of metadata.packages
     copyFileSync(source, destination);
   }
 }
-const buildRoot = join(root, "target/release/build");
+const buildRoot = join(cargoTarget, "release/build");
 const webrtc = readdirSync(buildRoot, {
   recursive: true,
   withFileTypes: true,

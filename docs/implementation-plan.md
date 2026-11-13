@@ -11,8 +11,9 @@ reference limits and a tighter normal-operation audio-lag target around 20 ms.
 Do not confuse audio-only output latency with A/V offset. In parallel, research
 receiver synchronization using the existing WebRTC audio clock/native ADM;
 report feasibility before implementing that larger architecture. The user has
-approved the output-only native WebRTC playback pilot after that investigation.
-Keep it opt-in with `FREEDOMSTREAM_NATIVE_AUDIO=1` while qualifying per-track gain,
+approved output-only native WebRTC playback and now explicitly requires it as
+the standard release path. Remove its environment switch and alternate application
+playback path. Qualify per-track gain,
 initial silence, Stop/rewatch/reconnect, shared-device teardown and the pinned
 SDK's guards against recording and microphone initialization. Retain LiveKit and
 existing codecs. Use the actual track factory's output device and preserve its
@@ -26,6 +27,10 @@ negotiated audio/video association per publisher; production rollout remains an
 explicit deployment gate until the actual VPS is exercised.
 Full physical synchronization, output-device changes and sustained drift remain
 acceptance gates; compile success cannot establish any of those properties.
+Follow the Windows default render endpoint, suspend output while no endpoint is
+available and retry without room rejoin. Preserve mixer generations and gains
+through recovery. Verify actual output stop/start, available alternate outputs,
+repeated transitions and sustained timing before promoting the next release.
 
 Investigate reported audio-after-video across AV1/H.264 capture, transport,
 decode and native output. Bound the demonstrated GStreamer audio sink ring

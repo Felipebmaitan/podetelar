@@ -95,7 +95,13 @@ fn run() -> Result<()> {
     gstreamer::init()
         .context("GStreamer could not initialize. Check the native runtime installation.")?;
     match std::env::args().nth(1).as_deref() {
-        Some("--av-timing-source") => av_qualification::source()?,
+        Some("--av-timing-source") => av_qualification::source(
+            std::env::args()
+                .nth(2)
+                .map(|s| s.parse::<u64>())
+                .transpose()?
+                .unwrap_or(60),
+        )?,
         Some("--qualify-playback") => {
             let legacy = match std::env::args().nth(2).as_deref() {
                 None => false,
@@ -372,6 +378,12 @@ struct AudioRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct WatchRequest {
     #[serde(default)]
+    soak: bool,
+    #[serde(default)]
+    output_pause_after_seconds: Option<u64>,
+    #[serde(default)]
+    output_switch_after_seconds: Option<u64>,
+    #[serde(default)]
     continuous_watch: bool,
     #[serde(default)]
     watch_schedule: Vec<FixtureWatch>,
@@ -467,8 +479,9 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
         "Invalid fixture volume schedule."
     );
     ensure!(
-        (10..=120).contains(&request.seconds),
-        "Watcher duration must be 10–120 seconds."
+        (10..=if request.soak { 2000 } else { 120 }).contains(&request.seconds)
+            && (!request.soak || request.audiovisual_timing && request.continuous_watch),
+        "Invalid watcher qualification duration."
     );
     let admission =
         admission::Admission::join(&request.invitation_url, "Native playback check").await?;
@@ -524,6 +537,9 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     };
     let mut preview_before_watching = false;
     let mut reconnected = false;
+    let mut output_paused = false;
+    let mut output_switched = false;
+    let mut alternate_output_available = false;
     let mut received = std::collections::HashMap::<String, RemoteTrack>::new();
     let mut byte_totals = std::collections::HashMap::<String, u64>::new();
     let mut previous_bytes = std::collections::HashMap::<String, u64>::new();
@@ -534,6 +550,13 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                 reconnected = true;
                 room.simulate_scenario(livekit::rtc_engine::SimulateScenario::FullReconnect).await
                     .map_err(|_| anyhow::anyhow!("Could not exercise watcher recovery."))?;
+            }
+            if !output_paused && request.output_pause_after_seconds.is_some_and(|second| elapsed >= second) {
+                output_paused = native_output::qualification_pause(3);
+            }
+            if !output_switched && request.output_switch_after_seconds.is_some_and(|second| elapsed >= second) {
+                alternate_output_available = native_output::qualification_switch(3);
+                output_switched = true;
             }
             let tiles = playback.reconcile(&room, &admission).await?;
             ensure!(!request.audiovisual_timing || tiles.len() <= 1, "A/V timing qualification requires one isolated publisher.");
@@ -589,9 +612,15 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                         }
                     }
                 }
-                samples.push(serde_json::json!({"second": elapsed, "nativeAudio":native_output::audit(),"syncGroups":fixture_sync_groups(&room), "mediaTiming":media_timing, "recoveries": recovery.load(Ordering::Acquire), "connected": room.connection_state() == ConnectionState::Connected, "phaseSecond": phase, "watching": watching,"receivedBytes":byte_totals.values().sum::<u64>(), "decoders":decoders, "streams": tiles.iter().map(|tile| serde_json::json!({"diagnosticRates":tile.presentation.diagnostics.rates.lock().ok().and_then(|v|*v),"diagnosticAttempts":tile.presentation.diagnostics.attempts.load(Ordering::Relaxed),"diagnosticSuccesses":tile.presentation.diagnostics.successes.load(Ordering::Relaxed),"diagnosticSender":tile.presentation.diagnostics.sender.lock().ok().and_then(|value|value.as_ref().map(|(_,value)|value.clone())),"codec":tile.codec,"frames":tile.frames.load(Ordering::Relaxed),"watching":tile.watching,"pictureSize":tile.picture.lock().ok().and_then(|p|p.as_ref().map(|image|image.size)),"audio":tile.audio.lock().map(|m|m.clone()).unwrap_or_default()})).collect::<Vec<_>>() }));
+                samples.push(serde_json::json!({"second": elapsed, "nativeAudio":native_output::audit(),"syncGroups":fixture_sync_groups(&room), "mediaTiming":media_timing, "recoveries": recovery.load(Ordering::Acquire), "connected": room.connection_state() == ConnectionState::Connected, "phaseSecond": phase, "watching": watching,"receivedBytes":byte_totals.values().sum::<u64>(), "decoders":decoders, "streams": tiles.iter().map(|tile| serde_json::json!({"diagnosticRates":tile.presentation.diagnostics.rates.lock().ok().and_then(|v|*v),"diagnosticAttempts":tile.presentation.diagnostics.attempts.load(Ordering::Relaxed),"diagnosticSuccesses":tile.presentation.diagnostics.successes.load(Ordering::Relaxed),"diagnosticSender":tile.presentation.diagnostics.sender.lock().ok().and_then(|value|value.as_ref().map(|(_,value)|value.clone())),"status":tile.status,"codec":tile.codec,"frames":tile.frames.load(Ordering::Relaxed),"watching":tile.watching,"pictureSize":tile.picture.lock().ok().and_then(|p|p.as_ref().map(|image|image.size)),"audio":tile.audio.lock().map(|m|m.clone()).unwrap_or_default()})).collect::<Vec<_>>() }));
                 if request.consume_pictures { for tile in &tiles { if let Ok(mut picture) = tile.picture.lock() { picture.take(); } } }
-                next_sample = elapsed + 1;
+                if request.soak {
+                    eprintln!("soak-progress second={} video={} audio={} rendering={}",elapsed,
+                        tiles.iter().map(|t|t.frames.load(Ordering::Relaxed)).sum::<u64>(),
+                        tiles.iter().map(|t|t.audio.lock().map_or(0,|m|m.frames)).sum::<u64>(),
+                        native_output::audit()["rendering"].as_bool().unwrap_or(false));
+                }
+                next_sample = elapsed + if request.soak { 30 } else { 1 };
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
@@ -605,7 +634,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     result?;
     println!(
         "{}",
-        serde_json::json!({"samples":samples,"closed":true,"nativeAudioAfterClose":native_output::audit(),"previewBeforeWatching":preview_before_watching,"audiovisualTiming":timing.as_ref().map(|timing|timing.report())})
+        serde_json::json!({"samples":samples,"closed":true,"outputPauseApplied":output_paused,"alternateOutputAvailable":alternate_output_available,"nativeAudioAfterClose":native_output::audit(),"previewBeforeWatching":preview_before_watching,"audiovisualTiming":timing.as_ref().map(|timing|timing.report())})
     );
     drop(observer);
     Ok(())
@@ -613,8 +642,8 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
 
 async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     ensure!(
-        (1..=900).contains(&request.seconds),
-        "Fixture duration must be between 1 and 900 seconds."
+        (1..=2100).contains(&request.seconds),
+        "Fixture duration must be between 1 and 2100 seconds."
     );
     ensure!(
         request.linger_seconds <= 8

@@ -3,6 +3,7 @@
 // silent before AddSource makes it visible to the audio thread.
 #pragma once
 #include <atomic>
+#include "native_output_guard.h"
 #include <cmath>
 #include <cstdint>
 #include <map>
@@ -102,6 +103,7 @@ class OutputMixer : public webrtc::AudioMixer {
   }
   void Mix(size_t channels, webrtc::AudioFrame* frame) override {
     delegate_->Mix(channels, frame);
+    mix_calls.fetch_add(1);
   }
  private:
   std::shared_ptr<MixerState> state_;

@@ -1,5 +1,8 @@
 # Audio-after-video investigation — 2026-11-12
 
+Current release behavior supersedes the initial pilot below: native output is now
+the standard path, with no feature flag. See [release qualification](native-audio-release.md).
+
 The user reports sound arriving **after** its matching picture, apparently worse
 on their AV1 publication than a friend's H.264 publication. Accumulating drift
 versus an initial constant offset is still unknown. These were different senders,
@@ -160,9 +163,11 @@ buffering is removed. A smaller ring is not a complete lip-sync controller.
 The correction is prepared separately for review and physical acceptance. The
 installed app, active production room, public release and VPS were not updated.
 
-## Approved native output pilot
+## Initial native output pilot (superseded for release)
 
-The user approved the output-only WebRTC pilot after the feasibility report.
+The following records the initial pilot at commit 6bf1e3b, before the user
+required standard release behavior. Its environment switch is now removed.
+The user initially approved the output-only WebRTC pilot after the feasibility report.
 `FREEDOMSTREAM_NATIVE_AUDIO=1` selects it for a new process. Normal launches retain
 the bounded 40 ms GStreamer output above. The 20 ms GStreamer ring was measured as
 an experiment; it is not the default shipped by this pilot.

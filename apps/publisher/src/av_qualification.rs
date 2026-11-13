@@ -55,7 +55,7 @@ impl Events {
         };
         let white = pixel.r() > 220 && pixel.g() > 220 && pixel.b() > 220;
         if let Ok(mut state) = self.0.lock() {
-            if white && !state.white && state.video.len() < 128 {
+            if white && !state.white && state.video.len() < 2048 {
                 state.video.push(Instant::now());
             }
             state.white = white;
@@ -108,7 +108,7 @@ impl Events {
             if state
                 .last_audio
                 .is_none_or(|last| now.duration_since(last) > Duration::from_millis(300))
-                && state.audio.len() < 128
+                && state.audio.len() < 2048
             {
                 state.audio.push(now);
                 if let Some(age) = age {
@@ -151,7 +151,7 @@ impl Events {
                 }
             }
         }
-        serde_json::json!({"available":!state.failed,"outputWindows":state.output_windows,"videoEvents":state.video.len(),"audioEvents":state.audio.len(),"pairedEvents":offsets.len(),"unmatchedVideoEvents":state.video.len()-offsets.len(),"unmatchedAudioEvents":state.audio.len()-offsets.len(),"videoMailboxToAudioLoopbackMs":offsets,"loopbackCaptureAgesMs":state.capture_ages,"physicalAvSync":"unavailable","pairingWindowMs":400,"timingIncludes":"loopback capture and callback scheduling; video is mailbox publication, not display presentation"})
+        serde_json::json!({"available":!state.failed,"outputWindows":state.output_windows,"videoEvents":state.video.len(),"audioEvents":state.audio.len(),"pairedEvents":offsets.len(),"unmatchedVideoEvents":state.video.len()-offsets.len(),"unmatchedAudioEvents":state.audio.len()-offsets.len(),"videoMailboxToAudioLoopbackMs":offsets,"videoEventTimesSeconds":state.video.iter().map(|t| t.duration_since(state.started).as_secs_f64()).collect::<Vec<_>>(),"audioEventTimesSeconds":state.audio.iter().map(|t| t.duration_since(state.started).as_secs_f64()).collect::<Vec<_>>(),"loopbackCaptureAgesMs":state.capture_ages,"physicalAvSync":"unavailable","pairingWindowMs":400,"timingIncludes":"loopback capture and callback scheduling; video is mailbox publication, not display presentation"})
     }
 }
 
@@ -218,8 +218,12 @@ impl Drop for Observer {
 
 /// An explicit generated source in its own GUI window. Tests run a copy named
 /// Game.exe so the publisher captures this source alone, respecting exclusion.
-pub fn source() -> Result<()> {
-    let pipeline=gst::parse::launch("appsrc name=video is-live=true format=time ! video/x-raw,format=BGRA,width=640,height=360,framerate=60/1 ! queue max-size-buffers=3 max-size-bytes=0 max-size-time=0 ! videoconvert ! d3d11videosink name=screen sync=true appsrc name=audio is-live=true format=time ! audio/x-raw,format=S16LE,rate=48000,channels=2,layout=interleaved ! queue ! wasapi2sink low-latency=true buffer-time=20000 sync=true")?
+pub fn source(seconds: u64) -> Result<()> {
+    ensure!(
+        (10..=2100).contains(&seconds),
+        "A/V source duration must be 10-2100 seconds."
+    );
+    let pipeline=gst::parse::launch("appsrc name=video is-live=true format=time max-buffers=2 leaky-type=downstream ! video/x-raw,format=BGRA,width=640,height=360,framerate=60/1 ! queue max-size-buffers=3 max-size-bytes=0 max-size-time=0 ! videoconvert ! d3d11videosink name=screen sync=true appsrc name=audio is-live=true format=time max-buffers=8 leaky-type=downstream ! audio/x-raw,format=S16LE,rate=48000,channels=2,layout=interleaved ! queue ! wasapi2sink low-latency=true buffer-time=20000 sync=true")?
         .downcast::<gst::Pipeline>().map_err(|_|anyhow::anyhow!("Invalid A/V source."))?;
     let pipeline = crate::playback::AudioPipeline(pipeline);
     let input = |name| {
@@ -232,21 +236,24 @@ pub fn source() -> Result<()> {
     };
     let video = input("video")?;
     let audio = input("audio")?;
-    // The same PTS schedules both branches. Unequal pulse intervals expose
-    // missed/mispaired events instead of concealing a periodic whole-cycle slip.
+    // The same PTS schedules both branches. A deterministic nonrepeating pulse
+    // sequence avoids concealing a whole-period slip with nearest-event pairing.
+    // Equal 100-ms markers tolerate a briefly late fixture producer on either
+    // branch; the event detector still measures each marker's leading edge.
     let mut pulses = Vec::new();
     let mut event = 2_000_000_000_u64;
-    for interval in [1_100_000_000, 1_700_000_000, 2_300_000_000, 1_400_000_000]
-        .into_iter()
-        .cycle()
-        .take(60)
-    {
+    let mut random = 0x51f1_a37d_u32;
+    for _ in 0..seconds {
         pulses.push(event);
-        event += interval;
+        random ^= random << 13;
+        random ^= random >> 17;
+        random ^= random << 5;
+        event += 1_100_000_000 + u64::from(random % 13) * 100_000_000;
     }
     pipeline.0.set_state(gst::State::Playing)?;
     let started = Instant::now();
-    for tick in 0..18_000_u64 {
+    let mut pulse = 0;
+    for tick in 0..seconds * 300 {
         let pts = tick * 1_000_000_000 / 300;
         std::thread::sleep(
             (started + Duration::from_nanos(pts)).saturating_duration_since(Instant::now()),
@@ -258,10 +265,12 @@ pub fn source() -> Result<()> {
                 .is_none_or(|bus| bus.pop_filtered(&[gst::MessageType::Error]).is_none()),
             "A/V source output failed."
         );
+        while pulse + 1 < pulses.len() && pts >= pulses[pulse] + 100_000_000 {
+            pulse += 1;
+        }
+        let event = pulses[pulse];
         if tick % 5 == 0 {
-            let white = pulses
-                .iter()
-                .any(|&event| pts >= event && pts < event + 100_000_000);
+            let white = pts >= event && pts < event + 100_000_000;
             let mut pixels = vec![if white { 255 } else { 0 }; 640 * 360 * 4];
             for pixel in pixels.chunks_exact_mut(4) {
                 pixel[3] = 255;
@@ -276,17 +285,13 @@ pub fn source() -> Result<()> {
             let samples = (0..480_u64)
                 .flat_map(|sample| {
                     let time = pts + sample * 1_000_000_000 / 48000;
-                    let value = pulses
-                        .iter()
-                        .find_map(|&event| {
-                            (time >= event && time < event + 20_000_000).then(|| {
-                                (3000.0
-                                    * (std::f64::consts::TAU * 1000.0 * (time - event) as f64
-                                        / 1e9)
-                                        .sin()) as i16
-                            })
-                        })
-                        .unwrap_or(0);
+                    let value = if time >= event && time < event + 100_000_000 {
+                        (3000.0
+                            * (std::f64::consts::TAU * 1000.0 * (time - event) as f64 / 1e9).sin())
+                            as i16
+                    } else {
+                        0
+                    };
                     [value, value]
                 })
                 .collect();

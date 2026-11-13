@@ -12,10 +12,14 @@ mod admission;
 mod audio;
 #[path = "../src/browser_links.rs"]
 mod browser_links;
+#[path = "../src/codec_policy.rs"]
+mod codec_policy;
 #[path = "../src/connection.rs"]
 mod connection;
 #[path = "../src/delivery.rs"]
 mod delivery;
+#[path = "../src/device.rs"]
+mod device;
 #[path = "../src/diagnostics.rs"]
 mod diagnostics;
 #[path = "../src/encoding.rs"]

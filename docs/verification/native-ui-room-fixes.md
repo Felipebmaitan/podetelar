@@ -1,7 +1,8 @@
 # Native UI and Discord room naming corrections
 
-Verified on Windows on 2026-11-13. The correction branch is based on the existing
-native audio work (PR #40); this change does not qualify or deploy that pilot.
+Verified on Windows on 2026-11-13. Initially developed on the audio branch, then
+rebased onto main after audio PR #40 and codec PR #43 merged. This correction
+does not change their media capabilities or deployment qualification.
 
 ## Behavior
 

@@ -28,6 +28,11 @@ administrator UI on Linux. Hosted native build/packaging qualification remains a
 explicit `Checks` workflow dispatch with `run_native` enabled. A green default CI
 run does not mean native hardware/media qualification ran.
 
+For an isolated concurrent native smoke run, set `FREEDOMSTREAM_SMOKE_APP_PORT`
+and `FREEDOMSTREAM_SMOKE_SFU_PORT` to unused ports. The SFU also uses the next
+two ports. Defaults remain 3010 and 17880–17882. Do not stop another test run's
+services to free these ports.
+
 ## Coverage retained outside browser participant flows
 
 - Server tests protect invitation secrecy, room-scoped sessions, persistence,

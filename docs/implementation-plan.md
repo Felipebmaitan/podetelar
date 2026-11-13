@@ -1,5 +1,26 @@
 # Implementation phases
 
+## Ranked room codec adaptation — corrective PR
+
+Replace direct AV1/HEVC-to-H.264 fallback with AV1 → HEVC → H.264, using
+the sender's available hardware encoders at the requested mode and every connected
+room member's advertised native decoders, even before Watch. The Advanced codec
+selection is the preferred ceiling: a deliberate HEVC or H.264 selection remains
+respected. Missing legacy capabilities conservatively allow H.264 only. Recompute
+on membership/capability changes and restore the preferred codec when constraints
+leave. A failed advanced decoder removes only that codec for that publisher's
+current watch, retaining failures across replacement SIDs. Report and stop when
+no common encoder/decoder exists; never silently change resolution or frame rate.
+Keep one publication, explicit subscriptions, watch intent, and the original
+start/minute preview capture clock across codec replacements.
+
+Accept with Node 24 checks, native Clippy/tests, real SFU AV1 → HEVC → H.264
+decode, joining/leaving preview-only members, recovery/upgrades and Stop/rewatch
+traffic checks. Obtain a fresh GPT-6.1-Sol high review. Synthetic decoder masks
+exercise negotiation on the local GPU; AMD and physical device failures remain
+separate hardware gates.
+See [verification](verification/ranked-room-codecs.md).
+
 ## Native audio output latency — corrective PR
 
 Follow-up authorized scope: add an opt-in synchronized flash/click source and

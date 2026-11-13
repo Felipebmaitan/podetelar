@@ -34,6 +34,7 @@ type Sent = {
   captureStopped: boolean;
   mode: { width: number; height: number; fps: number };
   previewUploads: number;
+  previewCaptures: number;
 };
 const quality = {
   resolution: "p1080",
@@ -78,7 +79,7 @@ for (const codec of ["h265", "h264"] as const) {
         contentType: "application/json",
       });
       expect(sent.captureStopped).toBe(true);
-      expect(sent.previewUploads).toBe(1);
+      expect(sent.previewCaptures).toBe(1);
       expect(watched.closed).toBe(true);
       expect(
         watched.samples.some(
@@ -139,7 +140,8 @@ test("an H.264-only watcher triggers publication fallback and keeps watching", a
       sender.result as Promise<Sent>,
       receiver.result as Promise<Received>,
     ]);
-    expect(sent.codec).toBe("h264");
+    // The restrictive member leaves before the sender finishes: recover HEVC.
+    expect(sent.codec).toBe("h265");
     expect(sent.finalSid).not.toBe(sent.initialSid);
     expect(
       watched.samples.some(
@@ -292,7 +294,7 @@ test("an unwatched preview returns after reconnect without another publisher cap
       ),
     ).toBe(true);
     expect(watched.samples.every((s) => s.receivedBytes === 0)).toBe(true);
-    expect(sent.previewUploads).toBe(1);
+    expect(sent.previewCaptures).toBe(1);
   } finally {
     sender.child.kill();
     receiver.child.kill();

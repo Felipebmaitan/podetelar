@@ -6,6 +6,7 @@ mod admission;
 mod audio;
 mod av_qualification;
 mod browser_links;
+mod codec_policy;
 mod connection;
 mod delivery;
 mod device;
@@ -401,6 +402,8 @@ struct WatchRequest {
     #[serde(default)]
     h264_only: bool,
     #[serde(default)]
+    hevc_only: bool,
+    #[serde(default)]
     wait_for_preview: bool,
     #[serde(default)]
     preview_only: bool,
@@ -510,6 +513,9 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
         }
     });
     playback.compatibility_only(request.h264_only);
+    if request.hevc_only {
+        playback.disable_av1();
+    }
     playback.measure_audio();
     let timing = (request.audiovisual_timing || request.measure_output_audio)
         .then(av_qualification::Events::new);
@@ -684,6 +690,9 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
         )
     })?;
     let cancellation = Arc::new(publisher::CaptureCancellation::default());
+    // The publisher fixture is a room member even when it does not watch.
+    let mut capabilities = playback::Playback::new();
+    capabilities.reconcile(&room, &admission).await?;
     let stop = cancellation.register();
     let cancel = cancellation.clone();
     let republished = Arc::new(AtomicU64::new(0));
@@ -755,13 +764,14 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             tokio::time::sleep(Duration::from_secs(request.seconds - after)).await;
         } else { active = serve_fixture(&room, &admission, active, request.seconds, cancellation.clone(), request.sample_rates).await?; }
         let preview_uploads = active.preview_uploads.clone(); let audio_metrics = active.audio_metrics.clone(); let delivery = active.delivery.clone();
+        let preview_captures = active.preview_captures();
         let mode=active.mode;
         let encoder=active.encoder().clone();
         let final_sid=active.sid();
         let delivered=delivery.lock().map(|value|value.clone()).unwrap_or_default();
         let metrics = active.stop(&room).await?;
         let audio = audio_metrics.lock().map(|value| value.clone()).unwrap_or_default();
-        println!("{}", serde_json::json!({"encoder": encoder.factory, "codec": encoder.codec, "initialSid":initial_sid,"finalSid":final_sid,"mode":mode,"delivery":delivered,"metrics": metrics, "audio": audio, "captureStopped": true, "republished": republished.load(Ordering::Relaxed), "previewUploads": preview_uploads.load(Ordering::Relaxed)}));
+        println!("{}", serde_json::json!({"encoder": encoder.factory, "codec": encoder.codec, "initialSid":initial_sid,"finalSid":final_sid,"mode":mode,"delivery":delivered,"metrics": metrics, "audio": audio, "captureStopped": true, "republished": republished.load(Ordering::Relaxed), "previewUploads": preview_uploads.load(Ordering::Relaxed), "previewCaptures": preview_captures}));
         tokio::time::sleep(Duration::from_secs(request.linger_seconds)).await;
         Ok::<_, anyhow::Error>(())
     }.await;
@@ -797,8 +807,7 @@ async fn serve_fixture(
         if active.cancelled() {
             break;
         }
-        if active.encoder().codec != Codec::H264 && playback::needs_h264(room) {
-            let config = active.fallback_config()?;
+        if let Some(config) = active.compatible_config(room)? {
             active = active
                 .fallback(room, admission.clone(), stop, config)
                 .await?;

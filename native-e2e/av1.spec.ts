@@ -31,6 +31,7 @@ type Sent = {
   captureStopped: boolean;
   mode: { width: number; height: number; fps: number };
   previewUploads: number;
+  previewCaptures: number;
 };
 const quality = {
   resolution: "p1080",
@@ -98,7 +99,7 @@ for (const software of [false, true]) {
         ),
       ).toBe(true);
       expect(sent.captureStopped).toBe(true);
-      expect(sent.previewUploads).toBe(1);
+      expect(sent.previewCaptures).toBe(1);
       expect(watched.closed).toBe(true);
       const beforeReconnect = watched.samples
         .filter((s) => s.second < 17)
@@ -173,7 +174,8 @@ test("an H.264-only watcher triggers AV1 publication fallback and keeps watching
       sender.result as Promise<Sent>,
       receiver.result as Promise<Received>,
     ]);
-    expect(sent.codec).toBe("h264");
+    // The restrictive member leaves before the sender finishes: recover AV1.
+    expect(sent.codec).toBe("av1");
     expect(sent.finalSid).not.toBe(sent.initialSid);
     expect(
       watched.samples.some(

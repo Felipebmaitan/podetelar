@@ -21,8 +21,19 @@ if (
 const root = resolve(import.meta.dirname, "..");
 process.chdir(root);
 const soak = process.argv.includes("--soak");
-const appPort = soak ? 13010 : 3010;
-const mediaPort = soak ? 18880 : 17880;
+const appPort = Number(
+  process.env.FREEDOMSTREAM_SMOKE_APP_PORT ?? (soak ? 13010 : 3010),
+);
+const mediaPort = Number(
+  process.env.FREEDOMSTREAM_SMOKE_SFU_PORT ?? (soak ? 18880 : 17880),
+);
+if (
+  ![appPort, mediaPort].every(
+    (port) => Number.isInteger(port) && port >= 1024 && port <= 65533,
+  ) ||
+  Math.abs(appPort - mediaPort) <= 2
+)
+  throw new Error("Choose distinct unprivileged native smoke port ranges.");
 const origin = `http://localhost:${appPort}`;
 const mediaOrigin = `http://127.0.0.1:${mediaPort}`;
 const occupied = await Promise.all(

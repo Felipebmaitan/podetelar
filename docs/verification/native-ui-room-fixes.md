@@ -54,6 +54,20 @@ native audio work (PR #40); this change does not qualify or deploy that pilot.
 - `cargo clippy --locked -p freedomstream-publisher --example ui-review --features
 ui-review -- -D warnings`: passed for the native capture helper.
 
+## Sidebar and bitrate follow-up
+
+The sidebar mode summary now omits the redundant SDR label. Advanced bitrate
+selection keeps Automatic, followed by 6, 8, 10, 12, 16, 20, 25, 35, 50, 75 and
+100 Mbps, then Custom. Presets do not show a second input. Custom shows only the
+word Custom in the selector and exposes the editable number below, including
+when that number equals a preset. Choosing a preset or Automatic hides the field.
+The existing 1–100 Mbps input/model limit remains unchanged.
+
+Independent GPT-6.1-Sol high source review approved this follow-up. The full Node
+24 check passed. Isolated native tests passed (publisher: 77 passed, 5 ignored).
+Native validation used an isolated checkout of the UI branch because concurrent codec edits in the shared workspace temporarily
+made a mixed-source test build fail. These codec edits are outside this PR.
+
 ## Native renderer captures
 
 These are **fixture layouts rendered by the actual native egui/Glow application**,
@@ -67,6 +81,8 @@ these layout captures. A production Discord user invocation has not been repeate
 
 ![PT-BR advanced settings](images/ui-room-fixes/advanced-settings-pt.jpg)
 
+![PT-BR Custom bitrate](images/ui-room-fixes/advanced-custom-pt.jpg)
+
 ![PT-BR stream information](images/ui-room-fixes/stream-information-pt.jpg)
 
 ![960×540 advanced settings](images/ui-room-fixes/advanced-settings-small-pt.jpg)
@@ -76,6 +92,7 @@ these layout captures. A production Discord user invocation has not been repeate
 To reproduce, build `cargo build --locked -p freedomstream-publisher --example
 ui-review --features ui-review` with the configured native runtime. Run the GUI
 example with `room`, `settings` or `information`, followed by a **new absolute JPEG
-path**. Add `--english` or `--narrow` for EN or 960×540; defaults are PT-BR and
+path**. Add `--custom` to expose the Custom bitrate field in settings. Add
+`--english` or `--narrow` for EN or 960×540; defaults are PT-BR and
 1280×720. The helper requests a native framebuffer capture and exits automatically.
 Run commands through hidden noninteractive processes as required by AGENTS.md.

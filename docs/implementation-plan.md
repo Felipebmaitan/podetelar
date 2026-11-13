@@ -30,6 +30,9 @@ confirmation must dispatch the existing validated Apply command for changed live
 settings; idle confirmation must never start publication. Keep busy and invalid
 selections disabled. Preserve existing in-place bitrate/profile updates and
 stream restart behavior for source, encoder, resolution and frame-rate changes.
+Remove the redundant SDR sidebar label. Keep Automatic plus 6–100 Mbps bitrate
+presets, followed by Custom; show the numeric field only for Custom and retain
+the existing 1–100 Mbps validation limit.
 
 Group watched-stream measurements into reception, network/decoding and sender
 sections. Distinguish muted labels from stronger values, collapse detailed

@@ -2,7 +2,9 @@
 
 Implemented on 2026-11-13. Originally developed on the native settings correction
 branch, then isolated onto `main` (`506ae97`, persistent PC usage identity) for
-PR #43. The unpublished UI/audio changes from PRs #40/#41 are excluded.
+PR #43. During acceptance, main advanced to `3404c8c` with audio PR #40; that
+update was integrated while retaining its native audio defaults and recovery.
+The unpublished UI changes from PR #41 are excluded.
 
 ## Behavior
 
@@ -60,17 +62,21 @@ native-e2e/av1.spec.ts native-e2e/native-room.spec.ts`, with
 
 ## Main integration
 
-The main-based version retains main's pinned SDK and playback behavior. The
-earlier audio-pilot SDK cache was preserved separately and regenerated from the
-main SDK/decoder pins before native verification. No SDK pin or runtime dependency
-changes are part of this PR. The smoke harness keeps main's room configuration.
+The main-based version retains main's pinned SDK and playback behavior. SDK caches
+from earlier bases were preserved separately and regenerated from each main
+SDK/decoder pin before native verification. No SDK pin or runtime dependency
+changes are part of this PR. The smoke harness keeps main's room configuration,
+including synchronized streams and the separate soak-test defaults.
 
-Node 24 checks passed again. Native tests passed with **80 publisher tests,
-6 ignored**, **10 portable tests** and the isolated process fixture. A fresh
+Node 24 checks passed again. On the earlier `506ae97` base, native tests passed
+with **80 publisher tests, 6 ignored**, **10 portable tests** and the isolated
+process fixture; all **11 real SFU scenarios** passed again in **4.7 minutes**. A fresh
 **GPT-6.1-Sol, high** review caught the test fixture's missing `continuousWatch`
 option after rebase; its defaulted field and predicate were restored. The reviewer
 approved the fix with no remaining findings, contingent on acceptance reruns.
-The main-based Clippy and real API/SFU rerun results are recorded in
+A further fresh GPT-6.1-Sol high review approved the integration of main's audio
+PR #40, including timing-aware video replacement, native output recovery and
+the smoke harness's soak/port handling. The latest-main Clippy, native tests and real API/SFU rerun results are recorded in
 [PR #43](https://github.com/Felipebmaitan/podetelar/pull/43) before merge.
 
 ## Qualification limits

@@ -76,7 +76,12 @@ option after rebase; its defaulted field and predicate were restored. The review
 approved the fix with no remaining findings, contingent on acceptance reruns.
 A further fresh GPT-6.1-Sol high review approved the integration of main's audio
 PR #40, including timing-aware video replacement, native output recovery and
-the smoke harness's soak/port handling. The latest-main Clippy, native tests and real API/SFU rerun results are recorded in
+the smoke harness's soak/port handling. It also caught a Stop/codec-replacement
+race; replacement cancellation registration was restored before observing the
+old stream's cancellation flag, and the reviewer approved the correction.
+Clippy and native tests passed again with **81 publisher tests, 6 ignored**,
+**10 portable tests** and the isolated process fixture. The latest-main real
+API/SFU rerun results are recorded in
 [PR #43](https://github.com/Felipebmaitan/podetelar/pull/43) before merge.
 
 ## Qualification limits

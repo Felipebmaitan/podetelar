@@ -1120,11 +1120,14 @@ async fn worker(
                         else { playback = crate::playback::Playback::new(); }
                         update(&snapshot, |state| state.tiles.clear());
                     }
+                    // Register before observing the old token: a concurrent
+                    // Stop must either cancel this replacement or the old
+                    // token that prevents entering the replacement path.
+                    let replacement_stop = cancellation.register();
                     if joined.room.connection_state() == ConnectionState::Connected
                         && stream.as_ref().is_some_and(|s| !s.cancelled()) {
                         match stream.as_ref().unwrap().compatible_config(&joined.room) {
                             Ok(Some(config)) => {
-                                let replacement_stop = cancellation.register();
                                 let active = stream.take().unwrap();
                                 match active.fallback(&joined.room, joined.admission.clone(), replacement_stop, config).await {
                                     Ok(active) => stream = Some(active),

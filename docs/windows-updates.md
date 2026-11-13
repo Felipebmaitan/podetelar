@@ -2,8 +2,11 @@
 
 The installed app supports an update badge, hover changelog, explicit download,
 progress/retry and Restart to update/Later. Windows releases offer an **unsigned
-installer preview** as a Setup download. No public update feed is enabled
-in this preview. Public releases offer only Setup with its manifest and checksums.
+installer preview** as a Setup download. Starting with the v0.1.2 installer,
+packaging compiles in the public GitHub releases feed. v0.1.0/v0.1.1 require one
+manual Setup upgrade because their launchers have no compiled feed. Public
+updater releases include Setup, a full `.nupkg`, `releases.preview.json`, an
+installer manifest and checksums.
 The portable executable remains an internal installer payload and qualification
 tool; do not publish it separately. See [installer qualification](verification/global-bot-installer.md).
 See [upstream research](research/windows-updates.md) for T3 Code's implementation,
@@ -24,6 +27,12 @@ node scripts/package-installer.mjs
 Use a clean committed checkout. Increase the preview number for each build.
 The packager verifies the portable artifact's commit, size and SHA-256 and uses
 the same pinned Velopack SDK/CLI. Outputs are under `.local/installers/`.
+Its `public/` directory contains the complete publishable asset set, after
+validating the feed's package ID, version, safe filename, size and SHA-256. It
+embeds `docs/releases/v<version>.md` as the update notes and disables deltas.
+Publish that directory together in a draft GitHub release, verify uploaded bytes,
+then publish the release with the full package already present. Keep old assets.
+Do not upload the generated portable ZIP or standalone executable.
 The manual **Windows installer preview** workflow builds the native payload,
 runs checks and portable qualification, then uploads installer/feed artifacts.
 Artifacts are for maintainers; they expire and are not a user update source.
@@ -83,12 +92,19 @@ installation or a production media-session switch.
 
 ## Badge, download and restart controls
 
-Set `FREEDOMSTREAM_UPDATE_FEED` **when building the installer bootstrap**, to a
-trusted HTTPS feed directory, public GitHub repository URL, or absolute local
-feed directory for qualification. It is compiled into the launcher; room data,
+`deploy/windows/installer.json` defaults `updateFeed` to
+`https://github.com/Felipebmaitan/podetelar`. An optional
+`FREEDOMSTREAM_UPDATE_FEED` build override may select a trusted, credential-free
+HTTPS feed directory or public GitHub repository URL. Empty overrides use the
+default; missing or malformed feeds fail packaging. The selected feed is compiled
+into the launcher; room data,
 IPC requests and runtime environment cannot select an arbitrary update source.
-The workflow reads repository variable `WINDOWS_UPDATE_FEED`; leaving it empty
-keeps updates disabled. No public visibility is needed to use a local directory.
+The workflow reads optional repository variable `WINDOWS_UPDATE_FEED`. Local
+qualification scripts compile an absolute file feed directly into their isolated
+test launcher; installer packaging refuses local paths. No PAT is embedded.
+The existing `preview` channel refers to the internal package version/channel,
+not GitHub's prerelease flag: the public repository source selects published
+GitHub releases, and public updater releases must not be marked prerelease.
 
 The publisher receives a per-launch loopback endpoint and random 256-bit token
 through its environment. Length-prefixed JSON is limited to 16 KiB, connections
@@ -122,9 +138,8 @@ opt-in nightly switching and delta optimization remain follow-up work.
    visual/interaction acceptance pass for the badge and restart dialog.
 2. Add transfer cancellation and qualify timeout/backoff behavior for each provider.
 3. Qualify saved-room continuity, offline startup and uninstall on fresh Windows.
-4. Publish public GitHub Release assets after the rename/repository transition.
-   No need to make source public to implement/test: a local feed or separate
-   public binary repository also works. Never ship a private GitHub token.
+4. Verify public GitHub feed discovery/download after publishing each release.
+   The packager prepares the required public assets together. Never ship a private GitHub token.
    Publish packages before discoverable feed metadata; use full packages first,
    then add measured delta updates with full fallback. Keep previous releases.
 5. Add stable tags and scheduled nightly CI only after update acceptance.

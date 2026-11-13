@@ -1141,7 +1141,7 @@ dependencies = [
 
 [[package]]
 name = "freedomstream-portable"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "sha2",
@@ -1153,7 +1153,7 @@ dependencies = [
 
 [[package]]
 name = "freedomstream-publisher"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "bytemuck",

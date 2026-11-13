@@ -2,5 +2,6 @@
   "packageId": "PodeTelar",
   "title": "PodeTelar",
   "mainExe": "freedomstream-installed.exe",
-  "velopackVersion": "1.2.161"
+  "velopackVersion": "1.2.161",
+  "updateFeed": "https://github.com/Felipebmaitan/podetelar"
 }

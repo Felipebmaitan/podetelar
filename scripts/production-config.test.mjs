@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { productionConfiguration } from "./prepare-production.mjs";
-import { PREVIEW_MAX_BYTES } from "@freedomstream/contracts";
+import { PREVIEW_MAX_BYTES } from "@podetelar/contracts";
 const secrets = Object.fromEntries(
   ["admin", "apiKey", "apiSecret", "turn"].map((key, i) => [
     key,
@@ -11,7 +11,7 @@ const secrets = Object.fromEntries(
 
 test("split domains retain the gateway and keep bulk traffic off the website listener", () => {
   const config = productionConfiguration(
-    "/opt/freedomstream",
+    "/opt/podetelar",
     "203.0.113.9",
     "stream.maitan.me",
     secrets,
@@ -46,7 +46,7 @@ test("split domains retain the gateway and keep bulk traffic off the website lis
     assert.throws(
       () =>
         productionConfiguration(
-          "/opt/freedomstream",
+          "/opt/podetelar",
           "203.0.113.9",
           "stream.maitan.me",
           secrets,
@@ -58,7 +58,7 @@ test("split domains retain the gateway and keep bulk traffic off the website lis
 });
 test("production config preserves the admission gateway and isolated certificate paths", () => {
   const config = productionConfiguration(
-    "/opt/freedomstream",
+    "/opt/podetelar",
     "203.0.113.9",
     "203.0.113.9",
     secrets,
@@ -93,7 +93,7 @@ test("deployment identifiers cannot inject config or shell lines", () => {
   assert.throws(
     () =>
       productionConfiguration(
-        "/opt/freedomstream",
+        "/opt/podetelar",
         "203.0.113.9",
         "203.0.113.9",
         secrets,
@@ -102,7 +102,7 @@ test("deployment identifiers cannot inject config or shell lines", () => {
   );
   for (const root of [
     "/",
-    "/opt/freedomstream\nX=bad",
+    "/opt/podetelar\nX=bad",
     "/opt/../etc",
     "C:/app",
     "/opt/a b",
@@ -118,11 +118,6 @@ test("deployment identifiers cannot inject config or shell lines", () => {
     "[::1]",
   ])
     assert.throws(() =>
-      productionConfiguration(
-        "/opt/freedomstream",
-        "203.0.113.9",
-        host,
-        secrets,
-      ),
+      productionConfiguration("/opt/podetelar", "203.0.113.9", host, secrets),
     );
 });

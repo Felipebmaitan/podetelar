@@ -46,14 +46,14 @@ int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR,int){
  const int contexts=_wtoi(args[3]),cycles=_wtoi(args[4]);const bool hidden=std::wstring(args[5])==L"hidden";const std::wstring codec_arg=args[6];const std::string codec(codec_arg.begin(),codec_arg.end());
  if((contexts!=1&&contexts!=4)||cycles<1||cycles>10||(codec!="h265"&&codec!="h264"&&codec!="av1"))return 2;
  gst_init(nullptr,nullptr);const auto packets=Fixture(args[1],codec);if(packets.size()!=300)return 3;
- const bool hash_all=deep::Flag("FREEDOMSTREAM_DEEP_HASH_ALL");std::ofstream report(args[2]);
+ const bool hash_all=deep::Flag("PODETELAR_DEEP_HASH_ALL");std::ofstream report(args[2]);
  report<<"{\"schema\":1,\"contexts\":"<<contexts<<",\"cycles\":"<<cycles<<",\"sharedDevice\":"<<(deep::Shared()?"true":"false")<<",\"relaxedMap\":"<<(deep::Relaxed()?"true":"false")<<",\"flushedPolling\":"<<(deep::FlushedPolling()?"true":"false")<<",\"allFrameHashQualification\":"<<(hash_all?"true":"false")<<",\"hidden\":"<<(hidden?"true":"false")<<",\"codec\":\""<<codec<<"\",\"runs\":[";
  int failures=0;
  for(int cycle=0;cycle<cycles;cycle++){
   std::vector<Callback> callbacks(contexts);std::vector<std::thread> workers;std::atomic<int> errors{0};Clock::time_point start;std::barrier gate(contexts,[&]() noexcept {start=Clock::now();});
   const auto before=Stats();const auto cpu=Cpu();const auto wall=Clock::now();
   for(int j=0;j<contexts;j++)workers.emplace_back([&,j]{
-   freedomstream::Decoder decoder(codec=="h265",codec=="av1");auto& cb=callbacks[j];cb.hidden=hidden;cb.hash_all=hash_all;
+   podetelar::Decoder decoder(codec=="h265",codec=="av1");auto& cb=callbacks[j];cb.hidden=hidden;cb.hash_all=hash_all;
    webrtc::VideoDecoder::Settings settings;
    const bool configured=decoder.Configure(settings);if(!configured)errors++;
    decoder.RegisterDecodeCompleteCallback(&cb);gate.arrive_and_wait();cb.start=start;

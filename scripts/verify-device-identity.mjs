@@ -16,12 +16,12 @@ assert.ok(
   process.env.ADMIN_TOKEN,
   "Supply a local test administrator credential.",
 );
-const executable = process.env.FREEDOMSTREAM_NATIVE_TEST_EXE;
+const executable = process.env.PODETELAR_NATIVE_TEST_EXE;
 assert.ok(
   executable,
   "Supply the publisher's freshly built Rust test executable.",
 );
-const container = process.env.FREEDOMSTREAM_DEVICE_DB_CONTAINER;
+const container = process.env.PODETELAR_DEVICE_DB_CONTAINER;
 assert.ok(
   container && /^[a-z0-9][a-z0-9_-]{0,127}$/.test(container),
   "Supply the isolated local API container name.",
@@ -69,7 +69,7 @@ for (let index = 0; index < 2; index++) {
         env: {
           ...process.env,
           LOCALAPPDATA: directory,
-          FREEDOMSTREAM_DEVICE_FIXTURE: fixture,
+          PODETELAR_DEVICE_FIXTURE: fixture,
         },
         windowsHide: true,
         timeout: 30000,
@@ -101,7 +101,7 @@ assert.ok(
 const query = `import { DatabaseSync } from 'node:sqlite';
 let input=''; for await (const chunk of process.stdin) input+=chunk;
 const ids=JSON.parse(input);
-const db=new DatabaseSync('/app/data/freedomstream.db',{readOnly:true});
+const db=new DatabaseSync('/app/data/podetelar.db',{readOnly:true});
 console.log(JSON.stringify(db.prepare('SELECT id,device_id FROM usage_users WHERE id IN (?,?)').all(...ids)));
 db.close();`;
 const rows = JSON.parse(

@@ -9,7 +9,7 @@ image, not an additional Windows application dependency.
 Build from the repository root:
 
 ```sh
-docker build -f deploy/livekit-usage/Dockerfile -t freedomstream/livekit-usage:COMMIT .
+docker build -f deploy/livekit-usage/Dockerfile -t podetelar/livekit-usage:COMMIT .
 ```
 
 Use the immutable resulting image tag as `LIVEKIT_USAGE_IMAGE` in the production

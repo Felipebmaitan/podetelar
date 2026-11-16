@@ -1,9 +1,9 @@
 # Test scope
 
-Participants join, publish and watch in the Windows app. Browser automation covers
-desktop operator administration. The old browser media controller is no longer
-connected to the web entry point, so its mocked capture, playback and network tests
-are retired along with mobile emulation and participant browser-room scenarios.
+Participants join, publish and watch in the native apps. Browser automation covers
+desktop operator administration. Participant browser-room and mobile media
+scenarios are outside the current product test scope. See [macOS checks](macos.md#development-and-checks) for its
+platform-specific capture, packaging and updater qualification commands.
 
 ## Automated checks
 
@@ -14,8 +14,8 @@ Use Node 24 LTS and `npm ci`.
 | `npm run check`                  | Formatting, workspace/tool types, API and configuration tests, administrator usage formatting tests, and production builds.                                                                |
 | `npm run test:admin`             | Desktop administrator login/logout, usage filters, room creation/directory, and per-room access-management Lock. Requires Chromium and a running app. `test:e2e` is a compatibility alias. |
 | `npm run smoke -- --restart-app` | Actual HTTP room API admission, authorization, persisted session recovery, leave, built web assets and authenticated SFU access against Docker.                                            |
-| `npm run native:check`           | Native formatting and Clippy. Requires the qualified Windows media runtime and SDK.                                                                                                        |
-| `npm run native:test`            | Native and portable Rust tests: capture cancellation, cleanup, audio policy, preview cadence, quality/network controls, encrypted settings and packaging/process contracts.                |
+| `npm run native:check`           | Native formatting and Clippy. Requires the platform media runtime and SDK.                                                                                                                 |
+| `npm run native:test`            | Native and portable Rust tests: capture cancellation, cleanup, audio policy, preview cadence, quality/network controls, activation and packaging/process contracts.                        |
 | `npm run native:room-smoke`      | Actual native decode, codec fallback, watch/stop/rewatch traffic, preview/reconnect, receiver allowance and audio against an isolated Windows API/SFU.                                     |
 
 Install Chromium with `npx playwright install chromium` before running administrator
@@ -28,8 +28,8 @@ administrator UI on Linux. Hosted native build/packaging qualification remains a
 explicit `Checks` workflow dispatch with `run_native` enabled. A green default CI
 run does not mean native hardware/media qualification ran.
 
-For an isolated concurrent native smoke run, set `FREEDOMSTREAM_SMOKE_APP_PORT`
-and `FREEDOMSTREAM_SMOKE_SFU_PORT` to unused ports. The SFU also uses the next
+For an isolated concurrent native smoke run, set `PODETELAR_SMOKE_APP_PORT`
+and `PODETELAR_SMOKE_SFU_PORT` to unused ports. The SFU also uses the next
 two ports. Defaults remain 3010 and 17880–17882. Do not stop another test run's
 services to free these ports.
 
@@ -45,7 +45,7 @@ services to free these ports.
   installed bytes/manifest integrity, expiry after leave and legacy redirects.
   Portable qualification checks the actual packaged executable separately.
 - `apps/web/test/usage.test.ts` protects the active administrator charts' units and
-  date ranges. The unused browser media controller's mock tests are removed.
+  date ranges.
 - Native media and audio scenarios remain separate even when they use the same
   fixture: local process-audio isolation and end-to-end stereo delivery catch
   different failures. H.264, HEVC and AV1 decoder paths also remain distinct.
@@ -61,8 +61,8 @@ traffic. For independent-process Windows identity/native HTTP qualification, see
 
 Synthetic fixtures and unit tests do not qualify real games, Discord sessions,
 AMD hardware, fresh-machine/offline startup, production TURN/network recovery,
-physical 4K120, synchronized A/V latency or multi-friend load. Preserve the separate
-verification records and open acceptance gates.
+physical 4K120, synchronized A/V latency or multi-friend load. Record actual hardware
+and deployment evidence, with unresolved limits, in the PR.
 
 The preview clock unit test covers the initial capture and minimum minute interval.
 Current native media scenarios also check initial previews and reconnect recovery,

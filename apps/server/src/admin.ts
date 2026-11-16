@@ -1,13 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Config } from "./config.js";
-import { adminCreateRoomSchema, roomIdSchema } from "@freedomstream/contracts";
+import { adminCreateRoomSchema, roomIdSchema } from "@podetelar/contracts";
 import { Rooms, secretsEqual } from "./rooms.js";
 import type { Usage } from "./usage.js";
 import type { Access } from "./access.js";
 import type { RoomLifecycle } from "./room-lifecycle.js";
 
-const COOKIE = "fs_admin";
+const COOKIE = "podetelar_admin";
 const TTL = 8 * 60 * 60 * 1000;
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");

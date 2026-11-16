@@ -39,7 +39,7 @@ export async function createTestRoom(
     response = await create();
   }
   // Optional cleanup ledger contains public room IDs only, never invitations/cookies.
-  const ledger = process.env.FREEDOMSTREAM_TEST_ROOM_IDS;
+  const ledger = process.env.PODETELAR_TEST_ROOM_IDS;
   if (ledger && response.status() === 201) {
     const body = await response.json();
     if (!/^[A-Za-z0-9_-]{22}$/.test(body.room.id))

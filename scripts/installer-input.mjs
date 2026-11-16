@@ -10,7 +10,7 @@ export function installerInput(directory, commit) {
     !/^\d+\.\d+\.\d+$/.test(manifest.version) ||
     typeof manifest.filename !== "string" ||
     basename(manifest.filename) !== manifest.filename ||
-    !/^freedomstream-windows-x64-[a-z0-9.-]+\.exe$/.test(manifest.filename)
+    !/^podetelar-windows-x64-[a-z0-9.-]+\.exe$/.test(manifest.filename)
   )
     throw new Error(
       "Installer input must be a portable release from this commit.",

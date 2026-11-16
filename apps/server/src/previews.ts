@@ -10,7 +10,7 @@ import {
   trackSidSchema,
   type Preview,
   type PreviewKind,
-} from "@freedomstream/contracts";
+} from "@podetelar/contracts";
 import { jpegDimensions } from "./jpeg.js";
 import { MediaUnavailable, type MediaDirectory } from "./media.js";
 import type { Rooms } from "./rooms.js";
@@ -205,7 +205,7 @@ export async function previewRoutes(
     { bodyLimit: PREVIEW_MAX_BYTES },
     async (request, reply) => {
       const { roomId } = request.params;
-      const member = session(roomId, request.cookies.fs_session);
+      const member = session(roomId, request.cookies.podetelar_session);
       if (!member)
         return reply
           .code(401)
@@ -228,7 +228,7 @@ export async function previewRoutes(
           kind.data,
           sid.data,
           request.body,
-          () => Boolean(session(roomId, request.cookies.fs_session)),
+          () => Boolean(session(roomId, request.cookies.podetelar_session)),
         );
       } catch (error) {
         const failure = errorResponse(error);
@@ -241,7 +241,7 @@ export async function previewRoutes(
     "/api/rooms/:roomId/previews/:kind",
     async (request, reply) => {
       const { roomId } = request.params;
-      const member = session(roomId, request.cookies.fs_session);
+      const member = session(roomId, request.cookies.podetelar_session);
       if (!member)
         return reply
           .code(401)
@@ -258,7 +258,7 @@ export async function previewRoutes(
     "/api/rooms/:roomId/previews/:owner/:kind/:revision",
     async (request, reply) => {
       const { roomId, owner, revision } = request.params;
-      if (!session(roomId, request.cookies.fs_session))
+      if (!session(roomId, request.cookies.podetelar_session))
         return reply
           .code(401)
           .send({ error: "Open your room invitation to join." });
@@ -277,7 +277,7 @@ export async function previewRoutes(
         if (!entry)
           return reply.code(404).send({ error: "Preview unavailable." });
         // Session expiry/rotation may happen while the live-publication check waits.
-        if (!session(roomId, request.cookies.fs_session))
+        if (!session(roomId, request.cookies.podetelar_session))
           return reply
             .code(401)
             .send({ error: "Open your room invitation to join." });

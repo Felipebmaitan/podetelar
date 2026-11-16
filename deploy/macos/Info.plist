@@ -14,5 +14,5 @@
 <key>NSHighResolutionCapable</key><true/>
 <key>NSScreenCaptureUsageDescription</key><string>PodeTelar shares the display or window you choose with your room.</string>
 <key>NSAudioCaptureUsageDescription</key><string>PodeTelar shares audio from the applications you choose, excluding Discord and its own playback.</string>
-<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>PodeTelar room invitation</string><key>CFBundleURLSchemes</key><array><string>freedomstream</string></array></dict></array>
+<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>PodeTelar room invitation</string><key>CFBundleURLSchemes</key><array><string>podetelar</string></array></dict></array>
 </dict></plist>

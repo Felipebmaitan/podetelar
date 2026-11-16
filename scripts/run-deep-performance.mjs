@@ -24,33 +24,33 @@ if (existsSync(index))
 const runs = [];
 const common = {
   ...process.env,
-  FREEDOMSTREAM_IMAGE_POOL: "1",
-  FREEDOMSTREAM_IMAGE_POOL_LIMIT: "2",
-  FREEDOMSTREAM_DEEP_CLIP: "0",
-  FREEDOMSTREAM_DEEP_PLANAR: "0",
-  FREEDOMSTREAM_DEEP_RETAIN_PLANES: "0",
-  FREEDOMSTREAM_DEEP_SHARED_DEVICE: "0",
-  FREEDOMSTREAM_DEEP_SELECTIVE_STOP: "0",
-  FREEDOMSTREAM_DEEP_RELAXED_MAP: "0",
-  FREEDOMSTREAM_DEEP_POOL_TRACE: "0",
-  FREEDOMSTREAM_AV1_DECODER: "",
-  FREEDOMSTREAM_FRAME_REPAINT: "0",
-  FREEDOMSTREAM_IMAGE_FALLBACK: "0",
-  FREEDOMSTREAM_DEEP_FLUSH_MAP: "0",
-  FREEDOMSTREAM_DEEP_HEAP: "0",
+  PODETELAR_IMAGE_POOL: "1",
+  PODETELAR_IMAGE_POOL_LIMIT: "2",
+  PODETELAR_DEEP_CLIP: "0",
+  PODETELAR_DEEP_PLANAR: "0",
+  PODETELAR_DEEP_RETAIN_PLANES: "0",
+  PODETELAR_DEEP_SHARED_DEVICE: "0",
+  PODETELAR_DEEP_SELECTIVE_STOP: "0",
+  PODETELAR_DEEP_RELAXED_MAP: "0",
+  PODETELAR_DEEP_POOL_TRACE: "0",
+  PODETELAR_AV1_DECODER: "",
+  PODETELAR_FRAME_REPAINT: "0",
+  PODETELAR_IMAGE_FALLBACK: "0",
+  PODETELAR_DEEP_FLUSH_MAP: "0",
+  PODETELAR_DEEP_HEAP: "0",
   GST_DEBUG: "0",
-  FREEDOMSTREAM_COUNT_SDK_LOGS: "0",
-  FREEDOMSTREAM_DEEP_NARROW: "0",
-  FREEDOMSTREAM_DEEP_SCROLL: "0",
-  FREEDOMSTREAM_DEEP_MIXED: "0",
-  FREEDOMSTREAM_DEEP_OWNERS: "0",
-  FREEDOMSTREAM_BENCH_CONTENTION: "0",
-  FREEDOMSTREAM_BENCH_ROUNDS: "1",
-  FREEDOMSTREAM_BENCH_STEADY: "0",
-  FREEDOMSTREAM_BENCH_AUDIO: "0",
-  FREEDOMSTREAM_BENCH_PUBLISH: "0",
-  FREEDOMSTREAM_BENCH_FPS: "60",
-  FREEDOMSTREAM_BENCH_RESOLUTION: "p1080",
+  PODETELAR_COUNT_SDK_LOGS: "0",
+  PODETELAR_DEEP_NARROW: "0",
+  PODETELAR_DEEP_SCROLL: "0",
+  PODETELAR_DEEP_MIXED: "0",
+  PODETELAR_DEEP_OWNERS: "0",
+  PODETELAR_BENCH_CONTENTION: "0",
+  PODETELAR_BENCH_ROUNDS: "1",
+  PODETELAR_BENCH_STEADY: "0",
+  PODETELAR_BENCH_AUDIO: "0",
+  PODETELAR_BENCH_PUBLISH: "0",
+  PODETELAR_BENCH_FPS: "60",
+  PODETELAR_BENCH_RESOLUTION: "p1080",
 };
 const groups =
   family === "shared-selective"
@@ -58,7 +58,7 @@ const groups =
         {
           name: "four",
           pairs: 1,
-          env: { FREEDOMSTREAM_DEEP_SELECTIVE_STOP: "1" },
+          env: { PODETELAR_DEEP_SELECTIVE_STOP: "1" },
         },
       ]
     : family === "shared-4k"
@@ -66,7 +66,7 @@ const groups =
           {
             name: "four4k",
             pairs: 1,
-            env: { FREEDOMSTREAM_BENCH_RESOLUTION: "p2160" },
+            env: { PODETELAR_BENCH_RESOLUTION: "p2160" },
           },
         ]
       : family === "shared-contention"
@@ -74,7 +74,7 @@ const groups =
             {
               name: "four",
               pairs: 1,
-              env: { FREEDOMSTREAM_BENCH_CONTENTION: "1" },
+              env: { PODETELAR_BENCH_CONTENTION: "1" },
             },
           ]
         : family === "shared-recovery"
@@ -84,10 +84,10 @@ const groups =
                 pairs: 1,
                 seconds: 20,
                 env: {
-                  FREEDOMSTREAM_BENCH_ROUNDS: "3",
-                  FREEDOMSTREAM_PERFORMANCE_PUBLISHER: resolve(
+                  PODETELAR_BENCH_ROUNDS: "3",
+                  PODETELAR_PERFORMANCE_PUBLISHER: resolve(
                     root,
-                    ".local/experiments/final-selected-v4/freedomstream-publisher.exe",
+                    ".local/experiments/final-selected-v4/podetelar-publisher.exe",
                   ),
                 },
               },
@@ -98,17 +98,17 @@ const groups =
                   name: "four",
                   pairs: 3,
                   env: {
-                    FREEDOMSTREAM_DEEP_PLANAR: "1",
-                    FREEDOMSTREAM_DEEP_OWNERS: "1",
+                    PODETELAR_DEEP_PLANAR: "1",
+                    PODETELAR_DEEP_OWNERS: "1",
                   },
                 },
                 {
                   name: "one4k",
                   pairs: 1,
                   env: {
-                    FREEDOMSTREAM_DEEP_PLANAR: "1",
-                    FREEDOMSTREAM_DEEP_OWNERS: "1",
-                    FREEDOMSTREAM_BENCH_RESOLUTION: "p2160",
+                    PODETELAR_DEEP_PLANAR: "1",
+                    PODETELAR_DEEP_OWNERS: "1",
+                    PODETELAR_BENCH_RESOLUTION: "p2160",
                   },
                 },
               ]
@@ -117,7 +117,7 @@ const groups =
                   {
                     name: "narrow",
                     pairs: 1,
-                    env: { FREEDOMSTREAM_DEEP_NARROW: "1" },
+                    env: { PODETELAR_DEEP_NARROW: "1" },
                   },
                 ]
               : family === "clip"
@@ -125,7 +125,7 @@ const groups =
                     {
                       name: "narrow",
                       pairs: 3,
-                      env: { FREEDOMSTREAM_DEEP_NARROW: "1" },
+                      env: { PODETELAR_DEEP_NARROW: "1" },
                     },
                     { name: "wide", pairs: 1, env: {} },
                   ]
@@ -134,30 +134,30 @@ const groups =
                       {
                         name: "narrow",
                         pairs: 3,
-                        env: { FREEDOMSTREAM_DEEP_NARROW: "1" },
+                        env: { PODETELAR_DEEP_NARROW: "1" },
                       },
                       { name: "wide", pairs: 3, env: {} },
                       {
                         name: "scroll",
                         pairs: 1,
                         env: {
-                          FREEDOMSTREAM_DEEP_NARROW: "1",
-                          FREEDOMSTREAM_DEEP_SCROLL: "1",
+                          PODETELAR_DEEP_NARROW: "1",
+                          PODETELAR_DEEP_SCROLL: "1",
                         },
                       },
                       {
                         name: "audio",
                         pairs: 1,
                         env: {
-                          FREEDOMSTREAM_DEEP_NARROW: "1",
-                          FREEDOMSTREAM_BENCH_AUDIO: "1",
+                          PODETELAR_DEEP_NARROW: "1",
+                          PODETELAR_BENCH_AUDIO: "1",
                         },
                       },
                       {
                         name: "five",
                         count: 5,
                         pairs: 1,
-                        env: { FREEDOMSTREAM_DEEP_NARROW: "1" },
+                        env: { PODETELAR_DEEP_NARROW: "1" },
                       },
                     ]
                   : family === "clip-wide-sustained"
@@ -166,10 +166,10 @@ const groups =
                           name: "wide",
                           pairs: 3,
                           env: {
-                            FREEDOMSTREAM_BENCH_STEADY: "60",
-                            FREEDOMSTREAM_PERFORMANCE_PUBLISHER: resolve(
+                            PODETELAR_BENCH_STEADY: "60",
+                            PODETELAR_PERFORMANCE_PUBLISHER: resolve(
                               root,
-                              ".local/experiments/final-selected-v4/freedomstream-publisher.exe",
+                              ".local/experiments/final-selected-v4/podetelar-publisher.exe",
                             ),
                           },
                         },
@@ -186,7 +186,7 @@ const groups =
                             {
                               name: "four4k",
                               pairs: 1,
-                              env: { FREEDOMSTREAM_BENCH_RESOLUTION: "p2160" },
+                              env: { PODETELAR_BENCH_RESOLUTION: "p2160" },
                             },
                           ]
                         : family === "planar-final"
@@ -197,14 +197,14 @@ const groups =
                                 name: "one4k",
                                 pairs: 2,
                                 env: {
-                                  FREEDOMSTREAM_BENCH_RESOLUTION: "p2160",
+                                  PODETELAR_BENCH_RESOLUTION: "p2160",
                                 },
                               },
                               {
                                 name: "four4k",
                                 pairs: 1,
                                 env: {
-                                  FREEDOMSTREAM_BENCH_RESOLUTION: "p2160",
+                                  PODETELAR_BENCH_RESOLUTION: "p2160",
                                 },
                               },
                             ]
@@ -213,14 +213,14 @@ const groups =
                                 {
                                   name: "four30",
                                   pairs: 3,
-                                  env: { FREEDOMSTREAM_BENCH_FPS: "30" },
+                                  env: { PODETELAR_BENCH_FPS: "30" },
                                 },
                                 {
                                   name: "one4k30",
                                   pairs: 3,
                                   env: {
-                                    FREEDOMSTREAM_BENCH_FPS: "30",
-                                    FREEDOMSTREAM_BENCH_RESOLUTION: "p2160",
+                                    PODETELAR_BENCH_FPS: "30",
+                                    PODETELAR_BENCH_RESOLUTION: "p2160",
                                   },
                                 },
                               ]
@@ -252,7 +252,7 @@ const groups =
                                       name: "four4k",
                                       pairs: 1,
                                       env: {
-                                        FREEDOMSTREAM_BENCH_RESOLUTION: "p2160",
+                                        PODETELAR_BENCH_RESOLUTION: "p2160",
                                       },
                                     },
                                   ]
@@ -265,21 +265,20 @@ const groups =
                                         name: "one4k",
                                         pairs: 1,
                                         env: {
-                                          FREEDOMSTREAM_BENCH_RESOLUTION:
-                                            "p2160",
+                                          PODETELAR_BENCH_RESOLUTION: "p2160",
                                         },
                                       },
                                       {
                                         name: "mixed",
                                         pairs: 1,
-                                        env: { FREEDOMSTREAM_DEEP_MIXED: "1" },
+                                        env: { PODETELAR_DEEP_MIXED: "1" },
                                       },
                                       {
                                         name: "combined",
                                         pairs: 1,
                                         env: {
-                                          FREEDOMSTREAM_BENCH_PUBLISH: "1",
-                                          FREEDOMSTREAM_BENCH_AUDIO: "1",
+                                          PODETELAR_BENCH_PUBLISH: "1",
+                                          PODETELAR_BENCH_AUDIO: "1",
                                         },
                                       },
                                     ]
@@ -290,12 +289,12 @@ const groups =
                                           pairs: 1,
                                           seconds: 20,
                                           env: {
-                                            FREEDOMSTREAM_DEEP_OWNERS: "1",
-                                            FREEDOMSTREAM_BENCH_ROUNDS: "7",
-                                            FREEDOMSTREAM_PERFORMANCE_PUBLISHER:
+                                            PODETELAR_DEEP_OWNERS: "1",
+                                            PODETELAR_BENCH_ROUNDS: "7",
+                                            PODETELAR_PERFORMANCE_PUBLISHER:
                                               resolve(
                                                 root,
-                                                ".local/experiments/final-selected-v4/freedomstream-publisher.exe",
+                                                ".local/experiments/final-selected-v4/podetelar-publisher.exe",
                                               ),
                                           },
                                         },
@@ -311,25 +310,25 @@ for (const group of groups)
       const env = { ...common, ...group.env };
       const key =
         family === "planar-memory"
-          ? "FREEDOMSTREAM_DEEP_RETAIN_PLANES"
+          ? "PODETELAR_DEEP_RETAIN_PLANES"
           : family.startsWith("clip")
-            ? "FREEDOMSTREAM_DEEP_CLIP"
+            ? "PODETELAR_DEEP_CLIP"
             : family.startsWith("shared-")
-              ? "FREEDOMSTREAM_DEEP_SHARED_DEVICE"
+              ? "PODETELAR_DEEP_SHARED_DEVICE"
               : family === "relaxed-map"
-                ? "FREEDOMSTREAM_DEEP_RELAXED_MAP"
+                ? "PODETELAR_DEEP_RELAXED_MAP"
                 : family === "ownership"
-                  ? "FREEDOMSTREAM_DEEP_HEAP"
+                  ? "PODETELAR_DEEP_HEAP"
                   : family === "pool-observation"
-                    ? "FREEDOMSTREAM_DEEP_POOL_TRACE"
-                    : "FREEDOMSTREAM_DEEP_PLANAR";
+                    ? "PODETELAR_DEEP_POOL_TRACE"
+                    : "PODETELAR_DEEP_PLANAR";
       if (family !== "calibration")
         env[key] =
           variant === (family === "planar-memory" ? "before" : "after")
             ? "1"
             : "0";
       if (family === "relaxed-map" && variant === "after")
-        env.FREEDOMSTREAM_DEEP_FLUSH_MAP = "1";
+        env.PODETELAR_DEEP_FLUSH_MAP = "1";
       const count = group.count ?? (group.name.startsWith("one") ? 1 : 4);
       const caseExe =
         family === "calibration" && variant === "before"
@@ -391,10 +390,10 @@ for (const group of groups)
         const meters = data.app.samples.map((s) => s.owners?.rgbaGl);
         if (!meters.length || meters.some((m) => !m || m.tagOverflow !== 0))
           throw Error("GL observer missing or tag bound exceeded");
-        if (env.FREEDOMSTREAM_DEEP_PLANAR !== "1" && meters.at(-1).calls <= 0)
+        if (env.PODETELAR_DEEP_PLANAR !== "1" && meters.at(-1).calls <= 0)
           throw Error("RGBA path issued no observed video uploads");
         if (
-          env.FREEDOMSTREAM_DEEP_PLANAR === "1" &&
+          env.PODETELAR_DEEP_PLANAR === "1" &&
           !data.app.samples.some((s) => s.planarGlUpdates > 0)
         )
           throw Error("Planar path issued no observed video uploads");

@@ -183,7 +183,7 @@ const result = {
 };
 const output = join(
   root,
-  "docs/verification/native-ui-performance-results.json",
+  ".local/experiments/native-ui-performance-results.json",
 );
 writeFileSync(output, JSON.stringify(result, null, 2) + "\n");
 console.log(

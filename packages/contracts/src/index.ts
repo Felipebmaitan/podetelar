@@ -23,7 +23,7 @@ export const previewSchema = z
   .strict();
 export type Preview = z.infer<typeof previewSchema>;
 export const previewAttribute = (kind: PreviewKind) =>
-  `freedomstream.preview.${kind}`;
+  `podetelar.preview.${kind}`;
 export const roomIdSchema = z.string().regex(/^[A-Za-z0-9_-]{22}$/);
 export const invitationSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const nameSchema = z

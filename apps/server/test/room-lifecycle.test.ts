@@ -13,7 +13,7 @@ import { loadConfig } from "../src/config.js";
 
 const key = "test-administrator-invitation-key-not-production";
 test("an older empty presence response cannot close a same-session signaling reconnect", async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "freedomstream-presence-race-"));
+  const dir = mkdtempSync(join(tmpdir(), "podetelar-presence-race-"));
   let now = 0;
   const rooms = new Rooms(join(dir, "rooms.db"), () => now, key);
   t.after(() => {
@@ -58,7 +58,7 @@ test("an older empty presence response cannot close a same-session signaling rec
   assert.equal(rooms.lifecycle(id)!.emptySince, null);
 });
 test("background presence cleanup preserves pending rooms, reconnects and outages, then deletes all room authority", async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "freedomstream-lifecycle-"));
+  const dir = mkdtempSync(join(tmpdir(), "podetelar-lifecycle-"));
   let now = 100000;
   const rooms = new Rooms(join(dir, "rooms.db"), () => now, key);
   let members: { id: string; displayName: string }[] = [];
@@ -142,7 +142,7 @@ test("background presence cleanup preserves pending rooms, reconnects and outage
 });
 
 test("encrypted invitations survive restart, bind to a room and follow rotation; legacy and changed keys need explicit replacement", (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "freedomstream-invite-cipher-"));
+  const dir = mkdtempSync(join(tmpdir(), "podetelar-invite-cipher-"));
   const path = join(dir, "rooms.db");
   let rooms = new Rooms(path, Date.now, key);
   t.after(() => {
@@ -193,7 +193,7 @@ test("encrypted invitations survive restart, bind to a room and follow rotation;
 });
 
 test("restart resets an unobserved empty interval and schema 3 migration preserves authority", (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "freedomstream-lifecycle-migration-"));
+  const dir = mkdtempSync(join(tmpdir(), "podetelar-lifecycle-migration-"));
   const path = join(dir, "rooms.db");
   let now = 100000;
   let rooms = new Rooms(path, () => now);
@@ -221,7 +221,7 @@ test("restart resets an unobserved empty interval and schema 3 migration preserv
 });
 
 test("admin invitation and close endpoints require admin and origin, retain invites on reload and revoke room access", async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "freedomstream-admin-actions-"));
+  const dir = mkdtempSync(join(tmpdir(), "podetelar-admin-actions-"));
   const origin = "http://localhost:5173";
   const config = loadConfig({
     PUBLIC_URL: origin,

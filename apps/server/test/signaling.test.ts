@@ -64,7 +64,7 @@ test(
     );
     access.addGrant({
       roomJoin: true,
-      room: `freedomstream_${session.snapshot.room.id}`,
+      room: `podetelar_${session.snapshot.room.id}`,
     });
     const token = await access.toJwt();
     const browser = new WebSocket(

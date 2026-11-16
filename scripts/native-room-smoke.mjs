@@ -22,10 +22,10 @@ const root = resolve(import.meta.dirname, "..");
 process.chdir(root);
 const soak = process.argv.includes("--soak");
 const appPort = Number(
-  process.env.FREEDOMSTREAM_SMOKE_APP_PORT ?? (soak ? 13010 : 3010),
+  process.env.PODETELAR_SMOKE_APP_PORT ?? (soak ? 13010 : 3010),
 );
 const mediaPort = Number(
-  process.env.FREEDOMSTREAM_SMOKE_SFU_PORT ?? (soak ? 18880 : 17880),
+  process.env.PODETELAR_SMOKE_SFU_PORT ?? (soak ? 18880 : 17880),
 );
 if (
   ![appPort, mediaPort].every(
@@ -109,12 +109,12 @@ const candidates = Object.values(networkInterfaces())
       /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(ip.address),
   );
 const nodeIp =
-  process.env.FREEDOMSTREAM_TEST_NODE_IP ??
+  process.env.PODETELAR_TEST_NODE_IP ??
   candidates.find((ip) => ip.address.startsWith("192.168."))?.address ??
   candidates[0]?.address;
 if (!nodeIp || !/^\d{1,3}(\.\d{1,3}){3}$/.test(nodeIp))
   throw new Error(
-    "Set FREEDOMSTREAM_TEST_NODE_IP to a reachable local IPv4 address.",
+    "Set PODETELAR_TEST_NODE_IP to a reachable local IPv4 address.",
   );
 const config = join(run, "livekit.yaml");
 writeFileSync(
@@ -175,9 +175,7 @@ try {
     LIVEKIT_INTERNAL_URL: mediaOrigin,
   });
   await ready(`${origin}/api/health`);
-  const gst = resolve(
-    process.env.FREEDOMSTREAM_GSTREAMER ?? ".local/gstreamer",
-  );
+  const gst = resolve(process.env.PODETELAR_GSTREAMER ?? ".local/gstreamer");
   const args = [
     "node_modules/@playwright/test/cli.js",
     "test",
@@ -196,11 +194,11 @@ try {
     env: {
       ...process.env,
       E2E_BASE_URL: origin,
-      FREEDOMSTREAM_TEST_SFU_PID: String(sfu.pid),
-      FREEDOMSTREAM_TEST_SFU_EXE: serverExecutable,
-      FREEDOMSTREAM_NATIVE_EXE: resolve(
-        process.env.FREEDOMSTREAM_NATIVE_EXE ??
-          "target/debug/freedomstream-publisher.exe",
+      PODETELAR_TEST_SFU_PID: String(sfu.pid),
+      PODETELAR_TEST_SFU_EXE: serverExecutable,
+      PODETELAR_NATIVE_EXE: resolve(
+        process.env.PODETELAR_NATIVE_EXE ??
+          "target/debug/podetelar-publisher.exe",
       ),
       PATH: `${join(gst, "bin")};${process.env.PATH}`,
     },

@@ -95,7 +95,7 @@ fn run() -> Result<()> {
         // pixels, including mixed-DPI desktops. A packaged manifest may set this first.
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
-    if std::env::var("FREEDOMSTREAM_DIAGNOSTICS").as_deref() == Ok("1") {
+    if std::env::var("PODETELAR_DIAGNOSTICS").as_deref() == Ok("1") {
         diagnostics::enable();
     }
     gstreamer::init()

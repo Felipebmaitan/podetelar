@@ -18,16 +18,16 @@ mkdirSync(out, { recursive: true });
 const paths = {
   before: resolve(
     root,
-    ".local/distribution/freedomstream-windows-x64-0.1.0-daca188dfc3c.exe",
+    ".local/distribution/podetelar-windows-x64-0.1.0-daca188dfc3c.exe",
   ),
   after: resolve(
     root,
-    ".local/distribution/freedomstream-windows-x64-0.1.0-e24856c63083.exe",
+    ".local/distribution/podetelar-windows-x64-0.1.0-e24856c63083.exe",
   ),
 };
 const tone = resolve(
   root,
-  ".local/distribution/0.1.0-e24856c63083/bin/freedomstream-publisher.exe",
+  ".local/distribution/0.1.0-e24856c63083/bin/podetelar-publisher.exe",
 );
 const sha = (path) =>
   createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -38,8 +38,8 @@ for (const [index, variant] of [
   "after",
   "before",
 ].entries()) {
-  process.env.FREEDOMSTREAM_NATIVE_EXE = paths[variant];
-  process.env.FREEDOMSTREAM_NATIVE_TONE_EXE = tone;
+  process.env.PODETELAR_NATIVE_EXE = paths[variant];
+  process.env.PODETELAR_NATIVE_TONE_EXE = tone;
   const background = process.argv.includes("--exclude-background")
     ? await backgroundAudioExclusions()
     : [];

@@ -420,7 +420,7 @@ const compact = (value) => {
   return value;
 };
 const output = resolve(
-  process.argv[2] ?? "docs/verification/local-performance-results.json",
+  process.argv[2] ?? ".local/experiments/local-performance-results.json",
 );
 writeFileSync(output, JSON.stringify(compact(result), null, 2) + "\n");
 console.log(

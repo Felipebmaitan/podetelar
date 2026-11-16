@@ -16,13 +16,13 @@ $env:PATH = "$(Join-Path $runtime 'bin');$env:WINDIR\System32;$env:WINDIR"
 $env:GST_PLUGIN_SYSTEM_PATH_1_0 = Join-Path $runtime 'lib/gstreamer-1.0'
 $env:GST_PLUGIN_SCANNER_1_0 = Join-Path $runtime 'libexec/gstreamer-1.0/gst-plugin-scanner.exe'
 $env:GST_PLUGIN_PATH_1_0 = ''
-$probe = & (Join-Path $runtime 'bin/freedomstream-publisher.exe') --probe
+$probe = & (Join-Path $runtime 'bin/podetelar-publisher.exe') --probe
 if ($LASTEXITCODE -ne 0) { throw 'Installed publisher probe failed.' }
 $result = $probe | ConvertFrom-Json
 if ($result.runtime -notmatch 'GStreamer 1\.28\.8') { throw 'Wrong packaged runtime.' }
 if (-not (Test-Path -LiteralPath (Join-Path $runtime 'share/licenses'))) { throw 'Missing runtime notices.' }
 . (Join-Path $root 'Ownership.ps1')
-try { Assert-FreedomStreamRoot $repository; throw 'An unrelated directory was accepted.' } catch { if ($_.Exception.Message -eq 'An unrelated directory was accepted.') { throw } }
+try { Assert-PodeTelarRoot $repository; throw 'An unrelated directory was accepted.' } catch { if ($_.Exception.Message -eq 'An unrelated directory was accepted.') { throw } }
 & (Join-Path $root 'Uninstall.ps1') | Out-Null
 if (Test-Path -LiteralPath $root) { throw 'Uninstall left its installation behind.' }
 if ((GStreamerRegistration) -ne $before) { throw 'Uninstall changed existing GStreamer registration.' }

@@ -9,7 +9,7 @@ import { loadConfig } from "../src/config.js";
 const password = "test-administrator-password-not-for-production";
 const origin = "https://admin.example";
 test("single-administrator sessions protect all usage, reject CSRF, expire and revoke on logout/restart", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "freedomstream-admin-"));
+  const dir = mkdtempSync(join(tmpdir(), "podetelar-admin-"));
   const config = loadConfig({
     PUBLIC_URL: origin,
     ADMIN_TOKEN: password,
@@ -144,7 +144,7 @@ test("single-administrator sessions protect all usage, reject CSRF, expire and r
     await app.close();
     const resolved = realpathSync(dir);
     assert.equal(dirname(resolved), realpathSync(tmpdir()));
-    assert.ok(basename(resolved).startsWith("freedomstream-admin-"));
+    assert.ok(basename(resolved).startsWith("podetelar-admin-"));
     rmSync(resolved, { recursive: true });
   }
 });

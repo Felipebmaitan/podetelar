@@ -66,8 +66,8 @@ mkdirSync(notices);
 const decoderPatch = join(notices, "source-patches", "native-decoder");
 mkdirSync(decoderPatch, { recursive: true });
 for (const file of [
-  "apps/publisher/decoder/freedomstream_decoder.h",
-  "apps/publisher/decoder/freedomstream_macos_decoder.h",
+  "apps/publisher/decoder/podetelar_decoder.h",
+  "apps/publisher/decoder/podetelar_macos_decoder.h",
   "apps/publisher/decoder/deferred_i420.h",
   "apps/publisher/decoder/bounded_readback.h",
   "apps/publisher/decoder/native_output_guard.h",
@@ -97,7 +97,7 @@ execFileSync(
     "--locked",
     "--release",
     "-p",
-    "freedomstream-portable",
+    "podetelar-portable",
     "--target",
     "x86_64-pc-windows-msvc",
     "--target-dir",
@@ -117,7 +117,7 @@ execFileSync(
 );
 const launcher = join(
   root,
-  ".local/portable-target/x86_64-pc-windows-msvc/release/freedomstream-portable.exe",
+  ".local/portable-target/x86_64-pc-windows-msvc/release/podetelar-portable.exe",
 );
 if (
   /^\s+(?:MSVCP|VCRUNTIME|api-ms-win-crt-).*\.dll\s*$/im.test(
@@ -133,7 +133,7 @@ if (
   throw new Error(
     "The launcher must resolve its Windows imports from System32.",
   );
-copyFileSync(join(root, "LICENSE"), join(notices, "FreedomStream-MIT.txt"));
+copyFileSync(join(root, "LICENSE"), join(notices, "PodeTelar-MIT.txt"));
 copyFileSync(
   join(root, "assets/fonts/OFL-Inter.txt"),
   join(notices, "Inter-OFL.txt"),
@@ -162,7 +162,7 @@ const index = [
 for (const pkg of metadata.packages
   .filter((pkg) => included.has(pkg.id))
   .sort((a, b) => a.id.localeCompare(b.id))) {
-  if (["freedomstream-publisher", "freedomstream-portable"].includes(pkg.name))
+  if (["podetelar-publisher", "podetelar-portable"].includes(pkg.name))
     continue;
   const directory = resolve(pkg.manifest_path, "..");
   const files = readdirSync(directory, {
@@ -273,7 +273,7 @@ writeFileSync(
 );
 // Quote a literal path, not a command assembled from user-supplied values.
 const quote = (value) => "'" + value.replaceAll("'", "''") + "'";
-const archive = join(resolve(output, ".."), `freedomstream-payload-${id}.zip`);
+const archive = join(resolve(output, ".."), `podetelar-payload-${id}.zip`);
 execFileSync(
   "powershell.exe",
   [
@@ -287,10 +287,10 @@ const payload = readFileSync(archive);
 const footer = Buffer.alloc(56);
 footer.writeBigUInt64LE(BigInt(payload.length));
 createHash("sha256").update(payload).digest().copy(footer, 8);
-footer.write("FREEDOMSTREAM01!", 40, "ascii");
+footer.write("PODETELAR000001!", 40, "ascii");
 const executable = join(
   resolve(output, ".."),
-  `freedomstream-windows-x64-${id}.exe`,
+  `podetelar-windows-x64-${id}.exe`,
 );
 writeFileSync(
   executable,

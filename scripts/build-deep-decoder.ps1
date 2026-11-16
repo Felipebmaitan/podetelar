@@ -1,7 +1,7 @@
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 $out=Join-Path $root '.local/experiments/deep-pass/decoder'
-& "$root/../freedomstream/.local/node24/node-v24.11.1-win-x64/node.exe" "$root/scripts/prepare-deep-decoder.mjs"
+& "$root/../podetelar/.local/node24/node-v24.11.1-win-x64/node.exe" "$root/scripts/prepare-deep-decoder.mjs"
 if($LASTEXITCODE -ne 0){throw 'Deep decoder preparation failed'}
 $gst=Join-Path $root '.local/gstreamer'
 $vs=& 'C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe' -latest -products '*' -property installationPath

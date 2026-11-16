@@ -49,7 +49,9 @@ impl Inventory {
             if current.identity == owner
                 || current
                     .name
-                    .eq_ignore_ascii_case("freedomstream-publisher.exe")
+                    .eq_ignore_ascii_case("podetelar-publisher.exe")
+                // Older installed instances must remain excluded during an upgrade.
+                || current.name.eq_ignore_ascii_case("freedomstream-publisher.exe")
                 || current.image.as_ref().is_some_and(|image| {
                     self.processes
                         .get(&owner.pid)
@@ -196,17 +198,19 @@ mod tests {
         own.image = Some("c:/app/renamed-native.exe".into());
         let mut same = process(5, 0, "renamed-native.exe");
         same.image = own.image.clone();
-        let mut different_version = process(8, 0, "freedomstream-publisher.exe");
-        different_version.image = Some("c:/another-version/bin/freedomstream-publisher.exe".into());
+        let mut different_version = process(8, 0, "podetelar-publisher.exe");
+        different_version.image = Some("c:/another-version/bin/podetelar-publisher.exe".into());
         let state = inventory(
             vec![
                 own,
                 same,
                 different_version,
+                process(10, 0, "freedomstream-publisher.exe"),
+                process(11, 10, "legacy-playback-helper.exe"),
                 process(6, 0, "game.exe"),
                 process(9, 8, "playback-helper.exe"),
             ],
-            &[1, 5, 6, 8, 9],
+            &[1, 5, 6, 8, 9, 10, 11],
         );
         assert_eq!(
             state.roots(&Choice::Desktop, &[], owner()),

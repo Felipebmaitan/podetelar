@@ -2,7 +2,7 @@ import { useState } from "react";
 import type {
   ChangedAccess,
   RoomAccess as AccessState,
-} from "@freedomstream/contracts";
+} from "@podetelar/contracts";
 import { request } from "./api";
 
 /** The operator key and new invitation exist only in this mounted form. */

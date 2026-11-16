@@ -244,7 +244,7 @@ pub async fn viewer(
                                 }
                                 let decoder = match current.inbound.decoder_implementation.as_str()
                                 {
-                                    "FreedomStream Direct3D11" => Some("Direct3D11 (hardware)"),
+                                    "PodeTelar Direct3D11" => Some("Direct3D11 (hardware)"),
                                     name if name.contains("VideoToolbox") => {
                                         Some(if current.inbound.power_efficient_decoder {
                                             "VideoToolbox (hardware)"

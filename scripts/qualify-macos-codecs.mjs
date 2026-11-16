@@ -26,7 +26,7 @@ print(String(data: try! JSONSerialization.data(withJSONObject: codecs.filter { V
 );
 const probe = JSON.parse(
   execFileSync(
-    join(app, "Contents/Helpers/PodeTelar.app/Contents/MacOS/FreedomStream"),
+    join(app, "Contents/Helpers/PodeTelar.app/Contents/MacOS/PodeTelar"),
     ["--probe"],
     {
       env: {

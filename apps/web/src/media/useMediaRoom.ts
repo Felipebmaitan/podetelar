@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { RoomSession } from "@freedomstream/contracts";
+import type { RoomSession } from "@podetelar/contracts";
 import type { MediaRoom } from "./MediaRoom";
 import { emptyMediaSnapshot } from "./model";
 import type { StreamKind, PlaybackBuffer, ConnectionRoute } from "./model";

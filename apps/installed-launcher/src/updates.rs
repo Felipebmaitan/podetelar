@@ -21,7 +21,7 @@ pub struct Bridge {
 }
 
 fn manager() -> Option<(UpdateManager, std::path::PathBuf)> {
-    let feed = option_env!("FREEDOMSTREAM_UPDATE_FEED")?;
+    let feed = option_env!("PODETELAR_UPDATE_FEED")?;
     let source: Box<dyn sources::UpdateSource> = if std::path::Path::new(feed).is_absolute() {
         Box::new(sources::FileSource::new(feed))
     } else {

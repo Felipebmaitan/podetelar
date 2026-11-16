@@ -3,7 +3,7 @@ import {
   deviceIdSchema,
   type UsageReport,
   type UsagePoint,
-} from "@freedomstream/contracts";
+} from "@podetelar/contracts";
 
 const MINUTE = 60_000;
 const RETENTION = 400 * 86400000;
@@ -22,13 +22,13 @@ export function parseUsageMetrics(body: string): {
   counters: Counter[];
   generation: number;
 } {
-  if (!/^freedomstream_usage_enabled 1\s*$/m.test(body))
+  if (!/^podetelar_usage_enabled 1\s*$/m.test(body))
     throw new Error("Usage metrics unavailable");
   const result: Counter[] = [];
   for (const line of body.split("\n")) {
-    if (!line.startsWith("freedomstream_participant_bytes_total{")) continue;
+    if (!line.startsWith("podetelar_participant_bytes_total{")) continue;
     const match =
-      /^freedomstream_participant_bytes_total\{([^}]+)\} ([0-9.e+]+)\s*$/.exec(
+      /^podetelar_participant_bytes_total\{([^}]+)\} ([0-9.e+]+)\s*$/.exec(
         line,
       );
     if (!match) throw new Error("Invalid usage counter");
@@ -37,7 +37,7 @@ export function parseUsageMetrics(body: string): {
     );
     const bytes = Number(match[2]);
     if (
-      !/^freedomstream_[A-Za-z0-9_-]{22}$/.test(labels.room ?? "") ||
+      !/^podetelar_[A-Za-z0-9_-]{22}$/.test(labels.room ?? "") ||
       !/^[0-9a-f-]{36}$/.test(labels.participant ?? "") ||
       !["incoming", "outgoing"].includes(labels.direction ?? "") ||
       !Number.isSafeInteger(bytes) ||
@@ -45,14 +45,14 @@ export function parseUsageMetrics(body: string): {
     )
       continue;
     result.push({
-      room: labels.room!.slice(14),
+      room: labels.room!.slice("podetelar_".length),
       participant: labels.participant!,
       direction: labels.direction as Counter["direction"],
       bytes,
     });
   }
   const generation = Number(
-    /^freedomstream_usage_started_seconds ([0-9.e+-]+)\s*$/m.exec(body)?.[1],
+    /^podetelar_usage_started_seconds ([0-9.e+-]+)\s*$/m.exec(body)?.[1],
   );
   if (!Number.isFinite(generation) || generation <= 0)
     throw new Error("Usage generation unavailable");

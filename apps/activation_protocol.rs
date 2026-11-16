@@ -1,9 +1,9 @@
 //! Per-launch local activation. Tickets live only in memory.
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
-pub const ENDPOINT: &str = "FREEDOMSTREAM_ACTIVATION_ENDPOINT";
-pub const TOKEN: &str = "FREEDOMSTREAM_ACTIVATION_TOKEN";
-pub const INSTALLED: &str = "FREEDOMSTREAM_INSTALLED_EXE";
+pub const ENDPOINT: &str = "PODETELAR_ACTIVATION_ENDPOINT";
+pub const TOKEN: &str = "PODETELAR_ACTIVATION_TOKEN";
+pub const INSTALLED: &str = "PODETELAR_INSTALLED_EXE";
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
@@ -20,7 +20,7 @@ pub struct Reply {
 }
 pub fn valid(link: &str) -> bool {
     link.len() <= 4096
-        && link.starts_with("freedomstream://join")
+        && link.starts_with("podetelar://join")
         && !link.chars().any(|c| c.is_control() || c == '"')
 }
 pub fn read<T: serde::de::DeserializeOwned>(stream: &mut impl Read) -> std::io::Result<T> {

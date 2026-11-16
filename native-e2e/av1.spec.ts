@@ -58,16 +58,16 @@ for (const software of [false, true]) {
       quality,
     });
     await sender.reported;
-    const previous = process.env.FREEDOMSTREAM_AV1_DECODER;
-    process.env.FREEDOMSTREAM_AV1_DECODER = software ? "software" : "hardware";
+    const previous = process.env.PODETELAR_AV1_DECODER;
+    process.env.PODETELAR_AV1_DECODER = software ? "software" : "hardware";
     const receiver = nativeRequest("--watch-fixture", {
       invitationUrl,
       seconds: 24,
       waitForPreview: true,
       reconnectAfterSeconds: 17,
     });
-    if (previous === undefined) delete process.env.FREEDOMSTREAM_AV1_DECODER;
-    else process.env.FREEDOMSTREAM_AV1_DECODER = previous;
+    if (previous === undefined) delete process.env.PODETELAR_AV1_DECODER;
+    else process.env.PODETELAR_AV1_DECODER = previous;
     try {
       const [sent, watched] = await Promise.all([
         sender.result as Promise<Sent>,
@@ -87,7 +87,7 @@ for (const software of [false, true]) {
           s.decoders.some((d) =>
             software
               ? /dav1d/i.test(d.implementation) && !d.hardware
-              : d.implementation === "FreedomStream Direct3D11" && d.hardware,
+              : d.implementation === "PodeTelar Direct3D11" && d.hardware,
           ),
         ),
       ).toBe(true);

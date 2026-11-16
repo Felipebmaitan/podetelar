@@ -1,5 +1,5 @@
 {
-  "name": "freedomstream",
+  "name": "podetelar",
   "version": "0.1.2",
   "private": true,
   "type": "module",
@@ -14,11 +14,11 @@
   },
   "scripts": {
     "setup": "node scripts/setup.mjs",
-    "dev": "npm run build -w @freedomstream/contracts && concurrently -k -n server,web \"npm run dev -w @freedomstream/server\" \"npm run dev -w @freedomstream/web\"",
-    "build": "npm run build -w @freedomstream/contracts && npm run build -w @freedomstream/server && npm run build -w @freedomstream/web",
-    "start": "npm run start -w @freedomstream/server",
-    "typecheck": "npm run build -w @freedomstream/contracts && npm run typecheck --workspaces --if-present && tsc -p tsconfig.tools.json --noEmit",
-    "test": "npm run build -w @freedomstream/contracts && npm run test --workspaces --if-present && node --test scripts/relay-config.test.mjs scripts/production-config.test.mjs scripts/discord-commands.test.mjs scripts/installer-input.test.mjs scripts/installer-release.test.mjs scripts/macos-release.test.mjs",
+    "dev": "npm run build -w @podetelar/contracts && concurrently -k -n server,web \"npm run dev -w @podetelar/server\" \"npm run dev -w @podetelar/web\"",
+    "build": "npm run build -w @podetelar/contracts && npm run build -w @podetelar/server && npm run build -w @podetelar/web",
+    "start": "npm run start -w @podetelar/server",
+    "typecheck": "npm run build -w @podetelar/contracts && npm run typecheck --workspaces --if-present && tsc -p tsconfig.tools.json --noEmit",
+    "test": "npm run build -w @podetelar/contracts && npm run test --workspaces --if-present && node --test scripts/relay-config.test.mjs scripts/production-config.test.mjs scripts/discord-commands.test.mjs scripts/installer-input.test.mjs scripts/installer-release.test.mjs scripts/macos-release.test.mjs",
     "check": "npm run format:check && npm run typecheck && npm test && npm run build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

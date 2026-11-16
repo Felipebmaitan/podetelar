@@ -1,7 +1,7 @@
 Built-in ImageGen; proposed UI mockups only.
 
 ADVANCED SETTINGS
-Use case: ui-mockup. Create ONE high-fidelity redesign mockup of the FreedomStream native desktop application's Advanced settings dialog. Input image 1 is the CURRENT crowded dialog, input image 2 is the current overall app's visual language. This is a proposed image for user approval, NOT an implementation.
+Use case: ui-mockup. Create ONE high-fidelity redesign mockup of the PodeTelar native desktop application's Advanced settings dialog. Input image 1 is the CURRENT crowded dialog, input image 2 is the current overall app's visual language. This is a proposed image for user approval, NOT an implementation.
 
 Output: a crisp portrait screenshot of JUST the redesigned dialog, approximately 1000x1150, tight framing with only a slim charcoal outer gutter, straight-on. No device, no marketing title outside the dialog, no annotations. Match the latest app's Inter regular and semibold type, charcoal #23272e and #171a1f surfaces, restrained mint #40dcb8 actions, quiet dividers and thin vector icons. Polished Discord-like design.
 
@@ -19,12 +19,12 @@ Exact content and hierarchy:
 Nothing else. No microphone row, no "Sem microfone", no route selector. Do not add extra features, fake successful speed test, sliders or unsupported hardware claims. All exact UI text in natural Brazilian Portuguese, readable and correctly spelled. Rounded 10px outer dialog, 6px controls, subtle border and shadow. The screenshot itself should clearly demonstrate the increased white space and reduced copy.
 
 SOURCE PREVIEW
-Use case: ui-mockup. Create ONE polished native desktop UI screenshot mockup for FreedomStream showing a source-picker with a local preview popover to its RIGHT. Reference image 1 is the current application's visual style and main layout. Preserve its established Inter typography, charcoal surfaces, mint accents, compact sidebar, large four-stream 2x2 video grid and room header; refine gently. This is a proposal image for user approval, not implemented behavior.
+Use case: ui-mockup. Create ONE polished native desktop UI screenshot mockup for PodeTelar showing a source-picker with a local preview popover to its RIGHT. Reference image 1 is the current application's visual style and main layout. Preserve its established Inter typography, charcoal surfaces, mint accents, compact sidebar, large four-stream 2x2 video grid and room header; refine gently. This is a proposal image for user approval, not implemented behavior.
 
 Output a single crisp wide 16:9 screenshot around 1920x1080, straight-on, edge to edge, no device frame, no marketing captions, no external annotations. Realistic native Windows desktop software styling, Discord-like polish. Sharp readable text, clean alignment, restrained thin line icons and 8px corners. Keep stream real estate large.
 
 Visible app:
-Header "FreedomStream", room "Sala dos amigos", "5 na sala", outlined "Convidar" action, room options ellipsis, "PT-BR".
+Header "PodeTelar", room "Sala dos amigos", "5 na sala", outlined "Convidar" action, room options ellipsis, "PT-BR".
 Left sidebar about 250px wide titled "TRANSMITIR"; source dropdown near the top, resolution 1920 × 1080, visible 60 FPS slider, quality preset, discreet "Avançado" link, small source-audio row "Áudio da fonte", mint "Iniciar transmissão" button, participant rows below. REMOVE the entire "Sem microfone" row and its icon and its empty space. Never show a microphone control or microphone messaging elsewhere.
 Right main area "Transmissões", "4 ao vivo · 3 assistindo", same large 2x2 stream grid as reference. Three watched live streams with compact name chips Bods, Lucas, Ana and one unwatched stream math with "Prévia" chip and centered "Assistir" CTA. No right-click volume menu open in this image. No permanently visible received codec/bitrate because mouse is on the source list.
 

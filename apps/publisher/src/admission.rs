@@ -591,7 +591,7 @@ mod tests {
             invitation: String,
             output: String,
         }
-        let path = std::env::var_os("FREEDOMSTREAM_DEVICE_FIXTURE").expect("Local fixture path");
+        let path = std::env::var_os("PODETELAR_DEVICE_FIXTURE").expect("Local fixture path");
         let fixture: Fixture = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         let invitation = Invitation::parse(&fixture.invitation).unwrap();
         let origin = invitation.origin.origin().ascii_serialization();
@@ -645,8 +645,7 @@ mod tests {
             origin: String,
             name: String,
         }
-        let path =
-            std::env::var_os("FREEDOMSTREAM_MULTI_SERVER_FIXTURE").expect("Local fixture path");
+        let path = std::env::var_os("PODETELAR_MULTI_SERVER_FIXTURE").expect("Local fixture path");
         let fixtures: Vec<Fixture> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         assert_eq!(fixtures.len(), 2);
         assert_ne!(fixtures[0].origin, fixtures[1].origin);
@@ -696,7 +695,7 @@ mod tests {
             invitation: String,
             direct_url: String,
         }
-        let path = std::env::var_os("FREEDOMSTREAM_DIRECT_FIXTURE").expect("Local fixture path");
+        let path = std::env::var_os("PODETELAR_DIRECT_FIXTURE").expect("Local fixture path");
         let fixture: Fixture =
             serde_json::from_slice(&std::fs::read(path).expect("Read local fixture"))
                 .expect("Valid fixture");

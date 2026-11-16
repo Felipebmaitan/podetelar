@@ -7,7 +7,7 @@ import { Rooms } from "../src/rooms.js";
 import { backupRooms, verifyBackup } from "../src/backup.js";
 
 test("online backup restores invitations, revocations and committed WAL without replacing a backup", async () => {
-  const root = mkdtempSync(join(tmpdir(), "freedomstream-backup-"));
+  const root = mkdtempSync(join(tmpdir(), "podetelar-backup-"));
   const source = join(root, "live.db");
   const target = join(root, "restore.db");
   const rooms = new Rooms(source);
@@ -42,7 +42,7 @@ test("online backup restores invitations, revocations and committed WAL without 
     rooms.close();
     const resolved = realpathSync(root);
     assert.equal(dirname(resolved), realpathSync(tmpdir()));
-    assert.ok(basename(resolved).startsWith("freedomstream-backup-"));
+    assert.ok(basename(resolved).startsWith("podetelar-backup-"));
     rmSync(resolved, { recursive: true });
   }
 });

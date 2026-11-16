@@ -106,7 +106,7 @@ fn main() -> anyhow::Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("Choose a report path."))?,
         ));
     }
-    if std::env::var("FREEDOMSTREAM_COUNT_SDK_LOGS").is_ok_and(|value| value == "1") {
+    if std::env::var("PODETELAR_COUNT_SDK_LOGS").is_ok_and(|value| value == "1") {
         playback::count_sdk_logs()?;
     }
     if std::env::args().nth(1).as_deref() == Some("--micro") {

@@ -203,7 +203,7 @@ pub fn run(request: Request) -> Result<()> {
         request.report.is_absolute() && !request.report.exists(),
         "Choose a new absolute report path."
     );
-    let narrow = std::env::var("FREEDOMSTREAM_DEEP_NARROW").is_ok_and(|v| v == "1");
+    let narrow = std::env::var("PODETELAR_DEEP_NARROW").is_ok_and(|v| v == "1");
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size(if narrow {
@@ -216,7 +216,7 @@ pub fn run(request: Request) -> Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "FreedomStream local application benchmark",
+        "PodeTelar local application benchmark",
         options,
         Box::new(move |context| {
             configure_theme(&context.egui_ctx);
@@ -368,7 +368,7 @@ impl BenchmarkUi {
         let Some(elapsed) = Instant::now().checked_duration_since(ready) else {
             return;
         };
-        if std::env::var("FREEDOMSTREAM_DEEP_SCROLL").is_ok_and(|v| v == "1") {
+        if std::env::var("PODETELAR_DEEP_SCROLL").is_ok_and(|v| v == "1") {
             let second = elapsed.as_secs() % self.request.phase_seconds;
             let offset = match second {
                 0..=2 => 0.0f32,
@@ -412,7 +412,7 @@ impl BenchmarkUi {
                     self.inner.set_fullscreen(ctx, None);
                 }
                 "focus" => {
-                    if std::env::var("FREEDOMSTREAM_DEEP_SELECTIVE_STOP").is_ok_and(|v| v == "1")
+                    if std::env::var("PODETELAR_DEEP_SELECTIVE_STOP").is_ok_and(|v| v == "1")
                         && let Some(id) = first.as_ref()
                     {
                         self.inner.controller.send(Command::Watch {
@@ -423,7 +423,7 @@ impl BenchmarkUi {
                     self.inner.focused = first;
                 }
                 "fullscreen" => {
-                    if std::env::var("FREEDOMSTREAM_DEEP_SELECTIVE_STOP").is_ok_and(|v| v == "1")
+                    if std::env::var("PODETELAR_DEEP_SELECTIVE_STOP").is_ok_and(|v| v == "1")
                         && let Some(tile) = state.tiles.iter().find(|tile| !tile.watching)
                     {
                         self.inner.controller.send(Command::Watch {
@@ -473,7 +473,7 @@ impl BenchmarkUi {
             && !state.sharing
             && state.tiles.iter().all(|tile| !tile.watching)
             && crate::resource_experiment::video_tasks_drained()
-            && std::env::var("FREEDOMSTREAM_DEEP_HEAP").is_ok_and(|v| v == "1")
+            && std::env::var("PODETELAR_DEEP_HEAP").is_ok_and(|v| v == "1")
         {
             self.heap_actions.push(
                 json!({"cycle":cycle,"action":crate::resource_experiment::optimize_idle_heap()}),

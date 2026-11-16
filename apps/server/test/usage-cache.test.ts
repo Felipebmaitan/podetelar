@@ -7,7 +7,7 @@ import { Usage } from "../src/usage.js";
 import { Rooms } from "../src/rooms.js";
 
 test("closed usage history avoids repeated queries while metadata, backfills and pruning stay fresh", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "freedomstream-usage-cache-"));
+  const dir = mkdtempSync(join(tmpdir(), "podetelar-usage-cache-"));
   const path = join(dir, "test.db");
   const base = Date.UTC(2026, 10, 10, 12);
   let now = base;
@@ -119,7 +119,7 @@ test("closed usage history avoids repeated queries while metadata, backfills and
     rooms.close();
     const resolved = realpathSync(dir);
     assert.equal(dirname(resolved), realpathSync(tmpdir()));
-    assert.ok(basename(resolved).startsWith("freedomstream-usage-cache-"));
+    assert.ok(basename(resolved).startsWith("podetelar-usage-cache-"));
     rmSync(resolved, { recursive: true });
   }
 });

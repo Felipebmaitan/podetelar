@@ -1,4 +1,4 @@
-// Copyright (c) 2026 FreedomStream contributors. MIT licensed.
+// Copyright (c) 2026 PodeTelar contributors. MIT licensed.
 // Compile-only inclusion below preserves the upstream file's Apache notice.
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
@@ -47,7 +47,7 @@ int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR,int){
  const auto start=Clock::now();const auto cpu=CpuMs();std::vector<uint64_t> ticks;std::vector<int> callbacks;
  for(int phase=0;phase<4;phase++){
   if(phase%2){if(gated)device->Init();device->StartPlayout();}else{device->StopPlayout();if(gated)device->Terminate();}
-  const auto before=freedomstream_probe_ticks.load();const auto calls=transport.calls.load();std::this_thread::sleep_for(std::chrono::seconds(2));ticks.push_back(freedomstream_probe_ticks.load()-before);callbacks.push_back(transport.calls.load()-calls);
+  const auto before=podetelar_probe_ticks.load();const auto calls=transport.calls.load();std::this_thread::sleep_for(std::chrono::seconds(2));ticks.push_back(podetelar_probe_ticks.load()-before);callbacks.push_back(transport.calls.load()-calls);
  }
  device->StopPlayout();device->Terminate();std::sort(transport.intervals.begin(),transport.intervals.end());auto p=[&](double q){return transport.intervals.empty()?0:transport.intervals[size_t((transport.intervals.size()-1)*q)];};
  const bool valid=callbacks[0]==0&&callbacks[2]==0&&callbacks[1]>=180&&callbacks[3]>=180&&transport.recorded==0;

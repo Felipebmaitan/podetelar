@@ -1,5 +1,5 @@
 [package]
-name = "freedomstream-portable"
+name = "podetelar-portable"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

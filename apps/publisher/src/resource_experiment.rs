@@ -13,7 +13,7 @@ static POOLS: OnceLock<Mutex<HashMap<u64, (usize, usize)>>> = OnceLock::new();
 static NEXT: AtomicU64 = AtomicU64::new(1);
 pub fn enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var("FREEDOMSTREAM_DEEP_OWNERS").is_ok_and(|v| v == "1"))
+    *ENABLED.get_or_init(|| std::env::var("PODETELAR_DEEP_OWNERS").is_ok_and(|v| v == "1"))
 }
 pub struct VideoTask;
 impl VideoTask {
@@ -82,26 +82,26 @@ pub fn video_tasks_drained() -> bool {
 // Ordinary builds, including --all-features, require no patched Glow API.
 #[allow(unexpected_cfgs)]
 pub fn tag_rgba_texture(id: eframe::egui::TextureId) {
-    #[cfg(freedomstream_deep_gl)]
+    #[cfg(podetelar_deep_gl)]
     eframe::egui_glow::deep_gl_observer::tag_video(id);
-    #[cfg(not(freedomstream_deep_gl))]
+    #[cfg(not(podetelar_deep_gl))]
     let _ = id;
 }
 #[allow(unexpected_cfgs)]
 pub fn untag_rgba_texture(id: eframe::egui::TextureId) {
-    #[cfg(freedomstream_deep_gl)]
+    #[cfg(podetelar_deep_gl)]
     eframe::egui_glow::deep_gl_observer::untag_video(id);
-    #[cfg(not(freedomstream_deep_gl))]
+    #[cfg(not(podetelar_deep_gl))]
     let _ = id;
 }
 #[allow(unexpected_cfgs)]
 pub fn gl_snapshot() -> serde_json::Value {
-    #[cfg(freedomstream_deep_gl)]
+    #[cfg(podetelar_deep_gl)]
     {
         let v = eframe::egui_glow::deep_gl_observer::snapshot();
         serde_json::json!({"calls":v[0],"payloadBytes":v[1],"partialCalls":v[2],"taggedTextures":v[3],"tagOverflow":v[4]})
     }
-    #[cfg(not(freedomstream_deep_gl))]
+    #[cfg(not(podetelar_deep_gl))]
     serde_json::Value::Null
 }
 
@@ -228,7 +228,7 @@ pub fn native_snapshot() -> serde_json::Value {
             if module.is_null() {
                 return None;
             }
-            let address = proc_address(module, c"freedomstream_deep_metrics".as_ptr().cast());
+            let address = proc_address(module, c"podetelar_deep_metrics".as_ptr().cast());
             if address.is_null() {
                 None
             } else {

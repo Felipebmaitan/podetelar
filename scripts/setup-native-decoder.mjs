@@ -48,13 +48,13 @@ if (
 )
   throw new Error("Native output guard differs from its pin.");
 const patch = readFileSync(
-  join(root, "apps/publisher/decoder/freedomstream_decoder.h"),
+  join(root, "apps/publisher/decoder/podetelar_decoder.h"),
   "utf8",
 ).replaceAll("\r\n", "\n");
 if (hash(patch) !== pin.adapterSha256)
   throw new Error("Decoder adapter differs from its pin.");
 const macosPatch = readFileSync(
-  join(root, "apps/publisher/decoder/freedomstream_macos_decoder.h"),
+  join(root, "apps/publisher/decoder/podetelar_macos_decoder.h"),
   "utf8",
 ).replaceAll("\r\n", "\n");
 if (hash(macosPatch) !== pin.macosAdapterSha256)
@@ -131,12 +131,12 @@ if (existsSync(destination)) {
   modify(
     "src/video_decoder_factory.cpp",
     "namespace livekit_ffi {",
-    '#ifdef _WIN32\n#include "freedomstream_decoder.h"\n#endif\n#ifdef WEBRTC_MAC\n#include "freedomstream_macos_decoder.h"\n#endif\n\nnamespace livekit_ffi {',
+    '#ifdef _WIN32\n#include "podetelar_decoder.h"\n#endif\n#ifdef WEBRTC_MAC\n#include "podetelar_macos_decoder.h"\n#endif\n\nnamespace livekit_ffi {',
   );
   modify(
     "src/video_decoder_factory.cpp",
     "#ifdef __APPLE__",
-    "#if defined(_WIN32) || defined(WEBRTC_MAC)\n  factories_.push_back(std::make_unique<freedomstream::DecoderFactory>());\n#endif\n#if defined(__APPLE__) && !defined(WEBRTC_MAC)",
+    "#if defined(_WIN32) || defined(WEBRTC_MAC)\n  factories_.push_back(std::make_unique<podetelar::DecoderFactory>());\n#endif\n#if defined(__APPLE__) && !defined(WEBRTC_MAC)",
   );
   modify(
     "src/video_decoder_factory.cpp",
@@ -184,7 +184,7 @@ if (existsSync(destination)) {
                 println!("cargo:rustc-link-lib=dylib={lib}");
             }
             println!("cargo:rerun-if-env-changed=GSTREAMER_1_0_ROOT_MSVC_X86_64");
-            println!("cargo:rerun-if-changed=src/freedomstream_decoder.h");
+            println!("cargo:rerun-if-changed=src/podetelar_decoder.h");
             println!("cargo:rerun-if-changed=src/deferred_i420.h");
             println!("cargo:rerun-if-changed=src/bounded_readback.h");`,
   );
@@ -196,10 +196,10 @@ if (existsSync(destination)) {
                 let gst = pkg_config::Config::new().probe(name).expect("Pinned macOS GStreamer SDK required");
                 builder.includes(gst.include_paths);
             }
-            println!("cargo:rerun-if-changed=src/freedomstream_macos_decoder.h");`,
+            println!("cargo:rerun-if-changed=src/podetelar_macos_decoder.h");`,
   );
-  writeFileSync(join(source, "src/freedomstream_macos_decoder.h"), macosPatch);
-  writeFileSync(join(source, "src/freedomstream_decoder.h"), patch);
+  writeFileSync(join(source, "src/podetelar_macos_decoder.h"), macosPatch);
+  writeFileSync(join(source, "src/podetelar_decoder.h"), patch);
   writeFileSync(join(source, "src/deferred_i420.h"), deferred);
   writeFileSync(join(source, "src/bounded_readback.h"), readback);
   patchNativeOutput(source, outputGuard);

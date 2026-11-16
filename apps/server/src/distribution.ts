@@ -14,7 +14,7 @@ export async function loadPublisher(directory?: string) {
   ) as Record<string, unknown>;
   if (
     typeof release.filename !== "string" ||
-    !/^freedomstream-windows-x64-[\d.a-f-]+\.exe$/.test(release.filename) ||
+    !/^podetelar-windows-x64-[\d.a-f-]+\.exe$/.test(release.filename) ||
     typeof release.version !== "string" ||
     !/^\d+\.\d+\.\d+$/.test(release.version) ||
     typeof release.commit !== "string" ||
@@ -110,7 +110,7 @@ export async function publisherRoutes(
   app.get<{ Params: { roomId: string } }>(
     "/api/rooms/:roomId/publisher",
     async (request, reply) => {
-      if (!admitted(request.params.roomId, request.cookies.fs_session))
+      if (!admitted(request.params.roomId, request.cookies.podetelar_session))
         return reply.code(401).send({ error: "Room access required." });
       return {
         version: release.version,
@@ -125,7 +125,7 @@ export async function publisherRoutes(
   app.get<{ Params: { roomId: string } }>(
     "/api/rooms/:roomId/publisher/windows.exe",
     async (request, reply) => {
-      if (!admitted(request.params.roomId, request.cookies.fs_session))
+      if (!admitted(request.params.roomId, request.cookies.podetelar_session))
         return reply.code(401).send({ error: "Room access required." });
       if (
         split &&
@@ -133,7 +133,7 @@ export async function publisherRoutes(
       ) {
         const url = download(
           request.params.roomId,
-          request.cookies.fs_session!,
+          request.cookies.podetelar_session!,
         );
         if (!url)
           return reply
@@ -155,7 +155,7 @@ export async function publisherRoutes(
   app.get<{ Params: { roomId: string } }>(
     "/api/rooms/:roomId/publisher/windows.zip",
     async (request, reply) => {
-      if (!admitted(request.params.roomId, request.cookies.fs_session))
+      if (!admitted(request.params.roomId, request.cookies.podetelar_session))
         return reply.code(401).send({ error: "Room access required." });
       return reply.redirect(
         `/api/rooms/${request.params.roomId}/publisher/windows.exe`,

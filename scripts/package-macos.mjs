@@ -52,7 +52,7 @@ const config = {
   title: "PodeTelar",
   updateFeed: "https://github.com/Felipebmaitan/podetelar",
 };
-const feed = installerUpdateFeed(config, process.env.FREEDOMSTREAM_UPDATE_FEED);
+const feed = installerUpdateFeed(config, process.env.PODETELAR_UPDATE_FEED);
 const destination = join(
   root,
   ".local/macos/releases",
@@ -66,20 +66,14 @@ const app = join(destination, "stage/PodeTelar.app"),
 mkdirSync(executables, { recursive: true });
 mkdirSync(frameworks);
 const mediaApp = join(contents, "Helpers/PodeTelar.app");
-const mediaExecutable = join(mediaApp, "Contents/MacOS/FreedomStream");
+const mediaExecutable = join(mediaApp, "Contents/MacOS/PodeTelar");
 mkdirSync(dirname(mediaExecutable), { recursive: true });
 mkdirSync(join(mediaApp, "Contents/Resources"));
 writeFileSync(
   join(mediaApp, "Contents/Info.plist"),
-  `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleName</key><string>PodeTelar</string><key>CFBundleIdentifier</key><string>app.podetelar.media</string><key>CFBundleExecutable</key><string>FreedomStream</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>${version}</string><key>CFBundleVersion</key><string>${build}</string><key>LSMinimumSystemVersion</key><string>14.0</string><key>CFBundleIconFile</key><string>PodeTelar.icns</string><key>NSHighResolutionCapable</key><true/><key>NSLocalNetworkUsageDescription</key><string>PodeTelar connects to your room's media server.</string><key>NSScreenCaptureUsageDescription</key><string>PodeTelar shares the display or window you choose with your room.</string><key>NSAudioCaptureUsageDescription</key><string>PodeTelar shares audio from the applications you choose.</string></dict></plist>`,
+  `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleName</key><string>PodeTelar</string><key>CFBundleIdentifier</key><string>app.podetelar.media</string><key>CFBundleExecutable</key><string>PodeTelar</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>${version}</string><key>CFBundleVersion</key><string>${build}</string><key>LSMinimumSystemVersion</key><string>14.0</string><key>CFBundleIconFile</key><string>PodeTelar.icns</string><key>NSHighResolutionCapable</key><true/><key>NSLocalNetworkUsageDescription</key><string>PodeTelar connects to your room's media server.</string><key>NSScreenCaptureUsageDescription</key><string>PodeTelar shares the display or window you choose with your room.</string><key>NSAudioCaptureUsageDescription</key><string>PodeTelar shares audio from the applications you choose.</string></dict></plist>`,
 );
-run("cargo", [
-  "build",
-  "--locked",
-  "--release",
-  "-p",
-  "freedomstream-publisher",
-]);
+run("cargo", ["build", "--locked", "--release", "-p", "podetelar-publisher"]);
 run(
   "cargo",
   [
@@ -92,21 +86,21 @@ run(
   {
     env: {
       ...env,
-      FREEDOMSTREAM_UPDATE_FEED: feed,
-      FREEDOMSTREAM_MACOS_STATE_TEST: "",
+      PODETELAR_UPDATE_FEED: feed,
+      PODETELAR_MACOS_STATE_TEST: "",
     },
   },
 );
 for (const [source, name] of [
-  ["target/release/freedomstream-publisher", "FreedomStream"],
+  ["target/release/podetelar-publisher", "PodeTelar"],
   [
-    "apps/installed-launcher/target/release/freedomstream-installed",
-    "FreedomStreamInstalled",
+    "apps/installed-launcher/target/release/podetelar-installed",
+    "PodeTelarInstalled",
   ],
 ])
   copyFileSync(
     join(root, source),
-    name === "FreedomStream" ? mediaExecutable : join(executables, name),
+    name === "PodeTelar" ? mediaExecutable : join(executables, name),
   );
 // Compile from this commit; a prior native:setup may have built an older helper.
 run("xcrun", [
@@ -188,7 +182,7 @@ function copyNative(source, target) {
     run("install_name_tool", ["-delete_rpath", match[1], target]);
 }
 copyNative(mediaExecutable, mediaExecutable);
-for (const name of ["FreedomStreamInstalled", "PodeTelar"])
+for (const name of ["PodeTelarInstalled", "PodeTelar"])
   copyNative(join(executables, name), join(executables, name));
 copyNative(
   join(runtime, "libexec/gstreamer-1.0/gst-plugin-scanner"),
@@ -302,7 +296,7 @@ run("dotnet", [
   "--packDir",
   app,
   "--mainExe",
-  "FreedomStreamInstalled",
+  "PodeTelarInstalled",
   "--channel",
   "osx-arm64",
   "--delta",

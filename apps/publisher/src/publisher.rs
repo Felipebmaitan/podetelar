@@ -276,7 +276,7 @@ impl Controller {
         let shutdown = Arc::new(Shutdown::default());
         let closing = shutdown.clone();
         let worker = std::thread::Builder::new()
-            .name("freedomstream-room".into())
+            .name("podetelar-room".into())
             .spawn(move || {
                 let _completion = WorkerCompletion(closing.clone());
                 let runtime = tokio::runtime::Builder::new_multi_thread()

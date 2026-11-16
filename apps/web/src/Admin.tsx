@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import type { UsagePoint, UsageReport } from "@freedomstream/contracts";
+import type { UsagePoint, UsageReport } from "@podetelar/contracts";
 import { ApiError, request } from "./api";
 import { dataSize, periodRange, speed, type Period } from "./usage";
 import "./admin.css";

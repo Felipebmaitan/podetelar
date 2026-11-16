@@ -131,7 +131,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     directUrl: directUrl.origin,
     databasePath: resolve(
       repositoryRoot,
-      env.DATABASE_PATH ?? "data/freedomstream.db",
+      env.DATABASE_PATH ?? "data/podetelar.db",
     ),
     adminToken: required("ADMIN_TOKEN", 32),
     usageMetricsUrl:

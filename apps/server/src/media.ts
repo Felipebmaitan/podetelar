@@ -4,10 +4,10 @@ import {
   TrackType,
   TwirpError,
 } from "livekit-server-sdk";
-import type { PreviewKind } from "@freedomstream/contracts";
+import type { PreviewKind } from "@podetelar/contracts";
 import type { Config } from "./config.js";
 
-export const mediaRoomName = (roomId: string) => `freedomstream_${roomId}`;
+export const mediaRoomName = (roomId: string) => `podetelar_${roomId}`;
 export type MediaParticipant = {
   attributes?: Record<string, string>;
   tracks: { sid: string; kind: PreviewKind; muted: boolean }[];

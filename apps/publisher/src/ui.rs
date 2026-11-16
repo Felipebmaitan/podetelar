@@ -210,8 +210,7 @@ impl PublisherUi {
             browser_invitation_open: is_browser_launch,
             pending_link: None,
             link_result,
-            browser_links_enabled: std::env::var("FREEDOMSTREAM_BROWSER_LINKS").as_deref()
-                == Ok("1"),
+            browser_links_enabled: std::env::var("PODETELAR_BROWSER_LINKS").as_deref() == Ok("1"),
             self_preview_revision: None,
             #[cfg(feature = "performance-experiments")]
             planar: Default::default(),
@@ -1594,7 +1593,7 @@ impl PublisherUi {
                 let visible = ui.is_rect_visible(rect);
                 tile.presentation.visible.store(visible, Ordering::Relaxed);
                 !*CLIP.get_or_init(|| {
-                    std::env::var("FREEDOMSTREAM_DEEP_CLIP")
+                    std::env::var("PODETELAR_DEEP_CLIP")
                         .ok()
                         .is_none_or(|v| v != "0")
                 }) || visible
@@ -2810,7 +2809,7 @@ mod tests {
         app.name = "Current nickname".into();
         let ctx = egui::Context::default();
         let link = format!(
-            "freedomstream://join?server=https%3A%2F%2Fother.test#handoff={}",
+            "podetelar://join?server=https%3A%2F%2Fother.test#handoff={}",
             "t".repeat(43)
         );
         app.open_activation(&link, &ctx);
@@ -2915,7 +2914,7 @@ mod tests {
         for server in ["first.test", "second.test"] {
             app.open_activation(
                 &format!(
-                    "freedomstream://join?server=https%3A%2F%2F{server}#handoff={}",
+                    "podetelar://join?server=https%3A%2F%2F{server}#handoff={}",
                     "t".repeat(43)
                 ),
                 &ctx,

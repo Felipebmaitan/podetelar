@@ -1,6 +1,6 @@
 """Windows integration qualification. Invitation is supplied as JSON on stdin, never argv.
 Usage: python scripts/qualify-browser-links.py --executable <portable EXE>
-Requires a running local FreedomStream API. Refuses to replace an existing handler.
+Requires a running local PodeTelar API. Refuses to replace an existing handler.
 """
 import argparse
 import ctypes
@@ -17,12 +17,12 @@ import urllib.parse
 import urllib.request
 import winreg
 
-KEY = r"Software\Classes\freedomstream"
+KEY = r"Software\Classes\podetelar"
 
 def processes():
     result = subprocess.run(
         ["powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
-         "Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*freedomstream*.exe' } | Select-Object ProcessId,ParentProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress"],
+         "Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*podetelar*.exe' } | Select-Object ProcessId,ParentProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress"],
         capture_output=True, creationflags=0x08000000, check=True,
     )
     value = json.loads(result.stdout.decode("utf-8-sig") or "[]")
@@ -50,12 +50,12 @@ def main():
         pass
     else:
         raise RuntimeError("Refusing to replace an existing browser-link registration")
-    root = Path(tempfile.mkdtemp(prefix="freedomstream-browser-links-")).resolve()
+    root = Path(tempfile.mkdtemp(prefix="podetelar-browser-links-")).resolve()
     previous = os.environ.get("LOCALAPPDATA")
     appdata = root / "profile"
     appdata.mkdir()
     os.environ["LOCALAPPDATA"] = str(appdata)
-    executable = root / "FreedomStream.exe"
+    executable = root / "PodeTelar.exe"
     shutil.copyfile(args.executable.resolve(), executable)
     def run(option):
         result = subprocess.run([str(executable), option], capture_output=True, creationflags=0x08000000)
@@ -73,8 +73,8 @@ def main():
         run("--enable-browser-links")
         current = registered()
         assert current != first and current.is_file(), "Updating links must select the new EXE"
-        executable.rename(root / "Moved-FreedomStream.exe")
-        executable = root / "Moved-FreedomStream.exe"
+        executable.rename(root / "Moved-PodeTelar.exe")
+        executable = root / "Moved-PodeTelar.exe"
         request = urllib.request.Request(origin + f"/api/rooms/{room_id}/app-link",
             data=json.dumps({"invitation": secret}).encode(), headers={"Origin": origin, "Content-Type": "application/json"})
         with urllib.request.urlopen(request, timeout=10) as response:
@@ -86,7 +86,7 @@ def main():
         deadline = time.monotonic() + 15
         while True:
             owned = [p for p in processes() if p.get("ExecutablePath") and Path(p["ExecutablePath"]).is_relative_to(appdata)]
-            publishers = [p for p in owned if Path(p["ExecutablePath"]).name.lower() == "freedomstream-publisher.exe"]
+            publishers = [p for p in owned if Path(p["ExecutablePath"]).name.lower() == "podetelar-publisher.exe"]
             if publishers:
                 assert all(secret not in (p.get("CommandLine") or "") for p in owned), "Permanent invitation leaked to process arguments"
                 break
@@ -111,7 +111,7 @@ def main():
             os.environ.pop("LOCALAPPDATA", None)
         else:
             os.environ["LOCALAPPDATA"] = previous
-        assert root.parent == Path(tempfile.gettempdir()).resolve() and root.name.startswith("freedomstream-browser-links-"), "Unexpected cleanup path"
+        assert root.parent == Path(tempfile.gettempdir()).resolve() and root.name.startswith("podetelar-browser-links-"), "Unexpected cleanup path"
         time.sleep(0.5)
         shutil.rmtree(root)
     print("PASS: disable removed the registration and test processes/files were cleaned up.")

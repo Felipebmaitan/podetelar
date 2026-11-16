@@ -22,8 +22,7 @@ export async function preparePortableRuntime(root, output, notices) {
     readFileSync(join(root, "deploy/portable-runtime.json")),
   );
   const runtimeOverride =
-    process.env.FREEDOMSTREAM_PORTABLE_RUNTIME ??
-    process.env.FREEDOMSTREAM_GSTREAMER;
+    process.env.PODETELAR_PORTABLE_RUNTIME ?? process.env.PODETELAR_GSTREAMER;
   const runtime = runtimeOverride
     ? resolve(runtimeOverride)
     : join(root, ".local/gstreamer");
@@ -31,9 +30,9 @@ export async function preparePortableRuntime(root, output, notices) {
   copyFileSync(
     join(
       resolve(root, process.env.CARGO_TARGET_DIR ?? "target"),
-      "release/freedomstream-publisher.exe",
+      "release/podetelar-publisher.exe",
     ),
-    join(output, "bin/freedomstream-publisher.exe"),
+    join(output, "bin/podetelar-publisher.exe"),
   );
   const inventory = readFileSync(join(runtime, "share/versions.txt"), "utf8");
   if (

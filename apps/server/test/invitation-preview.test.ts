@@ -9,7 +9,7 @@ import { loadConfig } from "../src/config.js";
 const origin = "http://localhost:5173";
 const admin = "test-invitation-administrator-not-production";
 test("invitation preview requires a current invitation and reveals only connected active members without admitting browsers", async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "freedomstream-invitation-"));
+  const dir = mkdtempSync(join(tmpdir(), "podetelar-invitation-"));
   const config = loadConfig({
     PUBLIC_URL: origin,
     ADMIN_TOKEN: admin,

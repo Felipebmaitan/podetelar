@@ -12,13 +12,13 @@ import { loadConfig } from "../src/config.js";
 const device = (number: number) =>
   `pc1_${number.toString(16).padStart(64, "0")}`;
 function temporary() {
-  const dir = mkdtempSync(join(tmpdir(), "freedomstream-device-"));
+  const dir = mkdtempSync(join(tmpdir(), "podetelar-device-"));
   return {
     path: join(dir, "test.db"),
     clean() {
       const resolved = realpathSync(dir);
       assert.equal(dirname(resolved), realpathSync(tmpdir()));
-      assert.ok(basename(resolved).startsWith("freedomstream-device-"));
+      assert.ok(basename(resolved).startsWith("podetelar-device-"));
       rmSync(resolved, { recursive: true });
     },
   };

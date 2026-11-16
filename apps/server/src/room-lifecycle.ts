@@ -1,4 +1,4 @@
-import type { AdminRoom, ManagedRoom } from "@freedomstream/contracts";
+import type { AdminRoom, ManagedRoom } from "@podetelar/contracts";
 import type { Rooms } from "./rooms.js";
 import type { MediaDirectory } from "./media.js";
 import type { Access } from "./access.js";

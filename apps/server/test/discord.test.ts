@@ -49,7 +49,7 @@ test("Discord configuration fails closed", () => {
 });
 
 test("signed Discord interactions create independent, admitted rooms without browser Origin bypass", async (t) => {
-  const directory = mkdtempSync(join(tmpdir(), "freedomstream-discord-"));
+  const directory = mkdtempSync(join(tmpdir(), "podetelar-discord-"));
   const config = loadConfig({
     ...env,
     DATABASE_PATH: join(directory, "rooms.db"),

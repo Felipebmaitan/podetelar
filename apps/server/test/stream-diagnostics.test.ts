@@ -30,7 +30,7 @@ class Directory implements MediaDirectory {
   }
 }
 async function fixture(t: TestContext) {
-  const directory = mkdtempSync(join(tmpdir(), "freedomstream-stats-"));
+  const directory = mkdtempSync(join(tmpdir(), "podetelar-stats-"));
   let now = Date.now();
   const media = new Directory();
   const config = loadConfig({
@@ -50,7 +50,7 @@ async function fixture(t: TestContext) {
       dirname(path).toLowerCase(),
       realpathSync(tmpdir()).toLowerCase(),
     );
-    assert.ok(basename(path).startsWith("freedomstream-stats-"));
+    assert.ok(basename(path).startsWith("podetelar-stats-"));
     rmSync(path, { recursive: true });
   });
   const create = async () => {
@@ -83,7 +83,7 @@ async function fixture(t: TestContext) {
     const id = response.json().participant.id as string;
     media.participants.set(id, {
       tracks: [],
-      attributes: { [`freedomstream.watch.${owner.owner}`]: "av1" },
+      attributes: { [`podetelar.watch.${owner.owner}`]: "av1" },
     });
     return {
       id,

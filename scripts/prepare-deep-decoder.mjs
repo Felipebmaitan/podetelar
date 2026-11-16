@@ -12,7 +12,7 @@ const replace = (s, a, b) => {
 };
 const originals = {};
 for (const name of [
-  "freedomstream_decoder.h",
+  "podetelar_decoder.h",
   "deferred_i420.h",
   "bounded_readback.h",
 ]) {
@@ -27,7 +27,7 @@ for (const name of [
     "#pragma once",
     '#pragma once\n#include "deep-decoder-support.h"',
   );
-  if (name === "freedomstream_decoder.h") {
+  if (name === "podetelar_decoder.h") {
     s = replace(
       s,
       "    Stop();\n    failed_generation_",
@@ -126,11 +126,11 @@ for (const name of [
     );
   }
   writeFileSync(resolve(out, name), s);
-  if (name === "freedomstream_decoder.h")
+  if (name === "podetelar_decoder.h")
     writeFileSync(
       resolve(out, "deep-adapter.h"),
       s.slice(0, s.indexOf("\nclass DecoderFactory final")) +
-        "\n} // namespace freedomstream\n",
+        "\n} // namespace podetelar\n",
     );
 }
 copyFileSync(

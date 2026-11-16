@@ -31,11 +31,11 @@ foreach($case in $cases){
  $info=[Diagnostics.ProcessStartInfo]::new($exe)
  $info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
  foreach($arg in @("$root/.local/experiments/fixtures/pattern-$($case.size)60.$($case.codec)",$report,"$($case.contexts)","$($case.cycles)",$case.visibility,$case.codec)){$info.ArgumentList.Add($arg)}
- $info.Environment['FREEDOMSTREAM_DEEP_SHARED_DEVICE']=if(($Family -eq 'device' -and $case.variant -eq 'after')-or $case.variant -eq 'device'){'1'}else{'0'}
- $info.Environment['FREEDOMSTREAM_DEEP_RELAXED_MAP']=if(($Family -eq 'readback' -and $case.variant -eq 'after')-or $case.variant -eq 'readback'){'1'}else{'0'}
- $info.Environment['FREEDOMSTREAM_DEEP_FLUSH_MAP']=if($FlushMap -and (($Family -eq 'readback' -and $case.variant -eq 'after')-or $case.variant -eq 'readback')){'1'}else{'0'}
- $info.Environment['FREEDOMSTREAM_DEEP_HASH_ALL']=if($Family -eq 'qualification'){'1'}else{'0'}
- $info.Environment['FREEDOMSTREAM_DEEP_POOL_TRACE']=if($Family -eq 'pool-trace'){'1'}else{'0'}
+ $info.Environment['PODETELAR_DEEP_SHARED_DEVICE']=if(($Family -eq 'device' -and $case.variant -eq 'after')-or $case.variant -eq 'device'){'1'}else{'0'}
+ $info.Environment['PODETELAR_DEEP_RELAXED_MAP']=if(($Family -eq 'readback' -and $case.variant -eq 'after')-or $case.variant -eq 'readback'){'1'}else{'0'}
+ $info.Environment['PODETELAR_DEEP_FLUSH_MAP']=if($FlushMap -and (($Family -eq 'readback' -and $case.variant -eq 'after')-or $case.variant -eq 'readback')){'1'}else{'0'}
+ $info.Environment['PODETELAR_DEEP_HASH_ALL']=if($Family -eq 'qualification'){'1'}else{'0'}
+ $info.Environment['PODETELAR_DEEP_POOL_TRACE']=if($Family -eq 'pool-trace'){'1'}else{'0'}
  $p=[Diagnostics.Process]::Start($info);$stdout=$p.StandardOutput.ReadToEndAsync();$stderr=$p.StandardError.ReadToEndAsync()
  $clock=[Diagnostics.Stopwatch]::StartNew();$private=0L;$working=0L
  try {

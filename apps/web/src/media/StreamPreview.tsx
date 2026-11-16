@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { PREVIEW_MAX_BYTES, PREVIEW_TTL_MS } from "@freedomstream/contracts";
+import { PREVIEW_MAX_BYTES, PREVIEW_TTL_MS } from "@podetelar/contracts";
 import type { LiveStream } from "./model";
 
 /** Fetches only the latest announced still; no media subscription or polling. */

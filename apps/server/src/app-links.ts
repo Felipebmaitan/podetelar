@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { invitationSchema, roomIdSchema } from "@freedomstream/contracts";
+import { invitationSchema, roomIdSchema } from "@podetelar/contracts";
 import type { Config } from "./config.js";
 import type { Rooms } from "./rooms.js";
 import type { MediaDirectory } from "./media.js";
@@ -92,7 +92,7 @@ export function appLinkRoutes(
         expires: now() + TTL,
       });
       return {
-        appUrl: `freedomstream://join?server=${encodeURIComponent(config.publicUrl)}#handoff=${ticket}`,
+        appUrl: `podetelar://join?server=${encodeURIComponent(config.publicUrl)}#handoff=${ticket}`,
       };
     },
   );

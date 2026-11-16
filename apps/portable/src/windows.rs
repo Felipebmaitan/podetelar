@@ -146,7 +146,7 @@ mod tests {
     // publisher could execute any code. This is the former orphaning window.
     #[test]
     fn startup_guardian() {
-        let Some(root) = std::env::var_os("FREEDOMSTREAM_TEST_GUARDIAN") else {
+        let Some(root) = std::env::var_os("PODETELAR_TEST_GUARDIAN") else {
             return;
         };
         let root = std::path::PathBuf::from(root);
@@ -184,7 +184,7 @@ mod tests {
         let mut guardian = Guardian(
             Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "windows::tests::startup_guardian", "--nocapture"])
-                .env("FREEDOMSTREAM_TEST_GUARDIAN", root.path())
+                .env("PODETELAR_TEST_GUARDIAN", root.path())
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .spawn()
@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     fn argument_fixture() {
-        let Some(expected) = std::env::var_os("FREEDOMSTREAM_TEST_ARGUMENT") else {
+        let Some(expected) = std::env::var_os("PODETELAR_TEST_ARGUMENT") else {
             return;
         };
         assert_eq!(std::env::args_os().next_back().unwrap(), expected);
@@ -246,7 +246,7 @@ mod tests {
                 "--skip",
                 expected,
             ])
-            .env("FREEDOMSTREAM_TEST_ARGUMENT", expected);
+            .env("PODETELAR_TEST_ARGUMENT", expected);
         assert!(
             process::spawn(&command, job.0, 0)
                 .unwrap()

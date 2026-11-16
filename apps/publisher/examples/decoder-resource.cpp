@@ -1,4 +1,4 @@
-// Copyright (c) 2026 FreedomStream contributors. MIT licensed.
+// Copyright (c) 2026 PodeTelar contributors. MIT licensed.
 // Independent local probe linked to the pinned release WebRTC, never shipped.
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
@@ -99,16 +99,16 @@ bool CheckDeferred(const wchar_t* path){
  for(int y=0;y<5;y++)for(int x=0;x<9;x++){map.data[info.offset[1]+y*info.stride[1]+x*2]=static_cast<uint8_t>(96+x);map.data[info.offset[1]+y*info.stride[1]+x*2+1]=static_cast<uint8_t>(160+y);}
  gst_buffer_unmap(buffer,&map);gst_mini_object_weak_ref(GST_MINI_OBJECT(buffer),[](gpointer data,GstMiniObject*){static_cast<std::atomic<bool>*>(data)->store(true);},&released);
  auto* caps=gst_video_info_to_caps(&info);auto* sample=gst_sample_new(buffer,caps,nullptr,nullptr);gst_buffer_unref(buffer);gst_caps_unref(caps);
- auto failed=std::make_shared<std::atomic<bool>>(false);auto frame=freedomstream_probe::DeferredI420Buffer::Create(sample,info,failed);gst_sample_unref(sample);
+ auto failed=std::make_shared<std::atomic<bool>>(false);auto frame=podetelar_probe::DeferredI420Buffer::Create(sample,info,failed);gst_sample_unref(sample);
  valid=valid&&frame&&frame->type()==webrtc::VideoFrameBuffer::Type::kI420&&frame->StrideY()==17&&frame->StrideU()==9&&!released;
  livekit_ffi::VideoFrameBuffer wrapper(frame);auto sdk=wrapper.get_i420();
- valid=valid&&wrapper.buffer_type()==livekit_ffi::VideoFrameBufferType::I420&&sdk->width()==17&&freedomstream_probe::materializations==0;
+ valid=valid&&wrapper.buffer_type()==livekit_ffi::VideoFrameBufferType::I420&&sdk->width()==17&&podetelar_probe::materializations==0;
  std::vector<std::thread> readers;for(int n=0;n<8;n++)readers.emplace_back([frame]{for(int i=0;i<10;i++){volatile auto value=frame->DataY()[0]^frame->DataU()[0]^frame->DataV()[0];(void)value;}});for(auto& reader:readers)reader.join();
- valid=valid&&released&&freedomstream_probe::materializations==1&&!failed->load();
+ valid=valid&&released&&podetelar_probe::materializations==1&&!failed->load();
  for(int y=0;y<9;y++)for(int x=0;x<17;x++)valid=valid&&frame->DataY()[y*17+x]==static_cast<uint8_t>(16+(y*17+x)%220);
  for(int y=0;y<5;y++)for(int x=0;x<9;x++)valid=valid&&frame->DataU()[y*9+x]==96+x&&frame->DataV()[y*9+x]==160+y;
  GstVideoInfo bad_info{};gst_video_info_set_format(&bad_info,GST_VIDEO_FORMAT_NV12,2,2);auto* bad_caps=gst_video_info_to_caps(&bad_info);auto* bad_buffer=gst_buffer_new();auto* bad_sample=gst_sample_new(bad_buffer,bad_caps,nullptr,nullptr);gst_buffer_unref(bad_buffer);gst_caps_unref(bad_caps);
- freedomstream_deferred::Decoder decoder(true);webrtc::VideoDecoder::Settings settings;valid=valid&&decoder.Configure(settings);auto old_generation=decoder.ErrorStateForProbe();auto bad=freedomstream_probe::DeferredI420Buffer::Create(bad_sample,bad_info,old_generation);gst_sample_unref(bad_sample);valid=valid&&decoder.Configure(settings);
+ podetelar_deferred::Decoder decoder(true);webrtc::VideoDecoder::Settings settings;valid=valid&&decoder.Configure(settings);auto old_generation=decoder.ErrorStateForProbe();auto bad=podetelar_probe::DeferredI420Buffer::Create(bad_sample,bad_info,old_generation);gst_sample_unref(bad_sample);valid=valid&&decoder.Configure(settings);
  const auto* black=bad->DataY();valid=valid&&black[0]==16&&black[1]==16&&black[2]==16&&black[3]==16&&bad->DataU()[0]==128&&bad->DataV()[0]==128&&old_generation->load()&&!decoder.ErrorStateForProbe()->load();decoder.Release();
  bool fallback_checked=false;
 #ifdef GST_D3D11_MEMORY_CAST
@@ -117,11 +117,11 @@ bool CheckDeferred(const wchar_t* path){
  gst_buffer_memset(cpu_buffer,bad_info.offset[1],128,bad_info.size-bad_info.offset[1]);
  auto* cpu_caps=gst_video_info_to_caps(&bad_info);
  auto* cpu_sample=gst_sample_new(cpu_buffer,cpu_caps,nullptr,nullptr);gst_buffer_unref(cpu_buffer);gst_caps_unref(cpu_caps);
- auto readback=std::make_shared<freedomstream_probe::BoundedReadback>();
+ auto readback=std::make_shared<podetelar_probe::BoundedReadback>();
  auto wrong=webrtc::I420Buffer::Create(4,4);wrong->MutableDataY()[0]=77;
  valid=valid&&!readback->Copy(cpu_sample,bad_info,wrong.get())&&wrong->DataY()[0]==77;
  auto cpu_failure=std::make_shared<std::atomic<bool>>(false);
- auto cpu_frame=freedomstream_probe::DeferredI420Buffer::Create(cpu_sample,bad_info,cpu_failure,readback);gst_sample_unref(cpu_sample);
+ auto cpu_frame=podetelar_probe::DeferredI420Buffer::Create(cpu_sample,bad_info,cpu_failure,readback);gst_sample_unref(cpu_sample);
  fallback_checked=cpu_frame&&cpu_frame->DataY()[0]==16&&cpu_frame->DataY()[3]==16&&cpu_frame->DataU()[0]==128&&cpu_frame->DataV()[0]==128&&!cpu_failure->load();
  valid=valid&&fallback_checked;
 #endif
@@ -166,7 +166,7 @@ int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR,int){
  std::atomic<int> delivered{0},restarts{0},skipped{0},max_pending{0},errors{0};std::mutex timing_mutex;std::vector<double> ages;std::vector<webrtc::scoped_refptr<webrtc::VideoFrameBuffer>> selected;
  const auto start=Clock::now();const double cpu=Cpu();std::vector<std::thread> workers;
  for(int worker=0;worker<contexts;worker++)workers.emplace_back([&,worker]{
-  std::unique_ptr<webrtc::VideoDecoder> decoder=av1?webrtc::CreateDav1dDecoder():deferred?std::unique_ptr<webrtc::VideoDecoder>(new freedomstream_deferred::Decoder(true)):fused?std::unique_ptr<webrtc::VideoDecoder>(new freedomstream_fused::Decoder(true)):std::unique_ptr<webrtc::VideoDecoder>(new freedomstream::Decoder(true));
+  std::unique_ptr<webrtc::VideoDecoder> decoder=av1?webrtc::CreateDav1dDecoder():deferred?std::unique_ptr<webrtc::VideoDecoder>(new podetelar_deferred::Decoder(true)):fused?std::unique_ptr<webrtc::VideoDecoder>(new podetelar_fused::Decoder(true)):std::unique_ptr<webrtc::VideoDecoder>(new podetelar::Decoder(true));
   Callback callback;callback.start=start;callback.stall=mode==L"baseline"||bounded;callback.read_planes=!hidden;webrtc::VideoDecoder::Settings settings;settings.set_number_of_cores(cores);settings.set_codec_type(av1?webrtc::kVideoCodecAV1:webrtc::kVideoCodecH265);
   if(!decoder||!decoder->Configure(settings)){errors++;return;}decoder->RegisterDecodeCompleteCallback(&callback);
   int submitted=0,base_delivered=0;bool need_key=false;
@@ -182,9 +182,9 @@ int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR,int){
   const auto deadline=Clock::now()+std::chrono::seconds(3);while(Clock::now()<deadline&&callback.delivered.load()-base_delivered<submitted)std::this_thread::sleep_for(std::chrono::milliseconds(10));
   decoder->Release();delivered+=callback.delivered.load();{std::lock_guard<std::mutex> lock(timing_mutex);ages.insert(ages.end(),callback.ages.begin(),callback.ages.end());selected.insert(selected.end(),callback.selected.begin(),callback.selected.end());}
  });
- for(auto& worker:workers)worker.join();const double measured_cpu=Cpu()-cpu;const double measured_wall=Ms(Clock::now()-start);const auto maps_before_hash=freedomstream_probe::materializations.load();std::sort(ages.begin(),ages.end());auto p=[&](double q){return ages.empty()?0:ages[size_t((ages.size()-1)*q)];};
+ for(auto& worker:workers)worker.join();const double measured_cpu=Cpu()-cpu;const double measured_wall=Ms(Clock::now()-start);const auto maps_before_hash=podetelar_probe::materializations.load();std::sort(ages.begin(),ages.end());auto p=[&](double q){return ages.empty()?0:ages[size_t((ages.size()-1)*q)];};
  uint64_t checksum=14695981039346656037ULL;
  for(const auto& frame:selected){auto image=frame->ToI420();if(!image){errors++;continue;}const uint8_t* data[]={image->DataY(),image->DataU(),image->DataV()};const int stride[]={image->StrideY(),image->StrideU(),image->StrideV()};const int width[]={image->width(),(image->width()+1)/2,(image->width()+1)/2};const int height[]={image->height(),(image->height()+1)/2,(image->height()+1)/2};for(int plane=0;plane<3;plane++)for(int y=0;y<height[plane];y++)for(int x=0;x<width[plane];x++){checksum^=data[plane][y*stride[plane]+x];checksum*=1099511628211ULL;}}
- report<<"{\"schema\":1,\"completed\":true,\"hardware\":"<<(av1?"false":"true")<<",\"fused\":"<<(fused?"true":"false")<<",\"deferred\":"<<(deferred?"true":"false")<<",\"hidden\":"<<(hidden?"true":"false")<<",\"deferredMaterializationsBeforeHash\":"<<maps_before_hash<<",\"deferredMaterializationsAfterHash\":"<<freedomstream_probe::materializations.load()<<",\"failedMaterializations\":"<<freedomstream_probe::failed_materializations.load()<<",\"contexts\":"<<contexts<<",\"coresPerContext\":"<<cores<<",\"cpuMs\":"<<measured_cpu<<",\"wallMs\":"<<measured_wall<<",\"inputPacketsPerContext\":"<<packets.size()<<",\"decoded\":"<<delivered<<",\"skippedForKeyframeRecovery\":"<<skipped<<",\"restarts\":"<<restarts<<",\"decodeErrors\":"<<errors<<",\"maxOutstandingFrames\":"<<max_pending<<",\"captureAgeMs\":{\"p50\":"<<p(.5)<<",\"p95\":"<<p(.95)<<",\"max\":"<<p(1)<<"},\"sampledPixelFrames\":"<<selected.size()<<",\"visiblePlaneChecksumHex\":\""<<std::hex<<checksum<<std::dec<<"\",\"limits\":\"Actual decoder, isolated fixture, no SFU/UI/device audio. Six whole visible I420 frames retained and hashed after timed CPU/wall interval; padding excluded. Deferred hidden mode must avoid all materialization until after timing, then survive pipeline shutdown. Validation images affect probe memory.\"}";
+ report<<"{\"schema\":1,\"completed\":true,\"hardware\":"<<(av1?"false":"true")<<",\"fused\":"<<(fused?"true":"false")<<",\"deferred\":"<<(deferred?"true":"false")<<",\"hidden\":"<<(hidden?"true":"false")<<",\"deferredMaterializationsBeforeHash\":"<<maps_before_hash<<",\"deferredMaterializationsAfterHash\":"<<podetelar_probe::materializations.load()<<",\"failedMaterializations\":"<<podetelar_probe::failed_materializations.load()<<",\"contexts\":"<<contexts<<",\"coresPerContext\":"<<cores<<",\"cpuMs\":"<<measured_cpu<<",\"wallMs\":"<<measured_wall<<",\"inputPacketsPerContext\":"<<packets.size()<<",\"decoded\":"<<delivered<<",\"skippedForKeyframeRecovery\":"<<skipped<<",\"restarts\":"<<restarts<<",\"decodeErrors\":"<<errors<<",\"maxOutstandingFrames\":"<<max_pending<<",\"captureAgeMs\":{\"p50\":"<<p(.5)<<",\"p95\":"<<p(.95)<<",\"max\":"<<p(1)<<"},\"sampledPixelFrames\":"<<selected.size()<<",\"visiblePlaneChecksumHex\":\""<<std::hex<<checksum<<std::dec<<"\",\"limits\":\"Actual decoder, isolated fixture, no SFU/UI/device audio. Six whole visible I420 frames retained and hashed after timed CPU/wall interval; padding excluded. Deferred hidden mode must avoid all materialization until after timing, then survive pipeline shutdown. Validation images affect probe memory.\"}";
  return errors?4:0;
 }

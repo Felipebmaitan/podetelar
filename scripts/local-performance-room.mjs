@@ -21,15 +21,15 @@ const [
 ] = process.argv.slice(2);
 const count = Number(countText),
   phaseSeconds = Number(phaseText);
-const fps = Number(process.env.FREEDOMSTREAM_BENCH_FPS ?? 60);
-const publishFixture = process.env.FREEDOMSTREAM_BENCH_PUBLISH === "1";
-const disconnected = process.env.FREEDOMSTREAM_BENCH_DISCONNECTED === "1";
-const audioEnabled = process.env.FREEDOMSTREAM_BENCH_AUDIO === "1";
-const contention = process.env.FREEDOMSTREAM_BENCH_CONTENTION === "1";
-const mixedCodecs = process.env.FREEDOMSTREAM_DEEP_MIXED === "1";
-const resolution = process.env.FREEDOMSTREAM_BENCH_RESOLUTION ?? "p1080";
-const rounds = Number(process.env.FREEDOMSTREAM_BENCH_ROUNDS ?? 1);
-const steadySeconds = Number(process.env.FREEDOMSTREAM_BENCH_STEADY ?? 0);
+const fps = Number(process.env.PODETELAR_BENCH_FPS ?? 60);
+const publishFixture = process.env.PODETELAR_BENCH_PUBLISH === "1";
+const disconnected = process.env.PODETELAR_BENCH_DISCONNECTED === "1";
+const audioEnabled = process.env.PODETELAR_BENCH_AUDIO === "1";
+const contention = process.env.PODETELAR_BENCH_CONTENTION === "1";
+const mixedCodecs = process.env.PODETELAR_DEEP_MIXED === "1";
+const resolution = process.env.PODETELAR_BENCH_RESOLUTION ?? "p1080";
+const rounds = Number(process.env.PODETELAR_BENCH_ROUNDS ?? 1);
+const steadySeconds = Number(process.env.PODETELAR_BENCH_STEADY ?? 0);
 const durationSeconds = phaseSeconds * 6 * rounds + steadySeconds;
 if (
   !/^[a-z0-9-]{1,50}$/.test(label) ||
@@ -148,11 +148,11 @@ async function ready(url) {
 }
 const nativeEnv = {
   ...process.env,
-  PATH: `${join(process.env.FREEDOMSTREAM_GSTREAMER ?? join(root, ".local/gstreamer"), "bin")};${process.env.PATH}`,
+  PATH: `${join(process.env.PODETELAR_GSTREAMER ?? join(root, ".local/gstreamer"), "bin")};${process.env.PATH}`,
 };
 const exe = resolve(
-  process.env.FREEDOMSTREAM_PERFORMANCE_PUBLISHER ??
-    ".local/experiments/baseline/freedomstream-publisher.exe",
+  process.env.PODETELAR_PERFORMANCE_PUBLISHER ??
+    ".local/experiments/baseline/podetelar-publisher.exe",
 );
 const pin = JSON.parse(readFileSync("deploy/test-livekit.json"));
 const sfu = join(root, `.local/livekit-test-${pin.version}/livekit-server.exe`);
@@ -287,11 +287,11 @@ async function executeWorkload() {
       if (!publisher.output().includes('"published"'))
         throw new Error("Publisher readiness timed out.");
     }
-    if (process.env.FREEDOMSTREAM_BENCH_CLI === "1") {
+    if (process.env.PODETELAR_BENCH_CLI === "1") {
       const receiver = resolve(uiPath),
         osReport = join(run, "receiver-process.json");
       const env = { ...nativeEnv };
-      if (codec === "av1-software") env.FREEDOMSTREAM_AV1_DECODER = "software";
+      if (codec === "av1-software") env.PODETELAR_AV1_DECODER = "software";
       const child = start(receiver, ["--watch-fixture"], env, {
         invitationUrl,
         seconds: 30,
@@ -382,11 +382,11 @@ async function executeWorkload() {
       appReport = join(run, "app.json"),
       osReport = join(run, "process.json");
     const appEnv = { ...nativeEnv, LOCALAPPDATA: join(run, "LocalAppData") };
-    if (publishFixture) appEnv.FREEDOMSTREAM_PERFORMANCE_FIXTURE = "1";
+    if (publishFixture) appEnv.PODETELAR_PERFORMANCE_FIXTURE = "1";
     mkdirSync(appEnv.LOCALAPPDATA);
-    if (codec === "av1-software") appEnv.FREEDOMSTREAM_AV1_DECODER = "software";
-    if (process.env.FREEDOMSTREAM_BENCH_TOKIO)
-      appEnv.TOKIO_WORKER_THREADS = process.env.FREEDOMSTREAM_BENCH_TOKIO;
+    if (codec === "av1-software") appEnv.PODETELAR_AV1_DECODER = "software";
+    if (process.env.PODETELAR_BENCH_TOKIO)
+      appEnv.TOKIO_WORKER_THREADS = process.env.PODETELAR_BENCH_TOKIO;
     const appStartedAt = Date.now();
     const app = start(uiExe, [], appEnv, {
       invitationUrl,
@@ -564,31 +564,30 @@ async function executeWorkload() {
         resolve("target/release/examples/pipeline-resource.exe"),
       ),
       experimentSettings: {
-        imagePool: appEnv.FREEDOMSTREAM_IMAGE_POOL === "1",
-        imagePoolLimit: Number(appEnv.FREEDOMSTREAM_IMAGE_POOL_LIMIT ?? 2),
-        temporaryImage: appEnv.FREEDOMSTREAM_IMAGE_FALLBACK === "1",
-        frameDrivenRepaint: appEnv.FREEDOMSTREAM_FRAME_REPAINT === "1",
-        conversionWorkers: Number(appEnv.FREEDOMSTREAM_CONVERSION_WORKERS ?? 0),
+        imagePool: appEnv.PODETELAR_IMAGE_POOL === "1",
+        imagePoolLimit: Number(appEnv.PODETELAR_IMAGE_POOL_LIMIT ?? 2),
+        temporaryImage: appEnv.PODETELAR_IMAGE_FALLBACK === "1",
+        frameDrivenRepaint: appEnv.PODETELAR_FRAME_REPAINT === "1",
+        conversionWorkers: Number(appEnv.PODETELAR_CONVERSION_WORKERS ?? 0),
         tokioWorkers: Number(appEnv.TOKIO_WORKER_THREADS ?? 0),
-        countSdkLogs: appEnv.FREEDOMSTREAM_COUNT_SDK_LOGS === "1",
-        deepClip: appEnv.FREEDOMSTREAM_DEEP_CLIP === "1",
-        deepPlanar: appEnv.FREEDOMSTREAM_DEEP_PLANAR === "1",
+        countSdkLogs: appEnv.PODETELAR_COUNT_SDK_LOGS === "1",
+        deepClip: appEnv.PODETELAR_DEEP_CLIP === "1",
+        deepPlanar: appEnv.PODETELAR_DEEP_PLANAR === "1",
         requestedPlaneRetention:
-          appEnv.FREEDOMSTREAM_DEEP_RETAIN_PLANES ?? "default",
-        sharedDecoderDevice: appEnv.FREEDOMSTREAM_DEEP_SHARED_DEVICE === "1",
-        selectiveStop: appEnv.FREEDOMSTREAM_DEEP_SELECTIVE_STOP === "1",
-        relaxedReadback: appEnv.FREEDOMSTREAM_DEEP_RELAXED_MAP === "1",
-        flushBeforeReadbackPoll: appEnv.FREEDOMSTREAM_DEEP_FLUSH_MAP === "1",
-        poolTrace: appEnv.FREEDOMSTREAM_DEEP_POOL_TRACE === "1",
-        owners: appEnv.FREEDOMSTREAM_DEEP_OWNERS === "1",
-        idleHeapOptimization: appEnv.FREEDOMSTREAM_DEEP_HEAP === "1",
-        narrowViewport: appEnv.FREEDOMSTREAM_DEEP_NARROW === "1",
-        scriptedScroll: appEnv.FREEDOMSTREAM_DEEP_SCROLL === "1",
-        av1Decoder: appEnv.FREEDOMSTREAM_AV1_DECODER ?? "",
+          appEnv.PODETELAR_DEEP_RETAIN_PLANES ?? "default",
+        sharedDecoderDevice: appEnv.PODETELAR_DEEP_SHARED_DEVICE === "1",
+        selectiveStop: appEnv.PODETELAR_DEEP_SELECTIVE_STOP === "1",
+        relaxedReadback: appEnv.PODETELAR_DEEP_RELAXED_MAP === "1",
+        flushBeforeReadbackPoll: appEnv.PODETELAR_DEEP_FLUSH_MAP === "1",
+        poolTrace: appEnv.PODETELAR_DEEP_POOL_TRACE === "1",
+        owners: appEnv.PODETELAR_DEEP_OWNERS === "1",
+        idleHeapOptimization: appEnv.PODETELAR_DEEP_HEAP === "1",
+        narrowViewport: appEnv.PODETELAR_DEEP_NARROW === "1",
+        scriptedScroll: appEnv.PODETELAR_DEEP_SCROLL === "1",
+        av1Decoder: appEnv.PODETELAR_AV1_DECODER ?? "",
       },
       source:
-        process.env.FREEDOMSTREAM_PERFORMANCE_SOURCE ??
-        "see git source manifest",
+        process.env.PODETELAR_PERFORMANCE_SOURCE ?? "see git source manifest",
       app: appResult,
       process: existsSync(osReport)
         ? JSON.parse(readFileSync(osReport, "utf8").replace(/^\uFEFF/, ""))

@@ -7,12 +7,12 @@ const id = `${process.pid}-${Date.now()}`;
 const output = join(root, ".local", `installed-links-${id}`);
 const current = join(output, "app with spaces/current");
 mkdirSync(current, { recursive: true });
-const scheme = `Software\\Classes\\freedomstream-qualification-${id}`;
-const active = `Software\\FreedomStream\\Qualification-${id}`;
+const scheme = `Software\\Classes\\podetelar-qualification-${id}`;
+const active = `Software\\PodeTelar\\Qualification-${id}`;
 const env = {
   ...process.env,
-  FREEDOMSTREAM_LINK_TEST_SCHEME: scheme,
-  FREEDOMSTREAM_LINK_TEST_ACTIVE: active,
+  PODETELAR_LINK_TEST_SCHEME: scheme,
+  PODETELAR_LINK_TEST_ACTIVE: active,
   LINK_FIXTURE_EVENTS: join(output, "events.txt"),
 };
 const run = (file, args, options = {}) =>
@@ -38,11 +38,11 @@ const binaries = join(
   root,
   "apps/installed-launcher/target/x86_64-pc-windows-msvc/release",
 );
-const executable = join(current, "freedomstream-installed.exe");
-copyFileSync(join(binaries, "freedomstream-installed.exe"), executable);
+const executable = join(current, "podetelar-installed.exe");
+copyFileSync(join(binaries, "podetelar-installed.exe"), executable);
 copyFileSync(
   join(binaries, "link-fixture.exe"),
-  join(current, "FreedomStream.exe"),
+  join(current, "PodeTelar.exe"),
 );
 run(executable, ["--veloapp-install", "0.1.0"]);
 const query = () =>
@@ -82,7 +82,7 @@ try {
   await waitEvent("focused");
   run(executable, [
     "--browser-link",
-    `freedomstream://join?server=https%3A%2F%2Fexample.test#handoff=${"t".repeat(43)}`,
+    `podetelar://join?server=https%3A%2F%2Fexample.test#handoff=${"t".repeat(43)}`,
   ]);
   await Promise.race([
     exited,

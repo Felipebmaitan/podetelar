@@ -8,7 +8,7 @@ import {
   PREVIEW_TTL_MS,
   THUMBNAIL_INTERVAL_MS,
   type Preview,
-} from "@freedomstream/contracts";
+} from "@podetelar/contracts";
 import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { jpegDimensions } from "../src/jpeg.js";
@@ -49,7 +49,7 @@ class Directory implements MediaDirectory {
   }
 }
 async function fixture(t: TestContext) {
-  const directory = mkdtempSync(join(tmpdir(), "freedomstream-preview-"));
+  const directory = mkdtempSync(join(tmpdir(), "podetelar-preview-"));
   let now = Date.now();
   const media = new Directory();
   const config = loadConfig({
@@ -69,7 +69,7 @@ async function fixture(t: TestContext) {
       dirname(path).toLowerCase(),
       realpathSync(tmpdir()).toLowerCase(),
     );
-    assert.ok(basename(path).startsWith("freedomstream-preview-"));
+    assert.ok(basename(path).startsWith("podetelar-preview-"));
     rmSync(path, { recursive: true });
   });
   const create = async () => {

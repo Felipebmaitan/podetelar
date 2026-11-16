@@ -419,7 +419,25 @@ impl Admission {
     }
 
     pub async fn media_access(&self) -> Result<MediaAccess> {
-        let response = self.post("native-media-token").await?;
+        self.media_access_with_decoders(crate::playback::Playback::new().decoders())
+            .await
+    }
+
+    pub async fn media_access_with_decoders(
+        &self,
+        decoders: crate::codec_policy::Codecs,
+    ) -> Result<MediaAccess> {
+        let response = self
+            .client
+            .post(
+                self.origin
+                    .join(&format!("api/rooms/{}/native-media-token", self.room_id))?,
+            )
+            .header("Origin", self.origin.origin().ascii_serialization())
+            .json(&serde_json::json!({"hardwareDecoders": decoders.names()}))
+            .send()
+            .await
+            .map_err(|_| anyhow::anyhow!("Could not reach the room server."))?;
         ensure!(
             response.status().as_u16() != 404,
             "This room server needs an update before native playback can be used."

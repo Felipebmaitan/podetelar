@@ -8,6 +8,8 @@ import {
   createRoomSchema,
   joinRoomSchema,
   roomIdSchema,
+  HARDWARE_DECODERS_ATTRIBUTE,
+  nativeMediaCapabilitiesSchema,
 } from "@podetelar/contracts";
 import type { Config } from "./config.js";
 import { Rooms, SESSION_TTL_MS } from "./rooms.js";
@@ -312,6 +314,14 @@ export async function buildApp(
           return reply
             .code(401)
             .send({ error: "Open your room invitation to join." });
+        const capabilities =
+          native && request.body !== undefined
+            ? nativeMediaCapabilitiesSchema.safeParse(request.body)
+            : undefined;
+        if (capabilities && !capabilities.success)
+          return reply
+            .code(400)
+            .send({ error: "Invalid hardware decoder capabilities." });
         const access = new AccessToken(
           config.livekitApiKey,
           config.livekitApiSecret,
@@ -319,6 +329,16 @@ export async function buildApp(
             identity: session.participant.id,
             name: session.participant.displayName,
             ttl: MEDIA_TOKEN_TTL_SECONDS,
+            // Initial participant attributes close the connect/announcement
+            // race. Missing legacy capabilities remain unknown, not H.264-only.
+            ...(capabilities?.success
+              ? {
+                  attributes: {
+                    [HARDWARE_DECODERS_ATTRIBUTE]:
+                      capabilities.data.hardwareDecoders.join(",") || "none",
+                  },
+                }
+              : {}),
           },
         );
         access.addGrant({

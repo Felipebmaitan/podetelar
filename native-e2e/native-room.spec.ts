@@ -140,8 +140,8 @@ test("an H.264-only watcher triggers publication fallback and keeps watching", a
       sender.result as Promise<Sent>,
       receiver.result as Promise<Received>,
     ]);
-    // The restrictive member leaves before the sender finishes: recover HEVC.
-    expect(sent.codec).toBe("h265");
+    // Departure alone does not invalidate the compatible live codec.
+    expect(sent.codec).toBe("h264");
     expect(sent.finalSid).not.toBe(sent.initialSid);
     expect(
       watched.samples.some(

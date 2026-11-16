@@ -60,6 +60,13 @@ when rolling back to code that cannot read the new schema.
 Watch is an actual subscription. Stop watching releases video and audio; hiding
 a tile does not. Uploaded previews capture once at stream start and at most once
 per minute afterward. Codec replacements and reconnects preserve that clock.
+Native media-token requests include a bounded `hardwareDecoders` list (`av1`,
+`hevc`, `h264`). The server puts that declaration in the initial participant's
+`podetelar.decode.hardware.v1` attribute; `none` represents an explicitly empty
+set, while an absent attribute remains unknown. Declarations describe native
+hardware availability, not binary attestation or a throughput certificate. Every
+room member participates in hardware compatibility, including preview-only
+members. Playback health never removes a codec from that declaration.
 
 ## Native dependency maintenance
 

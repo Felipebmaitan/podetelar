@@ -449,10 +449,19 @@ pub struct StreamConfig {
 }
 impl StreamConfig {
     fn negotiate(&mut self, room: &Room, preferred: &Encoder, available: &[Encoder]) -> Result<()> {
-        let shared = crate::playback::room_codecs(room);
+        let shared = crate::playback::room_codecs(room)
+            .context("Waiting for every room member's hardware decoder capabilities. Update older apps and retry.")?;
+        self.negotiate_codecs(shared, preferred, available)
+    }
+    fn negotiate_codecs(
+        &mut self,
+        shared: crate::codec_policy::Codecs,
+        preferred: &Encoder,
+        available: &[Encoder],
+    ) -> Result<()> {
         let codec = shared.best(preferred.codec, |codec| available.iter().any(|encoder| {
             encoder.codec == codec && self.quality.resolve(&self.source.info, codec).is_ok_and(|mode| encoder.supports(mode))
-        })).context("No codec can be encoded at this resolution/frame rate and decoded by every room member.")?;
+        })).context("No codec can be hardware encoded at this resolution/frame rate and hardware decoded by every room member.")?;
         self.encoder = available
             .iter()
             .filter(|encoder| {
@@ -758,8 +767,22 @@ impl Stream {
     }
 
     pub fn compatible_config(&self, room: &Room) -> Result<Option<StreamConfig>> {
+        let Some(shared) = crate::playback::room_codecs(room) else {
+            // A missing announcement cannot authorize a codec change.
+            return Ok(None);
+        };
+        if shared.select(
+            self.preferred_encoder.codec,
+            Some(self.config.encoder.codec),
+            |_| true,
+        ) == Some(self.config.encoder.codec)
+        {
+            return Ok(None);
+        }
         let mut config = self.config.clone();
-        config.negotiate(room, &self.preferred_encoder, &self.available_encoders)?;
+        // Use the same capability snapshot for the decision and replacement.
+        // A concurrently joining pending member must not turn this into an error.
+        config.negotiate_codecs(shared, &self.preferred_encoder, &self.available_encoders)?;
         Ok((config.encoder.factory != self.config.encoder.factory).then_some(config))
     }
 

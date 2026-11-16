@@ -518,7 +518,14 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     );
     let admission =
         admission::Admission::join(&request.invitation_url, "Native playback check").await?;
-    let access = admission.media_access().await?;
+    let mut playback = playback::Playback::new();
+    playback.compatibility_only(request.h264_only);
+    if request.hevc_only {
+        playback.disable_av1();
+    }
+    let access = admission
+        .media_access_with_decoders(playback.decoders())
+        .await?;
     let (room, mut events) = Room::connect(
         &access.server_url,
         &access.token,
@@ -531,7 +538,6 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
             admission::media_diagnostic(error)
         )
     })?;
-    let mut playback = playback::Playback::new();
     let recovery = playback.recovery_signal();
     let events_recovery = recovery.clone();
     let event_task = tokio::spawn(async move {
@@ -541,10 +547,6 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
             }
         }
     });
-    playback.compatibility_only(request.h264_only);
-    if request.hevc_only {
-        playback.disable_av1();
-    }
     playback.measure_audio();
     let timing = (request.audiovisual_timing || request.measure_output_audio)
         .then(av_qualification::Events::new);

@@ -3,7 +3,8 @@
 The native Windows app publishes and watches streams in existing LiveKit rooms.
 GStreamer captures D3D11 textures and uses NVIDIA NVENC or AMD AMF. A pinned
 WebRTC decoder adapter provides native H.264/HEVC/AV1 playback through GStreamer.
-AV1 receivers without a registered GPU decoder use the SDK dav1d CPU decoder.
+Only available hardware decoders authorize reception; software AV1 availability
+does not count as support.
 Audio uses WASAPI. LiveKit forwards compressed media without server transcoding.
 There is no embedded/external browser or CPU encoder fallback. The website handles
 invitations, access management and app downloads.
@@ -54,14 +55,20 @@ never acquired. See [automatic source audio](audio.md). Monitor capture uses DXG
 windows use Windows Graphics Capture. No injection into games is implemented.
 
 Rooms rank available codecs AV1 → HEVC → H.264 within the sender's preference
-and every connected member's decoder capabilities. Compatible rooms can return
-to the preferred codec when restrictions leave. This remains one shared encoding,
+and every connected member's explicitly advertised hardware decoders. The server
+includes these capabilities in the initial native media token so a joining member
+does not briefly appear H.264-only. Missing/older capabilities remain pending;
+starting a stream requires every member to report hardware support. A live stream
+keeps its current codec until explicit capabilities exclude it or the streamer
+applies settings. Interruptions and departures alone do not change codecs.
+This remains one shared encoding,
 with Watch intent and preview cadence preserved across replacements. SDR only;
 HDR fidelity and physical 4K120 remain unqualified.
 
 AV1 publication requires a runtime-probed hardware encoder. Receivers without a
-registered GPU decoder can use the SDK's dav1d CPU decoder; that fallback does not
-promise low CPU use while gaming or watching multiple streams. The presence of
+registered AV1 GPU decoder constrain the room to another common hardware codec.
+The SDK's bundled software decoder is not used by the app's subscription policy.
+The presence of
 AMD factories in the runtime does not establish AMD hardware qualification.
 
 ## Verification tools
@@ -83,10 +90,15 @@ VPS. The selected local adapter must be reachable; override its discovery with
 for audio checks. Native invitation authority travels through bounded stdin only.
 
 The AV1 acceptance suite (`native:room-smoke -- av1.spec.ts`) checks actual GPU
-and forced dav1d decoder implementations, Stop/rewatch traffic, reconnect frame
-advancement and H.264 replacement. `PODETELAR_AV1_DECODER=software` bypasses
-the custom AV1 GPU factory for CPU qualification; unset it for normal selection.
+decoding, exclusion of software-only AV1 support, Stop/rewatch traffic, reconnect
+frame advancement and H.264 replacement. `PODETELAR_AV1_DECODER=software` masks
+AV1 hardware availability for qualification; the app must then use another common
+hardware codec, never dav1d. Unset it for normal selection.
 These tests require an AV1 hardware encoder, and the GPU case requires a decoder.
+`codec-adaptation.spec.ts` checks room-wide hardware restrictions and stable codec
+selection after departures. `codec-interruptions.spec.ts` uses an isolated SFU's
+explicit test-only mute/unmute permission to verify real AV1/HEVC recovery after
+nine seconds without frames, preserving the publication and capability set.
 
 Set `PODETELAR_NATIVE_EXE` to test another built/portable executable. For
 portable audio fixtures, also set `PODETELAR_NATIVE_TONE_EXE` to its extracted

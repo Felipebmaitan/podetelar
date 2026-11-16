@@ -40,7 +40,11 @@ pub fn enumerate() -> Vec<Source> {
         };
         sources
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos::enumerate()
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         Vec::new()
     }
@@ -51,7 +55,11 @@ pub fn validate(source: &Source) -> bool {
     {
         windows::validate(source)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos::validate(source)
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         matches!(source.target, Target::Pattern)
     }

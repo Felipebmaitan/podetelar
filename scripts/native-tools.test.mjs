@@ -74,6 +74,7 @@ for (const state of ["archive", "source"]) {
 
 const decoderHeaders = [
   "freedomstream_decoder.h",
+  "freedomstream_macos_decoder.h",
   "deferred_i420.h",
   "bounded_readback.h",
   "native_output_guard.h",
@@ -170,13 +171,15 @@ for (const tampered of decoderHeaders) {
         result.stderr,
         tampered === "freedomstream_decoder.h"
           ? /Decoder adapter differs from its pin/
-          : tampered === "deferred_i420.h"
-            ? /Deferred I420 buffer differs from its pin/
-            : tampered === "bounded_readback.h"
-              ? /Bounded readback differs from its pin/
-              : tampered === "native_output_guard.h"
-                ? /Native output guard differs from its pin/
-                : /Native output mixer differs from its pin/,
+          : tampered === "freedomstream_macos_decoder.h"
+            ? /macOS decoder adapter differs from its pin/
+            : tampered === "deferred_i420.h"
+              ? /Deferred I420 buffer differs from its pin/
+              : tampered === "bounded_readback.h"
+                ? /Bounded readback differs from its pin/
+                : tampered === "native_output_guard.h"
+                  ? /Native output guard differs from its pin/
+                  : /Native output mixer differs from its pin/,
       );
     } finally {
       removeFixture(root);

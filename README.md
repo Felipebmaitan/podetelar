@@ -20,6 +20,13 @@ and [quality](docs/quality.md).
 
 See the [phase plan](docs/implementation-plan.md), [domain glossary](CONTEXT.md) and [research](docs/research/design-notes.md). Phase 1 is the initial commit; subsequent phases are separate PRs, each requiring acceptance checks and a GPT-6.1-Sol review at high reasoning before merge.
 
+## macOS Apple Silicon
+
+The ARM64 macOS 14+ port uses ScreenCaptureKit and VideoToolbox H.264/HEVC.
+New releases include a macOS DMG and its own built-in update feed. See
+[macOS builds, installation and qualification](docs/macos.md) for the preview
+status, permissions and signing requirements. Intel Macs are not supported.
+
 ## Windows downloads
 
 Use [PodeTelar Setup](https://github.com/Felipebmaitan/podetelar/releases/latest)

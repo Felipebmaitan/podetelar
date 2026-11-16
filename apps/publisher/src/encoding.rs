@@ -27,6 +27,8 @@ pub struct Encoder {
 
 pub fn encoders() -> Vec<Encoder> {
     [
+        ("vtenc_h265_hw", "Apple VideoToolbox HEVC", Codec::H265),
+        ("vtenc_h264_hw", "Apple VideoToolbox H.264", Codec::H264),
         ("nvd3d11av1enc", "NVIDIA NVENC AV1", Codec::Av1),
         ("amfav1enc", "AMD AMF AV1", Codec::Av1),
         ("nvd3d11h265enc", "NVIDIA NVENC HEVC", Codec::H265),
@@ -63,6 +65,8 @@ pub struct Metrics {
 
 // Owns the native pipeline. Every return/error path transitions it to NULL.
 pub struct Encoding {
+    #[cfg(target_os = "macos")]
+    _capture: Option<crate::macos::Capture>,
     pipeline: gst::Pipeline,
     sink: AppSink,
     encoder: gst::Element,
@@ -146,7 +150,11 @@ impl Encoding {
             ),
             Codec::H264 => (
                 "video/x-h264",
-                "constrained-baseline",
+                if cfg!(target_os = "macos") {
+                    "baseline"
+                } else {
+                    "constrained-baseline"
+                },
                 "h264parse config-interval=-1 ! video/x-h264,stream-format=byte-stream,alignment=au",
             ),
         };
@@ -154,13 +162,26 @@ impl Encoding {
         // WGC can stop delivering buffers while a window is unchanged. Retain the
         // latest GPU texture and clock its output so a late viewer can request a
         // fresh keyframe even on a static scene. ANY caps preserve D3D11 memory.
+        #[cfg(not(target_os = "macos"))]
         let cadence = if matches!(source.target, Target::Window { .. } | Target::MonitorWgc(_)) {
             "imagefreeze is-live=true allow-replace=true ! "
         } else {
             ""
         };
+        #[cfg(not(target_os = "macos"))]
         let processing = format!(
             "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! {cadence}videorate drop-only=true max-rate={} ! d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width={},height={},framerate={}/1 ! clocksync ! tee name=raw raw. ! queue name=encoder_queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! {} name=hardware bitrate={} gop-size={} ! {media_type},profile={profile} ! {framing} ! appsink name=encoded max-buffers=2 sync=false raw. ! queue name=preview_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=NV12,width=960,height=540 ! d3d11download ! video/x-raw,format=NV12 ! videoconvert ! video/x-raw,format=I420 ! jpegenc quality=85 ! appsink name=preview max-buffers=1 drop=true sync=false async=false wait-on-eos=false",
+            mode.fps,
+            mode.width,
+            mode.height,
+            mode.fps,
+            encoder.factory,
+            rate.effective(None) / 1000,
+            mode.fps
+        );
+        #[cfg(target_os = "macos")]
+        let processing = format!(
+            "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! imagefreeze is-live=true allow-replace=true ! videorate drop-only=true max-rate={} ! videoconvert ! videoscale add-borders=true ! video/x-raw,format=NV12,width={},height={},framerate={}/1 ! tee name=raw raw. ! queue name=encoder_queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! {} name=hardware bitrate={} max-keyframe-interval={} realtime=true allow-frame-reordering=false ! {media_type},profile={profile} ! {framing} ! appsink name=encoded max-buffers=2 sync=false raw. ! queue name=preview_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! videoscale add-borders=true ! video/x-raw,width=960,height=540 ! videoconvert ! video/x-raw,format=I420 ! jpegenc quality=85 ! appsink name=preview max-buffers=1 drop=true sync=false async=false wait-on-eos=false",
             mode.fps,
             mode.width,
             mode.height,
@@ -173,6 +194,9 @@ impl Encoding {
             .context("Could not create the GPU encoding pipeline.")?
             .downcast::<gst::Pipeline>()
             .map_err(|_| anyhow::anyhow!("Invalid encoding pipeline."))?;
+        #[cfg(target_os = "macos")]
+        let input = crate::macos::input(source)?;
+        #[cfg(not(target_os = "macos"))]
         let input = match source.target {
             Target::Pattern => gst::ElementFactory::make("d3d11testsrc")
                 .property("is-live", true)
@@ -203,10 +227,12 @@ impl Encoding {
         if matches!(source.target, Target::Pattern) {
             // A high-resolution fixture must originate at that size, rather than
             // accidentally qualifying an upscaled default test texture.
+            let caps = gst::Caps::builder("video/x-raw");
+            #[cfg(not(target_os = "macos"))]
+            let caps = caps.features(["memory:D3D11Memory"]);
             input.link_filtered(
                 &entry,
-                &gst::Caps::builder("video/x-raw")
-                    .features(["memory:D3D11Memory"])
+                &caps
                     .field("width", source.info.width as i32)
                     .field("height", source.info.height as i32)
                     .field("framerate", gst::Fraction::new(mode.fps as i32, 1))
@@ -227,7 +253,9 @@ impl Encoding {
         let hardware = pipeline
             .by_name("hardware")
             .context("Missing hardware encoder.")?;
-        if encoder.factory.starts_with("nv") {
+        if encoder.factory.starts_with("vtenc_") {
+            // The _hw factories require VideoToolbox hardware; no software fallback.
+        } else if encoder.factory.starts_with("nv") {
             hardware.set_property_from_str("preset", "p4");
             hardware.set_property_from_str("tune", "ultra-low-latency");
             hardware.set_property_from_str("rc-mode", "cbr");
@@ -285,7 +313,11 @@ impl Encoding {
             .duration_since(UNIX_EPOCH)?
             .as_micros()
             .min(i64::MAX as u128) as i64;
+        #[cfg(target_os = "macos")]
+        let capture = crate::macos::video(&pipeline, source, mode.width, mode.height, mode.fps)?;
         let mut encoding = Self {
+            #[cfg(target_os = "macos")]
+            _capture: capture,
             pipeline,
             sink,
             encoder: hardware,
@@ -334,6 +366,18 @@ impl Encoding {
     }
 
     fn validate_dimensions(&self) -> Result<()> {
+        #[cfg(target_os = "macos")]
+        if !matches!(self.capture.target, Target::Pattern) {
+            let actual = crate::macos::enumerate()
+                .into_iter()
+                .find(|source| source.info.id == self.capture.info.id)
+                .context("The capture source closed.")?;
+            ensure!(
+                actual.info.width >= self.mode.width && actual.info.height >= self.mode.height,
+                "Source is smaller than the selected stream resolution. Choose a smaller resolution and share again."
+            );
+        }
+
         let caps = self
             .pipeline
             .by_name("entry")
@@ -564,8 +608,10 @@ impl Encoder {
         let Some(factory) = gst::ElementFactory::find(&self.factory) else {
             return false;
         };
-        let caps = gst::Caps::builder("video/x-raw")
-            .features(["memory:D3D11Memory"])
+        let caps = gst::Caps::builder("video/x-raw");
+        #[cfg(not(target_os = "macos"))]
+        let caps = caps.features(["memory:D3D11Memory"]);
+        let caps = caps
             .field("format", "NV12")
             .field("width", mode.width as i32)
             .field("height", mode.height as i32)

@@ -13,6 +13,8 @@ mod device;
 mod diagnostics;
 mod encoding;
 mod locale;
+#[cfg(target_os = "macos")]
+mod macos;
 mod native_output;
 mod network;
 #[cfg(feature = "performance-experiments")]
@@ -169,6 +171,11 @@ fn run() -> Result<()> {
                     "audiotestsrc is-live=true freq={frequency} volume=0.02 samplesperbuffer=480 ! audio/x-raw,rate=48000,channels=2 ! wasapi2sink low-latency=true"
                 )
             };
+            let description = if cfg!(target_os = "macos") {
+                description.replace("wasapi2sink low-latency=true", "osxaudiosink")
+            } else {
+                description
+            };
             let pipeline = gstreamer::parse::launch(&description)?
                 .downcast::<gstreamer::Pipeline>()
                 .map_err(|_| anyhow::anyhow!("Invalid audio fixture."))?;
@@ -235,7 +242,7 @@ fn run() -> Result<()> {
             let encoders = encoding::encoders();
             ensure!(
                 !encoders.is_empty(),
-                "No NVIDIA/AMD hardware encoders were detected."
+                "No supported hardware encoders were detected."
             );
             for encoder in encoders {
                 let stop = Arc::new(AtomicBool::new(false));
@@ -310,6 +317,11 @@ fn run() -> Result<()> {
                     })
                     .with_inner_size([1280.0, 720.0])
                     .with_min_inner_size([960.0, 540.0]),
+                #[cfg(target_os = "macos")]
+                event_loop_builder: Some(Box::new(|builder| {
+                    use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS};
+                    builder.with_activation_policy(ActivationPolicy::Regular);
+                })),
                 renderer: eframe::Renderer::Glow,
                 ..Default::default()
             };
@@ -317,6 +329,8 @@ fn run() -> Result<()> {
                 "PodeTelar",
                 options,
                 Box::new(move |context| {
+                    #[cfg(target_os = "macos")]
+                    macos::request_capture_permission();
                     ui::configure_theme(&context.egui_ctx);
                     Ok(Box::new(ui::PublisherUi::with_browser_link(browser_link)))
                 }),
@@ -332,6 +346,8 @@ fn run() -> Result<()> {
 struct FixtureRequest {
     #[serde(default)]
     sample_rates: bool,
+    #[serde(default)]
+    source_audio: bool,
     #[serde(default)]
     upload_limit_bps: Option<u64>,
     #[serde(default)]
@@ -727,7 +743,8 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
         }
     };
     let result = async {
-        let config=publisher::StreamConfig { source,encoder:encoder.clone(),quality:request.quality,audio:request.audio,exclusions:request.exclusions };
+        let audio = if request.source_audio { audio::for_source(&source)? } else {request.audio};
+        let config=publisher::StreamConfig { source,encoder:encoder.clone(),quality:request.quality,audio,exclusions:request.exclusions };
         ensure!(request.upload_limit_bps.is_none_or(|v|(64_000..=100_000_000).contains(&v)),"Invalid fixture upload ceiling.");
         let mut active = if request.upload_limit_bps.is_some() {
             publisher::Stream::start_with_upload_cap(&room, config.clone(), stop, request.upload_limit_bps).await?

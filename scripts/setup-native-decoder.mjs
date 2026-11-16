@@ -53,6 +53,12 @@ const patch = readFileSync(
 ).replaceAll("\r\n", "\n");
 if (hash(patch) !== pin.adapterSha256)
   throw new Error("Decoder adapter differs from its pin.");
+const macosPatch = readFileSync(
+  join(root, "apps/publisher/decoder/freedomstream_macos_decoder.h"),
+  "utf8",
+).replaceAll("\r\n", "\n");
+if (hash(macosPatch) !== pin.macosAdapterSha256)
+  throw new Error("macOS decoder adapter differs from its pin.");
 const deferred = readFileSync(
   join(root, "apps/publisher/decoder/deferred_i420.h"),
   "utf8",
@@ -69,7 +75,7 @@ await import("./setup-native-audio.mjs");
 if (existsSync(destination)) {
   if (treeHash(destination) !== pin.treeSha256)
     throw new Error("Generated decoder SDK differs from its pin.");
-  console.log("Kept verified native Direct3D11 decoder SDK.");
+  console.log("Kept verified native hardware decoder SDK.");
 } else {
   const downloads = join(root, ".local/downloads");
   mkdirSync(downloads, { recursive: true });
@@ -125,12 +131,12 @@ if (existsSync(destination)) {
   modify(
     "src/video_decoder_factory.cpp",
     "namespace livekit_ffi {",
-    '#ifdef _WIN32\n#include "freedomstream_decoder.h"\n#endif\n\nnamespace livekit_ffi {',
+    '#ifdef _WIN32\n#include "freedomstream_decoder.h"\n#endif\n#ifdef WEBRTC_MAC\n#include "freedomstream_macos_decoder.h"\n#endif\n\nnamespace livekit_ffi {',
   );
   modify(
     "src/video_decoder_factory.cpp",
     "#ifdef __APPLE__",
-    "#ifdef _WIN32\n  factories_.push_back(std::make_unique<freedomstream::DecoderFactory>());\n#endif\n#ifdef __APPLE__",
+    "#if defined(_WIN32) || defined(WEBRTC_MAC)\n  factories_.push_back(std::make_unique<freedomstream::DecoderFactory>());\n#endif\n#if defined(__APPLE__) && !defined(WEBRTC_MAC)",
   );
   modify(
     "src/webrtc.cpp",
@@ -162,6 +168,17 @@ if (existsSync(destination)) {
             println!("cargo:rerun-if-changed=src/deferred_i420.h");
             println!("cargo:rerun-if-changed=src/bounded_readback.h");`,
   );
+  modify(
+    "build.rs",
+    '        "macos" => {',
+    `        "macos" => {
+            for name in ["gstreamer-app-1.0", "gstreamer-video-1.0"] {
+                let gst = pkg_config::Config::new().probe(name).expect("Pinned macOS GStreamer SDK required");
+                builder.includes(gst.include_paths);
+            }
+            println!("cargo:rerun-if-changed=src/freedomstream_macos_decoder.h");`,
+  );
+  writeFileSync(join(source, "src/freedomstream_macos_decoder.h"), macosPatch);
   writeFileSync(join(source, "src/freedomstream_decoder.h"), patch);
   writeFileSync(join(source, "src/deferred_i420.h"), deferred);
   writeFileSync(join(source, "src/bounded_readback.h"), readback);
@@ -170,5 +187,5 @@ if (existsSync(destination)) {
   if (actual !== pin.treeSha256)
     throw new Error(`Decoder patched tree mismatch: ${actual}`);
   renameSync(source, destination);
-  console.log("Prepared verified native Direct3D11 decoder SDK.");
+  console.log("Prepared verified native hardware decoder SDK.");
 }

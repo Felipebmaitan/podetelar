@@ -3181,7 +3181,8 @@ mod tests {
             update_restart_prompt: false,
             activation: crate::activation::Inbox::new(),
             prior_room: None,
-            controller: Controller::new(),
+            // Paint fixtures exercise UI state without requesting OS capture permission.
+            controller: Controller::recording_for_test(Snapshot::default()).0,
             invitation: String::new(),
             name: String::new(),
             session_name: None,

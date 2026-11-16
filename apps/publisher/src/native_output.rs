@@ -94,7 +94,17 @@ impl Device {
         }
         // Select only this process's output. No Windows default setting changes.
         self.controller.stop_playout();
-        let selected = self.controller.set_playout_device_by_guid(route.clone());
+        // macOS ADM exposes its system-default output as "default", while the
+        // CoreAudio UID is retained separately here to notice route changes.
+        #[cfg(target_os = "macos")]
+        let selection = if route.starts_with("default:") {
+            "default".to_owned()
+        } else {
+            route.clone()
+        };
+        #[cfg(not(target_os = "macos"))]
+        let selection = route.clone();
+        let selected = self.controller.set_playout_device_by_guid(selection);
         self.controller.set_adm_playout_enabled(selected);
         if selected && self.controller.init_playout() && self.controller.start_playout() {
             if self.route.as_ref().is_some_and(|old| old != &route) {
@@ -152,7 +162,12 @@ fn default_route() -> Result<Option<String>> {
     }
     Ok(Some(route?))
 }
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn default_route() -> Result<Option<String>> {
+    let uid: String = crate::macos::query("output", serde_json::json!({"action":"output"}))?;
+    Ok((!uid.is_empty()).then(|| format!("default:{uid}")))
+}
+#[cfg(not(any(windows, target_os = "macos")))]
 fn default_route() -> Result<Option<String>> {
     Ok(None)
 }

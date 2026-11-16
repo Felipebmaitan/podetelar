@@ -1,4 +1,5 @@
 fn main() {
+    println!("cargo:rerun-if-env-changed=FREEDOMSTREAM_MACOS_STATE_TEST");
     println!("cargo:rerun-if-env-changed=FREEDOMSTREAM_UPDATE_FEED");
     println!("cargo:rerun-if-env-changed=FREEDOMSTREAM_LINK_TEST_SCHEME");
     println!("cargo:rerun-if-env-changed=FREEDOMSTREAM_LINK_TEST_ACTIVE");

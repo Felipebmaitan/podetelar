@@ -69,9 +69,36 @@ pub fn for_server(server: &str) -> Result<String> {
     derive(&raw, server)
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn for_server(_server: &str) -> Result<String> {
     anyhow::bail!("PC identity requires Windows.")
+}
+
+#[cfg(target_os = "macos")]
+pub fn for_server(server: &str) -> Result<String> {
+    // Read the platform UUID locally; transmit only the existing server-scoped hash.
+    let output = std::process::Command::new("/usr/sbin/ioreg")
+        .args(["-rd1", "-c", "IOPlatformExpertDevice"])
+        .output()?;
+    ensure!(
+        output.status.success() && output.stdout.len() < 65536,
+        "Device identity unavailable."
+    );
+    let text = std::str::from_utf8(&output.stdout)?;
+    let raw = text
+        .lines()
+        .find_map(|line| {
+            line.split_once("\"IOPlatformUUID\" = \"")
+                .and_then(|(_, value)| value.strip_suffix('"'))
+        })
+        .ok_or_else(|| anyhow::anyhow!("Device identity unavailable."))?;
+    ensure!(
+        raw.len() == 36
+            && raw.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
+            && raw.bytes().any(|b| b != b'0' && b != b'-'),
+        "Device identity unavailable."
+    );
+    derive(raw.as_bytes(), server)
 }
 
 #[cfg(test)]

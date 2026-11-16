@@ -283,6 +283,11 @@ pub fn decoder_codecs() -> Vec<String> {
         .codecs
         .into_iter()
         .map(|codec| codec.mime_type.to_lowercase())
+        // Apple Silicon publication/receive qualification currently covers these
+        // two VideoToolbox codecs. Do not advertise the SDK software AV1 path.
+        .filter(|codec| {
+            !cfg!(target_os = "macos") || matches!(codec.as_str(), "video/h264" | "video/h265")
+        })
         .collect()
 }
 
@@ -1023,14 +1028,29 @@ pub fn room_codecs(room: &Room) -> Codecs {
 
 /// A bounded, quiet local fixture exercises exclusion of our native playback process.
 pub fn qualification_tone() -> Result<AudioPipeline> {
-    let pipeline = gst::parse::launch("audiotestsrc is-live=true freq=1320 volume=0.02 samplesperbuffer=480 ! audio/x-raw,rate=48000,channels=2 ! wasapi2sink low-latency=true")?
+    let sink = if cfg!(target_os = "macos") {
+        "osxaudiosink"
+    } else {
+        "wasapi2sink low-latency=true"
+    };
+    let pipeline = gst::parse::launch(&format!("audiotestsrc is-live=true freq=1320 volume=0.02 samplesperbuffer=480 ! audio/x-raw,rate=48000,channels=2 ! {sink}"))?
         .downcast::<gst::Pipeline>().map_err(|_| anyhow::anyhow!("Invalid playback fixture."))?;
     let pipeline = AudioPipeline(pipeline);
     pipeline.0.set_state(gst::State::Playing).map_err(|_| {
-        let kind = pipeline.0.bus().and_then(|bus| bus.pop_filtered(&[gst::MessageType::Error])).and_then(|message| {
-            if let gst::MessageView::Error(error) = message.view() { error.error().kind::<gst::ResourceError>() } else { None }
-        });
-        anyhow::anyhow!("Native audio output could not start ({kind:?}). Check the default Windows playback device.")
+        let kind = pipeline
+            .0
+            .bus()
+            .and_then(|bus| bus.pop_filtered(&[gst::MessageType::Error]))
+            .and_then(|message| {
+                if let gst::MessageView::Error(error) = message.view() {
+                    error.error().kind::<gst::ResourceError>()
+                } else {
+                    None
+                }
+            });
+        anyhow::anyhow!(
+            "Native audio output could not start ({kind:?}). Check the default playback device."
+        )
     })?;
     Ok(pipeline)
 }

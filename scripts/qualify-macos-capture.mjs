@@ -2,6 +2,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { root } from "./macos-runtime.mjs";
 if (process.platform !== "darwin") throw new Error("Run on macOS.");
 const app = join(root, ".local/macos/MediaQualification.app");
@@ -45,6 +46,49 @@ try {
       resolve();
     });
   });
+  // "ready" precedes AppKit's opening animation. Select this process's real
+  // window only after ScreenCaptureKit reports stable geometry, not a transient
+  // animation surface or a recently closed fixture with the same title.
+  const bundle =
+    process.env.MACOS_TEST_APP ||
+    JSON.parse(readFileSync(join(root, ".local/macos/latest-release.json")))
+      .app;
+  const helper = join(bundle, "Contents/MacOS/PodeTelar");
+  const deadline = Date.now() + 10000;
+  let previous = "",
+    stableSince = Date.now(),
+    sourceId;
+  while (Date.now() < deadline) {
+    const items = JSON.parse(
+      execFileSync(helper, ["enumerate"], {
+        input: JSON.stringify({ action: "enumerate" }),
+        encoding: "utf8",
+        timeout: 2500,
+      }),
+    );
+    const window = items.find(
+      (item) =>
+        item.kind === "window" &&
+        item.pid === fixture.pid &&
+        item.width > 144 &&
+        item.height > 128,
+    );
+    const key = window
+      ? JSON.stringify([window.id, window.width, window.height])
+      : "";
+    if (!key || key !== previous) {
+      previous = key;
+      stableSince = Date.now();
+    } else if (Date.now() - stableSince >= 500) {
+      sourceId = `window:${window.id}`;
+      break;
+    }
+    await delay(150);
+  }
+  if (!sourceId)
+    throw new Error(
+      "Fixture window did not become stable in ScreenCaptureKit.",
+    );
   await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ["scripts/qualify-macos-media.mjs"], {
       cwd: root,
@@ -52,6 +96,7 @@ try {
         ...process.env,
         MACOS_TEST_SOURCE_KIND: "window",
         MACOS_TEST_SOURCE_LABEL: "PodeTelar qualification",
+        MACOS_TEST_SOURCE_ID: sourceId,
         MACOS_TEST_AUDIO: "1",
       },
       stdio: "inherit",

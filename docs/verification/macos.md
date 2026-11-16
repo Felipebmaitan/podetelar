@@ -71,6 +71,27 @@ LiveKit source on the Mac, with a separate local API/room database. They did not
 substitute a mock for network transport. Generated inputs, raw logs, credentials,
 room databases and binary test artifacts remain local and ignored.
 
+## Awake-display follow-up
+
+After the built-in display was turned on, the packaged app's native GUI joined a
+fresh room through the private handoff and rendered the actual AV1 test video.
+The GUI showed the AV1 codec, active Watch state and incoming traffic (3.9 Mbps).
+The source was an externally pre-encoded qualification stream through the real
+native SFU, not a local preview. This verifies GUI rendering, not physical A/V
+timing or display refresh performance.
+
+Fresh real window capture and stereo audio checks passed with the same packaged
+receiver: H.264 accepted 554 frames and HEVC accepted 552. Both used hardware
+decoding, captured one preview, started CoreAudio output without recording input,
+received distinct stereo channels (290,880 / 295,200 frames), and measured zero
+bytes after Stop watching. The window harness now waits for stable geometry and
+selects the exact fixture PID's window, avoiding opening-animation surfaces or
+stale windows with the same title.
+
+Actual display capture also passed for H.264 (543 accepted frames) and HEVC (550),
+both with hardware decode, one preview and zero Stop watching bytes. The earlier asleep-display
+pattern tests remain separate from these actual ScreenCaptureKit checks.
+
 ## Remaining distribution and hardware gates
 
 - CI currently signs ad hoc. Developer ID credentials/notarization are not

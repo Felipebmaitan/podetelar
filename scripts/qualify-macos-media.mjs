@@ -102,6 +102,8 @@ const source = pattern
   ? { id: "pattern" }
   : sources.find(
       (source) =>
+        (!process.env.MACOS_TEST_SOURCE_ID ||
+          source.id === process.env.MACOS_TEST_SOURCE_ID) &&
         (!process.env.MACOS_TEST_SOURCE_LABEL ||
           source.label.includes(process.env.MACOS_TEST_SOURCE_LABEL)) &&
         source.id.startsWith(

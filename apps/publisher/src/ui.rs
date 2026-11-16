@@ -1907,7 +1907,16 @@ impl PublisherUi {
                     ui.label(tr("Restarting ends sharing and watching."));
                 }
                 ui.separator();
+                let action_width = match status.phase {
+                    Phase::Available | Phase::Ready => 180.0,
+                    Phase::Current => button_width(ui, tr("Check for updates")),
+                    Phase::Error => button_width(ui, tr("Retry update check")),
+                    _ => ui.spacing().interact_size.y,
+                };
                 ui.horizontal(|ui| {
+                    let row_width =
+                        button_width(ui, tr("Later")) + ui.spacing().item_spacing.x + action_width;
+                    ui.add_space(((ui.available_width() - row_width) / 2.0).max(0.0));
                     dismiss |= ui.button(tr("Later")).clicked();
                     match status.phase {
                         Phase::Available => {
@@ -1957,6 +1966,10 @@ impl PublisherUi {
                 "After restart, open a fresh invitation and enter your name again.",
             ));
             ui.horizontal(|ui| {
+                let row_width = button_width(ui, tr("Later"))
+                    + ui.spacing().item_spacing.x
+                    + button_width(ui, tr("Restart to update"));
+                ui.add_space(((ui.available_width() - row_width) / 2.0).max(0.0));
                 later = ui.button(tr("Later")).clicked();
                 restart = ui.button(tr("Restart to update")).clicked();
             });
@@ -2496,6 +2509,15 @@ fn defocus_invitation_background(root: &egui::Ui) {
             );
         }
     });
+}
+
+fn button_width(ui: &egui::Ui, label: &str) -> f32 {
+    let text = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        egui::TextStyle::Button.resolve(ui.style()),
+        TEXT,
+    );
+    (text.size().x + ui.spacing().button_padding.x * 2.0).max(ui.spacing().interact_size.x)
 }
 
 fn primary(label: &str, width: f32) -> egui::Button<'_> {

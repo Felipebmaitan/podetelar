@@ -96,12 +96,24 @@ for (const [source, name] of [
     "apps/installed-launcher/target/release/freedomstream-installed",
     "FreedomStreamInstalled",
   ],
-  [".local/macos/PodeTelar", "PodeTelar"],
 ])
   copyFileSync(
     join(root, source),
     name === "FreedomStream" ? mediaExecutable : join(executables, name),
   );
+// Compile from this commit; a prior native:setup may have built an older helper.
+run("xcrun", [
+  "swiftc",
+  "-swift-version",
+  "5",
+  "-warnings-as-errors",
+  "-O",
+  "-target",
+  "arm64-apple-macos14.0",
+  "apps/macos/ScreenCapture.swift",
+  "-o",
+  join(executables, "PodeTelar"),
+]);
 let plist = readFileSync(join(root, "deploy/macos/Info.plist"), "utf8");
 plist = plist
   .replace(

@@ -6,16 +6,19 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   readdirSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { root, macosEnvironment, sha256 } from "./macos-runtime.mjs";
 if (process.platform !== "darwin") throw new Error("Run on macOS.");
-const output = join(root, `.local/macos/update-qualification-${Date.now()}`);
+// Finder relaunch must not require Documents/Desktop privacy access merely to
+// write fixture state. Production state lives in Application Support.
+const output = mkdtempSync(join(tmpdir(), "podetelar-update-qualification-"));
 const feed = join(output, "feed"),
   app = join(output, "stage/PodeTelar.app");
 mkdirSync(join(app, "Contents/MacOS"), { recursive: true });

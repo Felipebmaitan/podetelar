@@ -64,6 +64,10 @@ Node's `--env-file=.env`; invitations remain in memory and child stdin. It verif
 native H.264/HEVC hardware decode, publication, Stop watching traffic and rewatch.
 `node --env-file=.env scripts/qualify-macos-capture.mjs` additionally creates an
 owned changing window and stereo source and requires real CoreAudio output.
+`node scripts/qualify-macos-exclusions.mjs` checks an initially quiet desktop,
+late application capture and excluded application launch/restart using distinct
+real tones. Run a release build first; this qualifier uses the development
+helper and release Rust binary.
 The updater qualifier uses real packages/helpers with a process fixture; it
 separately checks Later, corrupted cache replacement and explicit restart.
 Neither fixture substitutes for physical speaker/display timing or a fresh Mac.

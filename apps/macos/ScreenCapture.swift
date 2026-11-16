@@ -28,6 +28,7 @@ func fail(line: UInt = #line) -> Never {
 
 final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
     var stream: SCStream?
+    var audioProcesses: [Int32] = []
     let audio: Bool
     init(audio: Bool) { self.audio = audio }
     func stream(_ stream: SCStream, didStopWithError error: Error) {
@@ -91,30 +92,43 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
             try FileHandle.standardOutput.write(contentsOf: data)
         } catch { fail() }
     }
-    @MainActor func start(_ request: Request) async throws {
-        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
-        let running = NSWorkspace.shared.runningApplications
+    @MainActor func audioFilter(_ request: Request, _ content: SCShareableContent) -> (SCContentFilter, [Int32]) {
+        guard let display = content.displays.first else { fail() }
         let protected = content.applications.filter { app in
             app.processID == ProcessInfo.processInfo.processIdentifier || app.processID == getppid() ||
             app.bundleIdentifier.hasPrefix("app.podetelar.") ||
             app.bundleIdentifier.lowercased().contains("discord") ||
             (request.exclusions ?? []).contains(app.bundleIdentifier)
         }
+        let chosen: [SCRunningApplication]
+        if let id = request.application {
+            chosen = content.applications.filter { $0.bundleIdentifier == id && !protected.contains($0) }
+        } else if let pid = request.pid, let created = request.created {
+            guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.processIdentifier == pid && birth($0) == created }),
+                  let selected = content.applications.first(where: { $0.processID == pid }), !protected.contains(selected),
+                  app.bundleIdentifier == selected.bundleIdentifier else { fail() }
+            chosen = [selected]
+        } else {
+            // Positive membership prevents newly launched excluded applications
+            // from leaking audio before the next inventory refresh.
+            chosen = content.applications.filter { !protected.contains($0) }
+        }
+        return (SCContentFilter(display: display, including: chosen, exceptingWindows: []), chosen.map(\.processID).sorted())
+    }
+    @MainActor func refreshAudio(_ request: Request) async throws {
+        guard audio, let stream else { return }
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        let (filter, processes) = audioFilter(request, content)
+        if processes != audioProcesses {
+            try await stream.updateContentFilter(filter)
+            audioProcesses = processes
+        }
+    }
+    @MainActor func start(_ request: Request) async throws {
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
         let filter: SCContentFilter
         if audio {
-            guard let display = content.displays.first else { fail() }
-            if let id = request.application {
-                let chosen = content.applications.filter { $0.bundleIdentifier == id && !protected.contains($0) }
-                guard !chosen.isEmpty else { fail() }
-                filter = SCContentFilter(display: display, including: chosen, exceptingWindows: [])
-            } else if let pid = request.pid, let created = request.created {
-                guard let app = running.first(where: { $0.processIdentifier == pid && birth($0) == created }),
-                      let chosen = content.applications.first(where: { $0.processID == pid }), !protected.contains(chosen),
-                      app.bundleIdentifier == chosen.bundleIdentifier else { fail() }
-                filter = SCContentFilter(display: display, including: [chosen], exceptingWindows: [])
-            } else {
-                filter = SCContentFilter(display: display, excludingApplications: protected, exceptingWindows: [])
-            }
+            (filter, audioProcesses) = audioFilter(request, content)
         } else if request.kind == "window" {
             guard let window = content.windows.first(where: { $0.windowID == request.id }) else { fail() }
             filter = SCContentFilter(desktopIndependentWindow: window)
@@ -179,6 +193,7 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
         try await capture.start(request)
         while getppid() != 1 {
             try await Task.sleep(nanoseconds: 1_000_000_000)
+            try await capture.refreshAudio(request)
             withExtendedLifetime(capture) {}
         }
     }

@@ -31,6 +31,12 @@ macOS 14 is the deployment target, not an additional tested operating system.
 - Desktop audio spectral check: external 440 Hz tone amplitude 0.00498;
   excluded PodeTelar 1320 Hz playback leakage 0.00000649. This checks self-output
   exclusion, not an actual Discord call.
+- Late application audio test: after 4.5 seconds of initially quiet desktop,
+  a newly launched allowed source was captured. A louder excluded source
+  remained below 0.0001 amplitude throughout launch and restart. The actual
+  Rust audio pipeline also stayed alive through the quiet interval. Desktop
+  capture uses positive membership refreshed once per second so an excluded
+  process cannot enter the mix while awaiting an inventory refresh.
 - Self-contained ARM64 application, DMG, full Velopack package and
   `releases.osx-arm64.json` built; nested code signatures passed strict deep
   verification. Runtime load paths are bundle relative and the dependency
@@ -40,6 +46,7 @@ macOS 14 is the deployment target, not an additional tested operating system.
   explicit restart, actual UpdateMac replacement and relaunch all passed. The
   process fixture uses an isolated state directory; it does not prove media
   shutdown behavior during an upgrade.
+  Its temporary directory avoids macOS Documents privacy prompts on relaunch.
 - Outer application launch opened the native GUI without a terminal. A
   `freedomstream://` handoff to the running application prompted for a name and
   explicit confirmation, joined the local room, and allowed leaving and closing.

@@ -163,7 +163,7 @@ try {
           stream.codec.toLowerCase().includes("av1") && stream.frames > 30,
       ),
     ),
-    "No AV1 pictures presented.",
+    "No AV1 frames delivered to the native consumer.",
   );
   const stopped = final.samples.filter(
     (sample) => sample.phaseSecond >= 6 && sample.phaseSecond < 8,
@@ -183,7 +183,7 @@ try {
     codec: "av1",
     hardware: true,
     accepted: published[0].accepted,
-    presented: Math.max(
+    nativeFrames: Math.max(
       ...final.samples.flatMap((sample) =>
         sample.streams.map((stream) => stream.frames),
       ),

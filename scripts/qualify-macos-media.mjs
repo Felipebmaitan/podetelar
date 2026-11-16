@@ -96,15 +96,20 @@ function native(option, request) {
   });
   return { child, done };
 }
-const sources = (await native("--sources").done)[0];
-const source = sources.find(
-  (source) =>
-    (!process.env.MACOS_TEST_SOURCE_LABEL ||
-      source.label.includes(process.env.MACOS_TEST_SOURCE_LABEL)) &&
-    source.id.startsWith(
-      process.env.MACOS_TEST_SOURCE_KIND === "window" ? "window:" : "monitor:",
-    ),
-);
+const pattern = process.env.MACOS_TEST_SOURCE_KIND === "pattern";
+const sources = pattern ? [] : (await native("--sources").done)[0];
+const source = pattern
+  ? { id: "pattern" }
+  : sources.find(
+      (source) =>
+        (!process.env.MACOS_TEST_SOURCE_LABEL ||
+          source.label.includes(process.env.MACOS_TEST_SOURCE_LABEL)) &&
+        source.id.startsWith(
+          process.env.MACOS_TEST_SOURCE_KIND === "window"
+            ? "window:"
+            : "monitor:",
+        ),
+    );
 assert.ok(
   source,
   "ScreenCaptureKit did not return a capture source; allow screen recording first.",
@@ -143,11 +148,12 @@ for (const codec of process.env.MACOS_TEST_CODEC
     displayName: "Mac hardware publisher",
     codec,
     seconds: 18,
-    sourceId: source.id,
+    sourceId: pattern ? null : source.id,
     audio: { mode: "off" },
     sourceAudio: process.env.MACOS_TEST_AUDIO === "1",
     quality: {
-      resolution: "p720",
+      resolution:
+        process.env.MACOS_TEST_SOURCE_KIND === "window" ? "source" : "p720",
       fps: 30,
       profile: "motion",
       bitrate: { mode: "auto" },

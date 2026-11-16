@@ -63,6 +63,10 @@ recording permission. It uses the newest locally packaged app by default. Set
 `MACOS_TEST_SOURCE_KIND=window` to exercise a window. Pass the local `.env` using
 Node's `--env-file=.env`; invitations remain in memory and child stdin. It verifies
 native H.264/HEVC hardware decode, publication, Stop watching traffic and rewatch.
+Window checks use the actual source resolution instead of assuming a display
+scale. `MACOS_TEST_SOURCE_KIND=pattern` explicitly tests hardware codecs without
+screen capture, for example when the display is asleep; it does not qualify
+ScreenCaptureKit behavior.
 `node --env-file=.env scripts/qualify-macos-capture.mjs` additionally creates an
 owned changing window and stereo source and requires real CoreAudio output.
 `node scripts/qualify-macos-exclusions.mjs` checks an initially quiet desktop,
@@ -83,7 +87,8 @@ node --env-file=.env scripts/qualify-macos-av1.mjs
 ```
 
 This sends the pre-encoded AV1 stream through the real SFU to the latest packaged
-receiver, requiring hardware decode, displayed frames, Stop watching and rewatch.
+receiver, requiring hardware decode, frames delivered to the native consumer, Stop watching
+and rewatch.
 It does not qualify AV1 encoding on the Mac. Packaging also compares the built
 app's decoder set with a separate VideoToolbox query and rejects software AV1
 advertisement or any AV1 encoder. Hosted runners exercise their actual reported

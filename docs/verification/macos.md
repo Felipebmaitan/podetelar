@@ -20,7 +20,7 @@ macOS 14 is the deployment target, not an additional tested operating system.
   one initial preview. This encoder test does not measure network delivery.
 - Actual ScreenCaptureKit display capture → native LiveKit SFU → native
   VideoToolbox H.264/HEVC receive: both codecs delivered over 500 frames at
-  1280×720/30, reported hardware decode and displayed frames, stopped receiving
+  1280×720/30, reported hardware decode and delivered decoded frames to the native consumer, stopped receiving
   media after Stop watching (zero measured bytes), and resumed on rewatch.
 - Actual owned changing window and stereo CoreAudio source through the same SFU:
   H.264 delivered 546 frames; HEVC delivered 553. Both used the hardware encoder
@@ -39,12 +39,18 @@ macOS 14 is the deployment target, not an additional tested operating system.
   process cannot enter the mix while awaiting an inventory refresh.
 - AV1 follow-up: actual VideoToolbox hardware receive through the same native
   SFU passed on M5 Pro. A 1280×720/30 inter-frame AV1 fixture delivered 540
-  accepted frames and 180 presented frames, with hardware decoding, successful
+  accepted frames and 180 frames delivered to the native consumer, with hardware decoding, successful
   rewatch and zero bytes after Stop watching. An earlier all-keyframe 640×360
-  fixture also passed (540 accepted, 205 presented). These are receive checks;
+  fixture also passed (540 accepted, 205 native frames). These are receive checks;
   the pre-encoded fixtures were generated externally using software SVT-AV1.
   The qualification sender is behind an explicit build feature and excluded
   from the shipped app. AV1 encoding remains unavailable on macOS.
+  The packaged AV1 receiver also passed (540 accepted, 190 native frames, zero Stop
+  watching bytes). The display was asleep during the follow-up, so current
+  H.264/HEVC codec regression used an explicit test pattern; both codecs
+  accepted 548 frames with hardware decode and zero Stop watching bytes. These
+  counters establish native delivery, not physical display presentation. Earlier actual
+  ScreenCaptureKit checks above remain the capture qualification evidence.
 - Self-contained ARM64 application, DMG, full Velopack package and
   `releases.osx-arm64.json` built; nested code signatures passed strict deep
   verification. Runtime load paths are bundle relative and the dependency

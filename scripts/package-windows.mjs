@@ -67,6 +67,7 @@ const decoderPatch = join(notices, "source-patches", "native-decoder");
 mkdirSync(decoderPatch, { recursive: true });
 for (const file of [
   "apps/publisher/decoder/freedomstream_decoder.h",
+  "apps/publisher/decoder/freedomstream_macos_decoder.h",
   "apps/publisher/decoder/deferred_i420.h",
   "apps/publisher/decoder/bounded_readback.h",
   "apps/publisher/decoder/native_output_guard.h",

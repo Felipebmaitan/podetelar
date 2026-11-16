@@ -46,12 +46,17 @@ fn wait(phase: Phase, token: &str) -> Status {
     }
 }
 fn main() {
-    let manifest = std::fs::read_to_string(
-        std::env::current_exe()
-            .unwrap()
-            .with_file_name("sq.version"),
-    )
-    .unwrap();
+    let path = std::env::current_exe()
+        .unwrap()
+        .with_file_name("sq.version");
+    #[cfg(target_os = "macos")]
+    let path = path
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("Resources/sq.version");
+    let manifest = std::fs::read_to_string(path).unwrap();
     if manifest.contains("0.1.0-preview.2") {
         event("updated");
         return;

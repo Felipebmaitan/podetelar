@@ -27,18 +27,23 @@ pub fn forward(link: Option<String>) -> anyhow::Result<()> {
 }
 impl Instance {
     pub fn start() -> std::io::Result<Option<Self>> {
+        #[cfg(windows)]
         let exe = std::env::current_exe()?;
+        #[cfg(windows)]
         let root = exe
             .parent()
             .and_then(std::path::Path::parent)
             .ok_or(std::io::ErrorKind::NotFound)?;
+        #[cfg(windows)]
         let mut options = std::fs::OpenOptions::new();
+        #[cfg(windows)]
         options.read(true).write(true).create(true).truncate(false);
         #[cfg(windows)]
         {
             use std::os::windows::fs::OpenOptionsExt;
             options.share_mode(0);
         }
+        #[cfg(windows)]
         let lock = match options.open(root.join("installed-launcher.lock")) {
             Ok(lock) => lock,
             Err(error)
@@ -48,6 +53,10 @@ impl Instance {
                 return Ok(None);
             }
             Err(error) => return Err(error),
+        };
+        #[cfg(target_os = "macos")]
+        let Some(lock) = registration::lock()? else {
+            return Ok(None);
         };
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
         let address = listener.local_addr()?.to_string();

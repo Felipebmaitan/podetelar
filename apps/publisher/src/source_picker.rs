@@ -1,5 +1,7 @@
 //! Local, one-shot source confirmation. No admission, encoder, audio or upload path.
-use crate::sources::{self, Source, SourceInfo, Target};
+#[cfg(any(not(target_os = "macos"), test))]
+use crate::sources::Target;
+use crate::sources::{self, Source, SourceInfo};
 use anyhow::{Context, Result, ensure};
 use eframe::egui::ColorImage;
 use gstreamer::{self as gst, prelude::*};
@@ -194,9 +196,18 @@ fn capture(source: &Source, cancelled: &dyn Fn() -> bool) -> Result<ColorImage> 
         !cancelled() && sources::validate(source),
         "Source unavailable."
     );
-    let pipeline = Pipeline(gst::parse::launch(
-        "queue name=entry max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=RGBA,width=480,height=270 ! d3d11download ! video/x-raw,format=RGBA ! appsink name=local max-buffers=1 drop=true sync=false async=false wait-on-eos=false"
-    )?.downcast::<gst::Pipeline>().map_err(|_|anyhow::anyhow!("Invalid local preview pipeline."))?);
+    #[cfg(target_os = "macos")]
+    let processing = "queue name=entry max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! videoconvert ! videoscale add-borders=true ! video/x-raw,format=RGBA,width=480,height=270 ! appsink name=local max-buffers=1 drop=true sync=false async=false wait-on-eos=false";
+    #[cfg(not(target_os = "macos"))]
+    let processing = "queue name=entry max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=RGBA,width=480,height=270 ! d3d11download ! video/x-raw,format=RGBA ! appsink name=local max-buffers=1 drop=true sync=false async=false wait-on-eos=false";
+    let pipeline = Pipeline(
+        gst::parse::launch(processing)?
+            .downcast::<gst::Pipeline>()
+            .map_err(|_| anyhow::anyhow!("Invalid local preview pipeline."))?,
+    );
+    #[cfg(target_os = "macos")]
+    let input = crate::macos::input(source)?;
+    #[cfg(not(target_os = "macos"))]
     let input = match source.target {
         Target::Pattern => gst::ElementFactory::make("d3d11testsrc")
             .property("is-live", true)
@@ -216,7 +227,9 @@ fn capture(source: &Source, cancelled: &dyn Fn() -> bool) -> Result<ColorImage> 
             .property("show-cursor", false)
             .build()?,
     };
-    input.set_property("num-buffers", 1_i32);
+    if input.find_property("num-buffers").is_some() {
+        input.set_property("num-buffers", 1_i32);
+    }
     pipeline.0.add(&input)?;
     input.link(
         &pipeline
@@ -231,6 +244,8 @@ fn capture(source: &Source, cancelled: &dyn Fn() -> bool) -> Result<ColorImage> 
         .downcast::<AppSink>()
         .map_err(|_| anyhow::anyhow!("Invalid local sink."))?;
     ensure!(!cancelled(), "Cancelled.");
+    #[cfg(target_os = "macos")]
+    let _capture = crate::macos::video(&pipeline.0, source, 480, 270, 30)?;
     pipeline.0.set_state(gst::State::Playing)?;
     let started = Instant::now();
     while started.elapsed() < CAPTURE_TIMEOUT && !cancelled() {

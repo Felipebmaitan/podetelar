@@ -6,6 +6,9 @@ mod activation_protocol;
 mod protocol;
 #[cfg(windows)]
 mod registration;
+#[cfg(target_os = "macos")]
+#[path = "registration_macos.rs"]
+mod registration;
 mod updates;
 
 fn main() {
@@ -32,9 +35,11 @@ fn main() {
     } else {
         Vec::new()
     };
-    velopack::VelopackApp::build()
+    let app = velopack::VelopackApp::build()
         .set_args(hooks)
-        .set_auto_apply_on_startup(false)
+        .set_auto_apply_on_startup(false);
+    #[cfg(windows)]
+    let app = app
         .on_after_install_fast_callback(|_| {
             let _ = registration::register(true);
         })
@@ -44,8 +49,9 @@ fn main() {
         .on_before_uninstall_fast_callback(|_| {
             let _ = registration::unregister();
             registration::clear();
-        })
-        .run();
+        });
+    let mut app = app;
+    app.run();
     let link = if std::env::args().nth(1).as_deref() == Some("--browser-link") {
         let args: Vec<_> = std::env::args().skip(1).collect();
         if args.len() != 2 || !activation_protocol::valid(&args[1]) {
@@ -82,7 +88,39 @@ fn main() {
     }
     let bridge = updates::Bridge::start().ok();
     let result = std::env::current_exe().and_then(|exe| {
-        let mut child = std::process::Command::new(exe.with_file_name("FreedomStream.exe"));
+        #[cfg(windows)]
+        let filename = "FreedomStream.exe";
+        #[cfg(target_os = "macos")]
+        let filename = "FreedomStream";
+        let executable = exe.with_file_name(filename);
+        #[cfg(target_os = "macos")]
+        let executable = {
+            let nested = exe
+                .parent()
+                .and_then(std::path::Path::parent)
+                .ok_or(std::io::ErrorKind::NotFound)?
+                .join("Helpers/PodeTelar.app/Contents/MacOS/FreedomStream");
+            if nested.is_file() { nested } else { executable }
+        };
+        let mut child = std::process::Command::new(executable);
+        #[cfg(target_os = "macos")]
+        {
+            let contents = exe
+                .parent()
+                .and_then(std::path::Path::parent)
+                .ok_or(std::io::ErrorKind::NotFound)?;
+            child
+                .env("GST_PLUGIN_SYSTEM_PATH_1_0", contents.join("PlugIns"))
+                .env("GST_PLUGIN_PATH_1_0", "")
+                .env(
+                    "GST_PLUGIN_SCANNER_1_0",
+                    contents.join("MacOS/gst-plugin-scanner"),
+                )
+                .env(
+                    "GST_REGISTRY_1_0",
+                    registration::root()?.join("gstreamer-registry.bin"),
+                );
+        }
         child
             .env(activation_protocol::INSTALLED, &exe)
             .env(
@@ -118,6 +156,7 @@ fn main() {
     std::process::exit(result.ok().and_then(|status| status.code()).unwrap_or(1));
 }
 
+#[cfg(windows)]
 fn notice(message: &str) {
     let text: Vec<u16> = message.encode_utf16().chain(Some(0)).collect();
     unsafe {
@@ -128,4 +167,10 @@ fn notice(message: &str) {
             0x10,
         );
     }
+}
+
+#[cfg(target_os = "macos")]
+fn notice(_message: &str) {
+    // A fixed message only; never interpolate invitations into AppleScript.
+    let _ = std::process::Command::new("/usr/bin/osascript").args(["-e", "display alert \"PodeTelar could not start. Reopen the application and try again.\" as critical"]).output();
 }

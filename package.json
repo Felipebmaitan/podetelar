@@ -18,7 +18,7 @@
     "build": "npm run build -w @freedomstream/contracts && npm run build -w @freedomstream/server && npm run build -w @freedomstream/web",
     "start": "npm run start -w @freedomstream/server",
     "typecheck": "npm run build -w @freedomstream/contracts && npm run typecheck --workspaces --if-present && tsc -p tsconfig.tools.json --noEmit",
-    "test": "npm run build -w @freedomstream/contracts && npm run test --workspaces --if-present && node --test scripts/relay-config.test.mjs scripts/production-config.test.mjs scripts/discord-commands.test.mjs scripts/installer-input.test.mjs scripts/installer-release.test.mjs",
+    "test": "npm run build -w @freedomstream/contracts && npm run test --workspaces --if-present && node --test scripts/relay-config.test.mjs scripts/production-config.test.mjs scripts/discord-commands.test.mjs scripts/installer-input.test.mjs scripts/installer-release.test.mjs scripts/macos-release.test.mjs",
     "check": "npm run format:check && npm run typecheck && npm test && npm run build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -35,7 +35,8 @@
     "native:run": "node scripts/native.mjs run",
     "native:room-smoke": "node --env-file=.env scripts/native-room-smoke.mjs",
     "native:e2e": "node --env-file=.env node_modules/@playwright/test/cli.js test -c playwright.native.config.ts",
-    "native:soak": "node --env-file=.env scripts/native-room-smoke.mjs --soak"
+    "native:soak": "node --env-file=.env scripts/native-room-smoke.mjs --soak",
+    "native:package:macos": "node scripts/package-macos.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.65.0",

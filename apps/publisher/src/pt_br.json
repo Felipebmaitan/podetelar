@@ -323,5 +323,6 @@
   "Encoder and transport details": "Detalhes do codificador e transporte",
   "About these measurements": "Sobre estas medições",
   "Playback details": "Detalhes da reprodução",
-  "Custom": "Personalizada"
+  "Custom": "Personalizada",
+  "Allow PodeTelar in macOS Settings → Privacy & Security → Screen & System Audio Recording, then refresh sources.": "Permita o PodeTelar em Ajustes do macOS → Privacidade e Segurança → Gravação de Tela e Áudio do Sistema e atualize as fontes."
 }

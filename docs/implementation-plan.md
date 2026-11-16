@@ -1,5 +1,29 @@
 # Implementation phases
 
+## macOS Apple Silicon port — independent PR
+
+Add an ARM64 macOS 14+ native GUI distribution with ScreenCaptureKit display/window
+and application audio capture, hardware-only VideoToolbox H.264/HEVC encoding,
+native Apple decoding and CoreAudio output. Include receive-only AV1 when the
+VideoToolbox hardware decoder is available; never advertise software AV1 or add
+AV1 publication on macOS. Qualify actual AV1 native SFU receive/Stop/rewatch on
+available Apple Silicon hardware and preserve H.264/HEVC-only older chips.
+Preserve invitations, explicit joins,
+room codec intersection, subscriptions, preview cadence and graceful teardown.
+Package a self-contained app with a qualified, pinned MIT-compatible runtime and
+third-party notices/sources. Add an OS-specific Velopack feed and GitHub Actions
+build/upload on each published release. Do not merge or publish this change as
+part of the implementation request; open its PR after a fresh GPT-6.1-Sol high
+review approves the work.
+
+Accept with Node 24 checks, native formatting/Clippy/tests, Docker HTTP smoke,
+administrator browser checks, actual Apple Silicon encoding/capture/native SFU
+decode and Stop/rewatch checks, packaged GUI/activation, and real macOS updater
+package/download/Later/corruption/restart checks. Record chip/OS, signing and
+notarization, hardware families, physical A/V, audio exclusion and installed media
+shutdown separately. Compilation, hosted CI and updater fixtures cannot replace
+unavailable hardware/desktop verification. See [macOS development](macos.md).
+
 ## Public built-in Windows updater — v0.1.2
 
 Enable the existing check/download/restart updater in shipped installers by

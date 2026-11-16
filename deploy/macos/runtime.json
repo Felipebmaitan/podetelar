@@ -1,0 +1,88 @@
+{
+  "version": "1.28.8",
+  "runtime": {
+    "filename": "gstreamer-1.0-1.28.8-universal.pkg",
+    "sha256": "d371ab04a7632713626836c2fc234e863cc98484c74c473eba99b0fbd9b3a3fe"
+  },
+  "development": {
+    "filename": "gstreamer-1.0-devel-1.28.8-universal.pkg",
+    "sha256": "e6d380bc17be7eccf13e0154567d4718fc9321da822408c7ca0cd808b3d4a3f7"
+  },
+  "plugins": [
+    "coreelements",
+    "app",
+    "videotestsrc",
+    "videoconvertscale",
+    "videorate",
+    "applemedia",
+    "videoparsersbad",
+    "jpeg",
+    "audiotestsrc",
+    "audioconvert",
+    "audioresample",
+    "audiomixer",
+    "osxaudio",
+    "imagefreeze"
+  ],
+  "libraries": [
+    "libgstreamer-1.0.0.dylib",
+    "libgstapp-1.0.0.dylib",
+    "libgstbase-1.0.0.dylib",
+    "libgstvideo-1.0.0.dylib",
+    "libgstaudio-1.0.0.dylib",
+    "libgstpbutils-1.0.0.dylib",
+    "libgstgl-1.0.0.dylib",
+    "libgstallocators-1.0.0.dylib",
+    "libgstcodecparsers-1.0.0.dylib",
+    "libglib-2.0.0.dylib",
+    "libgobject-2.0.0.dylib",
+    "libgmodule-2.0.0.dylib",
+    "libgio-2.0.0.dylib",
+    "libintl.8.dylib",
+    "libffi.7.dylib",
+    "liborc-0.4.0.dylib",
+    "libpcre2-8.0.dylib",
+    "libjpeg.8.dylib",
+    "libz.1.dylib",
+    "libgstvulkan-1.0.0.dylib",
+    "libMoltenVK.dylib",
+    "libgsttag-1.0.0.dylib",
+    "libjpeg.8.3.2.dylib"
+  ],
+  "licenseDirectories": [
+    "gstreamer-1.0",
+    "gst-plugins-base-1.0",
+    "gst-plugins-good-1.0",
+    "gst-plugins-bad-1.0",
+    "glib",
+    "libffi",
+    "proxy-libintl",
+    "libjpeg-turbo",
+    "orc",
+    "pcre2",
+    "zlib",
+    "moltenvk"
+  ],
+  "sources": [
+    {
+      "filename": "gstreamer-1.28.8.tar.xz",
+      "url": "https://gstreamer.freedesktop.org/src/gstreamer/gstreamer-1.28.8.tar.xz",
+      "sha256": "baa8e86985ad6417cc0ad6e7b79ff2884c6779c8b1c7a6240e7121822c86e524"
+    },
+    {
+      "filename": "gst-plugins-base-1.28.8.tar.xz",
+      "url": "https://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-1.28.8.tar.xz",
+      "sha256": "ade70e3381fcbb024f1f20aa9ede9b5654aeed39d5bd70b1a98f53015e501117"
+    },
+    {
+      "filename": "gst-plugins-good-1.28.8.tar.xz",
+      "url": "https://gstreamer.freedesktop.org/src/gst-plugins-good/gst-plugins-good-1.28.8.tar.xz",
+      "sha256": "a7670ed900d3d03be744d25c1873b239896e9a82ce6d17f8febc6fffbaee9521"
+    },
+    {
+      "filename": "gst-plugins-bad-1.28.8.tar.xz",
+      "url": "https://gstreamer.freedesktop.org/src/gst-plugins-bad/gst-plugins-bad-1.28.8.tar.xz",
+      "sha256": "670d888bde8242579b0d8e91f60cf337aa7be20ca7c315ebfbdd6e5a9218d104"
+    }
+  ]
+}

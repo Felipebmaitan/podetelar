@@ -56,7 +56,11 @@ fn manager() -> Option<(UpdateManager, std::path::PathBuf)> {
         source,
         Some(UpdateOptions {
             AllowVersionDowngrade: false,
-            ExplicitChannel: None,
+            ExplicitChannel: if cfg!(target_os = "macos") {
+                Some("osx-arm64".into())
+            } else {
+                None
+            },
             MaximumDeltasBeforeFallback: -1,
         }),
         None,

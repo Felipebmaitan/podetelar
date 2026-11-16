@@ -1083,6 +1083,12 @@ async fn worker(
             }
         }
     });
+    #[cfg(target_os = "macos")]
+    if sources.is_empty() {
+        update(&snapshot, |state| {
+            state.error = "Allow PodeTelar in macOS Settings → Privacy & Security → Screen & System Audio Recording, then refresh sources.".into()
+        });
+    }
     let mut session: Option<Session> = None;
     let mut stream: Option<Stream> = None;
     let mut playback = crate::playback::Playback::new();

@@ -324,5 +324,9 @@
   "About these measurements": "Sobre estas medições",
   "Playback details": "Detalhes da reprodução",
   "Custom": "Personalizada",
-  "Allow PodeTelar in macOS Settings → Privacy & Security → Screen & System Audio Recording, then refresh sources.": "Permita o PodeTelar em Ajustes do macOS → Privacidade e Segurança → Gravação de Tela e Áudio do Sistema e atualize as fontes."
+  "Allow PodeTelar in macOS Settings → Privacy & Security → Screen & System Audio Recording, then refresh sources.": "Permita o PodeTelar em Ajustes do macOS → Privacidade e Segurança → Gravação de Tela e Áudio do Sistema e atualize as fontes.",
+  "App updates": "Atualizações do aplicativo",
+  "Update available": "Atualização disponível",
+  "Changelog": "Novidades",
+  "Check for updates": "Verificar atualizações"
 }

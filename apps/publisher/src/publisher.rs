@@ -226,7 +226,6 @@ pub enum Command {
     },
     Stop,
     Leave,
-    Refresh,
     RefreshSources,
     Shutdown,
 }
@@ -339,7 +338,7 @@ impl Controller {
             Command::Stop => "Stopping your stream…",
             Command::Leave => "Leaving the room…",
             Command::Shutdown => "Closing…",
-            Command::Refresh | Command::RefreshSources => "Refreshing available sources…",
+            Command::RefreshSources => "Refreshing available sources…",
             Command::DownloadBudget { .. } => "Updating your watching allowance…",
             Command::MeasureConnection => "Measuring your connection…",
             Command::Watch { enabled: true, .. } => "Starting playback…",
@@ -1351,7 +1350,7 @@ async fn worker(
                         state.participants.clear();
                     });
                 }
-                Command::Refresh | Command::RefreshSources => {
+                Command::RefreshSources => {
                     sources = sources::enumerate();
                     update(&snapshot, |state| {
                         state.sources = sources.iter().map(|source| source.info.clone()).collect();

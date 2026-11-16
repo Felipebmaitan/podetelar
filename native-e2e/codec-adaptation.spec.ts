@@ -11,7 +11,7 @@ type Received = {
   }[];
 };
 
-test("room members drive AV1 → HEVC → H.264 → HEVC → AV1 without subscribing", async ({
+test("explicit hardware capabilities drive AV1 → HEVC → H.264 and departures keep H.264 stable", async ({
   request,
   baseURL,
 }, testInfo) => {
@@ -88,13 +88,7 @@ test("room members drive AV1 → HEVC → H.264 → HEVC → AV1 without subscri
       previous = stream && codec ? { codec, frames: stream.frames } : undefined;
       expect(sample.streams.length).toBeLessThanOrEqual(1);
     }
-    expect(runs).toEqual([
-      "video/av1",
-      "video/h265",
-      "video/h264",
-      "video/h265",
-      "video/av1",
-    ]);
+    expect(runs).toEqual(["video/av1", "video/h265", "video/h264"]);
     for (const member of [hevcMember, h264Member]) {
       expect(
         member.samples.every(
@@ -104,7 +98,7 @@ test("room members drive AV1 → HEVC → H.264 → HEVC → AV1 without subscri
         ),
       ).toBe(true);
     }
-    expect(sent.codec).toBe("av1");
+    expect(sent.codec).toBe("h264");
     expect(sent.mode).toMatchObject({ width: 1920, height: 1080, fps: 60 });
     // All automatic replacements share the initial preview capture clock.
     expect(sent.previewCaptures).toBe(1);

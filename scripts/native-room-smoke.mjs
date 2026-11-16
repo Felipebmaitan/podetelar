@@ -121,7 +121,8 @@ writeFileSync(
   config,
   JSON.stringify({
     port: mediaPort,
-    room: { sync_streams: true },
+    // Only this isolated acceptance SFU permits controlled mute/unmute tests.
+    room: { sync_streams: true, enable_remote_unmute: true },
     bind_addresses: ["127.0.0.1"],
     rtc: {
       tcp_port: mediaPort + 1,

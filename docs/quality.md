@@ -15,9 +15,16 @@ The visible FPS slider steps through 15, 24, 30, 60, 90 and 120 fps. Resolution 
 Format negotiation is not a throughput certificate: a mode may be negotiable but
 exceed a particular GPU's real-time capacity. There is no silent CPU encoder.
 Rooms select AV1 → HEVC → H.264 within the sender's preference and connected
-members' decoder capabilities, including members who are not watching. Missing
-legacy capabilities allow H.264 only. Rooms can restore the preferred codec when
-constraints leave; failed decoders constrain the current watch. A codec change
+members' hardware decoder capabilities, including members who are not watching.
+Software availability does not authorize reception. Native admission sends the
+explicit hardware set to the server for the initial participant attributes.
+Missing/legacy capability reports remain unknown: they block a new stream with an
+update/retry explanation and never trigger a live codec downgrade. An explicitly
+empty set is incompatible. The current codec stays selected while everyone allows
+it, including after a restrictive member leaves. Missing/dropped frames, pauses,
+congestion and interruptions are playback-health conditions, not capability
+changes. A codec change is allowed when explicit hardware capabilities exclude
+the current codec, or when the streamer applies settings. It
 replaces the single publication while retaining Watch intent and preview cadence.
 
 | Bitrate mode | Behavior                                                                                                                |
@@ -77,8 +84,8 @@ Raw GPU buffers pass through a drop-only frame-rate limiter and pipeline-clock s
 The native UI distinguishes requested dimensions/FPS/bitrate, encoded output FPS/Mbps, effective encoder target, and actual outgoing video RTP Mbps/retransmissions to the SFU. The collector samples local aggregate RTC counters once a second with a bounded timeout; raw SDP, ICE credentials, candidates and room authority never enter UI snapshots. These sender facts do not prove what a friend decodes.
 
 Native playback uses the pinned WebRTC receiver and platform decoder adapter.
-Windows supports H.264/HEVC/AV1 with a dav1d CPU fallback for AV1; macOS uses
-hardware VideoToolbox decode and advertises AV1 only when supported. Frames pass
+Windows supports hardware H.264/HEVC/AV1 and filters out SDK software formats;
+macOS uses hardware VideoToolbox decode and advertises AV1 only when supported. Frames pass
 through bounded queues into native UI textures. Audio uses output-only WebRTC
 playback with independent per-stream gain and mute.
 

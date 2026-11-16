@@ -173,7 +173,6 @@ struct Watch {
     audio: Arc<Mutex<crate::audio::Metrics>>,
     error: Arc<Mutex<String>>,
     diagnostic_task: Option<Pump>,
-    rejected: Codecs,
     admitted: bool,
     video_sid: String,
 }
@@ -187,14 +186,6 @@ impl Watch {
             *last = Instant::now();
         }
         self.admitted = admitted;
-    }
-    fn usable(&self, mut decoders: Codecs) -> Codecs {
-        for codec in codec_policy::ORDER {
-            if self.rejected.supports(codec) {
-                decoders.reject(codec);
-            }
-        }
-        decoders
     }
     fn begin_video(
         &mut self,
@@ -277,17 +268,26 @@ pub struct Playback {
 }
 
 pub fn decoder_codecs() -> Vec<String> {
+    #[cfg(windows)]
+    let hardware = Codecs::new(
+        gst::ElementFactory::find("d3d11av1dec").is_some()
+            && std::env::var("PODETELAR_AV1_DECODER").as_deref() != Ok("software"),
+        gst::ElementFactory::find("d3d11h265dec").is_some(),
+        gst::ElementFactory::find("d3d11h264dec").is_some(),
+    );
+    // The macOS SDK factory already requires hardware VideoToolbox sessions.
+    #[cfg(target_os = "macos")]
+    let hardware = Codecs::new(true, true, true);
+    #[cfg(not(any(windows, target_os = "macos")))]
+    let hardware = Codecs::default();
     PeerConnectionFactory::default()
         .get_rtp_receiver_capabilities(MediaType::Video)
         .codecs
         .into_iter()
         .map(|codec| codec.mime_type.to_lowercase())
-        // The macOS SDK factory reports actual hardware availability. Omit RTP
-        // repair formats (RTX/RED/FEC) from the application's decoder set.
-        .filter(|codec| {
-            !cfg!(target_os = "macos")
-                || matches!(codec.as_str(), "video/h264" | "video/h265" | "video/av1")
-        })
+        // RTP capabilities include software dav1d on Windows. Only codecs with
+        // an available platform hardware path may authorize a subscription.
+        .filter(|mime| codec_policy::from_mime(mime).is_some_and(|codec| hardware.supports(codec)))
         .collect()
 }
 
@@ -368,7 +368,7 @@ impl Playback {
         self.av1 = false;
     }
 
-    fn decoders(&self) -> Codecs {
+    pub fn decoders(&self) -> Codecs {
         Codecs::new(self.av1, self.hevc, self.h264)
     }
 
@@ -379,7 +379,7 @@ impl Playback {
             }
             anyhow::ensure!(
                 self.h264 || self.hevc || self.av1,
-                "No compatible native video decoder is available on this computer."
+                "No compatible hardware video decoder is available on this computer."
             );
             self.watches.entry(id).or_insert_with(|| Watch {
                 picture: Arc::default(),
@@ -392,7 +392,6 @@ impl Playback {
                 audio: Arc::default(),
                 error: Arc::default(),
                 diagnostic_task: None,
-                rejected: Codecs::default(),
                 admitted: false,
                 video_sid: String::new(),
             });
@@ -518,14 +517,18 @@ impl Playback {
         let mut announce = HashMap::new();
         let decoders = self.decoders();
         announce.insert(codec_policy::CAPABILITIES.to_owned(), decoders.encode());
+        announce.insert(
+            codec_policy::HARDWARE_CAPABILITIES.to_owned(),
+            decoders.encode(),
+        );
         for participant in participants.values() {
             let id = participant.identity().to_string();
-            // Failures constrain this publisher for the whole watch lifetime,
-            // including replacement gaps and pauses imposed by the budget.
-            if let Some(watch) = self.watches.get(&id) {
+            // Preserve older publishers' capability protocol, but never derive
+            // support from missing frames or other transient playback health.
+            if self.watches.contains_key(&id) {
                 announce.insert(
                     format!("{}{id}", codec_policy::DECODE_PREFIX),
-                    watch.usable(decoders).encode(),
+                    decoders.encode(),
                 );
             }
             let publications = participant.track_publications();
@@ -554,8 +557,6 @@ impl Playback {
                 continue;
             };
             live.insert(id.clone());
-            let hevc = video.mime_type().eq_ignore_ascii_case("video/h265");
-            let av1 = video.mime_type().eq_ignore_ascii_case("video/av1");
             if let Some(watch) = self.watches.get_mut(&id) {
                 watch.admit(allowed.contains(&id));
                 if watch.video_sid != video.sid().as_str() {
@@ -565,30 +566,11 @@ impl Playback {
                         *last = Instant::now();
                     }
                 }
-                if allowed.contains(&id)
-                    && (hevc || av1)
-                    && codec_policy::from_mime(&video.mime_type()).is_some_and(|codec| {
-                        decoders.supports(codec) && !watch.rejected.supports(codec)
-                    })
-                    && watch
-                        .last_frame
-                        .lock()
-                        .is_ok_and(|last| last.elapsed() > Duration::from_secs(6))
-                {
-                    let codec = codec_policy::from_mime(&video.mime_type()).unwrap();
-                    // Accumulate failures across replacement SIDs for this watch.
-                    watch.rejected.insert(codec);
-                }
-                let usable = watch.usable(decoders);
-                announce.insert(
-                    format!("{}{id}", codec_policy::DECODE_PREFIX),
-                    usable.encode(),
-                );
                 if allowed.contains(&id) {
                     announce.insert(
                         format!("{WATCH_PREFIX}{id}"),
                         if codec_policy::from_mime(&video.mime_type())
-                            .is_none_or(|codec| !usable.supports(codec))
+                            .is_none_or(|codec| !decoders.supports(codec))
                         {
                             "h264"
                         } else {
@@ -644,10 +626,10 @@ impl Playback {
                 }
             }
             let watching = self.watches.contains_key(&id);
-            let compatible = self.watches.get(&id).is_some_and(|w| {
+            let compatible = self.watches.contains_key(&id) && {
                 codec_policy::from_mime(&video.mime_type())
-                    .is_some_and(|codec| decoders.supports(codec) && !w.rejected.supports(codec))
-            });
+                    .is_some_and(|codec| decoders.supports(codec))
+            };
             let admitted = allowed.contains(&id);
             for publication in publications.values().filter(|p| {
                 matches!(
@@ -1002,28 +984,15 @@ pub(crate) fn audio_buffer(samples: Vec<i16>) -> gst::Buffer {
     )
 }
 
-/// Every connected member constrains decoding, including preview-only members.
-/// Older clients without a capability announcement use conservative H.264.
-pub fn room_codecs(room: &Room) -> Codecs {
-    let id = room.local_participant().identity();
-    let decode = format!("{}{id}", codec_policy::DECODE_PREFIX);
-    let watch = format!("{WATCH_PREFIX}{id}");
-    room.remote_participants().values().fold(
-        Codecs::new(true, true, true),
-        |shared, participant| {
-            let attributes = participant.attributes();
-            let mut supported = attributes
-                .get(codec_policy::CAPABILITIES)
-                .map(|value| Codecs::parse(value))
-                .unwrap_or(Codecs::new(false, false, true));
-            if let Some(value) = attributes.get(&decode) {
-                supported = supported.intersect(Codecs::parse(value));
-            } else if attributes.get(&watch).is_some_and(|value| value == "h264") {
-                supported = supported.intersect(Codecs::new(false, false, true));
-            }
-            shared.intersect(supported)
-        },
-    )
+/// Every connected member constrains hardware compatibility, including previews.
+/// None means pending/older capabilities, never an inferred H.264-only decoder.
+pub fn room_codecs(room: &Room) -> Option<Codecs> {
+    Codecs::common(room.remote_participants().values().map(|participant| {
+        participant
+            .attributes()
+            .get(codec_policy::HARDWARE_CAPABILITIES)
+            .and_then(|value| Codecs::parse(value))
+    }))
 }
 
 /// A bounded, quiet local fixture exercises exclusion of our native playback process.
@@ -1120,7 +1089,6 @@ mod tests {
             audio: Arc::default(),
             error: Arc::default(),
             diagnostic_task: None,
-            rejected: Codecs::new(true, false, false),
             admitted: false,
             video_sid: "synthetic-track".into(),
         };
@@ -1145,11 +1113,9 @@ mod tests {
         );
         assert_eq!(watch.frames.load(Ordering::Relaxed), 7);
         assert_eq!(watch.volume.load(Ordering::Relaxed), 80);
-        assert!(watch.rejected.supports(crate::quality::Codec::Av1));
         *watch.last_frame.lock().unwrap() = Instant::now() - Duration::from_secs(20);
         watch.admit(true);
         assert!(watch.last_frame.lock().unwrap().elapsed() < Duration::from_secs(1));
-        assert!(watch.rejected.supports(crate::quality::Codec::Av1));
     }
     #[test]
     fn received_bitrate_uses_actual_elapsed_time_and_handles_counter_reset() {

@@ -40,114 +40,175 @@ const quality = {
   bitrate: { mode: "auto" },
 };
 
-for (const software of [false, true]) {
-  const codec = "av1";
-  test(`native ${codec} ${software ? "CPU" : "GPU"} decode, previews, explicit unsubscribe and rewatch`, async ({
-    request,
-    baseURL,
-  }, testInfo) => {
-    test.setTimeout(90_000);
-    const created = await createTestRoom(request, baseURL!, `Native ${codec}`);
-    expect(created.status()).toBe(201);
-    const { invitationUrl } = await created.json();
-    const sender = nativeRequest("--publish-fixture", {
-      invitationUrl,
-      displayName: "Publisher",
-      codec,
-      seconds: 26,
-      quality,
+const codec = "av1";
+test(`native ${codec} GPU decode, previews, explicit unsubscribe and rewatch`, async ({
+  request,
+  baseURL,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  const created = await createTestRoom(request, baseURL!, `Native ${codec}`);
+  expect(created.status()).toBe(201);
+  const { invitationUrl } = await created.json();
+  const sender = nativeRequest("--publish-fixture", {
+    invitationUrl,
+    displayName: "Publisher",
+    codec,
+    seconds: 26,
+    quality,
+  });
+  await sender.reported;
+  const previous = process.env.PODETELAR_AV1_DECODER;
+  process.env.PODETELAR_AV1_DECODER = "hardware";
+  const receiver = nativeRequest("--watch-fixture", {
+    invitationUrl,
+    seconds: 24,
+    waitForPreview: true,
+    reconnectAfterSeconds: 17,
+  });
+  if (previous === undefined) delete process.env.PODETELAR_AV1_DECODER;
+  else process.env.PODETELAR_AV1_DECODER = previous;
+  try {
+    const [sent, watched] = await Promise.all([
+      sender.result as Promise<Sent>,
+      receiver.result as Promise<Received>,
+    ]);
+    writeFileSync(
+      testInfo.outputPath("native-report.json"),
+      JSON.stringify({ sent, watched }),
+    );
+    await testInfo.attach("native-aggregate-report", {
+      body: JSON.stringify({ sent, watched }),
+      contentType: "application/json",
     });
+    expect(sent.codec).toBe("av1");
+    expect(
+      watched.samples.some((s) =>
+        s.decoders.some(
+          (d) => d.implementation === "PodeTelar Direct3D11" && d.hardware,
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      watched.samples.some((s) =>
+        s.streams.some(
+          (t) => t.codec.toLowerCase() === "video/av1" && t.frames > 5,
+        ),
+      ),
+    ).toBe(true);
+    expect(sent.captureStopped).toBe(true);
+    expect(sent.previewCaptures).toBe(1);
+    expect(watched.closed).toBe(true);
+    const beforeReconnect = watched.samples
+      .filter((s) => s.second < 17)
+      .at(-1)!;
+    const recovered = watched.samples.filter(
+      (s) => s.second >= 19 && s.recoveries > 0 && s.connected,
+    );
+    expect(recovered.length).toBeGreaterThanOrEqual(2);
+    const baseline = Math.max(...beforeReconnect.streams.map((t) => t.frames));
+    const first = Math.max(...recovered[0]!.streams.map((t) => t.frames));
+    const last = Math.max(...recovered.at(-1)!.streams.map((t) => t.frames));
+    expect(first).toBeGreaterThan(baseline);
+    expect(last).toBeGreaterThan(first);
+    expect(
+      watched.samples.some(
+        (s) =>
+          s.phaseSecond !== null &&
+          s.phaseSecond < 5 &&
+          s.streams.some((t) => t.frames > 5),
+      ),
+    ).toBe(true);
+    expect(
+      watched.samples.some(
+        (s) =>
+          s.phaseSecond !== null &&
+          s.phaseSecond >= 10 &&
+          s.streams.some((t) => t.frames > 5),
+      ),
+    ).toBe(true);
+    const before = watched.samples.find((s) => s.phaseSecond === 6)!;
+    const after = watched.samples.find((s) => s.phaseSecond === 7)!;
+    expect(before.streams.every((t) => !t.watching)).toBe(true);
+    expect(before.receivedBytes).toBeGreaterThan(0);
+    expect(after.receivedBytes).toBe(before.receivedBytes);
+    expect(watched.previewBeforeWatching).toBe(true);
+    expect(
+      after.streams.some(
+        (t) => t.pictureSize?.[0] === 960 && t.pictureSize?.[1] === 540,
+      ),
+    ).toBe(true);
+  } finally {
+    sender.child.kill();
+    receiver.child.kill();
+  }
+});
+
+test("software AV1 availability does not authorize AV1; negotiate hardware HEVC", async ({
+  request,
+  baseURL,
+}) => {
+  const created = await createTestRoom(
+    request,
+    baseURL!,
+    "Hardware only codecs",
+  );
+  expect(created.status()).toBe(201);
+  const { invitationUrl } = await created.json();
+  const sender = nativeRequest("--publish-fixture", {
+    invitationUrl,
+    displayName: "Publisher",
+    codec: "av1",
+    seconds: 20,
+    quality,
+  });
+  let receiver: ReturnType<typeof nativeRequest> | undefined;
+  try {
     await sender.reported;
     const previous = process.env.PODETELAR_AV1_DECODER;
-    process.env.PODETELAR_AV1_DECODER = software ? "software" : "hardware";
-    const receiver = nativeRequest("--watch-fixture", {
-      invitationUrl,
-      seconds: 24,
-      waitForPreview: true,
-      reconnectAfterSeconds: 17,
-    });
-    if (previous === undefined) delete process.env.PODETELAR_AV1_DECODER;
-    else process.env.PODETELAR_AV1_DECODER = previous;
     try {
-      const [sent, watched] = await Promise.all([
-        sender.result as Promise<Sent>,
-        receiver.result as Promise<Received>,
-      ]);
-      writeFileSync(
-        testInfo.outputPath("native-report.json"),
-        JSON.stringify({ sent, watched }),
-      );
-      await testInfo.attach("native-aggregate-report", {
-        body: JSON.stringify({ sent, watched }),
-        contentType: "application/json",
+      process.env.PODETELAR_AV1_DECODER = "software";
+      const probe = (await nativeRequest("--probe", {}).result) as {
+        decoders: string[];
+      };
+      expect(probe.decoders).not.toContain("video/av1");
+      receiver = nativeRequest("--watch-fixture", {
+        invitationUrl,
+        seconds: 18,
+        continuousWatch: true,
       });
-      expect(sent.codec).toBe("av1");
-      expect(
-        watched.samples.some((s) =>
-          s.decoders.some((d) =>
-            software
-              ? /dav1d/i.test(d.implementation) && !d.hardware
-              : d.implementation === "PodeTelar Direct3D11" && d.hardware,
-          ),
-        ),
-      ).toBe(true);
-      expect(
-        watched.samples.some((s) =>
-          s.streams.some(
-            (t) => t.codec.toLowerCase() === "video/av1" && t.frames > 5,
-          ),
-        ),
-      ).toBe(true);
-      expect(sent.captureStopped).toBe(true);
-      expect(sent.previewCaptures).toBe(1);
-      expect(watched.closed).toBe(true);
-      const beforeReconnect = watched.samples
-        .filter((s) => s.second < 17)
-        .at(-1)!;
-      const recovered = watched.samples.filter(
-        (s) => s.second >= 19 && s.recoveries > 0 && s.connected,
-      );
-      expect(recovered.length).toBeGreaterThanOrEqual(2);
-      const baseline = Math.max(
-        ...beforeReconnect.streams.map((t) => t.frames),
-      );
-      const first = Math.max(...recovered[0]!.streams.map((t) => t.frames));
-      const last = Math.max(...recovered.at(-1)!.streams.map((t) => t.frames));
-      expect(first).toBeGreaterThan(baseline);
-      expect(last).toBeGreaterThan(first);
-      expect(
-        watched.samples.some(
-          (s) =>
-            s.phaseSecond !== null &&
-            s.phaseSecond < 5 &&
-            s.streams.some((t) => t.frames > 5),
-        ),
-      ).toBe(true);
-      expect(
-        watched.samples.some(
-          (s) =>
-            s.phaseSecond !== null &&
-            s.phaseSecond >= 10 &&
-            s.streams.some((t) => t.frames > 5),
-        ),
-      ).toBe(true);
-      const before = watched.samples.find((s) => s.phaseSecond === 6)!;
-      const after = watched.samples.find((s) => s.phaseSecond === 7)!;
-      expect(before.streams.every((t) => !t.watching)).toBe(true);
-      expect(before.receivedBytes).toBeGreaterThan(0);
-      expect(after.receivedBytes).toBe(before.receivedBytes);
-      expect(watched.previewBeforeWatching).toBe(true);
-      expect(
-        after.streams.some(
-          (t) => t.pictureSize?.[0] === 960 && t.pictureSize?.[1] === 540,
-        ),
-      ).toBe(true);
     } finally {
-      sender.child.kill();
-      receiver.child.kill();
+      if (previous === undefined) delete process.env.PODETELAR_AV1_DECODER;
+      else process.env.PODETELAR_AV1_DECODER = previous;
     }
-  });
-}
+    const [sent, watched] = (await Promise.all([
+      sender.result,
+      receiver.result,
+    ])) as [Sent, Received];
+    expect(sent.codec).toBe("h265");
+    expect(
+      watched.samples.some((s) =>
+        s.streams.some(
+          (t) => t.codec.toLowerCase() === "video/h265" && t.frames > 5,
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      watched.samples.some((s) =>
+        s.decoders.some(
+          (d) => d.implementation === "PodeTelar Direct3D11" && d.hardware,
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      watched.samples.every((s) =>
+        s.decoders.every((d) => !/dav1d/i.test(d.implementation)),
+      ),
+    ).toBe(true);
+  } finally {
+    sender.child.kill();
+    receiver?.child.kill();
+  }
+});
 
 test("an H.264-only watcher triggers AV1 publication fallback and keeps watching", async ({
   request,
@@ -174,8 +235,8 @@ test("an H.264-only watcher triggers AV1 publication fallback and keeps watching
       sender.result as Promise<Sent>,
       receiver.result as Promise<Received>,
     ]);
-    // The restrictive member leaves before the sender finishes: recover AV1.
-    expect(sent.codec).toBe("av1");
+    // Departure alone does not invalidate the compatible live codec.
+    expect(sent.codec).toBe("h264");
     expect(sent.finalSid).not.toBe(sent.initialSid);
     expect(
       watched.samples.some(

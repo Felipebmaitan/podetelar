@@ -93,6 +93,15 @@ export type MediaAccess = {
   token: string;
   expiresInSeconds: number;
 };
+export const HARDWARE_DECODERS_ATTRIBUTE = "podetelar.decode.hardware.v1";
+export const nativeMediaCapabilitiesSchema = z
+  .object({
+    hardwareDecoders: z
+      .array(z.enum(["av1", "hevc", "h264"]))
+      .max(3)
+      .refine((codecs) => new Set(codecs).size === codecs.length),
+  })
+  .strict();
 export type ApiErrorBody = { error: string };
 
 export type UsagePoint = {

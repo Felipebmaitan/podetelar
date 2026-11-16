@@ -13,6 +13,7 @@ import { Rooms, SESSION_TTL_MS } from "../src/rooms.js";
 const ORIGIN = "http://localhost:5173";
 const ADMIN = "test-admin-key-only-not-a-production-secret";
 const MEDIA_SECRET = "test-livekit-secret-only-not-for-production";
+const HARDWARE_CAPABILITIES = "podetelar.decode.hardware.v1";
 const cookieFrom = (response: { headers: Record<string, unknown> }) =>
   String(response.headers["set-cookie"]).split(";")[0]!;
 
@@ -82,6 +83,62 @@ async function fixture(t: TestContext) {
     },
   };
 }
+
+test("native media admission carries explicit hardware capabilities in initial participant attributes", async (t) => {
+  const f = await fixture(t);
+  const created = await f.create();
+  const url = `/api/rooms/${created.body.room.id}/native-media-token`;
+  const headers = { origin: ORIGIN, cookie: created.cookie };
+  const verifier = new TokenVerifier("test-api-key", MEDIA_SECRET);
+  for (const [hardwareDecoders, encoded] of [
+    [["av1", "hevc", "h264"], "av1,hevc,h264"],
+    [["hevc", "h264"], "hevc,h264"],
+    [[], "none"],
+  ] as const) {
+    const response = await f.app.inject({
+      method: "POST",
+      url,
+      headers,
+      payload: { hardwareDecoders },
+    });
+    assert.equal(response.statusCode, 200);
+    const claims = await verifier.verify(response.json().token);
+    assert.equal(claims.attributes?.[HARDWARE_CAPABILITIES], encoded);
+    assert.equal(claims.sub, created.body.participant.id);
+  }
+  for (const payload of [
+    { hardwareDecoders: ["vp9"] },
+    { hardwareDecoders: ["av1", "av1"] },
+    { hardwareDecoders: "av1" },
+    { hardwareDecoders: [], extra: true },
+    {},
+  ]) {
+    assert.equal(
+      (await f.app.inject({ method: "POST", url, headers, payload }))
+        .statusCode,
+      400,
+    );
+  }
+  assert.equal(
+    (
+      await f.app.inject({
+        method: "POST",
+        url,
+        headers: { origin: ORIGIN },
+        payload: { hardwareDecoders: ["av1"] },
+      })
+    ).statusCode,
+    401,
+  );
+  const legacy = await f.app.inject({ method: "POST", url, headers });
+  assert.equal(legacy.statusCode, 200);
+  assert.equal(
+    (await verifier.verify(legacy.json().token)).attributes?.[
+      HARDWARE_CAPABILITIES
+    ],
+    undefined,
+  );
+});
 
 test("document/static requests do not spend the API quota, while API throttling stays enforced", async (t) => {
   const f = await fixture(t);
@@ -355,11 +412,18 @@ test("leaving revokes the current session and rejoining replaces an old cookie",
 test("media tokens have verified signatures, fixed room/identity and short lifetime", async (t) => {
   const f = await fixture(t);
   const created = await f.create();
-  const response = await f.app.inject({
+  const forged = await f.app.inject({
     method: "POST",
     url: `/api/rooms/${created.body.room.id}/native-media-token`,
     headers: { origin: ORIGIN, cookie: created.cookie },
     payload: { room: "someone-elses-room", identity: "forged" },
+  });
+  assert.equal(forged.statusCode, 400);
+  const response = await f.app.inject({
+    method: "POST",
+    url: `/api/rooms/${created.body.room.id}/native-media-token`,
+    headers: { origin: ORIGIN, cookie: created.cookie },
+    payload: { hardwareDecoders: ["av1", "hevc", "h264"] },
   });
   assert.equal(response.statusCode, 200);
   const body = response.json();

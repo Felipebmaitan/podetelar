@@ -1003,7 +1003,7 @@ impl PublisherUi {
                 let label = skin::help_label(
                     ui,
                     tr("Encoder"),
-                    tr("AV1 / HEVC switch to H.264 when a watcher needs compatibility."),
+                    tr("AV1 → HEVC → H.264, using hardware support from everyone in the room. Interruptions do not change codecs."),
                 );
                 egui::ComboBox::from_id_salt("hardware-encoder")
                     .width(ui.available_width())

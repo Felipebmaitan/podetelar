@@ -283,7 +283,12 @@ pub fn decoder_codecs() -> Vec<String> {
         .codecs
         .into_iter()
         .map(|codec| codec.mime_type.to_lowercase())
-        // The macOS SDK factory advertises only available hardware decoders.
+        // The macOS SDK factory reports actual hardware availability. Omit RTP
+        // repair formats (RTX/RED/FEC) from the application's decoder set.
+        .filter(|codec| {
+            !cfg!(target_os = "macos")
+                || matches!(codec.as_str(), "video/h264" | "video/h265" | "video/av1")
+        })
         .collect()
 }
 

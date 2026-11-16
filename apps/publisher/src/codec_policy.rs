@@ -2,8 +2,8 @@
 use crate::quality::Codec;
 
 pub const ORDER: [Codec; 3] = [Codec::Av1, Codec::H265, Codec::H264];
-pub const CAPABILITIES: &str = "freedomstream.decode.v1";
-pub const DECODE_PREFIX: &str = "freedomstream.decode.publisher.";
+pub const CAPABILITIES: &str = "podetelar.decode.v1";
+pub const DECODE_PREFIX: &str = "podetelar.decode.publisher.";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Codecs(u8);

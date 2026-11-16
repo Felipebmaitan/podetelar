@@ -42,7 +42,7 @@ test("administrator login, filters, charts, reload and logout", async ({
     page.getByText("Speed in Mb/s · Data in MB or GB"),
   ).toBeVisible();
   const cookies = await context.cookies(`${baseURL}/api/admin/session`);
-  const admin = cookies.find((c) => c.name === "fs_admin");
+  const admin = cookies.find((c) => c.name === "podetelar_admin");
   expect(admin?.httpOnly).toBe(true);
   expect(admin?.sameSite).toBe("Strict");
   expect(

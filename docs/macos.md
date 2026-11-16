@@ -13,15 +13,21 @@ this does not establish 4K120 or every M-series chip's performance.
 The Finder application launches a native GUI without a terminal. Its media UI
 has a nested application bundle so macOS can identify its window and permissions
 independently of the outer update/link host. Launch Services
-routes `freedomstream://` invitations through the app host and the authenticated
+routes `podetelar://` invitations through the app host and the authenticated
 local activation bridge. Joining, changing rooms, sharing and subscriptions retain
 the existing explicit controls. Grant Screen & System Audio Recording permission
 to PodeTelar when macOS requests it, then refresh sources. Capture never opens a
 microphone. Desktop audio excludes PodeTelar and Discord; application/window audio
 uses ScreenCaptureKit filters. Exclusion, actual output and physical A/V timing
-require separate measurements, described in the verification record.
-The [qualification record](verification/macos.md) distinguishes measured behavior
-from remaining hardware, GUI permission and distribution gates.
+require separate measurements.
+
+Local media qualification used an Apple M5 Pro on macOS 27.0.1: actual display/window
+capture, H.264/HEVC hardware transport, stereo receive and AV1 hardware receive
+passed, including Stop/rewatch traffic checks. GUI launch, invitation join and AV1
+rendering were observed. These results do not establish macOS 14, other M-series
+chips, physical A/V timing or 4K120 behavior. Actual Discord exclusion and alternate
+output-device recovery remain unqualified. GUI capture after granting its separate
+recording permission and installation/update on a fresh Mac also remain unverified.
 
 ## Development and checks
 

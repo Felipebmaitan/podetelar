@@ -51,20 +51,14 @@ switch (action) {
       "clippy",
       "--locked",
       "-p",
-      "freedomstream-publisher",
+      "podetelar-publisher",
       "--",
       "-D",
       "warnings",
     ]);
     break;
   case "test":
-    run("cargo", [
-      "test",
-      "--locked",
-      "-p",
-      "freedomstream-publisher",
-      ...args,
-    ]);
+    run("cargo", ["test", "--locked", "-p", "podetelar-publisher", ...args]);
     break;
   case "build-fixtures":
     run("cargo", [
@@ -72,14 +66,14 @@ switch (action) {
       "--locked",
       "--release",
       "-p",
-      "freedomstream-publisher",
+      "podetelar-publisher",
       "--features",
       "media-qualification",
     ]);
     mkdirSync(resolve(root, ".local/macos/fixtures"), { recursive: true });
     copyFileSync(
-      resolve(root, "target/release/freedomstream-publisher"),
-      resolve(root, ".local/macos/fixtures/freedomstream-publisher"),
+      resolve(root, "target/release/podetelar-publisher"),
+      resolve(root, ".local/macos/fixtures/podetelar-publisher"),
     );
     break;
   case "probe":
@@ -89,7 +83,7 @@ switch (action) {
       "run",
       "--locked",
       "-p",
-      "freedomstream-publisher",
+      "podetelar-publisher",
       "--",
       ...(action === "run" ? [] : [`--${action}`]),
       ...args,

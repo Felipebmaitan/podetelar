@@ -26,8 +26,8 @@ mkdirSync(join(app, "Contents/Resources"));
 mkdirSync(feed);
 const env = {
   ...macosEnvironment(),
-  FREEDOMSTREAM_UPDATE_FEED: feed,
-  FREEDOMSTREAM_MACOS_STATE_TEST: join(output, "state"),
+  PODETELAR_UPDATE_FEED: feed,
+  PODETELAR_MACOS_STATE_TEST: join(output, "state"),
 };
 const run = (file, args) =>
   execFileSync(file, args, { cwd: root, env, stdio: "inherit" });
@@ -42,19 +42,19 @@ run("cargo", [
 ]);
 const binaries = join(root, "apps/installed-launcher/target/release");
 copyFileSync(
-  join(binaries, "freedomstream-installed"),
-  join(app, "Contents/MacOS/FreedomStreamInstalled"),
+  join(binaries, "podetelar-installed"),
+  join(app, "Contents/MacOS/PodeTelarInstalled"),
 );
 copyFileSync(
   join(binaries, "update-fixture"),
-  join(app, "Contents/MacOS/FreedomStream"),
+  join(app, "Contents/MacOS/PodeTelar"),
 );
 writeFileSync(
   join(app, "Contents/Info.plist"),
   readFileSync(join(root, "deploy/macos/Info.plist"), "utf8")
     .replace(
       "<string>PodeTelar</string>\n<key>CFBundlePackageType",
-      "<string>FreedomStreamInstalled</string>\n<key>CFBundlePackageType",
+      "<string>PodeTelarInstalled</string>\n<key>CFBundlePackageType",
     )
     .replace("app.podetelar.desktop", "app.podetelar.update-fixture"),
 );
@@ -78,7 +78,7 @@ for (const version of ["0.1.0-preview.1", "0.1.0-preview.2"]) {
     "--packDir",
     app,
     "--mainExe",
-    "FreedomStreamInstalled",
+    "PodeTelarInstalled",
     "--channel",
     "osx-arm64",
     "--delta",
@@ -100,7 +100,7 @@ const installed = join(unpacked, "PodeTelar.app/Contents/MacOS"),
   manifest = join(unpacked, "PodeTelar.app/Contents/Resources/sq.version");
 const events = join(output, "events.txt");
 async function launch(mode) {
-  const child = spawn(join(installed, "FreedomStreamInstalled"), [], {
+  const child = spawn(join(installed, "PodeTelarInstalled"), [], {
     env: { ...env, UPDATE_FIXTURE_EVENTS: events, UPDATE_FIXTURE_MODE: mode },
     stdio: "ignore",
   });

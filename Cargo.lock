@@ -1140,7 +1140,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "freedomstream-portable"
+name = "podetelar-portable"
 version = "0.1.2"
 dependencies = [
  "anyhow",
@@ -1152,7 +1152,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "freedomstream-publisher"
+name = "podetelar-publisher"
 version = "0.1.2"
 dependencies = [
  "anyhow",

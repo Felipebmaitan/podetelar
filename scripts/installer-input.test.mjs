@@ -11,7 +11,7 @@ test("installer rejects a stale manifest, path escape and modified executable", 
   const commit = "a".repeat(40);
   const data = Buffer.from("test binary");
   const manifest = {
-    filename: "freedomstream-windows-x64-0.1.0-aaaaaaaaaaaa.exe",
+    filename: "podetelar-windows-x64-0.1.0-aaaaaaaaaaaa.exe",
     version: "0.1.0",
     commit,
     sha256: createHash("sha256").update(data).digest("hex"),

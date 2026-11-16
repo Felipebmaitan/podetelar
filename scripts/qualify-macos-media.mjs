@@ -11,8 +11,8 @@ const app =
   process.env.MACOS_TEST_APP ??
   (existsSync(latest) ? JSON.parse(readFileSync(latest)).app : null);
 const executable = app
-  ? join(app, "Contents/Helpers/PodeTelar.app/Contents/MacOS/FreedomStream")
-  : join(root, "target/release/freedomstream-publisher");
+  ? join(app, "Contents/Helpers/PodeTelar.app/Contents/MacOS/PodeTelar")
+  : join(root, "target/release/podetelar-publisher");
 const env = app
   ? {
       ...process.env,
@@ -27,7 +27,7 @@ const env = app
 const origin = process.env.MACOS_TEST_ORIGIN ?? "http://localhost:3000";
 function native(option, request) {
   const child = spawn(executable, [option], {
-    env: { ...env, FREEDOMSTREAM_DIAGNOSTICS: "1" },
+    env: { ...env, PODETELAR_DIAGNOSTICS: "1" },
     stdio: ["pipe", "pipe", "pipe"],
   });
   let output = "",

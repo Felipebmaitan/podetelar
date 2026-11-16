@@ -55,7 +55,7 @@ const started = Date.now(),
   bins = new Map();
 // Exercise Rust's no-sample handling while the desktop starts quiet for >3s.
 const native = spawn(
-  join(root, "target/release/freedomstream-publisher"),
+  join(root, "target/release/podetelar-publisher"),
   ["--qualify-audio"],
   { env: macosEnvironment(), stdio: ["pipe", "pipe", "ignore"] },
 );

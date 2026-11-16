@@ -7,9 +7,7 @@ use std::{
     path::PathBuf,
 };
 pub fn root() -> std::io::Result<PathBuf> {
-    if let Some(path) =
-        option_env!("FREEDOMSTREAM_MACOS_STATE_TEST").filter(|path| !path.is_empty())
-    {
+    if let Some(path) = option_env!("PODETELAR_MACOS_STATE_TEST").filter(|path| !path.is_empty()) {
         let root = PathBuf::from(path);
         if !root.is_absolute() {
             return Err(std::io::ErrorKind::InvalidInput.into());

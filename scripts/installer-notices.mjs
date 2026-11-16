@@ -5,7 +5,7 @@ export function installerNotices(metadata, stage) {
   const included = new Set(metadata.resolve.nodes.map((node) => node.id));
   const index = [];
   for (const pkg of metadata.packages.filter((pkg) => included.has(pkg.id))) {
-    if (pkg.name === "freedomstream-installed") continue;
+    if (pkg.name === "podetelar-installed") continue;
     // The pinned Rust crate omits its upstream LICENSE. The caller ships the
     // matching repository license separately at the package root.
     if (pkg.name === "velopack" && pkg.version === "1.2.161") {

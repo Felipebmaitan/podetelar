@@ -2,7 +2,7 @@ import {
   PREVIEW_MAX_BYTES,
   PREVIEW_MAX_WIDTH,
   PREVIEW_MAX_HEIGHT,
-} from "@freedomstream/contracts";
+} from "@podetelar/contracts";
 
 /** Validates one small baseline JPEG without decoding/transcoding any pixels. */
 export function jpegDimensions(

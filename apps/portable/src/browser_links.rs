@@ -6,8 +6,13 @@ use std::{
 };
 use windows_sys::Win32::{Foundation::ERROR_SUCCESS, System::Registry::*};
 
-const KEY: &str = "Software\\Classes\\freedomstream";
-const OWNER: &str = "FreedomStreamPortable";
+const KEY: &str = "Software\\Classes\\podetelar";
+const OWNER: &str = "PodeTelarPortable";
+#[path = "../../legacy_links_windows.rs"]
+mod legacy_links;
+pub fn cleanup_legacy() -> Result<()> {
+    legacy_links::cleanup()
+}
 struct Key(HKEY);
 impl Drop for Key {
     fn drop(&mut self) {
@@ -153,7 +158,8 @@ fn unregister(path: &str) -> Result<()> {
     Ok(())
 }
 pub fn disable() -> Result<()> {
-    unregister(KEY)
+    unregister(KEY)?;
+    cleanup_legacy()
 }
 pub fn enable(executable: &Path, payload_id: &str) -> Result<PathBuf> {
     ensure!(
@@ -163,7 +169,7 @@ pub fn enable(executable: &Path, payload_id: &str) -> Result<PathBuf> {
     let _ = owned(KEY)?;
     let base =
         PathBuf::from(std::env::var_os("LOCALAPPDATA").context("Local AppData is unavailable.")?)
-            .join("FreedomStreamPortable/browser-links");
+            .join("PodeTelarPortable/browser-links");
     ensure!(
         base.is_absolute(),
         "Local AppData must be an absolute path."
@@ -173,7 +179,7 @@ pub fn enable(executable: &Path, payload_id: &str) -> Result<PathBuf> {
     use sha2::{Digest, Sha256};
     let bytes = fs::read(executable)?;
     let digest = format!("{:x}", Sha256::digest(&bytes));
-    let target = base.join(format!("FreedomStream-{digest}.exe"));
+    let target = base.join(format!("PodeTelar-{digest}.exe"));
     super::check_ancestors(&target)?;
     if target.exists() {
         ensure!(
@@ -190,6 +196,7 @@ pub fn enable(executable: &Path, payload_id: &str) -> Result<PathBuf> {
             .context("Could not save browser-link launcher.")?;
     }
     register(KEY, &target)?;
+    cleanup_legacy()?;
     Ok(target)
 }
 
@@ -198,19 +205,16 @@ mod tests {
     use super::*;
     #[test]
     fn real_per_user_registration_quotes_paths_and_removes_only_our_scheme() {
-        let path = format!(
-            "Software\\Classes\\freedomstream-test-{}",
-            std::process::id()
-        );
+        let path = format!("Software\\Classes\\podetelar-test-{}", std::process::id());
         assert!(!owned(&path).unwrap());
-        register(&path, Path::new("C:\\A folder\\FreedomStream.exe")).unwrap();
+        register(&path, Path::new("C:\\A folder\\PodeTelar.exe")).unwrap();
         assert!(owned(&path).unwrap());
         let command = open(&format!("{path}\\shell\\open\\command"))
             .unwrap()
             .unwrap();
         assert_eq!(
             string(&command, "").unwrap(),
-            "\"C:\\A folder\\FreedomStream.exe\" --browser-link \"%1\""
+            "\"C:\\A folder\\PodeTelar.exe\" --browser-link \"%1\""
         );
         drop(command);
         unregister(&path).unwrap();

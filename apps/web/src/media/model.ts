@@ -1,4 +1,4 @@
-import type { Preview, PreviewKind } from "@freedomstream/contracts";
+import type { Preview, PreviewKind } from "@podetelar/contracts";
 export type StreamKind = PreviewKind;
 export type PlaybackBuffer = "smooth" | "low-delay";
 export type ConnectionRoute = "auto" | "relay";

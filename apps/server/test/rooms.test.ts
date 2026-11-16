@@ -17,7 +17,7 @@ const cookieFrom = (response: { headers: Record<string, unknown> }) =>
   String(response.headers["set-cookie"]).split(";")[0]!;
 
 async function fixture(t: TestContext) {
-  const directory = mkdtempSync(join(tmpdir(), "freedomstream-"));
+  const directory = mkdtempSync(join(tmpdir(), "podetelar-"));
   const config = loadConfig({
     PUBLIC_URL: ORIGIN,
     ADMIN_TOKEN: ADMIN,
@@ -46,7 +46,7 @@ async function fixture(t: TestContext) {
     if (
       dirname(resolved).toLowerCase() !==
         realpathSync(tmpdir()).toLowerCase() ||
-      !basename(resolved).startsWith("freedomstream-")
+      !basename(resolved).startsWith("podetelar-")
     )
       throw new Error("Refusing unexpected cleanup path");
     rmSync(resolved, { recursive: true });
@@ -368,7 +368,7 @@ test("media tokens have verified signatures, fixed room/identity and short lifet
     MEDIA_SECRET,
   ).verify(body.token);
   assert.equal(claims.sub, created.body.participant.id);
-  assert.equal(claims.video?.room, `freedomstream_${created.body.room.id}`);
+  assert.equal(claims.video?.room, `podetelar_${created.body.room.id}`);
   assert.equal(claims.video?.roomJoin, true);
   assert.equal(claims.video?.canPublish, true);
   assert.equal(claims.video?.canSubscribe, true);
@@ -495,7 +495,7 @@ test("app handoff tickets are private, single-use, expiring and revoked by invit
   assert.equal(issued.headers["cache-control"], "no-store");
   assert.ok(!issued.body.includes(created.invitation));
   const link = new URL(issued.json().appUrl);
-  assert.equal(link.protocol, "freedomstream:");
+  assert.equal(link.protocol, "podetelar:");
   assert.equal(link.searchParams.get("server"), ORIGIN);
   const ticket = link.hash.slice("#handoff=".length);
   assert.equal(ticket.length, 43);

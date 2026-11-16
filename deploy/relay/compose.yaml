@@ -2,7 +2,7 @@
 # Run scripts/setup-relay.mjs first. The root web/signaling listeners stay on loopback.
 services:
   livekit:
-    user: "${FREEDOMSTREAM_UID:?Set the private config/certificate owner UID}:${FREEDOMSTREAM_GID:?Set its GID}"
+    user: "${PODETELAR_UID:?Set the private config/certificate owner UID}:${PODETELAR_GID:?Set its GID}"
     cpus: 1
     mem_limit: 512m
     pids_limit: 256
@@ -20,7 +20,7 @@ services:
   relay:
     image: coturn/coturn:4.18.0-r0@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3
     # The image's turnserver has a file capability; keep its required bounding bit.
-    user: "${FREEDOMSTREAM_UID:?Set the private config/certificate owner UID}:${FREEDOMSTREAM_GID:?Set its GID}"
+    user: "${PODETELAR_UID:?Set the private config/certificate owner UID}:${PODETELAR_GID:?Set its GID}"
     command: ["-c", "/etc/coturn/turnserver.conf"]
     network_mode: host
     cpus: 0.5

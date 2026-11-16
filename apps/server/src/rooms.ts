@@ -14,7 +14,7 @@ import type {
   ManagedRoom,
   Room,
   RoomSession,
-} from "@freedomstream/contracts";
+} from "@podetelar/contracts";
 
 export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 export const EMPTY_ROOM_GRACE_MS = 60_000;

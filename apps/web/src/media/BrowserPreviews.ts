@@ -4,7 +4,7 @@ import {
   PREVIEW_MAX_WIDTH,
   THUMBNAIL_INTERVAL_MS,
   type PreviewKind,
-} from "@freedomstream/contracts";
+} from "@podetelar/contracts";
 import { ApiError, request } from "../api";
 
 type Job = {

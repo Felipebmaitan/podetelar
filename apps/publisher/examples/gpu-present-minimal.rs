@@ -138,7 +138,7 @@ mod experiment {
                 CreateWindowExW(
                     WINDOW_EX_STYLE::default(),
                     w!("STATIC"),
-                    w!("FreedomStream local GPU fixture"),
+                    w!("PodeTelar local GPU fixture"),
                     style,
                     40,
                     40,

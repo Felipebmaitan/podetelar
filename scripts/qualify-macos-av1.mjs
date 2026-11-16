@@ -12,8 +12,8 @@ const latest = JSON.parse(
 const app = process.env.MACOS_TEST_APP || latest.app;
 const receiver =
   process.env.MACOS_TEST_RECEIVER ||
-  join(app, "Contents/Helpers/PodeTelar.app/Contents/MacOS/FreedomStream");
-const sender = join(root, ".local/macos/fixtures/freedomstream-publisher");
+  join(app, "Contents/Helpers/PodeTelar.app/Contents/MacOS/PodeTelar");
+const sender = join(root, ".local/macos/fixtures/podetelar-publisher");
 const fixturePath = join(root, ".local/macos/av1-fixture.ivf");
 const packets = JSON.parse(
   execFileSync(

@@ -1,7 +1,7 @@
 param([Parameter(Mandatory=$true)][string]$Node,[Parameter(Mandatory=$true)][string]$Output)
 $ErrorActionPreference='Stop'
 $path=[IO.Path]::GetFullPath($Output);if(Test-Path -LiteralPath $path){throw 'Choose a new probe output.'}
-$prefix='FreedomStreamPerformance-'+[guid]::NewGuid().ToString('N');$subscriptions=[Collections.Generic.List[object]]::new();$children=[Collections.Generic.List[Diagnostics.Process]]::new()
+$prefix='PodeTelarPerformance-'+[guid]::NewGuid().ToString('N');$subscriptions=[Collections.Generic.List[object]]::new();$children=[Collections.Generic.List[Diagnostics.Process]]::new()
 $principal=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 $administrator=$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 try{

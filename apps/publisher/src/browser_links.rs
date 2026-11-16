@@ -19,7 +19,7 @@ impl Load {
     ) -> Self {
         let (cancel, cancelled) = tokio::sync::oneshot::channel();
         let worker = std::thread::Builder::new()
-            .name("freedomstream-invitation".into())
+            .name("podetelar-invitation".into())
             .spawn(move || {
                 let runtime = match tokio::runtime::Builder::new_current_thread()
                     .enable_all()
@@ -81,7 +81,7 @@ impl Link {
         ensure!(input.len() <= 4096, "Invalid browser invitation.");
         let url = Url::parse(input).context("Invalid browser invitation.")?;
         ensure!(
-            url.scheme() == "freedomstream"
+            url.scheme() == "podetelar"
                 && url.host_str() == Some("join")
                 && matches!(url.path(), "" | "/")
                 && url.username().is_empty()
@@ -173,7 +173,7 @@ impl Link {
 }
 
 pub fn set_enabled(enabled: bool) -> Result<()> {
-    let executable = std::env::var_os("FREEDOMSTREAM_PORTABLE_EXE")
+    let executable = std::env::var_os("PODETELAR_PORTABLE_EXE")
         .context("Download and run the portable EXE to enable browser links.")?;
     let mut command = std::process::Command::new(executable);
     command.arg(if enabled {
@@ -249,14 +249,14 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires a live FreedomStream API and local fixture path"]
+    #[ignore = "requires a live PodeTelar API and local fixture path"]
     fn redeem_real_server_invitation() {
         #[derive(serde::Deserialize)]
         struct Fixture {
             link: String,
             invitation: String,
         }
-        let path = std::env::var_os("FREEDOMSTREAM_APP_LINK_FIXTURE").expect("Local fixture path");
+        let path = std::env::var_os("PODETELAR_APP_LINK_FIXTURE").expect("Local fixture path");
         let fixture: Fixture =
             serde_json::from_slice(&std::fs::read(path).expect("Read local fixture"))
                 .expect("Valid local fixture");
@@ -290,7 +290,7 @@ mod tests {
         let ticket = "t".repeat(43);
         for path in ["", "/"] {
             let link = Link::parse(&format!(
-                "freedomstream://join{path}?server=http%3A%2F%2Flocalhost%3A18321#handoff={ticket}"
+                "podetelar://join{path}?server=http%3A%2F%2Flocalhost%3A18321#handoff={ticket}"
             ))
             .expect("Windows may append a slash to a protocol authority");
             assert_eq!(link.origin.as_str(), "http://localhost:18321/");
@@ -299,7 +299,7 @@ mod tests {
         for path in ["/room", "//", "/%2F", "/%6aoin"] {
             assert!(
                 Link::parse(&format!(
-                    "freedomstream://join{path}?server=https%3A%2F%2Fexample.test#handoff={ticket}"
+                    "podetelar://join{path}?server=https%3A%2F%2Fexample.test#handoff={ticket}"
                 ))
                 .is_err()
             );
@@ -311,13 +311,13 @@ mod tests {
         let ticket = "t".repeat(43);
         assert!(
             Link::parse(&format!(
-                "freedomstream://join?server=https%3A%2F%2Fexample.test#handoff={ticket}"
+                "podetelar://join?server=https%3A%2F%2Fexample.test#handoff={ticket}"
             ))
             .is_ok()
         );
         assert!(
             Link::parse(&format!(
-                "freedomstream://join?server=http%3A%2F%2Flocalhost%3A3211#handoff={ticket}"
+                "podetelar://join?server=http%3A%2F%2Flocalhost%3A3211#handoff={ticket}"
             ))
             .is_ok()
         );
@@ -332,19 +332,30 @@ mod tests {
             let encoded: String = url::form_urlencoded::byte_serialize(server.as_bytes()).collect();
             assert!(
                 Link::parse(&format!(
-                    "freedomstream://join?server={encoded}#handoff={ticket}"
+                    "podetelar://join?server={encoded}#handoff={ticket}"
                 ))
                 .is_err()
             );
         }
         for link in [
-            "freedomstream://join",
-            "freedomstream://other?server=https://example.test",
-            "freedomstream://join?server=https://example.test&extra=1#handoff=bad",
+            "podetelar://join",
+            "podetelar://other?server=https://example.test",
+            "podetelar://join?server=https://example.test&extra=1#handoff=bad",
             "https://example.test",
         ] {
             assert!(Link::parse(link).is_err());
         }
+    }
+
+    #[test]
+    fn rejects_retired_protocol() {
+        assert!(
+            Link::parse(&format!(
+                "freedomstream://join?server=https%3A%2F%2Fexample.test#handoff={}",
+                "t".repeat(43)
+            ))
+            .is_err()
+        );
     }
 
     #[test]
@@ -354,7 +365,7 @@ mod tests {
             "https://another.test:8443",
             "http://127.0.0.1:3000",
         ] {
-            let mut link = Url::parse("freedomstream://join").unwrap();
+            let mut link = Url::parse("podetelar://join").unwrap();
             link.query_pairs_mut().append_pair("server", server);
             link.set_fragment(Some(&format!("handoff={}", "t".repeat(43))));
             assert_eq!(

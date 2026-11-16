@@ -41,15 +41,6 @@ The result remains a persistent pseudonymous identifier, not anonymous data or
 proof of a person. A modified client can spoof or omit its identifier. This feature
 provides usage recognition, not a hardware ban or account authentication.
 
-The pinned windows-rs projection caches agile activation factories. Qualification
-found a reproducible access violation on the second independent-thread read after
-the last COM apartment was torn down. The device module keeps one process-lifetime
-MTA usage reference and balances each worker's `RoInitialize`/`RoUninitialize`.
-Repeated-thread and independent-process qualification pass with that correction.
-[`CoIncrementMTAUsage`](https://learn.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-coincrementmtausage)
-keeps MTA resources active between workers; process termination reclaims the one
-process-owned reference. It does not retain a raw system ID.
-
 ## Admission, storage and compatibility
 
 `POST /api/rooms` and `POST /api/rooms/:id/join` accept an optional `deviceId`
@@ -75,9 +66,7 @@ disabled; production log settings are unchanged.
 Older clients can still join without an ID and appear as **unidentified sessions**.
 Existing history remains unidentified; matching nicknames is not evidence that
 sessions belong to one PC. An updated native client requires the updated admission
-API: older servers' strict schemas reject the additional field. Deploy the server
-before distributing the updated native build. This PR does not publish an installer
-or deploy production.
+API: older servers' strict schemas reject the additional field. Deploy a compatible server before distributing a native build that requires it.
 
 ## Repeatable qualification
 
@@ -98,14 +87,13 @@ or deploy production.
 - `node --env-file=.env scripts/verify-device-identity.mjs`: actual Windows ID and
   HTTP admission from two copied Rust test executables, separate processes and
   empty app-data directories; verifies distinct session IDs bind the same PC ID
-  in the isolated Docker database. Set `FREEDOMSTREAM_NATIVE_TEST_EXE` to the
-  publisher test EXE produced by `native:test`, `FREEDOMSTREAM_DEVICE_DB_CONTAINER`
+  in the isolated Docker database. Set `PODETELAR_NATIVE_TEST_EXE` to the
+  publisher test EXE produced by `native:test`, `PODETELAR_DEVICE_DB_CONTAINER`
   to that local API container, and `E2E_BASE_URL` to its loopback origin. Include
   the qualified GStreamer DLL directory in the hidden process's PATH. Private
   fixture inputs/results stay under ignored `.local/device-identity-*`; IDs and
   invitations are never printed.
 
-These tests verify actual local Windows identity reads, process/app-data
-independence, native HTTP binding and actual SFU usage. They do not substitute for
-fresh-OS or replacement-hardware verification. Copying a test executable is not an
-installed-app uninstall/reinstall test.
+Local identity and traffic checks do not substitute for fresh-OS or
+replacement-hardware verification. Copying a test executable does not qualify
+installed-app uninstall/reinstall behavior.

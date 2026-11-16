@@ -89,9 +89,9 @@ fn main() {
     let bridge = updates::Bridge::start().ok();
     let result = std::env::current_exe().and_then(|exe| {
         #[cfg(windows)]
-        let filename = "FreedomStream.exe";
+        let filename = "PodeTelar.exe";
         #[cfg(target_os = "macos")]
-        let filename = "FreedomStream";
+        let filename = "PodeTelar";
         let executable = exe.with_file_name(filename);
         #[cfg(target_os = "macos")]
         let executable = {
@@ -99,7 +99,7 @@ fn main() {
                 .parent()
                 .and_then(std::path::Path::parent)
                 .ok_or(std::io::ErrorKind::NotFound)?
-                .join("Helpers/PodeTelar.app/Contents/MacOS/FreedomStream");
+                .join("Helpers/PodeTelar.app/Contents/MacOS/PodeTelar");
             if nested.is_file() { nested } else { executable }
         };
         let mut child = std::process::Command::new(executable);
@@ -124,7 +124,7 @@ fn main() {
         child
             .env(activation_protocol::INSTALLED, &exe)
             .env(
-                "FREEDOMSTREAM_INSTALLED_LINKS",
+                "PODETELAR_INSTALLED_LINKS",
                 if registration::enabled() { "1" } else { "0" },
             )
             .env(activation_protocol::ENDPOINT, &instance.address)

@@ -9,9 +9,9 @@ import { loadConfig } from "../apps/server/src/config.js";
 test("a browser downloads authorized bytes directly without sharing cookies or secrets in HTTP URLs", async ({
   page,
 }) => {
-  const dir = mkdtempSync(join(tmpdir(), "freedomstream-browser-domains-"));
+  const dir = mkdtempSync(join(tmpdir(), "podetelar-browser-domains-"));
   const bytes = Buffer.from("local browser download fixture, never executed");
-  const filename = "freedomstream-windows-x64-0.1.0-aaaaaaaaaaaa.exe";
+  const filename = "podetelar-windows-x64-0.1.0-aaaaaaaaaaaa.exe";
   writeFileSync(join(dir, filename), bytes);
   writeFileSync(
     join(dir, "publisher.json"),

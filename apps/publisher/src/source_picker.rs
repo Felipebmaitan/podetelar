@@ -55,7 +55,7 @@ impl Preview {
         let epoch = generation.clone();
         // One worker and a single overwriteable request slot bound work and memory.
         let worker = std::thread::Builder::new()
-            .name("freedomstream-source-preview".into())
+            .name("podetelar-source-preview".into())
             .spawn(move || {
                 loop {
                     let (lock, ready) = &*state;
@@ -491,7 +491,7 @@ mod tests {
                     CreateWindowExW(
                         WS_EX_APPWINDOW,
                         w!("STATIC"),
-                        w!("FreedomStream silent capture fixture"),
+                        w!("PodeTelar silent capture fixture"),
                         WS_OVERLAPPEDWINDOW,
                         40,
                         40,

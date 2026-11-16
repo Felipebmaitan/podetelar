@@ -8,7 +8,7 @@ import {
   createRoomSchema,
   joinRoomSchema,
   roomIdSchema,
-} from "@freedomstream/contracts";
+} from "@podetelar/contracts";
 import type { Config } from "./config.js";
 import { Rooms, SESSION_TTL_MS } from "./rooms.js";
 import {
@@ -34,7 +34,7 @@ import { RoomLifecycle } from "./room-lifecycle.js";
 
 import { discordRoutes } from "./discord.js";
 
-const COOKIE = "fs_session";
+const COOKIE = "podetelar_session";
 const MEDIA_TOKEN_TTL_SECONDS = 120;
 
 export async function buildApp(

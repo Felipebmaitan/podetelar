@@ -10,7 +10,7 @@ use std::{
     sync::Mutex,
 };
 
-pub const MAGIC: &[u8; 16] = b"FREEDOMSTREAM01!";
+pub const MAGIC: &[u8; 16] = b"PODETELAR000001!";
 #[cfg(windows)]
 pub mod browser_links;
 #[cfg(windows)]
@@ -167,7 +167,7 @@ impl Bundle {
             "The extraction parent folder does not exist."
         );
         let staging = tempfile::Builder::new()
-            .prefix(".freedomstream-")
+            .prefix(".podetelar-")
             .tempdir_in(parent)?;
         self.extract(staging.path())?;
         self.check_required(staging.path())?;
@@ -178,7 +178,7 @@ impl Bundle {
 
     fn check_required(&self, root: &Path) -> Result<()> {
         for path in [
-            "bin/freedomstream-publisher.exe",
+            "bin/podetelar-publisher.exe",
             "libexec/gstreamer-1.0/gst-plugin-scanner.exe",
             "notices/README.md",
             "notices/sources/README.md",
@@ -325,7 +325,7 @@ fn check_tree(path: &Path) -> Result<()> {
 pub fn command(directory: &Path) -> Result<std::process::Command> {
     check_tree(directory)?;
     let windows = std::env::var_os("WINDIR").context("Windows directory is unavailable.")?;
-    let mut command = std::process::Command::new(directory.join("bin/freedomstream-publisher.exe"));
+    let mut command = std::process::Command::new(directory.join("bin/podetelar-publisher.exe"));
     command.current_dir(directory);
     for (key, _) in std::env::vars_os() {
         let upper = key.to_string_lossy().to_ascii_uppercase();
@@ -478,7 +478,7 @@ mod tests {
     #[test]
     fn cache_is_atomic_and_preserves_modified_shared_libraries() {
         let (_temp, path) = executable(&[
-            ("bin/freedomstream-publisher.exe", b"publisher"),
+            ("bin/podetelar-publisher.exe", b"publisher"),
             ("libexec/gstreamer-1.0/gst-plugin-scanner.exe", b"scanner"),
             ("notices/README.md", b"notices"),
             ("notices/sources/README.md", b"sources"),

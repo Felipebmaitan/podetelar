@@ -3,14 +3,17 @@ use anyhow::{Context, Result, ensure};
 use std::path::Path;
 use windows_sys::Win32::{Foundation::ERROR_SUCCESS, System::Registry::*};
 #[cfg(not(any(feature = "link-qualification", feature = "update-qualification")))]
-const SCHEME: &str = "Software\\Classes\\freedomstream";
+const SCHEME: &str = "Software\\Classes\\podetelar";
 #[cfg(any(feature = "link-qualification", feature = "update-qualification"))]
-const SCHEME: &str = env!("FREEDOMSTREAM_LINK_TEST_SCHEME");
+const SCHEME: &str = env!("PODETELAR_LINK_TEST_SCHEME");
 #[cfg(not(any(feature = "link-qualification", feature = "update-qualification")))]
-const ACTIVE: &str = "Software\\FreedomStream\\InstalledActivation";
+const ACTIVE: &str = "Software\\PodeTelar\\InstalledActivation";
 #[cfg(any(feature = "link-qualification", feature = "update-qualification"))]
-const ACTIVE: &str = env!("FREEDOMSTREAM_LINK_TEST_ACTIVE");
-const OWNER: &str = "FreedomStreamInstalled";
+const ACTIVE: &str = env!("PODETELAR_LINK_TEST_ACTIVE");
+const OWNER: &str = "PodeTelarInstalled";
+#[cfg(not(any(feature = "link-qualification", feature = "update-qualification")))]
+#[path = "../../legacy_links_windows.rs"]
+mod legacy_links;
 struct Key(HKEY);
 impl Drop for Key {
     fn drop(&mut self) {
@@ -105,7 +108,10 @@ fn set(key: &Key, name: &str, value: &str) -> Result<()> {
 }
 
 pub fn register(migrate: bool) -> Result<()> {
-    register_at(SCHEME, &std::env::current_exe()?, migrate)
+    register_at(SCHEME, &std::env::current_exe()?, migrate)?;
+    #[cfg(not(any(feature = "link-qualification", feature = "update-qualification")))]
+    legacy_links::cleanup()?;
+    Ok(())
 }
 fn command(exe: &Path) -> Result<String> {
     let exe = exe.to_str().context("Invalid installed path.")?;
@@ -119,7 +125,7 @@ fn register_at(path: &str, exe: &Path, migrate: bool) -> Result<()> {
     let expected = command(exe)?;
     if let Some(key) = open(path)? {
         let ours = string(&key, OWNER).ok();
-        let legacy = string(&key, "FreedomStreamPortable").ok().as_deref() == Some("1");
+        let legacy = string(&key, "PodeTelarPortable").ok().as_deref() == Some("1");
         ensure!(
             ours.as_deref() == exe.to_str() || (migrate && (ours.is_some() || legacy)),
             "Room links are registered to another application."
@@ -136,7 +142,7 @@ fn register_at(path: &str, exe: &Path, migrate: bool) -> Result<()> {
     set(&key, "", "URL:PodeTelar room invitation")?;
     set(&key, "URL Protocol", "")?;
     unsafe {
-        RegDeleteValueW(key.0, wide("FreedomStreamPortable").as_ptr());
+        RegDeleteValueW(key.0, wide("PodeTelarPortable").as_ptr());
     }
     Ok(())
 }
@@ -218,12 +224,12 @@ mod tests {
     #[test]
     fn installed_registration_migrates_portable_and_preserves_foreign_handlers() {
         let path = format!(
-            "Software\\Classes\\freedomstream-installed-test-{}",
+            "Software\\Classes\\podetelar-installed-test-{}",
             std::process::id()
         );
-        let exe = Path::new("C:\\Room app\\current\\freedomstream-installed.exe");
+        let exe = Path::new("C:\\Room app\\current\\podetelar-installed.exe");
         let key = create(&path).unwrap();
-        set(&key, "FreedomStreamPortable", "1").unwrap();
+        set(&key, "PodeTelarPortable", "1").unwrap();
         drop(key);
         assert!(register_at(&path, exe, false).is_err());
         register_at(&path, exe, true).unwrap();
@@ -240,7 +246,7 @@ mod tests {
         );
         unregister_at(
             &path,
-            Path::new("C:\\Other\\current\\freedomstream-installed.exe"),
+            Path::new("C:\\Other\\current\\podetelar-installed.exe"),
         )
         .unwrap();
         assert!(open(&path).unwrap().is_some());

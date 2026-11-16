@@ -9,7 +9,7 @@ function Package([string]$wrapper,[string]$destination){
   foreach($path in @($wrapper,$payloadPath)){$source=[IO.File]::OpenRead($path);try{$source.CopyTo($target,65536)}finally{$source.Dispose()}}
   $source=[IO.File]::OpenRead($payloadPath);$sha=[Security.Cryptography.SHA256]::Create()
   try{$digest=$sha.ComputeHash($source)}finally{$source.Dispose();$sha.Dispose()}
-  $target.Write([BitConverter]::GetBytes([uint64](Get-Item -LiteralPath $payloadPath).Length));$target.Write($digest);$target.Write([Text.Encoding]::ASCII.GetBytes('FREEDOMSTREAM01!'))
+  $target.Write([BitConverter]::GetBytes([uint64](Get-Item -LiteralPath $payloadPath).Length));$target.Write($digest);$target.Write([Text.Encoding]::ASCII.GetBytes('PODETELAR01!'))
  }finally{$target.Dispose()}
 }
 $packages=@{}
@@ -31,7 +31,7 @@ function Finish-Owned($job){
   while(-not $job.nativeId){
    if($p.HasExited -or $job.clock.Elapsed.TotalSeconds -gt 20){throw 'Owned portable startup failed.'}
    $p.Refresh();$job.peakSampledPrivate=[Math]::Max($job.peakSampledPrivate,$p.PrivateMemorySize64);$job.peakSampledWorking=[Math]::Max($job.peakSampledWorking,$p.WorkingSet64)
-   $child=Get-CimInstance Win32_Process -Filter "ParentProcessId=$($p.Id)"|Where-Object Name -eq 'freedomstream-publisher.exe'|Select-Object -First 1
+   $child=Get-CimInstance Win32_Process -Filter "ParentProcessId=$($p.Id)"|Where-Object Name -eq 'podetelar-publisher.exe'|Select-Object -First 1
    if($child){$job.nativeId=[int]$child.ProcessId}
   }
   $p.Refresh()

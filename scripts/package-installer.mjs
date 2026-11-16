@@ -27,7 +27,7 @@ const config = JSON.parse(
 );
 const updateFeed = installerUpdateFeed(
   config,
-  process.env.FREEDOMSTREAM_UPDATE_FEED,
+  process.env.PODETELAR_UPDATE_FEED,
 );
 const releaseNotes = join(root, "docs/releases", `v${manifest.version}.md`);
 if (!existsSync(releaseNotes)) throw new Error("Release notes are required.");
@@ -43,8 +43,8 @@ if (existsSync(output)) throw new Error("Installer output already exists.");
 const stage = join(root, ".local/installer-stage", version);
 if (existsSync(stage)) throw new Error("Installer staging already exists.");
 mkdirSync(stage, { recursive: true });
-copyFileSync(executable, join(stage, "FreedomStream.exe"));
-copyFileSync(join(root, "LICENSE"), join(stage, "FreedomStream-MIT.txt"));
+copyFileSync(executable, join(stage, "PodeTelar.exe"));
+copyFileSync(join(root, "LICENSE"), join(stage, "PodeTelar-MIT.txt"));
 run(
   "cargo",
   [
@@ -60,7 +60,7 @@ run(
     stdio: "inherit",
     env: {
       ...process.env,
-      FREEDOMSTREAM_UPDATE_FEED: updateFeed,
+      PODETELAR_UPDATE_FEED: updateFeed,
       CARGO_ENCODED_RUSTFLAGS:
         "-C\x1ftarget-feature=+crt-static\x1f-C\x1flink-arg=/DEPENDENTLOADFLAG:0x800",
     },

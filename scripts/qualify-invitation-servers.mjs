@@ -64,7 +64,7 @@ try {
   const fixturePath = join(directory, "fixture.json");
   writeFileSync(fixturePath, JSON.stringify(fixtures));
   const runtime =
-    process.env.FREEDOMSTREAM_GSTREAMER ?? join(root, ".local/gstreamer");
+    process.env.PODETELAR_GSTREAMER ?? join(root, ".local/gstreamer");
   await new Promise((accept, reject) => {
     const child = spawn(
       "cargo",
@@ -72,7 +72,7 @@ try {
         "test",
         "--locked",
         "--bin",
-        "freedomstream-publisher",
+        "podetelar-publisher",
         "admission::tests::invitation_links_select_two_live_backends_without_saved_configuration",
         "--",
         "--ignored",
@@ -87,7 +87,7 @@ try {
           PATH: `${join(runtime, "bin")};${process.env.PATH}`,
           PKG_CONFIG_PATH: join(runtime, "lib/pkgconfig"),
           GSTREAMER_1_0_ROOT_MSVC_X86_64: runtime,
-          FREEDOMSTREAM_MULTI_SERVER_FIXTURE: fixturePath,
+          PODETELAR_MULTI_SERVER_FIXTURE: fixturePath,
         },
       },
     );

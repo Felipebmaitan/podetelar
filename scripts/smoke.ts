@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { RoomServiceClient } from "livekit-server-sdk";
-import type { CreatedRoom, RoomSession } from "@freedomstream/contracts";
+import type { CreatedRoom, RoomSession } from "@podetelar/contracts";
 
 const origin = new URL(process.env.SMOKE_BASE_URL ?? "http://localhost:3000")
   .origin;

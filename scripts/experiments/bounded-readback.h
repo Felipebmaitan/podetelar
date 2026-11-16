@@ -7,7 +7,7 @@
 #include "api/video/i420_buffer.h"
 #include "libyuv/convert.h"
 
-namespace freedomstream {
+namespace podetelar {
 class BoundedReadback {
  public:
   ~BoundedReadback() {
@@ -108,4 +108,4 @@ class BoundedReadback {
   Microsoft::WRL::ComPtr<ID3D11Texture2D> staging_;
   UINT width_ = 0, height_ = 0;
 };
-}  // namespace freedomstream
+}  // namespace podetelar

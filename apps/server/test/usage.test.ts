@@ -8,7 +8,7 @@ import { Rooms } from "../src/rooms.js";
 import { backupRooms } from "../src/backup.js";
 
 test("usage counts actual deltas, keeps equal names separate, splits minute boundaries, and survives backup/restart", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "freedomstream-usage-"));
+  const dir = mkdtempSync(join(tmpdir(), "podetelar-usage-"));
   const path = join(dir, "test.db");
   let now = Date.UTC(2026, 10, 9, 12, 0, 55);
   const rooms = new Rooms(path, () => now);
@@ -104,7 +104,7 @@ test("usage counts actual deltas, keeps equal names separate, splits minute boun
     rooms.close();
     const resolved = realpathSync(dir);
     assert.equal(dirname(resolved), realpathSync(tmpdir()));
-    assert.ok(basename(resolved).startsWith("freedomstream-usage-"));
+    assert.ok(basename(resolved).startsWith("podetelar-usage-"));
     rmSync(resolved, { recursive: true });
   }
 });
@@ -112,7 +112,7 @@ test("usage counts actual deltas, keeps equal names separate, splits minute boun
 test("the private scrape parser requires the instrumented SFU and accepts real Prometheus labels and scientific notation", () => {
   assert.throws(() => parseUsageMetrics("livekit_packet_bytes 100"));
   const result = parseUsageMetrics(
-    `freedomstream_usage_enabled 1\nfreedomstream_usage_started_seconds 1794220000.123\nfreedomstream_participant_bytes_total{direction="incoming",participant="12345678-1234-4234-8234-123456789abc",room="freedomstream_abcdefghijklmnopqrstuv"} 1.25e+06\n`,
+    `podetelar_usage_enabled 1\npodetelar_usage_started_seconds 1794220000.123\npodetelar_participant_bytes_total{direction="incoming",participant="12345678-1234-4234-8234-123456789abc",room="podetelar_abcdefghijklmnopqrstuv"} 1.25e+06\n`,
   );
   assert.equal(result.counters[0]?.bytes, 1250000);
   assert.equal(result.counters[0]?.room, "abcdefghijklmnopqrstuv");

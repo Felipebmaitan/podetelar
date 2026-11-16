@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 import { buildApp } from "../apps/server/src/app.js";
 import { loadConfig } from "../apps/server/src/config.js";
 
-const dir = mkdtempSync(join(tmpdir(), "freedomstream-direct-native-"));
+const dir = mkdtempSync(join(tmpdir(), "podetelar-direct-native-"));
 const config = loadConfig({
   PUBLIC_URL: "http://localhost:1",
   DIRECT_URL: "http://127.0.0.1:1",
@@ -50,7 +50,7 @@ try {
     { mode: 0o600 },
   );
   const runtime = resolve(
-    process.env.FREEDOMSTREAM_GSTREAMER ?? ".local/gstreamer",
+    process.env.PODETELAR_GSTREAMER ?? ".local/gstreamer",
   );
   const child = spawn(
     "cargo",
@@ -58,7 +58,7 @@ try {
       "test",
       "--locked",
       "-p",
-      "freedomstream-publisher",
+      "podetelar-publisher",
       "admission::tests::joins_discovered_direct_server",
       "--",
       "--ignored",
@@ -69,7 +69,7 @@ try {
       stdio: "inherit",
       env: {
         ...process.env,
-        FREEDOMSTREAM_DIRECT_FIXTURE: path,
+        PODETELAR_DIRECT_FIXTURE: path,
         PATH: `${join(runtime, "bin")}${delimiter}${process.env.PATH ?? ""}`,
         PKG_CONFIG_PATH: join(runtime, "lib/pkgconfig"),
         GSTREAMER_1_0_ROOT_MSVC_X86_64: runtime,

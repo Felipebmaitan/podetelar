@@ -4,7 +4,7 @@ import type {
   AdminCreatedRoom,
   AdminRoom,
   AdminRoomDirectory,
-} from "@freedomstream/contracts";
+} from "@podetelar/contracts";
 import { ApiError, request } from "./api";
 
 const presenceText = {

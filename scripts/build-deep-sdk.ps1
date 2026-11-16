@@ -2,7 +2,7 @@ param([ValidatePattern('^[a-z0-9-]{1,20}$')][string]$Label='sdk-v2',[switch]$Obs
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 if((Test-Path -LiteralPath "$root/.local/experiments/deep-pass/$Label-room.exe")-or(Test-Path -LiteralPath "$root/.local/experiments/deep-pass/source-$Label")){throw 'Choose a new immutable build label'}
-$node=Join-Path $root '../freedomstream/.local/node24/node-v24.11.1-win-x64/node.exe'
+$node=Join-Path $root '../podetelar/.local/node24/node-v24.11.1-win-x64/node.exe'
 & $node "$root/scripts/setup-native-decoder.mjs"
 if($LASTEXITCODE -ne 0){throw 'Original SDK verification failed'}
 & $node "$root/scripts/prepare-deep-decoder.mjs"
@@ -11,7 +11,7 @@ $target=[IO.Path]::GetFullPath("$root/.local/experiments/deep-pass/sdk/webrtc-sy
 $boundary=[IO.Path]::GetFullPath("$root/.local/experiments/deep-pass/")
 if(-not $target.StartsWith($boundary,[StringComparison]::OrdinalIgnoreCase)){throw 'Unexpected SDK destination'}
 if(-not(Test-Path -LiteralPath $target)){New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target)|Out-Null;Copy-Item -LiteralPath "$root/.local/native-sdk/webrtc-sys" -Destination $target -Recurse}
-foreach($name in @('freedomstream_decoder.h','deferred_i420.h','bounded_readback.h','deep-decoder-support.h')){Copy-Item -LiteralPath "$root/.local/experiments/deep-pass/decoder/$name" -Destination "$target/src/$name"}
+foreach($name in @('podetelar_decoder.h','deferred_i420.h','bounded_readback.h','deep-decoder-support.h')){Copy-Item -LiteralPath "$root/.local/experiments/deep-pass/decoder/$name" -Destination "$target/src/$name"}
 $build=Get-Content -LiteralPath "$target/build.rs" -Raw
 if(-not $build.Contains('cargo:rerun-if-changed=src/deep-decoder-support.h')){
  $marker='println!("cargo:rerun-if-changed=src/bounded_readback.h");'
@@ -36,7 +36,7 @@ if($ObserveGl){
  $originalLock=[IO.File]::ReadAllBytes($lockPath)
  [IO.File]::WriteAllBytes("$root/.local/experiments/deep-pass/gl-$Label/Cargo.original.lock",$originalLock)
  try {
-  cargo rustc --offline --release -p freedomstream-publisher --example room-benchmark --features performance-experiments @configArgs -- --cfg freedomstream_deep_gl
+  cargo rustc --offline --release -p podetelar-publisher --example room-benchmark --features performance-experiments @configArgs -- --cfg podetelar_deep_gl
   $buildExit=$LASTEXITCODE
   Copy-Item -LiteralPath $lockPath -Destination "$root/.local/experiments/deep-pass/gl-$Label/Cargo.observer.lock"
  }finally{[IO.File]::WriteAllBytes($lockPath,$originalLock)}
@@ -44,7 +44,7 @@ if($ObserveGl){
  & $node "$root/scripts/check-deep-gl-lock.mjs" $Label
  if($LASTEXITCODE -ne 0){throw 'Observer changed the resolved dependency graph'}
 }else{
- cargo build --locked --release -p freedomstream-publisher --example room-benchmark --features performance-experiments @configArgs
+ cargo build --locked --release -p podetelar-publisher --example room-benchmark --features performance-experiments @configArgs
 }
 if($LASTEXITCODE -ne 0){throw 'Experimental application build failed'}
 $exe=".local/experiments/deep-pass/$Label-room.exe"
@@ -54,7 +54,7 @@ if($LASTEXITCODE -ne 0){throw 'Build source identity capture failed'}
 $decoderArchive=Join-Path $root ".local/experiments/deep-pass/decoder-$Label"
 if(Test-Path -LiteralPath $decoderArchive){throw 'Existing generated decoder archive is immutable'}
 New-Item -ItemType Directory -Path $decoderArchive|Out-Null
-foreach($name in @('freedomstream_decoder.h','deferred_i420.h','bounded_readback.h','deep-decoder-support.h')){Copy-Item -LiteralPath "$target/src/$name" -Destination "$decoderArchive/$name"}
+foreach($name in @('podetelar_decoder.h','deferred_i420.h','bounded_readback.h','deep-decoder-support.h')){Copy-Item -LiteralPath "$target/src/$name" -Destination "$decoderArchive/$name"}
 Copy-Item -LiteralPath "$root/.local/experiments/deep-pass/decoder/source.json" -Destination "$decoderArchive/source.json"
 & $node "$root/scripts/setup-native-decoder.mjs"
 if($LASTEXITCODE -ne 0){throw 'Original SDK changed during isolated build'}

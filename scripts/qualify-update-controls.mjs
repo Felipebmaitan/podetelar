@@ -20,9 +20,9 @@ mkdirSync(feed, { recursive: true });
 mkdirSync(stage);
 const env = {
   ...process.env,
-  FREEDOMSTREAM_UPDATE_FEED: feed,
-  FREEDOMSTREAM_LINK_TEST_SCHEME: `Software\\Classes\\freedomstream-update-qualification-${Date.now()}`,
-  FREEDOMSTREAM_LINK_TEST_ACTIVE: `Software\\FreedomStream\\UpdateQualification-${Date.now()}`,
+  PODETELAR_UPDATE_FEED: feed,
+  PODETELAR_LINK_TEST_SCHEME: `Software\\Classes\\podetelar-update-qualification-${Date.now()}`,
+  PODETELAR_LINK_TEST_ACTIVE: `Software\\PodeTelar\\UpdateQualification-${Date.now()}`,
   CARGO_ENCODED_RUSTFLAGS:
     "-C\x1ftarget-feature=+crt-static\x1f-C\x1flink-arg=/DEPENDENTLOADFLAG:0x800",
 };
@@ -50,12 +50,12 @@ const binaries = join(
   "apps/installed-launcher/target/x86_64-pc-windows-msvc/release",
 );
 copyFileSync(
-  join(binaries, "freedomstream-installed.exe"),
-  join(stage, "freedomstream-installed.exe"),
+  join(binaries, "podetelar-installed.exe"),
+  join(stage, "podetelar-installed.exe"),
 );
 copyFileSync(
   join(binaries, "update-fixture.exe"),
-  join(stage, "FreedomStream.exe"),
+  join(stage, "PodeTelar.exe"),
 );
 run("dotnet", ["tool", "restore"]);
 for (const version of ["0.1.0-preview.1", "0.1.0-preview.2"]) {
@@ -69,13 +69,13 @@ for (const version of ["0.1.0-preview.1", "0.1.0-preview.2"]) {
     "--runtime",
     "win-x64",
     "--packId",
-    "FreedomStreamUpdateQualification",
+    "PodeTelarUpdateQualification",
     "--packVersion",
     version,
     "--packDir",
     stage,
     "--mainExe",
-    "freedomstream-installed.exe",
+    "podetelar-installed.exe",
     "--channel",
     "preview",
     "--outputDir",
@@ -94,7 +94,7 @@ run(
       ...env,
       UPDATE_FIXTURE_ZIP: join(
         output,
-        "old/FreedomStreamUpdateQualification-preview-Portable.zip",
+        "old/PodeTelarUpdateQualification-preview-Portable.zip",
       ),
       UPDATE_FIXTURE_DEST: unpacked,
     },
@@ -125,19 +125,15 @@ manifest.Assets.push({
 });
 writeFileSync(manifestPath, JSON.stringify(manifest));
 async function launch(mode) {
-  const child = spawn(
-    join(unpacked, "current/freedomstream-installed.exe"),
-    [],
-    {
-      windowsHide: true,
-      stdio: "ignore",
-      env: {
-        ...process.env,
-        UPDATE_FIXTURE_MODE: mode,
-        UPDATE_FIXTURE_EVENTS: events,
-      },
+  const child = spawn(join(unpacked, "current/podetelar-installed.exe"), [], {
+    windowsHide: true,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      UPDATE_FIXTURE_MODE: mode,
+      UPDATE_FIXTURE_EVENTS: events,
     },
-  );
+  });
   const exit = new Promise((resolveExit, reject) => {
     child.on("error", reject);
     child.on("exit", (code) =>
@@ -189,7 +185,7 @@ while (
 console.log(
   `Passed real package download/Later/apply/restart with fixture publisher. Evidence: ${output}`,
 );
-run(join(unpacked, "current/freedomstream-installed.exe"), [
+run(join(unpacked, "current/podetelar-installed.exe"), [
   "--veloapp-uninstall",
   "0.1.0-preview.2",
 ]);

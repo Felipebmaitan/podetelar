@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 
 pub const LIMIT: usize = 16 * 1024;
-pub const ENDPOINT_ENV: &str = "FREEDOMSTREAM_UPDATE_ENDPOINT";
-pub const TOKEN_ENV: &str = "FREEDOMSTREAM_UPDATE_TOKEN";
+pub const ENDPOINT_ENV: &str = "PODETELAR_UPDATE_ENDPOINT";
+pub const TOKEN_ENV: &str = "PODETELAR_UPDATE_TOKEN";
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Phase {

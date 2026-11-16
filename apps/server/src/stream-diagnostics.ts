@@ -105,7 +105,7 @@ export function streamDiagnosticsRoutes(
         timeWindow: "1 minute",
         keyGenerator: (request) =>
           createHash("sha256")
-            .update(request.cookies.fs_session ?? request.ip)
+            .update(request.cookies.podetelar_session ?? request.ip)
             .digest("hex"),
       },
     },
@@ -113,7 +113,8 @@ export function streamDiagnosticsRoutes(
       sweep();
       const { roomId: room, sid } = request.params;
       let { owner } = request.params;
-      const session = () => rooms.session(room, request.cookies.fs_session);
+      const session = () =>
+        rooms.session(room, request.cookies.podetelar_session);
       const member = session();
       if (!member)
         return reply.code(401).send({ error: "Room session required." });
@@ -159,7 +160,7 @@ export function streamDiagnosticsRoutes(
             !session() ||
             !rooms.active(room, owner) ||
             !["h264", "hevc", "av1"].includes(
-              watcher?.attributes?.[`freedomstream.watch.${owner}`] ?? "",
+              watcher?.attributes?.[`podetelar.watch.${owner}`] ?? "",
             )
           )
             return reply
@@ -174,7 +175,7 @@ export function streamDiagnosticsRoutes(
             if (
               !rooms.active(room, viewerId) ||
               !["h264", "hevc", "av1"].includes(
-                watcher?.attributes?.[`freedomstream.watch.${owner}`] ?? "",
+                watcher?.attributes?.[`podetelar.watch.${owner}`] ?? "",
               )
             )
               existing.viewers.delete(viewerId);

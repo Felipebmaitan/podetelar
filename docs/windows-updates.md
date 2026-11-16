@@ -1,20 +1,14 @@
-# Installed Windows builds and update rollout
+# Windows installers and updates
 
-The installed app supports an update badge, hover changelog, explicit download,
-progress/retry and Restart to update/Later. Windows releases offer an **unsigned
-installer preview** as a Setup download. Starting with the v0.1.2 installer,
-packaging compiles in the public GitHub releases feed. v0.1.0/v0.1.1 require one
-manual Setup upgrade because their launchers have no compiled feed. Public
-updater releases include Setup, a full `.nupkg`, `releases.preview.json`, an
-installer manifest and checksums.
-The portable executable remains an internal installer payload and qualification
-tool; do not publish it separately. See [installer qualification](verification/global-bot-installer.md).
-See [upstream research](research/windows-updates.md) for T3 Code's implementation,
-Velopack licensing, runtime constraints and source citations.
+Starting with v0.1.2, installed builds check the public GitHub releases feed on
+startup and periodically. Download and restart are explicit. Hover over the update
+badge for notes; Later keeps the current version running. Restart ends sharing and
+watching before applying the package. Versions 0.1.0 and 0.1.1 need one manual Setup
+upgrade because their launchers have no compiled feed.
 
-## Build a preview
+## Build and publish
 
-On Windows with Node 24, Rust 1.95, Visual Studio C++ and .NET SDK 8 or newer:
+Use Windows, Node 24, Rust 1.95, Visual Studio C++ and .NET SDK 8 or newer:
 
 ```powershell
 npm ci
@@ -24,181 +18,73 @@ $env:INSTALLER_BUILD_NUMBER = '1'
 node scripts/package-installer.mjs
 ```
 
-Use a clean committed checkout. Increase the preview number for each build.
-The packager verifies the portable artifact's commit, size and SHA-256 and uses
-the same pinned Velopack SDK/CLI. Outputs are under `.local/installers/`.
-Its `public/` directory contains the complete publishable asset set, after
-validating the feed's package ID, version, safe filename, size and SHA-256. It
-embeds `docs/releases/v<version>.md` as the update notes and disables deltas.
-Publish that directory together in a draft GitHub release, verify uploaded bytes,
-then publish the release with the full package already present. Keep old assets.
-Do not upload the generated portable ZIP or standalone executable.
-The manual **Windows installer preview** workflow builds the native payload,
-runs checks and portable qualification, then uploads installer/feed artifacts.
-Artifacts are for maintainers; they expire and are not a user update source.
-No PAT is embedded and the workflow has no release-write permission.
+Use a clean committed checkout and increase the preview build number for each
+build. The packager verifies the portable artifact's commit, size and SHA-256,
+uses the pinned Velopack SDK/CLI, and writes `.local/installers/`. Update notes
+come from `docs/releases/v<version>.md`; keep those files for packaging.
 
-Velopack installs per user, provides shortcuts and an uninstall entry. A small
-GUI bootstrap handles Velopack startup before launching the portable application.
-The existing portable application still extracts its licensed runtime and sources;
-its cleanup job remains intact. The outer bootstrap is outside that job and owns
-checking, downloading and handoff to Update.exe after the portable child exits.
-The separate bootstrap Cargo workspace avoids coupling installer startup to media
-SDK initialization. Neither .NET nor a shared CRT should be needed by users;
-offline/fresh-machine verification remains required before advertising that result.
+Publish the complete `public/` directory together: Setup, full `.nupkg`,
+`releases.preview.json`, installer manifest and checksums. Prepare a draft release,
+verify uploaded bytes, then publish with the package already present. Keep old
+assets. Do not publish portable ZIPs or standalone executables. Public updater
+releases must not be marked prerelease: `preview` is the internal package channel.
 
-Before the first public installer, `deploy/windows/installer.json` fixes the
-package ID as `PodeTelar`. Its default installation directory is therefore
-`%LOCALAPPDATA%\PodeTelar`, separate from existing encrypted profiles in
-`%LOCALAPPDATA%\FreedomStream`. The earlier `FreedomStream` ID was used only for
-local/CI installer previews and collides with that legacy profile directory;
-retire those previews before installing the public package. The fixed launcher
-filename and `freedomstream://` protocol remain compatible. The native app no
-longer saves a server, nickname or language preference and removes obsolete
-profile files on startup. Runtime caches and installation data are separate.
+The manual **Windows installer preview** workflow builds, checks and qualifies
+artifacts. Expiring Actions artifacts are not an update source. No private GitHub
+token is embedded in the app.
 
-## Installed room links
-
-Installing registers `freedomstream://` for the current Windows user. The command
-targets the fixed `current/freedomstream-installed.exe` with a quoted
-`--browser-link "%1"` argument; it does not invoke Update.exe with the ticket.
-Velopack install/update hooks maintain registration and uninstall removes only
-the matching installation's command. Explicit installation can migrate the old
-portable handler. Unrelated handlers are preserved. Legacy standalone builds
-retain their opt-in link registration; installed users no longer enable or refresh
-a content-addressed launcher copy from Room options.
-
-The installed launcher serializes instances. Later links and ordinary launches
-send an activation/focus request to the existing instance, using a random token
-and loopback endpoint discovered in the current user's registry. Only local
-broker credentials and executable paths enter that registry; handoff tickets stay
-in bounded memory queues. Both transport and native URL validation are retained.
-The publisher polls on a worker and requests restore/focus of its existing window.
-
-The website keeps its explicit Join action and one-use short-lived handoff. Each
-link loads its own server automatically, with no remembered-origin gate. The
-first room asks for a nickname; later links may reuse the process's nickname and
-join when idle. Switching from an active room requires confirmation. Dismissing
-restores that room's invitation. No capture or subscription starts from a link.
-Browser external-app prompts remain controlled by the browser/Windows.
-
-`node scripts/qualify-installed-links.mjs` builds a test-only launcher/publisher
-substitute with isolated registry keys. It verifies real install/update/uninstall
-hook registration, quoting paths with spaces, focus/link forwarding and one
-publisher process. Local tests also exercise migration, foreign-owner preservation,
-invitation-selected servers and dismissal. This establishes registry/process behavior,
-not a browser prompt or native foreground-window observation, fresh-machine
-installation or a production media-session switch.
-
-## Badge, download and restart controls
+## Feed and package validation
 
 `deploy/windows/installer.json` defaults `updateFeed` to
-`https://github.com/Felipebmaitan/podetelar`. An optional
-`FREEDOMSTREAM_UPDATE_FEED` build override may select a trusted, credential-free
-HTTPS feed directory or public GitHub repository URL. Empty overrides use the
-default; missing or malformed feeds fail packaging. The selected feed is compiled
-into the launcher; room data,
-IPC requests and runtime environment cannot select an arbitrary update source.
-The workflow reads optional repository variable `WINDOWS_UPDATE_FEED`. Local
-qualification scripts compile an absolute file feed directly into their isolated
-test launcher; installer packaging refuses local paths. No PAT is embedded.
-The existing `preview` channel refers to the internal package version/channel,
-not GitHub's prerelease flag: the public repository source selects published
-GitHub releases, and public updater releases must not be marked prerelease.
+`https://github.com/Felipebmaitan/podetelar`. A build-time
+`PODETELAR_UPDATE_FEED` override may select a trusted credential-free HTTPS
+feed or public GitHub repository; the workflow uses optional `WINDOWS_UPDATE_FEED`.
+Packaging rejects invalid/missing feeds and local paths. Room data and runtime
+IPC cannot change the compiled source.
 
-The publisher receives a per-launch loopback endpoint and random 256-bit token
-through its environment. Length-prefixed JSON is limited to 16 KiB, connections
-have short timeouts and the command queue is bounded. No room invitation/session
-authority crosses that connection. Normal activation arguments are excluded from
-Velopack startup logging and restart arguments are empty. Installed launchers
-serialize instances with a Windows file handle outside the replaced `current`
-directory. The publisher GUI only polls in a worker, never on its render thread.
+The launcher refuses downgrades, cross-application packages, unsafe filenames,
+missing hashes and packages over 1 GiB. It downloads full packages, verifies size
+and SHA-256 before Ready and again before applying, and repairs corrupted cached
+packages after an explicit download. Feed hashes do not establish an independent
+publisher signature. The current Windows preview is unsigned.
 
-Onboarding and room headers show update status. Hover reveals bounded plain-text
-notes and the version; Download starts a worker transfer and reports percentage.
-Ready opens a restart confirmation explaining that sharing/watching will end.
-Later keeps the downloaded package without applying it on ordinary exit/startup.
-Only an acknowledged Restart triggers the existing picker/admission/media shutdown
-path; Update.exe is launched outside the cleanup job after the portable child exits.
-The saved-room behavior is unchanged, and no media restarts automatically.
+## Process and invitation ownership
 
-Checks run on startup and at roughly 30-minute intervals with jitter while current
-or retryable. Downgrades, cross-application packages, unsafe filenames, missing
-SHA-256 and packages over 1 GiB are refused. Stable versions refuse prereleases.
-Downloads explicitly discard SDK delta strategies and use full packages. The
-launcher checks SHA-256/size itself before Ready and again before applying; invalid
-cached packages are removed and downloaded again on an explicit download action.
-This does not establish independent publisher authenticity. In-flight cancellation,
-opt-in nightly switching and delta optimization remain follow-up work.
+Velopack installs package ID `PodeTelar` under `%LOCALAPPDATA%\PodeTelar`.
+The GUI bootstrap owns update checks and application of updates, outside the
+portable publisher's cleanup job. Only an acknowledged Restart invokes Update.exe
+after the media child exits. Later does not apply updates on ordinary exit/startup.
 
-## Remaining delivery work
+A per-launch authenticated loopback bridge carries bounded update status/commands;
+room invitations and session authority never cross it. Rendering does not wait
+on network checks or downloads. No capture or subscription resumes automatically.
 
-1. Qualify the actual publisher/portable media shutdown during an installed update;
-   test concurrent launches, stale connections and publisher crashes. Add a native
-   visual/interaction acceptance pass for the badge and restart dialog.
-2. Add transfer cancellation and qualify timeout/backoff behavior for each provider.
-3. Qualify saved-room continuity, offline startup and uninstall on fresh Windows.
-4. Verify public GitHub feed discovery/download after publishing each release.
-   The packager prepares the required public assets together. Never ship a private GitHub token.
-   Publish packages before discoverable feed metadata; use full packages first,
-   then add measured delta updates with full fallback. Keep previous releases.
-5. Add stable tags and scheduled nightly CI only after update acceptance.
-   Nightlies require new commits and a minimum publication interval (initially
-   six hours). Use increasing SemVer prereleases, separate stable/nightly feeds,
-   explicit promotion and no accidental downgrade or preview offers.
-6. Integrate Authenticode signing and independently verify installer, helper and
-   application signatures. The existing portable EOF footer must be made signing
-   aware or replaced by a directly installed runtime before signing its payload.
-   Feed hashes alone are not independent publisher authentication. Qualify all
-   added helper/dependency licenses before public distribution.
+Install/update hooks register `podetelar://` for the current user, targeting
+the stable installed launcher. Uninstall removes only that installation's handler.
+The launcher forwards subsequent activation/focus requests to the running app
+through authenticated local IPC. Tickets remain in bounded memory queues and are
+excluded from updater logging and restart arguments. See
+[invitation behavior](distribution.md#invitations-and-launch-behavior).
 
-## Acceptance before shipping
+## Acceptance
 
-- Install two actual versions; check notes, download, Later and restart; verify
-  the updater survives publisher/portable exit and cleans up all media processes.
-- Verify offline launch, shortcut and uninstall, existing portable coexistence,
-  DPAPI server/name continuity, no automatic room rejoin or resumed capture/subscriptions, and no visible console.
-- Interrupt downloads; corrupt packages; test missing/auth-denied feeds, multiple
-  instances, channel isolation, full fallback and failed application recovery.
-- Verify signed artifacts/tamper rejection and inspect logs for session secrets.
-- Run actual Windows installation/update/uninstall on a fresh machine; report
-  firewall/SmartScreen observations separately from build checks.
+Run the workspace checks, native tests and packaging qualification, plus:
 
-These are pending acceptance gates. Local implementation and fixture results must
-not be advertised as production/fresh-machine updater qualification. Merge only after appropriate checks and a fresh
-GPT-6.1-Sol high-reasoning review; external verification stays explicitly open.
+```powershell
+cargo fmt --manifest-path apps/installed-launcher/Cargo.toml -- --check
+cargo clippy --locked --manifest-path apps/installed-launcher/Cargo.toml -- -D warnings
+cargo test --locked --manifest-path apps/installed-launcher/Cargo.toml
+node scripts/qualify-installed-links.mjs
+node scripts/qualify-update-controls.mjs
+```
 
-Follow-up tracking: [automatic update delivery, badge and release rollout #29](https://github.com/Felipebmaitan/freedomstream/issues/29).
+The link qualifier uses isolated registry keys and a publisher substitute to check
+hooks and real-process forwarding. The update qualifier creates two real Velopack
+packages and exercises discovery, download, Later, corrupt-cache repair and
+Update.exe replacement/relaunch using a fixture process.
 
-## Local foundation verification
-
-On 2026-11-11, Node 24.11.1 `npm run check`, the installer integrity-input test,
-bootstrap Rust formatting/Clippy and Windows x64 release compilation passed.
-The notice collector successfully collected the pinned bootstrap dependency texts.
-Velopack 1.2.161 produced a real Setup EXE, full update package and preview feed
-in a separate local smoke directory using an existing portable release plus the
-new bootstrap. This checks package assembly only: the old portable payload is
-not a build of this branch and those files must not be distributed. No actual
-installation, two-version update, signing or fresh-machine acceptance is claimed.
-
-## Update-controls qualification
-
-`node scripts/qualify-update-controls.mjs` builds two actual Velopack packages
-against a private local file feed. It uses a small publisher substitute to drive
-the real launcher/transport, reject a bad token and a premature restart, download
-the package, choose Later and verify version one stays unchanged, then explicitly
-restart through the real Update.exe and observe version two relaunch. Evidence is
-kept under `.local/update-controls-*`. The substitute is behind a Cargo feature
-and is never staged by the production installer packager. The workflow runs this
-test on Windows. It also offers an unsafe delta alongside a real base package and
-verifies that delta is ignored, then corrupts the downloaded cache after Later and
-requires the next download to repair it. This verifies helper lifetime and update application with a
-fixture process; it does not establish actual media cleanup, fresh installation,
-signed provenance or saved-profile continuity. Those remain separate gates above.
-
-Local 2026-11-11 results: Node 24 `npm run check` passed; launcher Clippy and
-protocol tests passed; the real two-package fixture qualified download, Later and
-Update.exe apply/restart. The native suite passed 70 tests (three live-environment
-tests skipped), including pointer interactions for Download/Restart/Later and
-existing shutdown checks. These automated egui interactions are not a rendered
-native-window visual acceptance pass or a production media-update run.
+Before shipping, verify the actual installed publisher's media shutdown during
+an update, concurrent launches, shortcut/room-link behavior, offline startup and
+uninstall on fresh Windows. Verify public anonymous feed discovery/download and
+uploaded package integrity for every release. Fixture success does not qualify
+native UI interaction, production media cleanup, signing or fresh-machine behavior.

@@ -125,8 +125,7 @@ test("diagnostics distinguish isolated SFU delivery interruption and publisher s
   baseURL,
 }) => {
   test.skip(
-    !process.env.FREEDOMSTREAM_TEST_SFU_PID ||
-      !process.env.FREEDOMSTREAM_TEST_SFU_EXE,
+    !process.env.PODETELAR_TEST_SFU_PID || !process.env.PODETELAR_TEST_SFU_EXE,
     "Requires the owned local native-room-smoke SFU.",
   );
   test.setTimeout(110000);
@@ -180,11 +179,11 @@ test("diagnostics distinguish isolated SFU delivery interruption and publisher s
   try {
     await delay(15000);
     await pause(
-      Number(process.env.FREEDOMSTREAM_TEST_SFU_PID),
-      process.env.FREEDOMSTREAM_TEST_SFU_EXE!,
+      Number(process.env.PODETELAR_TEST_SFU_PID),
+      process.env.PODETELAR_TEST_SFU_EXE!,
     );
     await delay(6000);
-    await pause(sender.child.pid!, process.env.FREEDOMSTREAM_NATIVE_EXE!);
+    await pause(sender.child.pid!, process.env.PODETELAR_NATIVE_EXE!);
     const [sent, received] = await Promise.all([
       sender.result,
       viewer.result as Promise<Report>,

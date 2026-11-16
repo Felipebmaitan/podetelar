@@ -22,8 +22,8 @@ use std::{
 };
 use tokio::task::JoinHandle;
 
-pub const LIMIT_PREFIX: &str = "freedomstream.limit.";
-pub const WATCH_PREFIX: &str = "freedomstream.watch.";
+pub const LIMIT_PREFIX: &str = "podetelar.limit.";
+pub const WATCH_PREFIX: &str = "podetelar.watch.";
 use crate::codec_policy::{self, Codecs};
 pub type Picture = Arc<Mutex<Option<Arc<egui::ColorImage>>>>;
 
@@ -130,16 +130,15 @@ fn apply_subscription(publication: &RemoteTrackPublication, enabled: bool) {
 #[cfg(feature = "performance-experiments")]
 pub fn frame_driven_repaint() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        std::env::var("FREEDOMSTREAM_FRAME_REPAINT").is_ok_and(|value| value == "1")
-    })
+    *ENABLED
+        .get_or_init(|| std::env::var("PODETELAR_FRAME_REPAINT").is_ok_and(|value| value == "1"))
 }
 #[cfg(feature = "performance-experiments")]
 fn conversion_jobs() -> Option<&'static Arc<tokio::sync::Semaphore>> {
     static JOBS: std::sync::OnceLock<Option<Arc<tokio::sync::Semaphore>>> =
         std::sync::OnceLock::new();
     JOBS.get_or_init(|| {
-        std::env::var("FREEDOMSTREAM_CONVERSION_WORKERS")
+        std::env::var("PODETELAR_CONVERSION_WORKERS")
             .ok()
             .and_then(|value| value.parse::<usize>().ok())
             .filter(|workers| (1..=4).contains(workers))
@@ -603,7 +602,7 @@ impl Playback {
             if !self.watches.contains_key(&id) {
                 let descriptor = participant
                     .attributes()
-                    .get("freedomstream.preview.screen")
+                    .get("podetelar.preview.screen")
                     .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok());
                 if let Some(descriptor) = descriptor
                     && descriptor.get("trackSid").and_then(|v| v.as_str())
@@ -699,12 +698,12 @@ impl Playback {
                             let _lifetime = lifetime;
                             let mut image_pool = crate::video_image::ImagePool::default();
                             #[cfg(feature = "performance-experiments")]
-                            let pooled = std::env::var("FREEDOMSTREAM_IMAGE_POOL")
+                            let pooled = std::env::var("PODETELAR_IMAGE_POOL")
                                 .is_ok_and(|value| value == "1");
                             #[cfg(not(feature = "performance-experiments"))]
                             let pooled = true;
                             #[cfg(feature = "performance-experiments")]
-                            let fallback = std::env::var("FREEDOMSTREAM_IMAGE_FALLBACK")
+                            let fallback = std::env::var("PODETELAR_IMAGE_FALLBACK")
                                 .is_ok_and(|value| value == "1");
                             let mut stream = NativeVideoStream::with_options(
                                 track.rtc_track(),

@@ -56,7 +56,7 @@ try {
   }
   if (!ready) throw new Error("Local SFU startup failed.");
   const admin = new RoomServiceClient(endpoint, key, secret);
-  await admin.createRoom({ name: "freedomstream_benchmark" });
+  await admin.createRoom({ name: "podetelar_benchmark" });
   for (let pair = 1; pair <= 5; pair++)
     for (const mode of pair % 2
       ? ["direct", "coalesced"]

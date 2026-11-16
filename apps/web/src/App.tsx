@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { invitationSchema, roomIdSchema } from "@freedomstream/contracts";
-import type { CreatedRoom, RoomSession } from "@freedomstream/contracts";
+import { invitationSchema, roomIdSchema } from "@podetelar/contracts";
+import type { CreatedRoom, RoomSession } from "@podetelar/contracts";
 import { ApiError, request } from "./api";
 import { RoomAccess } from "./RoomAccess";
 import { PublisherDownload } from "./PublisherDownload";

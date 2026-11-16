@@ -73,7 +73,7 @@ jobs:
         env:
           INSTALLER_BUILD_NUMBER: ${{ github.run_number }}
           # Empty optional override falls back to deploy/windows/installer.json.
-          FREEDOMSTREAM_UPDATE_FEED: ${{ vars.WINDOWS_UPDATE_FEED }}
+          PODETELAR_UPDATE_FEED: ${{ vars.WINDOWS_UPDATE_FEED }}
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer-preview

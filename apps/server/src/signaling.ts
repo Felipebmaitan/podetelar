@@ -74,7 +74,7 @@ export class Signaling {
           try {
             const claims = await verifier.verify(token, 0);
             const room = claims.video?.room?.match(
-              /^freedomstream_([A-Za-z0-9_-]{22})$/,
+              /^podetelar_([A-Za-z0-9_-]{22})$/,
             )?.[1];
             if (
               !room ||

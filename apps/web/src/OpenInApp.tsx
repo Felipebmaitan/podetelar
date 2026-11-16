@@ -25,7 +25,7 @@ export function OpenInApp({
       .then(({ appUrl }) => {
         if (controller.signal.aborted) return;
         const url = new URL(appUrl);
-        if (url.protocol !== "freedomstream:" || url.hostname !== "join")
+        if (url.protocol !== "podetelar:" || url.hostname !== "join")
           throw new Error("Invalid app invitation.");
         setAppUrl(appUrl);
         setExpires(Date.now() + 45000);

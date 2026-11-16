@@ -27,7 +27,7 @@ const execute = (file, args) =>
   execFileSync(file, args, { cwd: root, windowsHide: true, stdio: "pipe" });
 const originalAdapter = execute("git", [
   "show",
-  `${base}:apps/publisher/decoder/freedomstream_decoder.h`,
+  `${base}:apps/publisher/decoder/podetelar_decoder.h`,
 ]);
 const archive = join(output, "source.tar");
 execute("git", [
@@ -55,7 +55,7 @@ for (const name of ["livekit", "webrtc-sys"])
 // Restore only the known adapter changes in this private copy, then verify the
 // complete original tree. The current candidate SDK is never mutated.
 const sdk = join(output, ".local/native-sdk/webrtc-sys");
-writeFileSync(join(sdk, "src/freedomstream_decoder.h"), originalAdapter);
+writeFileSync(join(sdk, "src/podetelar_decoder.h"), originalAdapter);
 const deferredHeader = join(sdk, "src/deferred_i420.h");
 if (existsSync(deferredHeader)) rmSync(deferredHeader);
 const readbackHeader = join(sdk, "src/bounded_readback.h");
@@ -149,7 +149,7 @@ edit("apps/publisher/src/sources.rs", (text) => {
     "        windows::enumerate()",
     `        let sources=windows::enumerate();
         #[cfg(feature="performance-experiments")]
-        let sources={let mut sources=sources;if std::env::var("FREEDOMSTREAM_PERFORMANCE_FIXTURE").is_ok_and(|value|value=="1"){sources.push(fixture());}sources};
+        let sources={let mut sources=sources;if std::env::var("PODETELAR_PERFORMANCE_FIXTURE").is_ok_and(|value|value=="1"){sources.push(fixture());}sources};
         sources`,
   );
 });

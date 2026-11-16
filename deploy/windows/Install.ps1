@@ -1,4 +1,4 @@
-param([string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'FreedomStream'), [switch]$NoShortcut, [string]$RuntimeArchive)
+param([string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'PodeTelar'), [switch]$NoShortcut, [string]$RuntimeArchive)
 $ErrorActionPreference = 'Stop'
 $env:PSModulePath = "$PSHOME\Modules;$env:PSModulePath"
 $ProgressPreference = 'SilentlyContinue'
@@ -11,18 +11,18 @@ foreach ($entry in $release.files.PSObject.Properties) {
     if ((Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $entry.Name) -Algorithm SHA256).Hash -ne $entry.Value) { throw "Damaged package file: $($entry.Name)" }
 }
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
-if (Test-Path -LiteralPath $InstallRoot) { Assert-FreedomStreamRoot $InstallRoot }
+if (Test-Path -LiteralPath $InstallRoot) { Assert-PodeTelarRoot $InstallRoot }
 else {
     New-Item -ItemType Directory -Path $InstallRoot | Out-Null
-    Set-Content -LiteralPath (Join-Path $InstallRoot '.freedomstream-install') -Value 'FreedomStream per-user installation v1' -Encoding ASCII
-    Assert-FreedomStreamRoot $InstallRoot
+    Set-Content -LiteralPath (Join-Path $InstallRoot '.podetelar-install') -Value 'PodeTelar per-user installation v1' -Encoding ASCII
+    Assert-PodeTelarRoot $InstallRoot
 }
 $versionRoot = Join-Path $InstallRoot "versions/$($release.id)"
 if (Test-Path -LiteralPath $versionRoot) { throw 'This release is already installed or an interrupted installation exists. Keep the current version; inspect the version directory before retrying.' }
 New-Item -ItemType Directory -Path $versionRoot -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Ownership.ps1') -Destination $InstallRoot -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Uninstall.ps1') -Destination $InstallRoot -Force
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Start-FreedomStream.ps1') -Destination $InstallRoot -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Start-PodeTelar.ps1') -Destination $InstallRoot -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'release.json') -Destination $versionRoot
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'notices') -Destination $versionRoot -Recurse
 $runtime = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'native-runtime.json') -Raw | ConvertFrom-Json
@@ -54,24 +54,24 @@ if ($missingCrt.Count -gt 0) {
     $process.WaitForExit()
     if ($process.ExitCode -notin @(0, 1638, 3010)) { throw "Microsoft runtime installation failed ($($process.ExitCode))." }
 }
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'freedomstream-publisher.exe') -Destination (Join-Path $gstRoot 'bin')
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'podetelar-publisher.exe') -Destination (Join-Path $gstRoot 'bin')
 $env:PATH = "$(Join-Path $gstRoot 'bin');$env:WINDIR\System32;$env:WINDIR"
 $env:GST_PLUGIN_PATH_1_0 = ''
 $env:GST_PLUGIN_SYSTEM_PATH_1_0 = Join-Path $gstRoot 'lib/gstreamer-1.0'
 $env:GST_PLUGIN_SCANNER_1_0 = Join-Path $gstRoot 'libexec/gstreamer-1.0/gst-plugin-scanner.exe'
 $env:GST_REGISTRY_1_0 = Join-Path $versionRoot 'registry.bin'
-$probe = & (Join-Path $gstRoot 'bin/freedomstream-publisher.exe') --probe
+$probe = & (Join-Path $gstRoot 'bin/podetelar-publisher.exe') --probe
 if ($LASTEXITCODE -ne 0 -or -not ($probe -match 'GStreamer 1\.28\.8')) { throw 'Packaged runtime probe failed. The previous version remains current. Check the Visual C++ x64 prerequisite and GPU driver.' }
 Set-Content -LiteralPath (Join-Path $InstallRoot 'current.json.new') -Value ($release.id | ConvertTo-Json) -Encoding ASCII
 Move-Item -LiteralPath (Join-Path $InstallRoot 'current.json.new') -Destination (Join-Path $InstallRoot 'current.json') -Force
 if (-not $NoShortcut) {
     $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Programs')) 'FreedomStream.lnk'))
+    $shortcut = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Programs')) 'PodeTelar.lnk'))
     $shortcut.TargetPath = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
-    $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$(Join-Path $InstallRoot 'Start-FreedomStream.ps1')`""
+    $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$(Join-Path $InstallRoot 'Start-PodeTelar.ps1')`""
     $shortcut.WorkingDirectory = $InstallRoot
-    $shortcut.IconLocation = Join-Path $gstRoot 'bin/freedomstream-publisher.exe'
+    $shortcut.IconLocation = Join-Path $gstRoot 'bin/podetelar-publisher.exe'
     $shortcut.Save()
-    Set-Content -LiteralPath (Join-Path $InstallRoot '.start-menu-shortcut') -Value 'FreedomStream.lnk' -Encoding ASCII
+    Set-Content -LiteralPath (Join-Path $InstallRoot '.start-menu-shortcut') -Value 'PodeTelar.lnk' -Encoding ASCII
 }
 Write-Output "Installed PodeTelar $($release.id). Open it from the Start menu. To remove it, run $InstallRoot\Uninstall.ps1."

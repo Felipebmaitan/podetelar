@@ -20,12 +20,11 @@ pub static MAX_AGE_US: AtomicU64 = AtomicU64::new(0);
 static FAILED: AtomicBool = AtomicBool::new(false);
 pub fn retain_planes() -> bool {
     static RETAIN: OnceLock<bool> = OnceLock::new();
-    *RETAIN
-        .get_or_init(|| std::env::var("FREEDOMSTREAM_DEEP_RETAIN_PLANES").is_ok_and(|v| v == "1"))
+    *RETAIN.get_or_init(|| std::env::var("PODETELAR_DEEP_RETAIN_PLANES").is_ok_and(|v| v == "1"))
 }
 pub fn enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var("FREEDOMSTREAM_DEEP_PLANAR").is_ok_and(|v| v == "1"))
+    *ENABLED.get_or_init(|| std::env::var("PODETELAR_DEEP_PLANAR").is_ok_and(|v| v == "1"))
         && !FAILED.load(Ordering::Relaxed)
 }
 pub struct Picture {
@@ -425,7 +424,7 @@ pub fn check(report: std::path::PathBuf) -> anyhow::Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "FreedomStream planar pixel qualification",
+        "PodeTelar planar pixel qualification",
         options,
         Box::new(move |_| {
             Ok(Box::new(Check {

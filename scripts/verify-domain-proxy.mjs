@@ -15,8 +15,8 @@ import { loadConfig } from "../apps/server/dist/config.js";
 const exec = promisify(execFile);
 const docker = (...args) =>
   exec("docker", args, { windowsHide: true, maxBuffer: 1024 * 1024 });
-const dir = mkdtempSync(join(tmpdir(), "freedomstream-nginx-domains-"));
-const container = `freedomstream-nginx-domains-${randomBytes(6).toString("hex")}`;
+const dir = mkdtempSync(join(tmpdir(), "podetelar-nginx-domains-"));
+const container = `podetelar-nginx-domains-${randomBytes(6).toString("hex")}`;
 const secrets = Object.fromEntries(
   ["admin", "apiKey", "apiSecret", "turn"].map((key) => [
     key,
@@ -26,7 +26,7 @@ const secrets = Object.fromEntries(
 const publicUrl = "https://stream.example.test";
 const directUrl = "https://stream-direct.example.test:8443";
 const bytes = Buffer.from("proxy download fixture, never executed");
-const filename = "freedomstream-windows-x64-0.1.0-aaaaaaaaaaaa.exe";
+const filename = "podetelar-windows-x64-0.1.0-aaaaaaaaaaaa.exe";
 writeFileSync(join(dir, filename), bytes);
 writeFileSync(
   join(dir, "publisher.json"),
@@ -63,7 +63,7 @@ const app = await buildApp(config, {
 try {
   const upstream = await app.listen({ host: "0.0.0.0", port: 0 });
   const generated = productionConfiguration(
-    "/opt/freedomstream",
+    "/opt/podetelar",
     "203.0.113.9",
     "stream.example.test",
     secrets,
@@ -80,11 +80,11 @@ try {
     "run",
     "--rm",
     "-v",
-    `${dir}:/opt/freedomstream`,
+    `${dir}:/opt/podetelar`,
     "nginx:stable-alpine",
     "sh",
     "-c",
-    "apk add --no-cache openssl >/dev/null && openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=stream-direct.example.test -keyout /opt/freedomstream/shared/tls/current/privkey.pem -out /opt/freedomstream/shared/tls/current/fullchain.pem 2>/dev/null",
+    "apk add --no-cache openssl >/dev/null && openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=stream-direct.example.test -keyout /opt/podetelar/shared/tls/current/privkey.pem -out /opt/podetelar/shared/tls/current/fullchain.pem 2>/dev/null",
   );
   await docker(
     "run",
@@ -98,9 +98,9 @@ try {
     "-p",
     "127.0.0.1::443",
     "-v",
-    `${dir}:/opt/freedomstream:ro`,
+    `${dir}:/opt/podetelar:ro`,
     "-v",
-    `${join(dir, "nginx.conf")}:/etc/nginx/conf.d/freedomstream.conf:ro`,
+    `${join(dir, "nginx.conf")}:/etc/nginx/conf.d/podetelar.conf:ro`,
     "nginx:stable-alpine",
   );
   await docker("exec", container, "nginx", "-t");
@@ -203,7 +203,7 @@ try {
   const target = resolve(dir);
   assert.equal(dirname(target), resolve(tmpdir()));
   assert.ok(
-    target.split(/[\\/]/).at(-1).startsWith("freedomstream-nginx-domains-"),
+    target.split(/[\\/]/).at(-1).startsWith("podetelar-nginx-domains-"),
   );
   rmSync(target, { recursive: true });
 }

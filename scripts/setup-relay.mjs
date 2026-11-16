@@ -70,8 +70,8 @@ tls-listening-port=${port}
 listening-port=3478
 min-port=30000
 max-port=30127
-realm=freedomstream
-server-name=freedomstream
+realm=podetelar
+server-name=podetelar
 use-auth-secret
 static-auth-secret=${secret}
 fingerprint

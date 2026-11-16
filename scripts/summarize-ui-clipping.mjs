@@ -202,7 +202,7 @@ const result = {
   limits:
     "Short local B/A/A/B phases, two runs per variant. Five streams remain partly visible: no demonstrated clipping gain. Five-stream a2 has only three grid observations; its CPU/GPU aggregates are not a matched full-window comparison, and apparent regression is not causally established. Seven-stream trials have eight grid observations each, one fully clipped tile and ~419 decoded frames/s. All grid samples report unfocused windows and unknown occlusion; no foreground/display qualification. CPU100%=one core; private=commit, working set=resident; GPU engines separate; handoffs are not physical GL uploads/display frames. Cached HTTP is warm closed history, not normal live dashboard or WAN/VPS qualification. Windows CPU timer granularity can produce 0 ms in short cached bursts; that is not zero work. No audible/physical A/V, AMD GPU, games or physical4K qualification.",
 };
-const output = join(root, "docs/verification/native-ui-clipping-results.json");
+const output = join(root, ".local/experiments/native-ui-clipping-results.json");
 writeFileSync(output, JSON.stringify(result, null, 2) + "\n");
 console.log(
   JSON.stringify({

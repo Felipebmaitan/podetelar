@@ -7,7 +7,7 @@ import { format } from "prettier";
 const root = resolve(import.meta.dirname, "..");
 const report = JSON.parse(
   readFileSync(
-    resolve(root, "docs/verification/deep-performance-results.json"),
+    resolve(root, ".local/experiments/deep-performance-results.json"),
   ),
 );
 assert.equal(report.complete, true);
@@ -456,7 +456,7 @@ const html = await format(
 assert.ok(Buffer.byteLength(html) < 1_000_000);
 const output = resolve(
   root,
-  "docs/verification/deep-performance-comparison.html",
+  ".local/experiments/deep-performance-comparison.html",
 );
 writeFileSync(output, html);
 console.log(

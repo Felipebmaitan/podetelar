@@ -3,9 +3,9 @@ import { copyFileSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 
 export function nativeExecutable(): string {
-  const executable = process.env.FREEDOMSTREAM_NATIVE_EXE;
+  const executable = process.env.PODETELAR_NATIVE_EXE;
   if (!executable)
-    throw new Error("Set FREEDOMSTREAM_NATIVE_EXE to the built publisher.");
+    throw new Error("Set PODETELAR_NATIVE_EXE to the built publisher.");
   return resolve(executable);
 }
 
@@ -36,7 +36,7 @@ export function toneFixtures(directory: string) {
   const discord = join(directory, "Discord.exe");
   // A portable launcher keeps its own name separate from the publisher process.
   // Tone fixtures need their real process names for application-audio policy.
-  const tone = process.env.FREEDOMSTREAM_NATIVE_TONE_EXE ?? nativeExecutable();
+  const tone = process.env.PODETELAR_NATIVE_TONE_EXE ?? nativeExecutable();
   copyFileSync(tone, game);
   copyFileSync(tone, discord);
   const children: ChildProcess[] = [];

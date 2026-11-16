@@ -29,7 +29,7 @@ function Package-Launcher([string]$Launcher, [string]$Destination) {
         $size = [BitConverter]::GetBytes([uint64](Get-Item -LiteralPath $payloadPath).Length)
         $destinationStream.Write($size, 0, $size.Length)
         $destinationStream.Write($digest, 0, $digest.Length)
-        $magic = [Text.Encoding]::ASCII.GetBytes('FREEDOMSTREAM01!')
+        $magic = [Text.Encoding]::ASCII.GetBytes('PODETELAR01!')
         $destinationStream.Write($magic, 0, $magic.Length)
     } finally { $destinationStream.Dispose() }
 }
@@ -93,7 +93,7 @@ function Invoke-Wrapper([string]$Executable) {
     try {
         while (-not $nativeId) {
             if ($childProcess.HasExited -or $clock.Elapsed.TotalSeconds -gt 15) { throw 'Portable publisher did not reach its stdin wait.' }
-            $native = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($childProcess.Id)" | Where-Object Name -eq 'freedomstream-publisher.exe' | Select-Object -First 1
+            $native = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($childProcess.Id)" | Where-Object Name -eq 'podetelar-publisher.exe' | Select-Object -First 1
             if ($native) { $nativeId = [int]$native.ProcessId }
             [Threading.Thread]::Sleep(100)
         }
@@ -123,8 +123,8 @@ $hashes = [ordered]@{}
 foreach ($name in $variants.Keys) {
     $directory = $variants[$name]
     $packaged = Join-Path $fixtureRoot "$name.exe"
-    Package-Launcher (Join-Path $directory 'freedomstream-portable.exe') $packaged
-    $hashes[$name] = @{ launcher = (Get-FileHash -LiteralPath (Join-Path $directory 'freedomstream-portable.exe')).Hash.ToLowerInvariant(); conversion = (Get-FileHash -LiteralPath (Join-Path $directory 'frame-conversion.exe')).Hash.ToLowerInvariant() }
+    Package-Launcher (Join-Path $directory 'podetelar-portable.exe') $packaged
+    $hashes[$name] = @{ launcher = (Get-FileHash -LiteralPath (Join-Path $directory 'podetelar-portable.exe')).Hash.ToLowerInvariant(); conversion = (Get-FileHash -LiteralPath (Join-Path $directory 'frame-conversion.exe')).Hash.ToLowerInvariant() }
     $probe = Start-Hidden $packaged '--probe' $true
     try {
         if (-not $probe.Process.WaitForExit(90000) -or $probe.Process.ExitCode -ne 0) { throw 'Portable warm-cache preparation failed.' }

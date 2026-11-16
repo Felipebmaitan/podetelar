@@ -165,7 +165,7 @@ mod tests {
                 CreateWindowExW(
                     style,
                     w!("STATIC"),
-                    w!("FreedomStream discovery test"),
+                    w!("PodeTelar discovery test"),
                     WS_OVERLAPPEDWINDOW,
                     -30000,
                     -30000,

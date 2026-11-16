@@ -1,10 +1,12 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 use anyhow::{Context, Result, ensure};
-use freedomstream_portable::Bundle;
+use podetelar_portable::Bundle;
 use std::path::PathBuf;
 
 fn run() -> Result<i32> {
     ensure!(cfg!(windows), "The portable publisher requires Windows.");
+    #[cfg(windows)]
+    podetelar_portable::browser_links::cleanup_legacy()?;
     let bundle = Bundle::read(&std::env::current_exe()?)?;
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     if args.first().is_some_and(|arg| arg == "--extract") {
@@ -22,9 +24,9 @@ fn run() -> Result<i32> {
     {
         ensure!(args.len() == 1, "Invalid browser-link settings request.");
         if args[0] == "--enable-browser-links" {
-            freedomstream_portable::browser_links::enable(&std::env::current_exe()?, &bundle.id)?;
+            podetelar_portable::browser_links::enable(&std::env::current_exe()?, &bundle.id)?;
         } else {
-            freedomstream_portable::browser_links::disable()?;
+            podetelar_portable::browser_links::disable()?;
         }
         return Ok(0);
     }
@@ -36,7 +38,7 @@ fn run() -> Result<i32> {
     }
     let base =
         PathBuf::from(std::env::var_os("LOCALAPPDATA").context("Local AppData is unavailable.")?)
-            .join("FreedomStreamPortable");
+            .join("PodeTelarPortable");
     let directory = bundle.prepare(&base)?;
     // The verified runtime directory owns what launch needs. Do not retain the
     // complete compressed payload throughout the supervised child's lifetime.
@@ -53,14 +55,14 @@ fn run() -> Result<i32> {
         return Ok(0);
     }
     let bundled_probe = args.first().is_some_and(|arg| arg == "--bundled-probe");
-    let mut command = freedomstream_portable::command(&directory)?;
-    command.env("FREEDOMSTREAM_PORTABLE_EXE", std::env::current_exe()?);
+    let mut command = podetelar_portable::command(&directory)?;
+    command.env("PODETELAR_PORTABLE_EXE", std::env::current_exe()?);
     #[cfg(windows)]
     command.env(
-        "FREEDOMSTREAM_BROWSER_LINKS",
-        if (std::env::var_os("FREEDOMSTREAM_INSTALLED_EXE").is_some()
-            && std::env::var("FREEDOMSTREAM_INSTALLED_LINKS").as_deref() == Ok("1"))
-            || freedomstream_portable::browser_links::enabled()
+        "PODETELAR_BROWSER_LINKS",
+        if (std::env::var_os("PODETELAR_INSTALLED_EXE").is_some()
+            && std::env::var("PODETELAR_INSTALLED_LINKS").as_deref() == Ok("1"))
+            || podetelar_portable::browser_links::enabled()
         {
             "1"
         } else {
@@ -74,7 +76,7 @@ fn run() -> Result<i32> {
         command.args(args);
     }
     Ok(
-        freedomstream_portable::run_publisher(&mut command, bundled_probe)?
+        podetelar_portable::run_publisher(&mut command, bundled_probe)?
             .code()
             .unwrap_or(1),
     )

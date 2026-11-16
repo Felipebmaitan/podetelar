@@ -9,9 +9,9 @@ import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 
 test("split origins keep invitations public, admit natives directly, and transfer only authorized downloads", async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "freedomstream-domains-"));
+  const dir = mkdtempSync(join(tmpdir(), "podetelar-domains-"));
   const bytes = Buffer.from("verified local download fixture");
-  const filename = "freedomstream-windows-x64-0.1.0-aaaaaaaaaaaa.exe";
+  const filename = "podetelar-windows-x64-0.1.0-aaaaaaaaaaaa.exe";
   writeFileSync(join(dir, filename), bytes);
   writeFileSync(
     join(dir, "publisher.json"),

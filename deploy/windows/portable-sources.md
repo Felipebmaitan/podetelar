@@ -29,8 +29,8 @@ Reproducing identical binary timestamps/toolchain output is not claimed.
 You may modify/rebuild the LGPL libraries and replace the compatible DLLs in the
 extracted runtime's `bin/` and `lib/gstreamer-1.0/` directories. PodeTelar does
 not re-hash or overwrite a completed cache on subsequent launches. A separate
-copy can be extracted with `FreedomStream.exe --extract C:\new\absolute-folder`.
-The normal cache is `%LOCALAPPDATA%\FreedomStreamPortable\<payload-sha256>`.
+copy can be extracted with `PodeTelar.exe --extract C:\new\absolute-folder`.
+The normal cache is `%LOCALAPPDATA%\PodeTelarPortable\<payload-sha256>`.
 Retain the notices and license terms when redistributing changed libraries.
 The publisher dynamically links these libraries; original application code is MIT.
 

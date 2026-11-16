@@ -68,7 +68,7 @@ export async function macosNotices(destination, env) {
   ]) {
     const included = new Set(graph.resolve.nodes.map((node) => node.id));
     for (const pkg of graph.packages.filter(
-      (pkg) => included.has(pkg.id) && !pkg.name.startsWith("freedomstream-"),
+      (pkg) => included.has(pkg.id) && !pkg.name.startsWith("podetelar-"),
     )) {
       const key = `${pkg.name}@${pkg.version}`;
       if (seen.has(key)) continue;

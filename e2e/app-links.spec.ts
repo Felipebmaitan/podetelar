@@ -35,7 +35,7 @@ for (const width of [1280, 390])
     await expect(page.getByRole("textbox")).toHaveCount(0);
     await expect(page.locator("aside, details")).toHaveCount(0);
     const appUrl = new URL((await open.getAttribute("href"))!);
-    expect(appUrl.protocol).toBe("freedomstream:");
+    expect(appUrl.protocol).toBe("podetelar:");
     expect(appUrl.href).not.toContain(secret);
     const ticket = appUrl.hash.slice("#handoff=".length);
     expect(ticket).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -43,7 +43,7 @@ for (const width of [1280, 390])
     await cdp.send("Page.enable");
     const navigation = new Promise<string>((resolve) =>
       cdp.on("Page.frameRequestedNavigation", (event) => {
-        if (event.url.startsWith("freedomstream:")) resolve(event.url);
+        if (event.url.startsWith("podetelar:")) resolve(event.url);
       }),
     );
     const before = await page.locator("main").innerText();

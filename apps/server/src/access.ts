@@ -3,7 +3,7 @@ import {
   accessChangeSchema,
   participantIdSchema,
   roomIdSchema,
-} from "@freedomstream/contracts";
+} from "@podetelar/contracts";
 import type { Config } from "./config.js";
 import { Rooms, secretsEqual } from "./rooms.js";
 import type { MediaDirectory } from "./media.js";

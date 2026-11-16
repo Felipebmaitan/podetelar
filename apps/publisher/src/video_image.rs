@@ -40,7 +40,7 @@ pub struct ImagePool {
 impl Default for ImagePool {
     fn default() -> Self {
         #[cfg(feature = "performance-experiments")]
-        let limit = std::env::var("FREEDOMSTREAM_IMAGE_POOL_LIMIT")
+        let limit = std::env::var("PODETELAR_IMAGE_POOL_LIMIT")
             .ok()
             .and_then(|value| value.parse::<usize>().ok())
             .filter(|limit| (1..=2).contains(limit))

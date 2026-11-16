@@ -1,4 +1,4 @@
-name: freedomstream-production
+name: podetelar-production
 services:
   app:
     image: ${APP_IMAGE:?Set an immutable release image tag}
@@ -12,7 +12,7 @@ services:
       PUBLIC_URL: ${PUBLIC_URL:?Set HTTPS origin}
       DIRECT_URL: ${DIRECT_URL:-}
       TRUSTED_PROXY: 172.30.77.1
-      DATABASE_PATH: /app/data/freedomstream.db
+      DATABASE_PATH: /app/data/podetelar.db
       PUBLISHER_DIRECTORY: /app/publisher
       ADMIN_TOKEN: ${ADMIN_TOKEN:?Private server access key}
       LIVEKIT_INTERNAL_URL: http://livekit:7880
@@ -47,7 +47,7 @@ services:
       driver: local
       options: { max-size: 5m, max-file: "2" }
   livekit:
-    image: ${LIVEKIT_USAGE_IMAGE:?Set the immutable FreedomStream usage-enabled SFU image}
+    image: ${LIVEKIT_USAGE_IMAGE:?Set the immutable PodeTelar usage-enabled SFU image}
     user: "1000:1000"
     command: [--config, /etc/livekit.yaml]
     # Signaling has no published port. Only the admitted app gateway can reach it.

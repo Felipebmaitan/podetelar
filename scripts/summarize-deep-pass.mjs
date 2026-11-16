@@ -576,7 +576,7 @@ for (const name of [
   usage[name] = clean(json(resolve(dir, `usage/${name}.json`)));
 }
 const prior = readFileSync(
-  resolve(root, "docs/verification/local-performance-results.json"),
+  resolve(root, ".local/experiments/local-performance-results.json"),
   "utf8",
 ).toLowerCase();
 const fixtures = [];
@@ -664,7 +664,7 @@ const file = resolve(
   root,
   partial
     ? ".local/experiments/deep-pass/aggregate-partial.json"
-    : "docs/verification/deep-performance-results.json",
+    : ".local/experiments/deep-performance-results.json",
 );
 writeFileSync(file, await format(JSON.stringify(output), { parser: "json" }));
 console.log(

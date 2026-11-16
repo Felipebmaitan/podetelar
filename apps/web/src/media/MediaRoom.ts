@@ -9,8 +9,8 @@ import {
   setLogLevel,
 } from "livekit-client";
 import type { LocalTrack, Participant } from "livekit-client";
-import type { MediaAccess } from "@freedomstream/contracts";
-import { previewAttribute, previewSchema } from "@freedomstream/contracts";
+import type { MediaAccess } from "@podetelar/contracts";
+import { previewAttribute, previewSchema } from "@podetelar/contracts";
 import { ApiError, request } from "../api";
 import type {
   LiveStream,

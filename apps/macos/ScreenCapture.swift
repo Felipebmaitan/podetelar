@@ -4,6 +4,7 @@ import ScreenCaptureKit
 import CoreMedia
 import CoreVideo
 import CoreAudio
+import CoreServices
 import Darwin
 
 struct Request: Decodable {
@@ -205,10 +206,12 @@ final class Host: NSObject, NSApplicationDelegate {
     var child: Process?
     var pending: URL?
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard urls.count == 1, let url = urls.first, url.scheme == "freedomstream", url.absoluteString.utf8.count <= 4096 else { return }
+        guard urls.count == 1, let url = urls.first, url.scheme == "podetelar", url.absoluteString.utf8.count <= 4096 else { return }
         if child == nil { pending = url } else { launch(url, primary: false) }
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Refresh this bundle's URL claims after an upgrade removes an old scheme.
+        LSRegisterURL(Bundle.main.bundleURL as CFURL, true)
         DispatchQueue.main.async { self.launch(self.pending, primary: true) }
     }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -218,7 +221,7 @@ final class Host: NSObject, NSApplicationDelegate {
     }
     func launch(_ link: URL?, primary: Bool) {
         let process = Process()
-        process.executableURL = Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("FreedomStreamInstalled")
+        process.executableURL = Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("PodeTelarInstalled")
         process.arguments = link.map { ["--browser-link", $0.absoluteString] } ?? []
         process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
         if primary {

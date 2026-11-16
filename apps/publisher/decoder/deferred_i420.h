@@ -1,4 +1,4 @@
-// Copyright (c) 2026 FreedomStream contributors. MIT licensed.
+// Copyright (c) 2026 PodeTelar contributors. MIT licensed.
 // Retain decoded GPU storage until a consumer reads the supported I420 planes.
 #pragma once
 
@@ -15,8 +15,8 @@
 #include "libyuv/convert.h"
 #include "bounded_readback.h"
 
-namespace freedomstream {
-#ifdef FREEDOMSTREAM_DECODER_PROBE
+namespace podetelar {
+#ifdef PODETELAR_DECODER_PROBE
 inline std::atomic<uint64_t> materializations{0}, failed_materializations{0};
 #endif
 
@@ -61,7 +61,7 @@ class DeferredI420Buffer : public webrtc::I420BufferInterface {
   const webrtc::I420Buffer* Pixels() const {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!pixels_) {
-#ifdef FREEDOMSTREAM_DECODER_PROBE
+#ifdef PODETELAR_DECODER_PROBE
       materializations.fetch_add(1, std::memory_order_relaxed);
 #endif
       auto pixels = webrtc::I420Buffer::Create(width(), height(), StrideY(), StrideU(), StrideV());
@@ -94,7 +94,7 @@ class DeferredI420Buffer : public webrtc::I420BufferInterface {
         std::memset(pixels->MutableDataV(), 128,
                     static_cast<size_t>(StrideV()) * ((height() + 1) / 2));
         failed_->store(true, std::memory_order_release);
-#ifdef FREEDOMSTREAM_DECODER_PROBE
+#ifdef PODETELAR_DECODER_PROBE
         failed_materializations.fetch_add(1, std::memory_order_relaxed);
 #endif
       }
@@ -115,4 +115,4 @@ class DeferredI420Buffer : public webrtc::I420BufferInterface {
   mutable std::mutex mutex_;
   mutable webrtc::scoped_refptr<webrtc::I420Buffer> pixels_;
 };
-} // namespace freedomstream
+} // namespace podetelar

@@ -1,5 +1,5 @@
 {
-  "name": "@freedomstream/web",
+  "name": "@podetelar/web",
   "version": "0.1.2",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@freedomstream/contracts": "0.1.2",
+    "@podetelar/contracts": "0.1.2",
     "livekit-client": "2.23.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"

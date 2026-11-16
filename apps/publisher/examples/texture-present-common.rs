@@ -573,7 +573,7 @@ fn main() {
     };
     options.glow_options.vsync = config.vsync;
     if eframe::run_native(
-        "FreedomStream synthetic texture probe",
+        "PodeTelar synthetic texture probe",
         options,
         Box::new(move |cc| Ok(Box::new(Probe::new(cc, config)?))),
     )

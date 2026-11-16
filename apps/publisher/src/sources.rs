@@ -33,7 +33,7 @@ pub fn enumerate() -> Vec<Source> {
         #[cfg(feature = "performance-experiments")]
         let sources = {
             let mut sources = sources;
-            if std::env::var("FREEDOMSTREAM_PERFORMANCE_FIXTURE").is_ok_and(|value| value == "1") {
+            if std::env::var("PODETELAR_PERFORMANCE_FIXTURE").is_ok_and(|value| value == "1") {
                 sources.push(fixture());
             }
             sources

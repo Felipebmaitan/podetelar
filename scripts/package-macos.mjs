@@ -21,7 +21,14 @@ import { macosNotices } from "./macos-notices.mjs";
 import { installerUpdateFeed } from "./installer-feed.mjs";
 if (process.platform !== "darwin" || process.arch !== "arm64")
   throw new Error("Package on Apple Silicon macOS.");
-const env = macosEnvironment();
+// Build tools must use their own libraries. In particular Homebrew Git needs
+// a newer libintl than GStreamer's SDK provides. Media binaries already carry
+// the SDK rpath during development; the final probe uses bundle-relative paths.
+const env = {
+  ...macosEnvironment(),
+  DYLD_LIBRARY_PATH: "",
+  DYLD_FALLBACK_LIBRARY_PATH: "",
+};
 const run = (file, args, options = {}) =>
   execFileSync(file, args, { cwd: root, env, stdio: "inherit", ...options });
 const output = (file, args) =>

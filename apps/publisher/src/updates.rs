@@ -77,7 +77,7 @@ impl Client {
             let _ = commands.try_send(action);
         }
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "ui-review"))]
     pub fn fixture(status: Status) -> (Self, mpsc::Receiver<Action>) {
         let (send, receive) = mpsc::sync_channel(4);
         (

@@ -51,7 +51,6 @@ pub enum Icon {
     Settings,
     Invite,
     More,
-    Refresh,
     Grid,
     Monitor,
 }
@@ -158,22 +157,6 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
             ));
             line((6.0, -2.0), (6.0, 4.0));
             line((3.0, 1.0), (9.0, 1.0));
-        }
-        Icon::Refresh => {
-            p.add(egui::Shape::line(
-                vec![
-                    point(5.0, -5.0),
-                    point(0.0, -7.0),
-                    point(-6.0, -4.0),
-                    point(-7.0, 2.0),
-                    point(-3.0, 7.0),
-                    point(4.0, 6.0),
-                    point(7.0, 1.0),
-                ],
-                stroke,
-            ));
-            line((5.0, -5.0), (1.0, -5.0));
-            line((5.0, -5.0), (5.0, -9.0));
         }
         Icon::Settings => {
             // One connected gear outline, scaled with the icon rectangle.

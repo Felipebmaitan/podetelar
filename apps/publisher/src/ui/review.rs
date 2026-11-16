@@ -6,8 +6,8 @@ use std::{path::PathBuf, sync::Arc};
 pub fn run() -> Result<()> {
     let mode = std::env::args().nth(1).unwrap_or_else(|| "room".into());
     ensure!(
-        ["room", "settings", "information"].contains(&mode.as_str()),
-        "Choose room, settings or information."
+        ["room", "settings", "information", "update"].contains(&mode.as_str()),
+        "Choose room, settings, information or update."
     );
     let output = PathBuf::from(
         std::env::args()
@@ -53,6 +53,17 @@ pub fn run() -> Result<()> {
         let (controller, commands) = Controller::recording_for_test(state);
         inner.controller = controller;
         inner.advanced_open = mode == "settings";
+        if mode == "update" {
+            use crate::update_protocol::{Phase, Status};
+            inner.updates = crate::updates::Client::fixture(Status {
+                phase: if std::env::args().any(|arg| arg == "--ready") { Phase::Ready } else if std::env::args().any(|arg| arg == "--downloading") { Phase::Downloading } else { Phase::Available },
+                version: "0.1.3".into(),
+                notes: if english { "A simpler update experience\n\n• Removed the redundant sidebar refresh button.\n• A soft glow lets you know when an update is available.\n• Read the changelog here before downloading.\n\nYour sharing and watching continue until you choose to restart." } else { "Uma experiência de atualização mais simples\n\n• Removido o botão de atualizar da barra lateral.\n• Um brilho suave avisa quando há uma atualização.\n• Leia as novidades antes de baixar.\n\nSuas transmissões continuam até você escolher reiniciar." }.into(),
+                progress: 42,
+                ..Default::default()
+            }).0;
+            inner.update_open = true;
+        }
         if mode == "settings" { inner.quality.bitrate = Bitrate::Manual(25_000_000); inner.custom_bitrate = std::env::args().any(|arg| arg == "--custom"); }
         Ok(Box::new(Capture { inner, _commands: Box::new(commands), output, started: Instant::now(), requested: false, finished: Arc::new(std::sync::atomic::AtomicBool::new(false)) }))
     })).map_err(|error| anyhow::anyhow!("Native layout capture failed: {error}"))

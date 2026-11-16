@@ -62,6 +62,8 @@ pub fn qualify_planar_transitions(
         activation: crate::activation::Inbox::new(),
         prior_room: None,
         updates: crate::updates::Client::new(),
+        update_open: false,
+        update_announced_version: None,
         update_restart_prompt: false,
         controller: Controller::new(),
         invitation: String::new(),

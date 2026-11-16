@@ -1,8 +1,12 @@
 # Windows installers and updates
 
 Starting with v0.1.2, installed builds check the public GitHub releases feed on
-startup and periodically. Download and restart are explicit. Hover over the update
-badge for notes; Later keeps the current version running. Restart ends sharing and
+startup and periodically. Download and restart are explicit. The top-right update
+button glows softly when a new version is available or ready to restart. Click it
+for a centered changelog dialog with explicit download, progress and restart
+controls. The dialog also opens once per available version during each launch,
+after any invitation, Advanced settings or fullscreen view is dismissed. Later
+keeps the current version running and the button reopens the dialog. Restart ends sharing and
 watching before applying the package. Versions 0.1.0 and 0.1.1 need one manual Setup
 upgrade because their launchers have no compiled feed.
 

@@ -90,6 +90,8 @@ pub fn configure_theme(ctx: &egui::Context) {
 
 pub struct PublisherUi {
     updates: crate::updates::Client,
+    update_open: bool,
+    update_announced_version: Option<String>,
     update_restart_prompt: bool,
     activation: crate::activation::Inbox,
     prior_room: Option<(String, String)>,
@@ -183,6 +185,8 @@ impl PublisherUi {
         let link_result = link.map(crate::browser_links::Load::start);
         Self {
             updates: crate::updates::Client::new(),
+            update_open: false,
+            update_announced_version: None,
             update_restart_prompt: false,
             activation: crate::activation::Inbox::new(),
             prior_room: None,
@@ -857,11 +861,6 @@ impl PublisherUi {
         }
         ui.horizontal(|ui| {
             ui.label(skin::strong(tr("Share your screen").to_uppercase(), 12.0));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if skin::icon_button(ui, Icon::Refresh, tr("Refresh")).clicked() {
-                    self.controller.send(Command::Refresh);
-                }
-            });
         });
         ui.spacing_mut().item_spacing.y = 6.0;
         let encoder = state.encoders.iter().find(|e| e.factory == self.encoder);
@@ -1762,7 +1761,7 @@ impl PublisherUi {
 
 impl PublisherUi {
     fn update_badge(&mut self, ui: &mut egui::Ui) {
-        use crate::update_protocol::{Action, Phase};
+        use crate::update_protocol::Phase;
         let status = self.updates.snapshot();
         if status.phase == Phase::Disabled {
             return;
@@ -1770,61 +1769,186 @@ impl PublisherUi {
         let label = match status.phase {
             Phase::Checking => "Checking for updates…",
             Phase::Current => "Up to date",
-            Phase::Available => "Download update",
+            Phase::Available => "Update available",
             Phase::Downloading => "Downloading update…",
             Phase::Ready => "Restart to update",
             Phase::Restarting => "Restarting…",
             Phase::Error => "Retry update check",
             Phase::Disabled => unreachable!(),
         };
-        let response = ui.add_enabled(
-            !matches!(
-                status.phase,
-                Phase::Checking | Phase::Downloading | Phase::Restarting
-            ),
-            egui::Button::new("↻").fill(
-                if matches!(status.phase, Phase::Available | Phase::Ready) {
-                    egui::Color32::from_rgb(33, 91, 85)
+        let attention = matches!(status.phase, Phase::Available | Phase::Ready);
+        // A slow, low-contrast pulse keeps the update discoverable after Later.
+        let glow = if attention {
+            let time = ui.input(|input| input.time);
+            ui.ctx().request_repaint_after(Duration::from_millis(80));
+            (0.5 + 0.5 * (time * std::f64::consts::TAU / 3.0).sin()) as f32
+        } else {
+            0.0
+        };
+        let response = ui.add_sized(
+            [32.0, 32.0],
+            egui::Button::new(egui::RichText::new("↻").color(if attention {
+                ACCENT
+            } else {
+                TEXT
+            }))
+            .fill(if attention {
+                egui::Color32::from_rgb(33, 70 + (glow * 18.0) as u8, 66 + (glow * 16.0) as u8)
+            } else {
+                CARD
+            })
+            .stroke(egui::Stroke::new(
+                1.0,
+                if attention {
+                    ACCENT.gamma_multiply(0.45 + glow * 0.25)
                 } else {
-                    CARD
+                    BORDER
                 },
-            ),
+            )),
         );
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tr(label)));
-        response.clone().on_disabled_hover_text(tr(label));
-        response.clone().on_hover_ui(|ui| {
-            ui.set_max_width(340.0);
-            ui.strong(tr(label));
-            if !status.version.is_empty() {
-                ui.label(format!("{} {}", tr("New version"), status.version));
-            }
-            if status.notes.is_empty() {
-                ui.label(tr("No release notes provided."));
-            } else {
-                ui.label(&status.notes);
-            }
-            if !status.message.is_empty() {
-                ui.label(tr(&status.message));
-            }
-            if status.phase == Phase::Downloading {
-                ui.add(
-                    egui::ProgressBar::new(f32::from(status.progress) / 100.0).show_percentage(),
-                );
-            }
-            if status.phase == Phase::Ready {
-                ui.label(tr("Restarting ends sharing and watching."));
-            }
-        });
+        response.clone().on_hover_text(tr(label));
         if status.phase == Phase::Downloading {
             ui.label(format!("{}%", status.progress));
         }
         if response.clicked() {
-            match status.phase {
-                Phase::Current | Phase::Error => self.updates.send(Action::Check),
-                Phase::Available => self.updates.send(Action::Download),
-                Phase::Ready => self.update_restart_prompt = true,
-                _ => {}
-            }
+            self.update_open = true;
+        }
+    }
+
+    fn update_dialog(&mut self, ctx: &egui::Context) {
+        use crate::update_protocol::{Action, Phase};
+        let status = self.updates.snapshot();
+        if status.phase == Phase::Disabled {
+            self.update_open = false;
+            self.update_restart_prompt = false;
+            return;
+        }
+        if self.closing_since.is_some()
+            || self.browser_invitation_open
+            || self.advanced_open
+            || self.fullscreen.is_some()
+        {
+            return;
+        }
+        if matches!(status.phase, Phase::Available | Phase::Ready)
+            && self.update_announced_version.as_ref() != Some(&status.version)
+        {
+            self.update_announced_version = Some(status.version.clone());
+            self.update_open = true;
+        }
+        if !self.update_open {
+            return;
+        }
+        self.clear_picker();
+        if self.update_restart_prompt {
+            self.update_restart_dialog(ctx);
+            return;
+        }
+        let width = (ctx.content_rect().width() - 96.0).clamp(240.0, 520.0);
+        let mut dismiss = false;
+        let modal = egui::Modal::new(egui::Id::unique("app-update"))
+            .backdrop_color(egui::Color32::from_black_alpha(150))
+            .frame(
+                egui::Frame::new()
+                    .fill(CARD)
+                    .stroke(egui::Stroke::new(1.0, BORDER))
+                    .corner_radius(12)
+                    .inner_margin(24),
+            )
+            .show(ctx, |ui| {
+                ui.set_width(width);
+                ui.spacing_mut().item_spacing.y = 12.0;
+                ui.horizontal(|ui| {
+                    ui.label(skin::strong(tr("App updates"), 24.0));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        dismiss |= skin::icon_button(ui, Icon::Close, tr("Close")).clicked();
+                    });
+                });
+                let label = match status.phase {
+                    Phase::Available => "Update available",
+                    Phase::Ready => "Restart to update",
+                    Phase::Checking => "Checking for updates…",
+                    Phase::Current => "Up to date",
+                    Phase::Downloading => "Downloading update…",
+                    Phase::Restarting => "Restarting…",
+                    Phase::Error => "Retry update check",
+                    Phase::Disabled => unreachable!(),
+                };
+                ui.colored_label(ACCENT, tr(label));
+                if !status.version.is_empty() {
+                    ui.label(format!("{} {}", tr("New version"), status.version));
+                }
+                egui::ScrollArea::vertical()
+                    .id_salt("update-notes")
+                    .max_height((ctx.content_rect().height() - 330.0).clamp(60.0, 320.0))
+                    .show(ui, |ui| {
+                        ui.set_width(width - 16.0);
+                        ui.strong(tr("Changelog"));
+                        ui.add(
+                            egui::Label::new(if status.notes.is_empty() {
+                                tr("No release notes provided.")
+                            } else {
+                                &status.notes
+                            })
+                            .wrap(),
+                        );
+                    });
+                if !status.message.is_empty() {
+                    ui.add(egui::Label::new(tr(&status.message)).wrap());
+                }
+                if status.phase == Phase::Downloading {
+                    ui.add(
+                        egui::ProgressBar::new(f32::from(status.progress) / 100.0)
+                            .show_percentage(),
+                    );
+                }
+                if status.phase == Phase::Ready {
+                    ui.label(tr("Restarting ends sharing and watching."));
+                }
+                ui.separator();
+                let action_width = match status.phase {
+                    Phase::Available | Phase::Ready => 180.0,
+                    Phase::Current => button_width(ui, tr("Check for updates")),
+                    Phase::Error => button_width(ui, tr("Retry update check")),
+                    _ => ui.spacing().interact_size.y,
+                };
+                ui.horizontal(|ui| {
+                    let row_width =
+                        button_width(ui, tr("Later")) + ui.spacing().item_spacing.x + action_width;
+                    ui.add_space(((ui.available_width() - row_width) / 2.0).max(0.0));
+                    dismiss |= ui.button(tr("Later")).clicked();
+                    match status.phase {
+                        Phase::Available => {
+                            if ui.add(primary(tr("Download update"), 180.0)).clicked() {
+                                self.updates.send(Action::Download);
+                            }
+                        }
+                        Phase::Ready => {
+                            if ui.add(primary(tr("Restart to update"), 180.0)).clicked() {
+                                self.update_restart_prompt = true;
+                            }
+                        }
+                        Phase::Current | Phase::Error => {
+                            if ui
+                                .button(tr(if status.phase == Phase::Current {
+                                    "Check for updates"
+                                } else {
+                                    "Retry update check"
+                                }))
+                                .clicked()
+                            {
+                                self.updates.send(Action::Check);
+                            }
+                        }
+                        _ => {
+                            ui.spinner();
+                        }
+                    }
+                });
+            });
+        if dismiss || modal.should_close() {
+            self.update_open = false;
         }
     }
 
@@ -1842,12 +1966,17 @@ impl PublisherUi {
                 "After restart, open a fresh invitation and enter your name again.",
             ));
             ui.horizontal(|ui| {
+                let row_width = button_width(ui, tr("Later"))
+                    + ui.spacing().item_spacing.x
+                    + button_width(ui, tr("Restart to update"));
+                ui.add_space(((ui.available_width() - row_width) / 2.0).max(0.0));
                 later = ui.button(tr("Later")).clicked();
                 restart = ui.button(tr("Restart to update")).clicked();
             });
         });
         if later {
             self.update_restart_prompt = false;
+            self.update_open = false;
         }
         if restart {
             self.updates.send(crate::update_protocol::Action::Restart);
@@ -1958,7 +2087,6 @@ impl PublisherUi {
     fn render(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
         ctx.request_repaint_after(Duration::from_secs(1));
-        self.update_restart_dialog(&ctx);
         if let Some(started) = self.closing_since {
             egui::CentralPanel::default().show(root, |ui| {
                 ui.vertical_centered(|ui| {
@@ -1976,7 +2104,10 @@ impl PublisherUi {
             });
             return;
         }
-        if !self.browser_invitation_open && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if !self.browser_invitation_open
+            && !self.update_open
+            && ctx.input(|i| i.key_pressed(egui::Key::Escape))
+        {
             if self.advanced_open {
                 self.advanced_open = false;
             } else if self.fullscreen.is_some() {
@@ -2023,7 +2154,10 @@ impl PublisherUi {
         } else {
             250
         }));
-        if !self.browser_invitation_open && ctx.input(|i| i.key_pressed(egui::Key::F11)) {
+        if !self.browser_invitation_open
+            && !self.update_open
+            && ctx.input(|i| i.key_pressed(egui::Key::F11))
+        {
             if self.fullscreen.is_some() {
                 self.set_fullscreen(&ctx, None);
             } else if let Some(tile) = state
@@ -2333,6 +2467,7 @@ impl PublisherUi {
             defocus_invitation_background(root);
             self.browser_invitation_modal(&ctx, &state);
         }
+        self.update_dialog(&ctx);
     }
 }
 
@@ -2374,6 +2509,15 @@ fn defocus_invitation_background(root: &egui::Ui) {
             );
         }
     });
+}
+
+fn button_width(ui: &egui::Ui, label: &str) -> f32 {
+    let text = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        egui::TextStyle::Button.resolve(ui.style()),
+        TEXT,
+    );
+    (text.size().x + ui.spacing().button_padding.x * 2.0).max(ui.spacing().interact_size.x)
 }
 
 fn primary(label: &str, width: f32) -> egui::Button<'_> {
@@ -2730,7 +2874,7 @@ mod tests {
                     egui::CentralPanel::default().show(root, |ui| {
                         app.update_badge(ui);
                     });
-                    app.update_restart_dialog(root.ctx());
+                    app.update_dialog(root.ctx());
                 },
             );
             output.textures_delta.clear();
@@ -2774,27 +2918,99 @@ mod tests {
             ..Default::default()
         });
         app.updates = client;
+        draw(&mut app, &ctx, vec![]);
+        assert!(app.update_open, "Announce a newly available version");
+        assert!(actions.try_recv().is_err(), "Opening never downloads");
+        click(&mut app, &ctx, tr("Later"));
+        draw(&mut app, &ctx, vec![]);
+        assert!(
+            !app.update_open,
+            "Later must stay dismissed for this version"
+        );
         click(&mut app, &ctx, "↻");
+        assert!(app.update_open);
+        assert!(actions.try_recv().is_err());
+        click(&mut app, &ctx, tr("Download update"));
         assert_eq!(actions.try_recv().unwrap(), Action::Download);
         let (client, actions) = crate::updates::Client::fixture(Status {
             phase: Phase::Ready,
             ..Default::default()
         });
         app.updates = client;
-        click(&mut app, &ctx, "↻");
+        click(&mut app, &ctx, tr("Restart to update"));
         assert!(app.update_restart_prompt);
         assert!(actions.try_recv().is_err());
         click(&mut app, &ctx, tr("Later"));
         assert!(!app.update_restart_prompt);
         assert!(app.closing_since.is_none());
         assert!(actions.try_recv().is_err());
-        app.update_restart_prompt = true;
+        click(&mut app, &ctx, "↻");
+        click(&mut app, &ctx, tr("Restart to update"));
         click(&mut app, &ctx, tr("Restart to update"));
         assert_eq!(actions.try_recv().unwrap(), Action::Restart);
         assert!(
             app.closing_since.is_none(),
             "Wait for launcher acknowledgement before closing"
         );
+        app.update_open = false;
+        for phase in [
+            Phase::Checking,
+            Phase::Current,
+            Phase::Downloading,
+            Phase::Error,
+        ] {
+            let (client, actions) = crate::updates::Client::fixture(Status {
+                phase,
+                progress: 42,
+                ..Default::default()
+            });
+            app.updates = client;
+            click(&mut app, &ctx, "↻");
+            assert!(
+                app.update_open,
+                "Status must remain accessible during {phase:?}"
+            );
+            assert!(actions.try_recv().is_err());
+            if matches!(phase, Phase::Current | Phase::Error) {
+                click(
+                    &mut app,
+                    &ctx,
+                    tr(if phase == Phase::Current {
+                        "Check for updates"
+                    } else {
+                        "Retry update check"
+                    }),
+                );
+                assert_eq!(actions.try_recv().unwrap(), Action::Check);
+            }
+            click(&mut app, &ctx, tr("Later"));
+            assert!(actions.try_recv().is_err());
+        }
+    }
+
+    #[test]
+    fn update_announcement_waits_for_other_dialogs_and_fullscreen() {
+        use crate::update_protocol::{Phase, Status};
+        let mut app = app();
+        let ctx = egui::Context::default();
+        let (client, actions) = crate::updates::Client::fixture(Status {
+            phase: Phase::Available,
+            version: "0.1.3".into(),
+            ..Default::default()
+        });
+        app.updates = client;
+        for blocked in 0..4 {
+            app.browser_invitation_open = blocked == 0;
+            app.advanced_open = blocked == 1;
+            app.fullscreen = (blocked == 2).then(|| "watched-stream".into());
+            let mut output = ctx.run_ui(egui::RawInput::default(), |root| {
+                app.update_dialog(root.ctx())
+            });
+            output.textures_delta.clear();
+            assert_eq!(app.update_open, blocked == 3);
+            assert_eq!(app.update_announced_version.is_some(), blocked == 3);
+        }
+        assert!(actions.try_recv().is_err());
     }
 
     #[test]
@@ -3177,6 +3393,8 @@ mod tests {
         gstreamer::init().expect("Test media runtime");
         PublisherUi {
             updates: crate::updates::Client::new(),
+            update_open: false,
+            update_announced_version: None,
             update_restart_prompt: false,
             activation: crate::activation::Inbox::new(),
             prior_room: None,

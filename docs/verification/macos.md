@@ -37,6 +37,14 @@ macOS 14 is the deployment target, not an additional tested operating system.
   Rust audio pipeline also stayed alive through the quiet interval. Desktop
   capture uses positive membership refreshed once per second so an excluded
   process cannot enter the mix while awaiting an inventory refresh.
+- AV1 follow-up: actual VideoToolbox hardware receive through the same native
+  SFU passed on M5 Pro. A 1280×720/30 inter-frame AV1 fixture delivered 540
+  accepted frames and 180 presented frames, with hardware decoding, successful
+  rewatch and zero bytes after Stop watching. An earlier all-keyframe 640×360
+  fixture also passed (540 accepted, 205 presented). These are receive checks;
+  the pre-encoded fixtures were generated externally using software SVT-AV1.
+  The qualification sender is behind an explicit build feature and excluded
+  from the shipped app. AV1 encoding remains unavailable on macOS.
 - Self-contained ARM64 application, DMG, full Velopack package and
   `releases.osx-arm64.json` built; nested code signatures passed strict deep
   verification. Runtime load paths are bundle relative and the dependency

@@ -11,6 +11,8 @@ mod connection;
 mod delivery;
 mod device;
 mod diagnostics;
+#[cfg(feature = "media-qualification")]
+mod encoded_fixture;
 mod encoding;
 mod locale;
 #[cfg(target_os = "macos")]
@@ -99,6 +101,17 @@ fn run() -> Result<()> {
     gstreamer::init()
         .context("GStreamer could not initialize. Check the native runtime installation.")?;
     match std::env::args().nth(1).as_deref() {
+        #[cfg(feature = "media-qualification")]
+        Some("--publish-av1-fixture") => {
+            let mut input = String::new();
+            std::io::stdin().take(8193).read_to_string(&mut input)?;
+            ensure!(input.len() <= 8192, "Encoded fixture input is too large.");
+            let request = serde_json::from_str(&input).context("Invalid encoded fixture input.")?;
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(encoded_fixture::publish(request))?;
+        }
         Some("--av-timing-source") => av_qualification::source(
             std::env::args()
                 .nth(2)

@@ -66,6 +66,22 @@ switch (action) {
       ...args,
     ]);
     break;
+  case "build-fixtures":
+    run("cargo", [
+      "build",
+      "--locked",
+      "--release",
+      "-p",
+      "freedomstream-publisher",
+      "--features",
+      "media-qualification",
+    ]);
+    mkdirSync(resolve(root, ".local/macos/fixtures"), { recursive: true });
+    copyFileSync(
+      resolve(root, "target/release/freedomstream-publisher"),
+      resolve(root, ".local/macos/fixtures/freedomstream-publisher"),
+    );
+    break;
   case "probe":
   case "qualify":
   case "run":
@@ -80,5 +96,7 @@ switch (action) {
     ]);
     break;
   default:
-    throw new Error("Use setup, check, test, probe, qualify or run.");
+    throw new Error(
+      "Use setup, check, test, build-fixtures, probe, qualify or run.",
+    );
 }

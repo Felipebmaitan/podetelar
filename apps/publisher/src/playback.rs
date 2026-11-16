@@ -283,11 +283,7 @@ pub fn decoder_codecs() -> Vec<String> {
         .codecs
         .into_iter()
         .map(|codec| codec.mime_type.to_lowercase())
-        // Apple Silicon publication/receive qualification currently covers these
-        // two VideoToolbox codecs. Do not advertise the SDK software AV1 path.
-        .filter(|codec| {
-            !cfg!(target_os = "macos") || matches!(codec.as_str(), "video/h264" | "video/h265")
-        })
+        // The macOS SDK factory advertises only available hardware decoders.
         .collect()
 }
 

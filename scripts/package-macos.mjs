@@ -280,6 +280,9 @@ const clean = {
 };
 // Fixture encoding exercises actual hardware; hosted CI may lack a usable GPU.
 run(mediaExecutable, ["--probe"], { env: clean });
+run(process.execPath, ["scripts/qualify-macos-codecs.mjs", app], {
+  env: clean,
+});
 run("dotnet", ["tool", "restore"]);
 const packages = join(destination, "packages");
 run("dotnet", [

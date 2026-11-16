@@ -139,6 +139,26 @@ if (existsSync(destination)) {
     "#if defined(_WIN32) || defined(WEBRTC_MAC)\n  factories_.push_back(std::make_unique<freedomstream::DecoderFactory>());\n#endif\n#if defined(__APPLE__) && !defined(WEBRTC_MAC)",
   );
   modify(
+    "src/video_decoder_factory.cpp",
+    "  formats.push_back(webrtc::SdpVideoFormat(webrtc::kVp8CodecName));",
+    "#ifndef WEBRTC_MAC\n  formats.push_back(webrtc::SdpVideoFormat(webrtc::kVp8CodecName));",
+  );
+  modify(
+    "src/video_decoder_factory.cpp",
+    "  return formats;\n}",
+    "#endif\n  return formats;\n}",
+  );
+  modify(
+    "src/video_decoder_factory.cpp",
+    "  if (absl::EqualsIgnoreCase(format.name, webrtc::kVp8CodecName))",
+    "#ifndef WEBRTC_MAC\n  if (absl::EqualsIgnoreCase(format.name, webrtc::kVp8CodecName))",
+  );
+  modify(
+    "src/video_decoder_factory.cpp",
+    '  RTC_LOG(LS_ERROR) << "No VideoDecoder found for " << format.name;',
+    '#endif\n  RTC_LOG(LS_ERROR) << "No VideoDecoder found for " << format.name;',
+  );
+  modify(
     "src/webrtc.cpp",
     "  webrtc::MutexLock lock(&mutex_);\n  for (std::weak_ptr<MediaStreamTrack> weak_existing_track :",
     `  webrtc::MutexLock lock(&mutex_);
@@ -172,7 +192,7 @@ if (existsSync(destination)) {
     "build.rs",
     '        "macos" => {',
     `        "macos" => {
-            for name in ["gstreamer-app-1.0", "gstreamer-video-1.0"] {
+            for name in ["gstreamer-app-1.0", "gstreamer-video-1.0", "gstreamer-codecparsers-1.0"] {
                 let gst = pkg_config::Config::new().probe(name).expect("Pinned macOS GStreamer SDK required");
                 builder.includes(gst.include_paths);
             }

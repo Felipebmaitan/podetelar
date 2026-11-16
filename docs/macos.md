@@ -4,8 +4,9 @@ The macOS port targets Apple Silicon (`arm64`) and macOS 14 or newer. It uses
 ScreenCaptureKit for display/window and application/system audio capture,
 GStreamer's hardware-only VideoToolbox H.264/HEVC encoders, a pinned WebRTC decoder
 adapter requiring hardware VideoToolbox sessions, and output-only WebRTC/CoreAudio
-playback. AV1 publication
-and receive are excluded from this platform's qualified codec set. There is no
+playback. AV1 receive (8-bit Main profile) is advertised only when VideoToolbox
+reports hardware support; AV1 encoding is unavailable. Older chips without an
+AV1 hardware decoder advertise H.264/HEVC instead. There is no
 software encoder fallback. Actual supported modes are checked when capture starts;
 this does not establish 4K120 or every M-series chip's performance.
 
@@ -68,6 +69,25 @@ owned changing window and stereo source and requires real CoreAudio output.
 late application capture and excluded application launch/restart using distinct
 real tones. Run a release build first; this qualifier uses the development
 helper and release Rust binary.
+
+For actual hardware AV1 receive qualification, create a local test fixture using
+an external FFmpeg build with SVT-AV1, then build the explicit qualification
+sender. Neither that encoder nor the qualification sender is bundled in releases:
+
+```sh
+ffmpeg -y -f lavfi -i testsrc2=size=1280x720:rate=30 -frames:v 600 \
+  -c:v libsvtav1 -preset 12 -crf 38 -g 30 -svtav1-params pred-struct=1 \
+  -pix_fmt yuv420p -f ivf .local/macos/av1-fixture.ivf
+node scripts/native.mjs build-fixtures
+node --env-file=.env scripts/qualify-macos-av1.mjs
+```
+
+This sends the pre-encoded AV1 stream through the real SFU to the latest packaged
+receiver, requiring hardware decode, displayed frames, Stop watching and rewatch.
+It does not qualify AV1 encoding on the Mac. Packaging also compares the built
+app's decoder set with a separate VideoToolbox query and rejects software AV1
+advertisement or any AV1 encoder. Hosted runners exercise their actual reported
+capability set, including absence of hardware AV1.
 The updater qualifier uses real packages/helpers with a process fixture; it
 separately checks Later, corrupted cache replacement and explicit restart.
 Neither fixture substitutes for physical speaker/display timing or a fresh Mac.

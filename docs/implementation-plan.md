@@ -4,7 +4,11 @@
 
 Add an ARM64 macOS 14+ native GUI distribution with ScreenCaptureKit display/window
 and application audio capture, hardware-only VideoToolbox H.264/HEVC encoding,
-native Apple decoding and CoreAudio output. Preserve invitations, explicit joins,
+native Apple decoding and CoreAudio output. Include receive-only AV1 when the
+VideoToolbox hardware decoder is available; never advertise software AV1 or add
+AV1 publication on macOS. Qualify actual AV1 native SFU receive/Stop/rewatch on
+available Apple Silicon hardware and preserve H.264/HEVC-only older chips.
+Preserve invitations, explicit joins,
 room codec intersection, subscriptions, preview cadence and graceful teardown.
 Package a self-contained app with a qualified, pinned MIT-compatible runtime and
 third-party notices/sources. Add an OS-specific Velopack feed and GitHub Actions

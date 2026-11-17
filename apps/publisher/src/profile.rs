@@ -89,6 +89,7 @@ pub enum Edit {
 enum Command {
     Edit(Edit),
     Choose,
+    Connect(Option<crate::account::Credential>, Option<String>, u64),
 }
 #[derive(Clone, Default)]
 pub struct State {
@@ -97,6 +98,8 @@ pub struct State {
     pub error: String,
     pub busy: bool,
     pub identity_synced: bool,
+    pub identity_generation: u64,
+    pub acknowledged_generation: Option<u64>,
 }
 pub struct Client {
     pub participant_id: String,
@@ -127,12 +130,13 @@ impl Client {
                 runtime.block_on(async move {
                     let mut next = Instant::now();
                     let mut avatars: HashMap<String, Arc<Animation>> = HashMap::new();
-                    let mut identity_ack = false;
+                    let mut identity_ack = None;
                     let mut identity: Option<(
                         Option<crate::account::Credential>,
                         Option<String>,
                         Instant,
                         u32,
+                        u64,
                     )> = None;
                     while !stopped.load(Ordering::Acquire) {
                         if let Ok(command) = receiver.try_recv() {
@@ -142,19 +146,17 @@ impl Client {
                             }
                             let edit = match command {
                                 Command::Edit(edit) => Ok(Some(edit)),
+                                Command::Connect(credential, guest, generation) => {
+                                    identity =
+                                        Some((credential, guest, Instant::now(), 0, generation));
+                                    identity_ack = None;
+                                    Ok(None)
+                                }
                                 Command::Choose => {
                                     choose_picture().map(|bytes| bytes.map(Edit::Picture))
                                 }
                             };
                             let result = match edit {
-                                Ok(Some(Edit::Discord(credential, guest))) => {
-                                    identity_ack = false;
-                                    identity = Some((credential, guest, Instant::now(), 0));
-                                    if let Ok(mut state) = worker_state.lock() {
-                                        state.identity_synced = false;
-                                    }
-                                    Ok(())
-                                }
                                 Ok(Some(edit)) => admission.edit_profile(edit).await,
                                 Ok(None) => Ok(()),
                                 Err(error) => Err(error),
@@ -167,7 +169,7 @@ impl Client {
                             }
                             next = Instant::now();
                         }
-                        if let Some((credential, guest, due, attempt)) = &mut identity
+                        if let Some((credential, guest, due, attempt, generation)) = &mut identity
                             && Instant::now() >= *due
                         {
                             let result = async {
@@ -184,9 +186,9 @@ impl Client {
                             .await;
                             match result {
                                 Ok(()) => {
+                                    identity_ack = Some(*generation);
                                     identity = None;
                                     if let Ok(mut state) = worker_state.lock() {
-                                        identity_ack = true;
                                         state.error.clear();
                                     }
                                 }
@@ -210,7 +212,7 @@ impl Client {
                                 });
                                 // Publish removals before fetching new pictures, including administrator deletion.
                                 if let Ok(mut state) = worker_state.lock() {
-                                    state.identity_synced = identity_ack;
+                                    state.acknowledged_generation = identity_ack;
                                     state.profiles = profiles.clone();
                                     state.avatars = avatars.clone();
                                 }
@@ -251,20 +253,32 @@ impl Client {
         }
     }
     pub fn state(&self) -> State {
-        self.state.lock().map(|s| s.clone()).unwrap_or_default()
+        self.state
+            .lock()
+            .map(|s| {
+                let mut state = s.clone();
+                state.identity_synced =
+                    state.acknowledged_generation == Some(state.identity_generation);
+                state
+            })
+            .unwrap_or_default()
     }
     pub fn name(&self, name: String) {
         let _ = self.commands.send(Command::Edit(Edit::Name(name)));
     }
     pub fn connect(&self, credential: Option<crate::account::Credential>, guest: Option<String>) {
-        // Invalidate the previous acknowledgement before the GUI can read it.
-        if let Ok(mut state) = self.state.lock() {
+        let generation = if let Ok(mut state) = self.state.lock() {
+            state.identity_generation = state.identity_generation.wrapping_add(1);
             state.identity_synced = false;
-        }
+            state.identity_generation
+        } else {
+            return;
+        };
         let _ = self
             .commands
-            .send(Command::Edit(Edit::Discord(credential, guest)));
+            .send(Command::Connect(credential, guest, generation));
     }
+
     pub fn choose(&self) {
         let _ = self.commands.send(Command::Choose);
     }
@@ -353,6 +367,29 @@ pub async fn qualify(request: Qualification) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn stale_identity_response_cannot_acknowledge_a_new_transition() {
+        let (commands, _receiver) = mpsc::channel();
+        let state = Arc::new(Mutex::new(State {
+            acknowledged_generation: Some(0),
+            ..Default::default()
+        }));
+        let client = Client {
+            participant_id: "test".into(),
+            server: "https://test.invalid".into(),
+            state: state.clone(),
+            commands,
+            stop: Arc::new(AtomicBool::new(false)),
+            worker: None,
+        };
+        assert!(client.state().identity_synced);
+        client.connect(None, Some("Remembered guest".into()));
+        // An earlier HTTP operation finishes after the new command was queued.
+        state.lock().unwrap().acknowledged_generation = Some(0);
+        assert!(!client.state().identity_synced);
+        state.lock().unwrap().acknowledged_generation = Some(1);
+        assert!(client.state().identity_synced);
+    }
     #[test]
     fn identity_detach_retries_and_acknowledges_only_the_restored_profile() {
         use std::io::{Read, Write};

@@ -981,6 +981,7 @@
     position: static;
     width: auto;
     flex-direction: row;
+    flex-wrap: wrap;
     padding: 16px 18px 0;
   }
   .admin-nav > p {

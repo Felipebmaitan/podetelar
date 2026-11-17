@@ -171,6 +171,17 @@ pub fn media_diagnostic(error: impl std::fmt::Display) -> String {
 }
 
 impl Admission {
+    #[cfg(test)]
+    pub(crate) fn profile_test(origin: &str) -> Self {
+        Self {
+            client: Client::new(),
+            origin: Url::parse(origin).unwrap(),
+            room_id: "test".into(),
+            room_name: "test".into(),
+            participant_id: "test".into(),
+            public_origin: origin.into(),
+        }
+    }
     pub async fn stream_diagnostic(
         &self,
         method: reqwest::Method,
@@ -597,7 +608,7 @@ impl Admission {
     pub async fn edit_profile(&self, edit: crate::profile::Edit) -> Result<()> {
         let base = format!("api/rooms/{}/profile", self.room_id);
         let request = match edit {
-            crate::profile::Edit::Discord(Some(credential)) => {
+            crate::profile::Edit::Discord(Some(credential), _) => {
                 let Some(token) = credential.for_server(&self.public_origin) else {
                     return Ok(());
                 };
@@ -608,7 +619,7 @@ impl Admission {
                     )
                     .bearer_auth(token)
             }
-            crate::profile::Edit::Discord(None) => self.client.delete(
+            crate::profile::Edit::Discord(None, _) => self.client.delete(
                 self.origin
                     .join(&(base.replace("/profile", "/discord-identity")))?,
             ),

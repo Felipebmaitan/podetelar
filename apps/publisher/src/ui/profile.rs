@@ -110,10 +110,9 @@ impl PublisherUi {
                     .profile_connection_key
                     .as_ref()
                     .is_some_and(|(_, session)| session.is_some());
-                client.connect(credential);
-                if was_discord && key.1.is_none() && !self.saved_guest_name.is_empty() {
-                    client.name(self.saved_guest_name.clone());
-                }
+                let restore = (was_discord && key.1.is_none() && !self.saved_guest_name.is_empty())
+                    .then(|| self.saved_guest_name.clone());
+                client.connect(credential, restore);
                 self.profile_connection_key = Some(key);
             }
             self.profile_state = client.state();
@@ -126,7 +125,11 @@ impl PublisherUi {
                 let name = own.display_name.clone();
                 let discord = own.discord;
                 self.observe_profile_name(&name);
-                if !discord && self.saved_guest_name != name {
+                if !discord
+                    && self.account_state.credential.is_none()
+                    && self.profile_state.identity_synced
+                    && self.saved_guest_name != name
+                {
                     if crate::settings::save_guest_name(&name).is_err() {
                         self.settings_error =
                             "Could not remember your guest name on this PC.".into();

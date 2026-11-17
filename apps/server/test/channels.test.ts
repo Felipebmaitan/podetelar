@@ -77,6 +77,34 @@ test("slash interactions reuse the channel room and keep persistent replay prote
     );
     assert.ok(typeof a === "object" && typeof b === "object");
     assert.equal(a.room.id, b.room.id);
+    rooms.manageChannel(guild, channel, "pause");
+    const explicit = rooms.createFromDiscord(
+      "723456789012345678",
+      guild,
+      "423456789012345678",
+      "Explicit",
+      location,
+    );
+    assert.ok(
+      typeof explicit === "object",
+      "pausing automatic joins must not disable an explicit command invitation",
+    );
+    rooms.manageChannel(guild, channel, "resume");
+    rooms.manageChannel(guild, channel, "disable");
+    assert.equal(
+      rooms.createFromDiscord(
+        "823456789012345678",
+        guild,
+        "423456789012345678",
+        "Disabled guest",
+        location,
+      ),
+      "unavailable",
+    );
+    assert.ok(
+      rooms.resolveChannel(guild, channel, "Games"),
+      "disabling guest invitations must not pause automatic joining",
+    );
     assert.equal(
       rooms.createFromDiscord(
         "323456789012345678",

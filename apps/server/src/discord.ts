@@ -147,7 +147,7 @@ export async function discordRoutes(
           return message("Too many rooms created. Try again in a minute.");
         if (created === "unavailable")
           return message(
-            "Room entry is paused for this voice channel. Ask the administrator to check room access.",
+            "Room invitations are unavailable for this voice channel. Ask the administrator to check room access.",
           );
         // Angle brackets and SUPPRESS_EMBEDS prevent link unfurling. The secret is fragment-only.
         const permanent = location

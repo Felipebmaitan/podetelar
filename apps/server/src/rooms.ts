@@ -192,13 +192,22 @@ export class Rooms {
       this.db
         .prepare("INSERT INTO discord_interactions VALUES (?, ?, ?, ?)")
         .run(id, guildId, actorId, now);
-      const resolved = channel
-        ? this.resolveChannelInner(
+      const channelSecret = channel
+        ? this.channelInvitation(
             channel.guildId,
             channel.channelId,
             channel.name,
           )
         : null;
+      const resolved =
+        channel && channelSecret
+          ? this.resolveChannelInner(
+              channel.guildId,
+              channel.channelId,
+              channel.name,
+              channelSecret,
+            )
+          : null;
       if (channel && !resolved) return "unavailable";
       const { room, invitation } = resolved ?? this.insertRoom(roomName);
       return {

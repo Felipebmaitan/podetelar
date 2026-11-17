@@ -43,9 +43,16 @@ export class GuestProfiles {
       );
       CREATE TABLE IF NOT EXISTS guest_profile_names (
         participant_id TEXT PRIMARY KEY, room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-        display_name TEXT NOT NULL
+        display_name TEXT NOT NULL, next_attempt_at INTEGER NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS guest_profile_room ON guest_profile_sessions(room_id);`);
+    const columns = this.db
+      .prepare("PRAGMA table_info(guest_profile_names)")
+      .all();
+    if (!columns.some((column) => column.name === "next_attempt_at"))
+      this.db.exec(
+        "ALTER TABLE guest_profile_names ADD COLUMN next_attempt_at INTEGER NOT NULL DEFAULT 0",
+      );
   }
   bind(room: string, participant: string, name: string, device?: string) {
     this.db
@@ -116,7 +123,7 @@ export class GuestProfiles {
     this.db
       .prepare(
         `INSERT INTO guest_profile_names(participant_id,room_id,display_name) VALUES (?,?,?)
-      ON CONFLICT(participant_id) DO UPDATE SET display_name=excluded.display_name`,
+      ON CONFLICT(participant_id) DO UPDATE SET display_name=excluded.display_name,next_attempt_at=0`,
       )
       .run(participant, room, name);
     const row = this.row(room, participant);
@@ -129,29 +136,45 @@ export class GuestProfiles {
   syncNames(directory: MediaDirectory): Promise<void> {
     if (this.syncing) return this.syncing;
     this.syncing = (async () => {
+      this.db
+        .prepare(
+          `DELETE FROM guest_profile_names WHERE NOT EXISTS (
+        SELECT 1 FROM sessions s WHERE s.participant_id=guest_profile_names.participant_id
+        AND s.room_id=guest_profile_names.room_id AND s.expires_at>?)`,
+        )
+        .run(this.now());
       if (!directory.rename) return;
       const rows = this.db
         .prepare(
           `SELECT b.participant_id,b.room_id,b.display_name AS pending_name FROM guest_profile_names b JOIN sessions s
-        ON s.participant_id=b.participant_id AND s.room_id=b.room_id WHERE s.expires_at>? LIMIT 8`,
+        ON s.participant_id=b.participant_id AND s.room_id=b.room_id WHERE s.expires_at>? AND b.next_attempt_at<=?
+        ORDER BY b.next_attempt_at,b.rowid LIMIT 8`,
         )
-        .all(this.now()) as {
+        .all(this.now(), this.now()) as {
         participant_id: string;
         room_id: string;
         pending_name: string;
       }[];
       await Promise.allSettled(
         rows.map(async (row) => {
-          await directory.rename!(
-            row.room_id,
-            row.participant_id,
-            row.pending_name,
-          );
-          this.db
-            .prepare(
-              "DELETE FROM guest_profile_names WHERE participant_id=? AND display_name=?",
-            )
-            .run(row.participant_id, row.pending_name);
+          try {
+            await directory.rename!(
+              row.room_id,
+              row.participant_id,
+              row.pending_name,
+            );
+            this.db
+              .prepare(
+                "DELETE FROM guest_profile_names WHERE participant_id=? AND display_name=?",
+              )
+              .run(row.participant_id, row.pending_name);
+          } catch {
+            this.db
+              .prepare(
+                "UPDATE guest_profile_names SET next_attempt_at=? WHERE participant_id=? AND display_name=?",
+              )
+              .run(this.now() + 5000, row.participant_id, row.pending_name);
+          }
         }),
       );
     })().finally(() => {

@@ -9,7 +9,8 @@ available through that panel and the Room options menu.
 
 Changing a nickname updates the existing participant session and the SFU display
 name without replacing its identity or restarting sharing/watching. Failed SFU
-updates are persisted for retry. Other connected native apps observe the change.
+updates are persisted for fair retries with a five-second backoff; expired queue
+entries are removed. Other connected native apps observe the change.
 
 ## Pictures and ownership
 
@@ -39,6 +40,8 @@ Participant responses and image URLs expose participant IDs and random image
 revisions, never PC identifiers. Image retrieval requires an admitted session in
 the same room, and rechecks the target session and image revision. Profile metadata
 refreshes every three seconds; deleting/replacing an image retires the old revision.
+Authenticated profile routes use per-session request budgets, keeping several PCs
+behind one network address from exhausting unrelated room/session request limits.
 
 ## Administration
 

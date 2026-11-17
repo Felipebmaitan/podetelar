@@ -3183,6 +3183,22 @@ mod tests {
     }
 
     #[test]
+    fn offline_nickname_change_is_used_by_the_next_invitation() {
+        let mut app = app();
+        app.session_name = Some("Previous name".into());
+        app.name = "Previous name".into();
+        app.remember_guest_name("Updated offline name".into());
+        let (controller, mut command) = Controller::recording_for_test(Snapshot::default());
+        app.controller = controller;
+        finish_link(&mut app, "https://next.test/synthetic");
+        assert!(matches!(command(),Some(Command::Join{name,..})if name=="Updated offline name"));
+        assert!(
+            command().is_none(),
+            "A nickname update must not start capture or subscriptions"
+        );
+    }
+
+    #[test]
     fn latest_link_supersedes_pending_load_without_detaching_worker() {
         let mut app = app();
         app.link_result = Some(crate::browser_links::Load::with_request(

@@ -8,6 +8,7 @@ import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { AVATAR_MAX_BYTES } from "@podetelar/contracts";
 import { GuestProfiles } from "../src/profiles.js";
+import { Rooms } from "../src/rooms.js";
 
 const origin = "http://localhost:5173",
   password = "profile-test-admin-not-a-production-secret";
@@ -388,4 +389,110 @@ test("administrator deletion wins over an upload that is still decoding", async 
   } finally {
     await store.close();
   }
+});
+
+test("failed SFU renames yield retry slots to later participants", async (t) => {
+  const f = await fixture(t),
+    first = await f.create(11),
+    rooms = new Rooms(f.config.databasePath);
+  let now = Date.now();
+  const store = new GuestProfiles(f.config.databasePath, () => now);
+  try {
+    const ids = Array.from(
+      { length: 9 },
+      (_, index) =>
+        rooms.join(first.room, first.invitation, `Original ${index}`)!.snapshot
+          .participant.id,
+    );
+    ids.forEach((id, index) =>
+      store.rename(first.room, id, `Updated ${index}`),
+    );
+    const attempts: string[] = [];
+    let failure = true;
+    const media = {
+      async members() {
+        return [];
+      },
+      async remove() {},
+      async participant() {
+        return null;
+      },
+      async attribute() {},
+      async rename(_room: string, id: string) {
+        attempts.push(id);
+        if (failure && ids.indexOf(id) < 8) throw Error("Offline participant");
+      },
+    };
+    await store.syncNames(media);
+    await store.syncNames(media);
+    assert.equal(attempts.length, 9);
+    assert.equal(attempts[8], ids[8]);
+    failure = false;
+    now += 5001;
+    await store.syncNames(media);
+    assert.equal(attempts.length, 17);
+    await store.syncNames(media);
+    assert.equal(
+      attempts.length,
+      17,
+      "successfully synchronized updates are removed",
+    );
+  } finally {
+    await store.close();
+    rooms.close();
+  }
+});
+
+test("authenticated profile polling has per-session budgets independent of other room requests", async (t) => {
+  const f = await fixture(t),
+    guest = await f.create(12);
+  for (let index = 0; index < 120; index++)
+    assert.equal(
+      (
+        await f.app.inject({
+          url: `/api/rooms/${guest.room}/profiles`,
+          headers: { cookie: guest.cookie },
+        })
+      ).statusCode,
+      200,
+    );
+  assert.equal(
+    (
+      await f.app.inject({
+        url: `/api/rooms/${guest.room}/profiles`,
+        headers: { cookie: guest.cookie },
+      })
+    ).statusCode,
+    429,
+  );
+  assert.equal(
+    (
+      await f.app.inject({
+        url: `/api/rooms/${guest.room}/session`,
+        headers: { cookie: guest.cookie },
+      })
+    ).statusCode,
+    200,
+  );
+  const other = await f.app.inject({
+    method: "POST",
+    url: `/api/rooms/${guest.room}/join`,
+    headers: { origin },
+    payload: {
+      invitation: guest.invitation,
+      displayName: "Other PC",
+      deviceId: device(13),
+    },
+  });
+  assert.equal(other.statusCode, 200);
+  const cookie = String(other.headers["set-cookie"]).split(";")[0]!;
+  assert.equal(
+    (
+      await f.app.inject({
+        url: `/api/rooms/${guest.room}/profiles`,
+        headers: { cookie },
+      })
+    ).statusCode,
+    200,
+  );
 });

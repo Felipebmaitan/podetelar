@@ -11,6 +11,11 @@ pub(super) fn avatar(ui: &mut egui::Ui, name: &str, size: f32, texture: Option<e
     }
 }
 impl PublisherUi {
+    pub(super) fn remember_guest_name(&mut self, name: String) {
+        self.name = name.clone();
+        self.session_name = Some(name.clone());
+        self.saved_guest_name = name;
+    }
     pub(super) fn open_profile(&mut self) {
         self.profile_name = self.name.clone();
         self.profile_open = true;
@@ -128,8 +133,9 @@ impl PublisherUi {
                 if let Some(client) = &self.profile_client {
                     client.name(name);
                 } else if crate::settings::save_guest_name(&name).is_ok() {
-                    self.name = name.clone();
-                    self.saved_guest_name = name;
+                    self.remember_guest_name(name);
+                } else {
+                    self.settings_error = "Could not remember your guest name on this PC.".into();
                 }
             }
             ui.add_space(12.0);

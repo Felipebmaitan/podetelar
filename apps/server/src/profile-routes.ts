@@ -1,4 +1,5 @@
-import type { FastifyInstance } from "fastify";
+import { createHash } from "node:crypto";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   AVATAR_MAX_BYTES,
   guestNameSchema,
@@ -15,6 +16,14 @@ export async function guestProfileRoutes(
   profiles: GuestProfiles,
   directory: MediaDirectory,
 ) {
+  const keyGenerator = (request: FastifyRequest) => {
+    const room = (request.params as { roomId: string }).roomId;
+    const token = request.cookies.podetelar_session;
+    return token && rooms.session(room, token)
+      ? createHash("sha256").update(token).digest("hex")
+      : `anonymous:${request.ip}`;
+  };
+  const profileLimit = { max: 120, timeWindow: "1 minute", keyGenerator };
   await app.register(async (scope) => {
     scope.addContentTypeParser(
       "application/octet-stream",
@@ -33,10 +42,12 @@ export async function guestProfileRoutes(
     });
     scope.get<{ Params: { roomId: string } }>(
       "/api/rooms/:roomId/profiles",
+      { config: { rateLimit: profileLimit } },
       async (request) => ({ profiles: profiles.list(request.params.roomId) }),
     );
     scope.patch<{ Params: { roomId: string } }>(
       "/api/rooms/:roomId/profile",
+      { config: { rateLimit: profileLimit } },
       async (request, reply) => {
         const input = guestNameSchema.safeParse(request.body);
         if (!input.success)
@@ -55,7 +66,7 @@ export async function guestProfileRoutes(
       "/api/rooms/:roomId/profile/avatar",
       {
         bodyLimit: AVATAR_MAX_BYTES,
-        config: { rateLimit: { max: 6, timeWindow: "1 minute" } },
+        config: { rateLimit: { ...profileLimit, max: 6 } },
       },
       async (request, reply) => {
         if (
@@ -97,6 +108,7 @@ export async function guestProfileRoutes(
     );
     scope.delete<{ Params: { roomId: string } }>(
       "/api/rooms/:roomId/profile/avatar",
+      { config: { rateLimit: profileLimit } },
       async (request, reply) => {
         const room = request.params.roomId,
           participant = rooms.session(room, request.cookies.podetelar_session)!
@@ -109,6 +121,7 @@ export async function guestProfileRoutes(
       Params: { roomId: string; participantId: string; revision: string };
     }>(
       "/api/rooms/:roomId/profiles/:participantId/avatar/:revision",
+      { config: { rateLimit: profileLimit } },
       async (request, reply) => {
         const { roomId, participantId, revision } = request.params;
         if (

@@ -257,6 +257,10 @@ impl Client {
         let _ = self.commands.send(Command::Edit(Edit::Name(name)));
     }
     pub fn connect(&self, credential: Option<crate::account::Credential>, guest: Option<String>) {
+        // Invalidate the previous acknowledgement before the GUI can read it.
+        if let Ok(mut state) = self.state.lock() {
+            state.identity_synced = false;
+        }
         let _ = self
             .commands
             .send(Command::Edit(Edit::Discord(credential, guest)));

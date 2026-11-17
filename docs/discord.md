@@ -1,7 +1,7 @@
 # Discord room creation
 
-Discord HTTP interactions can create rooms directly inside PodeTelar: there
-is no gateway connection, message-content intent or Discord SDK dependency.
+Discord HTTP interactions create rooms inside PodeTelar. An optional runtime
+bot Gateway connection also discovers voice membership across installed servers.
 `/stream` and `/telar` are global, server-installed commands. They each create a new room and reply in the invoking channel.
 Anyone who can read or forward the invitation can join; use a private channel.
 Embeds and automatic mentions are suppressed. Discord necessarily receives and
@@ -32,7 +32,7 @@ See [native invitation behavior](distribution.md#invitations-and-launch-behavior
    Confirm the actual configured origin/port is supported and reachable from Discord
    before rollout. Retain the production proxy's disabled request logging.
 4. Store `DISCORD_BOT_TOKEN` only in a local untracked environment file used for
-   command registration (never the runtime container, logs, source, or CLI args).
+   command registration and optional Gateway runtime (never logs, source or CLI args).
    Run `node --env-file=PATH_TO_PRIVATE_ENV scripts/register-discord.mjs` with Node 24. The file must also set the application and guild IDs. The script upserts
    only these two global commands and does not bulk-delete other commands. Errors
    report HTTP status only. For HTTP 429, wait before rerunning.
@@ -42,7 +42,7 @@ See [native invitation behavior](distribution.md#invitations-and-launch-behavior
    invitation is refused. Confirm room closure after all members leave.
 
 The live server needs only the application ID, public verification key and guild
-policy, never the bot token or PodeTelar administrator key. Request
+policy. Runtime voice discovery additionally needs the private bot token. Request
 signatures cover the timestamp plus exact raw bytes; accepted timestamps are within
 five minutes. Successful interaction IDs are recorded transactionally with room
 creation and retained ten minutes. A retry returns an ephemeral already-handled
@@ -71,3 +71,25 @@ admission as well as signed HTTP fixtures before rollout.
 Primary references:
 [Discord interactions](https://docs.discord.com/developers/interactions/receiving-and-responding)
 and [application commands](https://docs.discord.com/developers/interactions/application-commands).
+
+## Voice discovery and administration
+
+With a runtime `DISCORD_BOT_TOKEN`, pinned discord.js connects using only Guilds
+and GuildVoiceStates intents. No message-content or privileged member/presence
+intent is needed. Install the actual bot user with access to intended channels.
+All ordinary voice channels are discovered by default, without opt-in commands.
+Guild snapshots initialize an in-memory index; ordered voice events update it.
+Lookup does not scan every server when a desktop client connects. DMs, group-DM
+calls and Stage channels are outside the initial integration.
+
+The administrator dashboard Discord section shows connection/readiness, installed
+allowed guilds, channels and member counts. Reconnect and resynchronize rebuilds
+the index. Credentials and raw SDK errors never appear in dashboard responses.
+An unavailable guild or disconnected transport means unknown presence, not a
+confirmed departure. New Gateway sessions discard stale state. No voice history
+is persisted. Targeted member REST requests support nickname/avatar resolution
+without storing user OAuth refresh tokens.
+
+Live qualification requires a real bot and Discord users: already-in-voice startup,
+movement, departure, guild/transport outage and recovery, bot installation/removal
+and dashboard reconnect. Deterministic tests do not qualify those external events.

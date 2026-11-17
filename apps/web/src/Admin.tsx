@@ -6,6 +6,7 @@ import { dataSize, periodRange, speed, type Period } from "./usage";
 import "./admin.css";
 import { AdminRooms } from "./AdminRooms";
 import { AdminProfiles } from "./AdminProfiles";
+import { AdminDiscord } from "./AdminDiscord";
 import { BrandMark } from "./BrandMark";
 
 const periods: Period[] = [
@@ -28,9 +29,9 @@ export function Admin() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [section, setSection] = useState<"usage" | "rooms" | "profiles">(
-    "rooms",
-  );
+  const [section, setSection] = useState<
+    "usage" | "rooms" | "profiles" | "discord"
+  >("rooms");
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     const abort = new AbortController();
@@ -104,6 +105,12 @@ export function Admin() {
             {error && <p role="alert">{error}</p>}
           </div>
           <nav className="admin-nav" aria-label="Administration sections">
+            <button
+              aria-pressed={section === "discord"}
+              onClick={() => setSection("discord")}
+            >
+              Discord
+            </button>
             <p>Administration</p>
             <button
               aria-pressed={section === "rooms"}
@@ -124,7 +131,14 @@ export function Admin() {
               Usage
             </button>
           </nav>
-          {section === "profiles" ? (
+          {section === "discord" ? (
+            <AdminDiscord
+              onExpired={() => {
+                setAuth("login");
+                setError("Your session expired. Sign in again.");
+              }}
+            />
+          ) : section === "profiles" ? (
             <AdminProfiles
               onExpired={() => {
                 setAuth("login");

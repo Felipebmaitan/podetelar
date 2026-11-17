@@ -2,7 +2,9 @@
 
 Discord HTTP interactions create rooms inside PodeTelar. An optional runtime
 bot Gateway connection also discovers voice membership across installed servers.
-`/stream` and `/telar` are global, server-installed commands. They each create a new room and reply in the invoking channel.
+`/stream` and `/telar` are global, server-installed commands. When voice discovery is available, they reuse the invoking user's voice-channel
+room and return its permanent invitation. Outside voice, each creates an ordinary
+room and replies in the invoking channel.
 Anyone who can read or forward the invitation can join; use a private channel.
 Embeds and automatic mentions are suppressed. Discord necessarily receives and
 stores the invitation in that message. It is not end-to-end secret from Discord.
@@ -93,3 +95,33 @@ without storing user OAuth refresh tokens.
 Live qualification requires a real bot and Discord users: already-in-voice startup,
 movement, departure, guild/transport outage and recovery, bot installation/removal
 and dashboard reconnect. Deterministic tests do not qualify those external events.
+
+## Channel rooms and permanent invitations
+
+Each Discord guild/channel pair maps transactionally to at most one active room.
+The room follows the existing 60-second empty grace. Closing it clears the mapping,
+but its encrypted/hash-protected permanent channel invitation remains valid until
+rotated or disabled. Opening a valid invitation creates the next room on demand.
+A channel URL is `/c/GUILD/CHANNEL#invite=SECRET`; secrets are submitted in request
+bodies, never HTTP URLs or browser storage. Native pasted links and browser app
+handoffs both support these invitations. Merely viewing the landing page does not
+create a room. Invitation joins remain independent of Discord voice membership,
+including while the bot reconnects. The server can resolve previously known
+channels from persisted metadata during outages.
+
+The Discord administrator section manages permanent invitation copy/rotation and
+disable/enable, automatic admission pause/resume, and announcement repair. These
+controls are independent; disabling an invitation preserves established sessions.
+The existing room directory can close the current room or manage its sessions.
+An existing room admission lock cannot be bypassed through the channel resolver.
+
+The bot posts or updates one message per channel when a room is first requested.
+It updates that message when the room closes or its guest access changes. Links
+are explicitly shareable guest capabilities and necessarily disclosed to Discord.
+Message permission failures are visible in administration and retried with bounded
+backoff; they do not prevent joining. Slash command replay protection and quotas
+are retained, and unknown voice state does not create a competing fallback room.
+
+Live Discord message delivery/permissions remain to be checked with a configured
+bot. Automated tests cover permanent-invitation lifecycle and slash room reuse;
+they do not qualify actual Discord installations or message delivery.

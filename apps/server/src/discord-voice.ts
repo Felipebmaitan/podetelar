@@ -344,4 +344,38 @@ export class DiscordVoice {
       return null;
     }
   }
+  async announce(
+    channelId: string,
+    messageId: string | null,
+    body: Record<string, unknown>,
+  ): Promise<string | null> {
+    if (!this.client || !this.index.status().online) return null;
+    try {
+      let result: unknown;
+      if (messageId) {
+        try {
+          result = await this.client.rest.patch(
+            Routes.channelMessage(channelId, messageId),
+            { body },
+          );
+        } catch (error) {
+          if (!(
+            error instanceof Error &&
+            "status" in error &&
+            error.status === 404
+          ))
+            return null;
+        }
+      }
+      if (!result)
+        result = await this.client.rest.post(
+          Routes.channelMessages(channelId),
+          { body },
+        );
+      const parsed = z.object({ id }).safeParse(result);
+      return parsed.success ? parsed.data.id : null;
+    } catch {
+      return null;
+    }
+  }
 }

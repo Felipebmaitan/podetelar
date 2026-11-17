@@ -111,6 +111,14 @@ export class Rooms {
     this.db.exec(`CREATE TABLE IF NOT EXISTS discord_interactions (
       id TEXT PRIMARY KEY, guild_id TEXT NOT NULL, actor_id TEXT NOT NULL, created_at INTEGER NOT NULL
     ); CREATE INDEX IF NOT EXISTS discord_interactions_time ON discord_interactions(created_at);`);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS discord_channels (
+      guild_id TEXT NOT NULL, channel_id TEXT NOT NULL, name TEXT NOT NULL,
+      room_id TEXT UNIQUE REFERENCES rooms(id) ON DELETE SET NULL,
+      invitation_hash BLOB NOT NULL, invitation_cipher BLOB,
+      guest_enabled INTEGER NOT NULL DEFAULT 1, auto_enabled INTEGER NOT NULL DEFAULT 1,
+      announcement_id TEXT, announcement_state TEXT, announcement_error INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY(guild_id,channel_id)
+    );`);
     this.findStatement = this.db.prepare(
       "SELECT id, name, invitation_hash, invitation_enabled, created_at FROM rooms WHERE id = ?",
     );
@@ -156,7 +164,12 @@ export class Rooms {
     guildId: string,
     actorId: string,
     roomName: string,
-  ): { room: Room; invitation: string } | "duplicate" | "limited" {
+    channel?: { guildId: string; channelId: string; name: string },
+  ):
+    | { room: Room; invitation: string }
+    | "duplicate"
+    | "limited"
+    | "unavailable" {
     return this.transaction(() => {
       const now = this.now();
       this.db
@@ -179,7 +192,15 @@ export class Rooms {
       this.db
         .prepare("INSERT INTO discord_interactions VALUES (?, ?, ?, ?)")
         .run(id, guildId, actorId, now);
-      const { room, invitation } = this.insertRoom(roomName);
+      const resolved = channel
+        ? this.resolveChannelInner(
+            channel.guildId,
+            channel.channelId,
+            channel.name,
+          )
+        : null;
+      if (channel && !resolved) return "unavailable";
+      const { room, invitation } = resolved ?? this.insertRoom(roomName);
       return {
         room: {
           id: room.id,
@@ -203,6 +224,194 @@ export class Rooms {
         invitation,
       };
     });
+  }
+
+  private ensureChannel(guild: string, channel: string, name: string) {
+    const secret = randomSecret();
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO discord_channels(guild_id,channel_id,name,invitation_hash,invitation_cipher)
+      VALUES (?,?,?,?,?)`,
+      )
+      .run(
+        guild,
+        channel,
+        name,
+        digest(secret),
+        this.encryptInvitation(`discord:${guild}:${channel}`, secret),
+      );
+    this.db
+      .prepare(
+        "UPDATE discord_channels SET name=? WHERE guild_id=? AND channel_id=?",
+      )
+      .run(name, guild, channel);
+  }
+  private resolveChannelInner(
+    guild: string,
+    channel: string,
+    name: string,
+    secret?: string,
+  ) {
+    if (
+      secret !== undefined &&
+      !this.db
+        .prepare(
+          "SELECT 1 FROM discord_channels WHERE guild_id=? AND channel_id=?",
+        )
+        .get(guild, channel)
+    )
+      return null;
+    this.ensureChannel(guild, channel, name);
+    const row = this.db
+      .prepare(
+        "SELECT * FROM discord_channels WHERE guild_id=? AND channel_id=?",
+      )
+      .get(guild, channel) as {
+      room_id: string | null;
+      guest_enabled: number;
+      auto_enabled: number;
+      invitation_hash: Uint8Array;
+    };
+    if (
+      secret !== undefined
+        ? !row.guest_enabled ||
+          !timingSafeEqual(digest(secret), Buffer.from(row.invitation_hash))
+        : !row.auto_enabled
+    )
+      return null;
+    if (row.room_id) {
+      const room = this.find(row.room_id),
+        invitation = this.invitation(row.room_id);
+      if (room && invitation) return { room, invitation };
+      if (room) return null;
+    }
+    const created = this.insertRoom(name.slice(0, 60));
+    this.db
+      .prepare(
+        "UPDATE discord_channels SET room_id=? WHERE guild_id=? AND channel_id=?",
+      )
+      .run(created.room.id, guild, channel);
+    return created;
+  }
+  resolveChannel(
+    guild: string,
+    channel: string,
+    name: string,
+    secret?: string,
+  ) {
+    return this.transaction(() =>
+      this.resolveChannelInner(guild, channel, name, secret),
+    );
+  }
+  channelContext(room: string) {
+    return this.db
+      .prepare(
+        "SELECT guild_id AS guildId,channel_id AS channelId FROM discord_channels WHERE room_id=?",
+      )
+      .get(room) as { guildId: string; channelId: string } | undefined;
+  }
+  channelName(guild: string, channel: string) {
+    return (
+      this.db
+        .prepare(
+          "SELECT name FROM discord_channels WHERE guild_id=? AND channel_id=?",
+        )
+        .get(guild, channel) as { name: string } | undefined
+    )?.name;
+  }
+  channelInvitation(guild: string, channel: string, name: string) {
+    this.ensureChannel(guild, channel, name);
+    const row = this.db
+      .prepare(
+        "SELECT invitation_cipher FROM discord_channels WHERE guild_id=? AND channel_id=?",
+      )
+      .get(guild, channel) as { invitation_cipher: Uint8Array | null };
+    if (!row.invitation_cipher || !this.invitationKey) return null;
+    try {
+      const data = Buffer.from(row.invitation_cipher),
+        decipher = createDecipheriv(
+          "aes-256-gcm",
+          digest(`invitation:${this.invitationKey}`),
+          data.subarray(0, 12),
+        );
+      decipher.setAAD(Buffer.from(`discord:${guild}:${channel}`));
+      decipher.setAuthTag(data.subarray(data.length - 16));
+      return Buffer.concat([
+        decipher.update(data.subarray(12, -16)),
+        decipher.final(),
+      ]).toString("utf8");
+    } catch {
+      return null;
+    }
+  }
+  channelDirectory() {
+    return this.db
+      .prepare(
+        `SELECT guild_id AS guildId,channel_id AS channelId,name,room_id AS roomId,
+    guest_enabled AS guestEnabled,auto_enabled AS autoEnabled,announcement_error AS announcementError FROM discord_channels ORDER BY guild_id,name LIMIT 1000`,
+      )
+      .all();
+  }
+  manageChannel(
+    guild: string,
+    channel: string,
+    action: "rotate" | "disable" | "enable" | "pause" | "resume",
+  ) {
+    if (action === "rotate") {
+      const secret = randomSecret();
+      return (
+        this.db
+          .prepare(
+            "UPDATE discord_channels SET invitation_hash=?,invitation_cipher=?,guest_enabled=1,announcement_state=NULL WHERE guild_id=? AND channel_id=?",
+          )
+          .run(
+            digest(secret),
+            this.encryptInvitation(`discord:${guild}:${channel}`, secret),
+            guild,
+            channel,
+          ).changes > 0
+      );
+    }
+    const field =
+        action === "pause" || action === "resume"
+          ? "auto_enabled"
+          : "guest_enabled",
+      enabled = action === "enable" || action === "resume";
+    return (
+      this.db
+        .prepare(
+          `UPDATE discord_channels SET ${field}=?,announcement_state=NULL WHERE guild_id=? AND channel_id=?`,
+        )
+        .run(Number(enabled), guild, channel).changes > 0
+    );
+  }
+  announcementJobs() {
+    return this.db
+      .prepare(
+        "SELECT guild_id AS guildId,channel_id AS channelId,name,room_id AS roomId,announcement_id AS messageId,announcement_state AS state,guest_enabled AS guestEnabled FROM discord_channels LIMIT 1000",
+      )
+      .all() as {
+      guildId: string;
+      channelId: string;
+      name: string;
+      roomId: string | null;
+      messageId: string | null;
+      state: string | null;
+      guestEnabled: number;
+    }[];
+  }
+  announcementResult(
+    guild: string,
+    channel: string,
+    message: string | null,
+    state: string | null,
+    failed: boolean,
+  ) {
+    this.db
+      .prepare(
+        "UPDATE discord_channels SET announcement_id=COALESCE(?,announcement_id),announcement_state=?,announcement_error=? WHERE guild_id=? AND channel_id=?",
+      )
+      .run(message, state, Number(failed), guild, channel);
   }
 
   /** Ciphertext is recoverable only by the server holding ADMIN_TOKEN. */

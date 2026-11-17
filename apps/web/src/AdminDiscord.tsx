@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError, request } from "./api";
+import { AdminChannels } from "./AdminChannels";
 type Status = {
   configured: boolean;
   online: boolean;
@@ -119,6 +120,16 @@ export function AdminDiscord({ onExpired }: { onExpired: () => void }) {
               </ul>
             </section>
           ))}
+          <AdminChannels
+            observed={data.guilds.flatMap((g) =>
+              g.channels.map((c) => ({
+                guildId: g.id,
+                channelId: c.id,
+                name: `${g.name} / ${c.name}`,
+              })),
+            )}
+            onExpired={onExpired}
+          />
         </>
       )}
     </main>

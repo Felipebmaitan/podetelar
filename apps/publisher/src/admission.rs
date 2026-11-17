@@ -608,7 +608,7 @@ impl Admission {
     pub async fn edit_profile(&self, edit: crate::profile::Edit) -> Result<()> {
         let base = format!("api/rooms/{}/profile", self.room_id);
         let request = match edit {
-            crate::profile::Edit::Discord(Some(credential), _) => {
+            crate::profile::Edit::Discord(Some(credential)) => {
                 let Some(token) = credential.for_server(&self.public_origin) else {
                     return Ok(());
                 };
@@ -619,7 +619,7 @@ impl Admission {
                     )
                     .bearer_auth(token)
             }
-            crate::profile::Edit::Discord(None, _) => self.client.delete(
+            crate::profile::Edit::Discord(None) => self.client.delete(
                 self.origin
                     .join(&(base.replace("/profile", "/discord-identity")))?,
             ),

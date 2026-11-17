@@ -81,11 +81,19 @@ pub fn decode(bytes: &[u8]) -> Result<Animation> {
 }
 
 pub enum Edit {
-    Discord(Option<crate::account::Credential>, Option<String>),
+    Discord(Option<crate::account::Credential>),
     Name(String),
     Picture(Vec<u8>),
     Remove,
 }
+type PendingIdentity = (
+    Option<crate::account::Credential>,
+    Option<String>,
+    Instant,
+    u32,
+    u64,
+);
+
 enum Command {
     Edit(Edit),
     Choose,
@@ -131,13 +139,7 @@ impl Client {
                     let mut next = Instant::now();
                     let mut avatars: HashMap<String, Arc<Animation>> = HashMap::new();
                     let mut identity_ack = None;
-                    let mut identity: Option<(
-                        Option<crate::account::Credential>,
-                        Option<String>,
-                        Instant,
-                        u32,
-                        u64,
-                    )> = None;
+                    let mut identity: Option<PendingIdentity> = None;
                     while !stopped.load(Ordering::Acquire) {
                         if let Ok(command) = receiver.try_recv() {
                             if let Ok(mut state) = worker_state.lock() {
@@ -174,7 +176,7 @@ impl Client {
                         {
                             let result = async {
                                 admission
-                                    .edit_profile(Edit::Discord(credential.clone(), None))
+                                    .edit_profile(Edit::Discord(credential.clone()))
                                     .await?;
                                 if credential.is_none()
                                     && let Some(name) = guest

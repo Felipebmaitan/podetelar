@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError, request } from "./api";
 import { AdminChannels } from "./AdminChannels";
+import { AdminAccounts } from "./AdminAccounts";
 type Status = {
   configured: boolean;
   online: boolean;
@@ -130,6 +131,7 @@ export function AdminDiscord({ onExpired }: { onExpired: () => void }) {
             )}
             onExpired={onExpired}
           />
+          <AdminAccounts onExpired={onExpired} />
         </>
       )}
     </main>

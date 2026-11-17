@@ -11,6 +11,14 @@ pub(super) fn avatar(ui: &mut egui::Ui, name: &str, size: f32, texture: Option<e
     }
 }
 impl PublisherUi {
+    pub(super) fn observe_profile_name(&mut self, name: &str) {
+        // An invitation has its own editable name draft in self.name. Live updates
+        // to the current room must not replace that draft before it is submitted.
+        if !self.browser_invitation_open {
+            self.name = name.to_owned();
+        }
+        self.session_name = Some(name.to_owned());
+    }
     pub(super) fn remember_guest_name(&mut self, name: String) {
         self.name = name.clone();
         self.session_name = Some(name.clone());
@@ -42,14 +50,14 @@ impl PublisherUi {
                 .iter()
                 .find(|p| p.participant_id == client.participant_id)
             {
-                self.name = own.display_name.clone();
-                self.session_name = Some(self.name.clone());
-                if self.saved_guest_name != self.name {
-                    if crate::settings::save_guest_name(&self.name).is_err() {
+                let name = own.display_name.clone();
+                self.observe_profile_name(&name);
+                if self.saved_guest_name != name {
+                    if crate::settings::save_guest_name(&name).is_err() {
                         self.settings_error =
                             "Could not remember your guest name on this PC.".into();
                     }
-                    self.saved_guest_name = self.name.clone();
+                    self.saved_guest_name = name;
                 }
             }
         }

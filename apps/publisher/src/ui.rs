@@ -3199,6 +3199,31 @@ mod tests {
     }
 
     #[test]
+    fn current_profile_updates_preserve_an_active_invitation_name_draft() {
+        let mut app = app();
+        app.browser_invitation_open = true;
+        app.invitation = "https://destination.test/synthetic".into();
+        app.name = "Destination nickname draft".into();
+        app.session_name = Some("Current nickname".into());
+        let (controller, mut command) = Controller::recording_for_test(Snapshot {
+            connection: "connected",
+            ..Default::default()
+        });
+        app.controller = controller;
+        app.observe_profile_name("Updated current nickname");
+        assert_eq!(app.name, "Destination nickname draft");
+        assert_eq!(
+            app.session_name.as_deref(),
+            Some("Updated current nickname")
+        );
+        app.join();
+        assert!(
+            matches!(command(),Some(Command::Join{name,..})if name=="Destination nickname draft")
+        );
+        assert!(command().is_none());
+    }
+
+    #[test]
     fn latest_link_supersedes_pending_load_without_detaching_worker() {
         let mut app = app();
         app.link_result = Some(crate::browser_links::Load::with_request(

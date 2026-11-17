@@ -1,3 +1,5 @@
+#[path = "ui/profile.rs"]
+mod profile;
 #[cfg(feature = "ui-review")]
 #[path = "ui/review.rs"]
 pub mod review;
@@ -89,6 +91,13 @@ pub fn configure_theme(ctx: &egui::Context) {
 }
 
 pub struct PublisherUi {
+    profile_client: Option<crate::profile::Client>,
+    profile_state: crate::profile::State,
+    profile_textures: HashMap<String, (usize, egui::TextureHandle)>,
+    profile_started: Instant,
+    profile_open: bool,
+    profile_name: String,
+    saved_guest_name: String,
     updates: crate::updates::Client,
     update_open: bool,
     update_announced_version: Option<String>,
@@ -184,6 +193,13 @@ impl PublisherUi {
         });
         let link_result = link.map(crate::browser_links::Load::start);
         Self {
+            profile_client: None,
+            profile_state: Default::default(),
+            profile_textures: HashMap::new(),
+            profile_started: Instant::now(),
+            profile_open: false,
+            profile_name: String::new(),
+            saved_guest_name: crate::settings::guest_name(),
             updates: crate::updates::Client::new(),
             update_open: false,
             update_announced_version: None,
@@ -192,7 +208,7 @@ impl PublisherUi {
             prior_room: None,
             controller: Controller::new(),
             invitation: String::new(),
-            name: String::new(),
+            name: crate::settings::guest_name(),
             session_name: None,
             source_id: String::new(),
             encoder: String::new(),
@@ -310,6 +326,10 @@ impl PublisherUi {
                 egui::Popup::menu(&room_options)
                     .frame(skin::menu_frame())
                     .show(|ui| {
+                        if ui.button(tr("User settings")).clicked() {
+                            self.open_profile();
+                            ui.close();
+                        }
                         if ui.button(tr("Advanced settings")).clicked() {
                             self.advanced_open = true;
                             ui.close();
@@ -446,7 +466,7 @@ impl PublisherUi {
                 self.join();
             }
             ui.small(tr(
-                "This invitation selects the server. Your name is kept only while the app is open.",
+                "This invitation selects the server. Your guest nickname is remembered on this PC.",
             ));
             return;
         }
@@ -1963,7 +1983,7 @@ impl PublisherUi {
             ui.heading(tr("Restart to update"));
             ui.label(tr("Restarting ends sharing and watching."));
             ui.label(tr(
-                "After restart, open a fresh invitation and enter your name again.",
+                "After restart, open a fresh invitation. Your guest nickname is remembered.",
             ));
             ui.horizontal(|ui| {
                 let row_width = button_width(ui, tr("Later"))
@@ -2086,6 +2106,9 @@ impl PublisherUi {
 
     fn render(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
+        let profile_snapshot = self.controller.snapshot();
+        self.poll_profile(&profile_snapshot);
+        self.profile_dialog(&ctx);
         ctx.request_repaint_after(Duration::from_secs(1));
         if let Some(started) = self.closing_since {
             egui::CentralPanel::default().show(root, |ui| {
@@ -2108,7 +2131,9 @@ impl PublisherUi {
             && !self.update_open
             && ctx.input(|i| i.key_pressed(egui::Key::Escape))
         {
-            if self.advanced_open {
+            if self.profile_open {
+                self.profile_open = false;
+            } else if self.advanced_open {
                 self.advanced_open = false;
             } else if self.fullscreen.is_some() {
                 self.set_fullscreen(&ctx, None);
@@ -2288,13 +2313,28 @@ impl PublisherUi {
                                 )
                                 .color(MUTED),
                             );
-                            participant(ui, &self.name, true, state.sharing);
-                            for name in &state.participants {
+                            let own_id = self
+                                .profile_client
+                                .as_ref()
+                                .map(|c| c.participant_id.clone())
+                                .unwrap_or_default();
+                            let texture = self.profile_texture(ui.ctx(), &own_id);
+                            if participant(ui, &self.name, true, state.sharing, texture).clicked() {
+                                self.open_profile();
+                            }
+                            for (index, name) in state.participants.iter().enumerate() {
+                                let id = state
+                                    .participant_ids
+                                    .get(index)
+                                    .map(|(id, _)| id.as_str())
+                                    .unwrap_or("");
+                                let texture = self.profile_texture(ui.ctx(), id);
                                 participant(
                                     ui,
                                     name,
                                     false,
                                     state.tiles.iter().any(|tile| tile.name == *name),
+                                    texture,
                                 );
                             }
                         });
@@ -2306,7 +2346,13 @@ impl PublisherUi {
                             egui::vec2(ui.available_width(), 44.0),
                             egui::Layout::left_to_right(egui::Align::Center),
                             |ui| {
-                                avatar(ui, &self.name, 30.0);
+                                let own_id = self
+                                    .profile_client
+                                    .as_ref()
+                                    .map(|c| c.participant_id.clone())
+                                    .unwrap_or_default();
+                                let texture = self.profile_texture(ui.ctx(), &own_id);
+                                profile::avatar(ui, &self.name, 30.0, texture);
                                 let info_width = (ui.available_width() - 40.0).max(20.0);
                                 ui.allocate_ui_with_layout(
                                     egui::vec2(info_width, 38.0),
@@ -2314,10 +2360,16 @@ impl PublisherUi {
                                     |ui| {
                                         ui.set_width(info_width);
                                         ui.spacing_mut().item_spacing.y = 3.0;
-                                        ui.add(
-                                            egui::Label::new(skin::strong(&self.name, 14.0))
-                                                .truncate(),
-                                        );
+                                        if ui
+                                            .add(
+                                                egui::Label::new(skin::strong(&self.name, 14.0))
+                                                    .truncate()
+                                                    .sense(egui::Sense::click()),
+                                            )
+                                            .clicked()
+                                        {
+                                            self.open_profile();
+                                        }
                                         ui.label(
                                             egui::RichText::new(tr(
                                                 if state.connection == "connected" {
@@ -2337,10 +2389,10 @@ impl PublisherUi {
                                         );
                                     },
                                 );
-                                if skin::icon_button(ui, Icon::Settings, tr("Advanced settings"))
+                                if skin::icon_button(ui, Icon::Settings, tr("User settings"))
                                     .clicked()
                                 {
-                                    self.advanced_open = true;
+                                    self.open_profile();
                                 }
                             },
                         );
@@ -2807,12 +2859,18 @@ fn avatar(ui: &mut egui::Ui, name: &str, size: f32) {
     );
 }
 
-fn participant(ui: &mut egui::Ui, name: &str, own: bool, sharing: bool) {
+fn participant(
+    ui: &mut egui::Ui,
+    name: &str,
+    own: bool,
+    sharing: bool,
+    texture: Option<egui::TextureId>,
+) -> egui::Response {
     ui.scope(|ui| {
         ui.spacing_mut().interact_size.y = 26.0;
         ui.spacing_mut().item_spacing.y = 3.0;
         ui.horizontal(|ui| {
-            avatar(ui, name, 26.0);
+            profile::avatar(ui, name, 26.0, texture);
             let label = if own {
                 format!("{} ({})", name, tr("you"))
             } else {
@@ -2832,7 +2890,13 @@ fn participant(ui: &mut egui::Ui, name: &str, own: bool, sharing: bool) {
                 badge(ui, tr("Live"), ACCENT);
             }
         });
-    });
+    })
+    .response
+    .interact(if own {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    })
 }
 
 fn settings_divider(ui: &mut egui::Ui) {
@@ -3392,6 +3456,13 @@ mod tests {
     fn app() -> PublisherUi {
         gstreamer::init().expect("Test media runtime");
         PublisherUi {
+            profile_client: None,
+            profile_state: Default::default(),
+            profile_textures: HashMap::new(),
+            profile_started: Instant::now(),
+            profile_open: false,
+            profile_name: String::new(),
+            saved_guest_name: String::new(),
             updates: crate::updates::Client::new(),
             update_open: false,
             update_announced_version: None,

@@ -22,8 +22,11 @@ selects its backend. The first room asks for a nickname; later links can reuse
 that nickname while the process remains open and join when idle. Switching from
 an active room requires confirmation. Links never start sharing or watching.
 
-Server, nickname, invitations, session credentials and language choices remain
-in memory. Startup removes obsolete profile/preferences files left by previous versions. Installation data and runtime caches are separate.
+The last successful guest nickname is saved locally; pictures are associated with
+the PC on each backend. See [guest profiles](guest-profiles.md). Server,
+invitations, session credentials and language choices remain in memory. Startup
+removes obsolete profile/preferences files left by previous versions. Installation
+data and runtime caches are separate.
 The installed launcher forwards later links to the existing app window.
 
 Both launcher and publisher use the Windows GUI subsystem. Helpers run hidden.

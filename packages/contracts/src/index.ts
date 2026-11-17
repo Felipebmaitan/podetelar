@@ -33,6 +33,29 @@ const nameSchema = z
   .max(60)
   .refine((value) => !/[\p{Cc}\p{Cf}]/u.test(value));
 
+export const guestNameSchema = z.object({ displayName: nameSchema }).strict();
+export const AVATAR_MAX_BYTES = 3_000_000;
+export type GuestProfile = {
+  participantId: string;
+  displayName: string;
+  avatarRevision: string | null;
+  uploadsBlocked: boolean;
+};
+export type AdminGuestProfile = {
+  id: string;
+  deviceId: string;
+  displayName: string;
+  avatarRevision: string | null;
+  uploadsBlocked: boolean;
+  updatedAt: number;
+  bytes: number;
+  animated: boolean;
+};
+export type AdminGuestProfiles = {
+  profiles: AdminGuestProfile[];
+  nextOffset: number | null;
+};
+
 export const adminCreateRoomSchema = z.object({ name: nameSchema }).strict();
 export const deviceIdSchema = z.string().regex(/^pc1_[0-9a-f]{64}$/);
 export const createRoomSchema = z

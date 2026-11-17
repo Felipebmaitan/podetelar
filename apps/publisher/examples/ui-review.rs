@@ -32,6 +32,8 @@ mod network;
 mod playback;
 #[path = "../src/preview.rs"]
 mod preview;
+#[path = "../src/profile.rs"]
+mod profile;
 #[path = "../src/publisher.rs"]
 mod publisher;
 #[path = "../src/quality.rs"]

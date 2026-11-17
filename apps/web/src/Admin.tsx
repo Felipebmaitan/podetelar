@@ -5,6 +5,7 @@ import { ApiError, request } from "./api";
 import { dataSize, periodRange, speed, type Period } from "./usage";
 import "./admin.css";
 import { AdminRooms } from "./AdminRooms";
+import { AdminProfiles } from "./AdminProfiles";
 import { BrandMark } from "./BrandMark";
 
 const periods: Period[] = [
@@ -27,7 +28,9 @@ export function Admin() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [section, setSection] = useState<"usage" | "rooms">("rooms");
+  const [section, setSection] = useState<"usage" | "rooms" | "profiles">(
+    "rooms",
+  );
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     const abort = new AbortController();
@@ -109,13 +112,26 @@ export function Admin() {
               Rooms
             </button>
             <button
+              aria-pressed={section === "profiles"}
+              onClick={() => setSection("profiles")}
+            >
+              Guest profiles
+            </button>
+            <button
               aria-pressed={section === "usage"}
               onClick={() => setSection("usage")}
             >
               Usage
             </button>
           </nav>
-          {section === "usage" ? (
+          {section === "profiles" ? (
+            <AdminProfiles
+              onExpired={() => {
+                setAuth("login");
+                setError("Your session expired. Sign in again.");
+              }}
+            />
+          ) : section === "usage" ? (
             <Dashboard
               onExpired={() => {
                 setAuth("login");

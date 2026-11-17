@@ -6,8 +6,8 @@ use std::{path::PathBuf, sync::Arc};
 pub fn run() -> Result<()> {
     let mode = std::env::args().nth(1).unwrap_or_else(|| "room".into());
     ensure!(
-        ["room", "settings", "information", "update"].contains(&mode.as_str()),
-        "Choose room, settings, information or update."
+        ["room", "settings", "profile", "information", "update"].contains(&mode.as_str()),
+        "Choose room, settings, profile, information or update."
     );
     let output = PathBuf::from(
         std::env::args()
@@ -53,6 +53,7 @@ pub fn run() -> Result<()> {
         let (controller, commands) = Controller::recording_for_test(state);
         inner.controller = controller;
         inner.advanced_open = mode == "settings";
+        if mode == "profile" { inner.open_profile(); }
         if mode == "update" {
             use crate::update_protocol::{Phase, Status};
             inner.updates = crate::updates::Client::fixture(Status {

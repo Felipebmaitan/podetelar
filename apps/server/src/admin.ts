@@ -6,6 +6,8 @@ import { Rooms, secretsEqual } from "./rooms.js";
 import type { Usage } from "./usage.js";
 import type { Access } from "./access.js";
 import type { RoomLifecycle } from "./room-lifecycle.js";
+import type { GuestProfiles } from "./profiles.js";
+import { z } from "zod";
 
 const COOKIE = "podetelar_admin";
 const TTL = 8 * 60 * 60 * 1000;
@@ -21,6 +23,7 @@ export async function adminRoutes(
   access: Access,
   lifecycle: RoomLifecycle,
   now = Date.now,
+  profiles?: GuestProfiles,
 ) {
   const sessions = new Map<string, number>();
   const cookie = {
@@ -37,6 +40,63 @@ export async function adminRoutes(
       (sessions.get(hash(token)) ?? 0) > now(),
     );
   };
+  if (profiles) {
+    await app.register(async (scope) => {
+      scope.addHook("preHandler", async (request, reply) => {
+        if (!authenticated(request))
+          return reply.code(401).send({ error: "Sign in as administrator." });
+      });
+      scope.get<{ Querystring: { offset?: string } }>(
+        "/api/admin/profiles",
+        async (request, reply) => {
+          const offset = request.query.offset ?? "0";
+          if (!/^(0|[1-9][0-9]{0,8})$/.test(offset))
+            return reply
+              .code(400)
+              .send({ error: "Invalid profile directory offset." });
+          return profiles.directory(Number(offset));
+        },
+      );
+      scope.post<{ Params: { profileId: string } }>(
+        "/api/admin/profiles/:profileId",
+        async (request, reply) => {
+          const action = z
+            .object({ action: z.enum(["delete", "block", "allow"]) })
+            .strict()
+            .safeParse(request.body);
+          if (
+            !z.uuid().safeParse(request.params.profileId).success ||
+            !action.success
+          )
+            return reply
+              .code(400)
+              .send({ error: "Choose a valid profile action." });
+          if (!profiles.moderate(request.params.profileId, action.data.action))
+            return reply.code(404).send({ error: "Profile unavailable." });
+          return reply.code(204).send();
+        },
+      );
+      scope.get<{ Params: { profileId: string; revision: string } }>(
+        "/api/admin/profiles/:profileId/avatar/:revision",
+        async (request, reply) => {
+          const { profileId, revision } = request.params;
+          if (
+            !z.uuid().safeParse(profileId).success ||
+            !z.uuid().safeParse(revision).success
+          )
+            return reply
+              .code(404)
+              .send({ error: "Profile picture unavailable." });
+          const image = profiles.adminAvatar(profileId, revision);
+          if (!image)
+            return reply
+              .code(404)
+              .send({ error: "Profile picture unavailable." });
+          return reply.type(image.type).send(image.bytes);
+        },
+      );
+    });
+  }
   app.post(
     "/api/admin/login",
     { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },

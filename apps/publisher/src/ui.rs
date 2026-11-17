@@ -3938,6 +3938,7 @@ mod tests {
     #[test]
     fn long_room_names_preserve_header_actions_at_the_minimum_window_width() {
         let mut app = app();
+        app.invitation="https://room.example/r/AAAAAAAAAAAAAAAAAAAAAA#invite=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".into();
         let (client, _actions) = crate::updates::Client::fixture(crate::update_protocol::Status {
             phase: crate::update_protocol::Phase::Ready,
             ..Default::default()

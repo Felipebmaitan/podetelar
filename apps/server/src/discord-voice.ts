@@ -213,7 +213,10 @@ export class DiscordVoice {
   private reconnecting: Promise<void> | null = null;
   private stopped = false;
   private failure = false;
-  constructor(private config: Config["discord"]) {
+  constructor(
+    private config: Config["discord"],
+    private createClient?: () => Client,
+  ) {
     this.index = new VoiceIndex(config?.guildIds);
   }
   status() {
@@ -227,16 +230,18 @@ export class DiscordVoice {
   }
   async start() {
     if (!this.config?.botToken || this.stopped || this.client) return;
-    const client = new Client({
-      intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
-      makeCache: Options.cacheWithLimits({
-        MessageManager: 0,
-        GuildMemberManager: 0,
-        UserManager: 0,
-        PresenceManager: 0,
-      }),
-      rest: { timeout: 8000, retries: 1 },
-    });
+    const client =
+      this.createClient?.() ??
+      new Client({
+        intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
+        makeCache: Options.cacheWithLimits({
+          MessageManager: 0,
+          GuildMemberManager: 0,
+          UserManager: 0,
+          PresenceManager: 0,
+        }),
+        rest: { timeout: 8000, retries: 1 },
+      });
     this.client = client;
     client.on("raw", (packet) => {
       if (
@@ -254,6 +259,12 @@ export class DiscordVoice {
     });
     client.on("shardResume", () => {
       if (this.client === client) this.index.connected();
+    });
+    client.on("shardReady", () => {
+      if (this.client === client) {
+        this.failure = false;
+        this.index.connected();
+      }
     });
     client.on("shardDisconnect", () => {
       if (this.client === client) this.index.disconnected();

@@ -27,6 +27,9 @@ that PC's guest sessions and rooms. Pictures are independent of temporary stream
 previews and do not capture screens or subscribe to media. Database backups
 include the profile metadata and image bytes. Storage is capped at 128 MiB of
 image bytes and 10,000 profile records per backend.
+Regenerate the production HTTPS proxy configuration when deploying this feature:
+the avatar upload path needs its separate 3,000,000-byte allowance. The default
+256 KiB preview limit is retained, including on installations with split origins.
 
 **PC claims intentionally authorize cosmetic changes.** A current room session
 fixes the claimed PC identifier at admission; an upload cannot supply a different

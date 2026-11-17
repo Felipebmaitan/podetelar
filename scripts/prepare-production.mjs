@@ -101,6 +101,22 @@ export function productionConfiguration(
     "proxy_set_header Host $host;",
     "proxy_set_header Host $http_host;",
   );
+  // Guest pictures have their own bounded upload path on both HTTPS listeners.
+  result.nginx = result.nginx.replaceAll(
+    "  location / {",
+    `  location ~ "^/api/rooms/[A-Za-z0-9_-]{22}/profile/avatar$" {
+    client_max_body_size 3000000;
+    proxy_pass http://127.0.0.1:18080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-For $realip_remote_addr;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_read_timeout 15s;
+    proxy_send_timeout 15s;
+    proxy_buffering off;
+  }
+  location / {`,
+  );
   return result;
 }
 

@@ -9,12 +9,16 @@ import {
 import type { Rooms } from "./rooms.js";
 import type { GuestProfiles } from "./profiles.js";
 import type { MediaDirectory } from "./media.js";
+import type { Identities } from "./identities.js";
+import { accountBearer, type Accounts } from "./accounts.js";
 
 export async function guestProfileRoutes(
   app: FastifyInstance,
   rooms: Rooms,
   profiles: GuestProfiles,
   directory: MediaDirectory,
+  identities?: Identities,
+  accounts?: Accounts,
 ) {
   const keyGenerator = (request: FastifyRequest) => {
     const room = (request.params as { roomId: string }).roomId;
@@ -43,7 +47,11 @@ export async function guestProfileRoutes(
     scope.get<{ Params: { roomId: string } }>(
       "/api/rooms/:roomId/profiles",
       { config: { rateLimit: profileLimit } },
-      async (request) => ({ profiles: profiles.list(request.params.roomId) }),
+      async (request) => ({
+        profiles:
+          identities?.list(request.params.roomId) ??
+          profiles.list(request.params.roomId),
+      }),
     );
     scope.patch<{ Params: { roomId: string } }>(
       "/api/rooms/:roomId/profile",
@@ -57,6 +65,10 @@ export async function guestProfileRoutes(
         const room = request.params.roomId,
           participant = rooms.session(room, request.cookies.podetelar_session)!
             .participant.id;
+        if (identities?.get(participant))
+          return reply
+            .code(409)
+            .send({ error: "Your nickname is managed by Discord." });
         profiles.rename(room, participant, input.data.displayName);
         await profiles.syncNames(directory);
         return { displayName: input.data.displayName };
@@ -79,6 +91,10 @@ export async function guestProfileRoutes(
         const room = request.params.roomId,
           participant = rooms.session(room, request.cookies.podetelar_session)!
             .participant.id;
+        if (identities?.get(participant))
+          return reply
+            .code(409)
+            .send({ error: "Your profile picture is managed by Discord." });
         const result = await profiles.upload(room, participant, request.body);
         if (result !== "ok")
           return reply
@@ -113,6 +129,10 @@ export async function guestProfileRoutes(
         const room = request.params.roomId,
           participant = rooms.session(room, request.cookies.podetelar_session)!
             .participant.id;
+        if (identities?.get(participant))
+          return reply
+            .code(409)
+            .send({ error: "Your profile picture is managed by Discord." });
         profiles.remove(room, participant);
         return reply.code(204).send();
       },
@@ -131,12 +151,52 @@ export async function guestProfileRoutes(
           return reply
             .code(404)
             .send({ error: "Profile picture unavailable." });
-        const image = profiles.avatar(roomId, participantId, revision);
+        const image = identities?.get(participantId)
+          ? await identities.avatar(roomId, participantId, revision)
+          : profiles.avatar(roomId, participantId, revision);
+        if (
+          !rooms.session(roomId, request.cookies.podetelar_session) ||
+          !rooms.active(roomId, participantId)
+        )
+          return reply
+            .code(404)
+            .send({ error: "Profile picture unavailable." });
         if (!image)
           return reply
             .code(404)
             .send({ error: "Profile picture unavailable." });
         return reply.type(image.type).send(image.bytes);
+      },
+    );
+    scope.post<{ Params: { roomId: string } }>(
+      "/api/rooms/:roomId/discord-identity",
+      { config: { rateLimit: profileLimit } },
+      async (request, reply) => {
+        const room = request.params.roomId,
+          participant = rooms.session(room, request.cookies.podetelar_session)!
+            .participant.id,
+          account = accounts?.authenticate(
+            accountBearer(request.headers.authorization),
+          );
+        if (!account || !identities)
+          return reply.code(401).send({ error: "Sign in with Discord." });
+        if (!(await identities.bind(room, participant, account)))
+          return reply
+            .code(401)
+            .send({ error: "Discord login or room session expired." });
+        await profiles.syncNames(directory);
+        return { profiles: identities.list(room) };
+      },
+    );
+    scope.delete<{ Params: { roomId: string } }>(
+      "/api/rooms/:roomId/discord-identity",
+      { config: { rateLimit: profileLimit } },
+      async (request, reply) => {
+        const room = request.params.roomId,
+          participant = rooms.session(room, request.cookies.podetelar_session)!
+            .participant.id;
+        identities?.unbind(participant);
+        return reply.code(204).send();
       },
     );
   });

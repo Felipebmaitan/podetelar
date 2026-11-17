@@ -39,7 +39,8 @@ import { GuestProfiles } from "./profiles.js";
 import { guestProfileRoutes } from "./profile-routes.js";
 import { DiscordVoice } from "./discord-voice.js";
 import { channelRoutes, ChannelAnnouncements } from "./channels.js";
-import { Accounts } from "./accounts.js";
+import { Accounts, accountBearer } from "./accounts.js";
+import { Identities } from "./identities.js";
 import { discordAuthRoutes } from "./auth.js";
 
 const COOKIE = "podetelar_session";
@@ -72,6 +73,14 @@ export async function buildApp(
   );
   const discordVoice = options.discordVoice ?? new DiscordVoice(config.discord);
   const announcements = new ChannelAnnouncements(config, rooms, discordVoice);
+  const identities = new Identities(
+    config.databasePath,
+    rooms,
+    accounts,
+    profiles,
+    discordVoice,
+    options.now,
+  );
   if (!options.discordVoice) void discordVoice.start();
   const usage = new Usage(
     config.databasePath,
@@ -94,6 +103,7 @@ export async function buildApp(
   const previewSweep = setInterval(() => {
     previews.sweep();
     void profiles.syncNames(directory);
+    void identities.refresh();
     void access.settle();
   }, ACCESS_SWEEP_MS);
   previewSweep.unref();
@@ -112,6 +122,7 @@ export async function buildApp(
     await access.settle();
     previews.clear();
     await usage.close();
+    await identities.close();
     await profiles.close();
     accounts.close();
     rooms.close();
@@ -214,8 +225,16 @@ export async function buildApp(
     profiles,
     discordVoice,
     accounts,
+    identities,
   );
-  await guestProfileRoutes(app, rooms, profiles, directory);
+  await guestProfileRoutes(
+    app,
+    rooms,
+    profiles,
+    directory,
+    identities,
+    accounts,
+  );
   appLinkRoutes(app, config, rooms, directory, options.now);
   streamDiagnosticsRoutes(app, rooms, directory, options.now);
   app.get("/api/diagnostics", async (request, reply) => {
@@ -273,10 +292,19 @@ export async function buildApp(
         return reply.code(400).send({
           error: "Enter a display name and open a valid room invitation.",
         });
+      const accountToken = accountBearer(request.headers.authorization),
+        account = accounts.authenticate(accountToken);
+      if (request.headers.authorization && !account)
+        return reply.code(401).send({
+          error: "Discord login expired. Sign in again or continue as a guest.",
+        });
+      const display = account
+        ? await identities.display(id.data, account)
+        : null;
       const issued = rooms.join(
         id.data,
         input.data.invitation,
-        input.data.displayName,
+        display?.displayName ?? input.data.displayName,
       );
       if (!issued)
         return reply
@@ -288,6 +316,13 @@ export async function buildApp(
         issued.snapshot.participant.displayName,
         input.data.deviceId,
       );
+      if (account)
+        await identities.bind(
+          id.data,
+          issued.snapshot.participant.id,
+          account,
+          display!,
+        );
       // Rejoining from this browser replaces its previous session for this room.
       usage.remember(
         issued.snapshot.room.id,

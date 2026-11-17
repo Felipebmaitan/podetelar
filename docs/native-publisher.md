@@ -32,7 +32,10 @@ use the GUI subsystem. Helper processes run hidden.
 
 Open a room invitation from `/stream` or `/telar` in Discord, or paste a link and
 enter your nickname. Each invitation selects its backend; the last successful guest
-nickname is remembered locally. No server, room or language preference is saved.
+nickname is remembered locally. Discord sign-in defaults to the hosted backend and
+uses the system browser. The selected login backend is remembered separately;
+its credential uses OS credential storage scoped to that exact public origin.
+No room or language preference is saved. See [Discord accounts](discord-accounts.md).
 Guest pictures and live nickname editing are described in [guest profiles](guest-profiles.md).
 Later links may reuse the nickname
 and join when idle while the app remains open. An active room requires confirmation

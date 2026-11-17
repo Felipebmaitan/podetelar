@@ -19,6 +19,8 @@ use std::{
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Participant {
+    #[serde(default)]
+    pub discord: bool,
     pub participant_id: String,
     pub display_name: String,
     pub avatar_revision: Option<String>,
@@ -79,6 +81,7 @@ pub fn decode(bytes: &[u8]) -> Result<Animation> {
 }
 
 pub enum Edit {
+    Discord(Option<crate::account::Credential>),
     Name(String),
     Picture(Vec<u8>),
     Remove,
@@ -96,6 +99,7 @@ pub struct State {
 }
 pub struct Client {
     pub participant_id: String,
+    pub server: String,
     state: Arc<Mutex<State>>,
     commands: mpsc::Sender<Command>,
     stop: Arc<AtomicBool>,
@@ -104,6 +108,7 @@ pub struct Client {
 impl Client {
     pub fn new(admission: Admission) -> Self {
         let participant_id = admission.participant_id.clone();
+        let server = admission.public_origin.clone();
         let state = Arc::new(Mutex::new(State::default()));
         let stop = Arc::new(AtomicBool::new(false));
         let (commands, receiver) = mpsc::channel();
@@ -187,6 +192,7 @@ impl Client {
             .expect("profile worker");
         Self {
             participant_id,
+            server,
             state,
             commands,
             stop,
@@ -198,6 +204,9 @@ impl Client {
     }
     pub fn name(&self, name: String) {
         let _ = self.commands.send(Command::Edit(Edit::Name(name)));
+    }
+    pub fn connect(&self, credential: Option<crate::account::Credential>) {
+        let _ = self.commands.send(Command::Edit(Edit::Discord(credential)));
     }
     pub fn choose(&self) {
         let _ = self.commands.send(Command::Choose);

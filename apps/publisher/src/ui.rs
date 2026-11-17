@@ -91,6 +91,10 @@ pub fn configure_theme(ctx: &egui::Context) {
 }
 
 pub struct PublisherUi {
+    account_client: crate::account::Client,
+    account_state: crate::account::State,
+    account_server: String,
+    profile_connection_key: Option<(String, Option<String>)>,
     profile_client: Option<crate::profile::Client>,
     profile_state: crate::profile::State,
     profile_textures: HashMap<String, (usize, egui::TextureHandle)>,
@@ -193,6 +197,11 @@ impl PublisherUi {
         });
         let link_result = link.map(crate::browser_links::Load::start);
         Self {
+            account_client: crate::account::Client::new(),
+            profile_connection_key: None,
+            account_state: Default::default(),
+            account_server: crate::settings::login_server()
+                .unwrap_or_else(|| crate::account::DEFAULT_SERVER.into()),
             profile_client: None,
             profile_state: Default::default(),
             profile_textures: HashMap::new(),
@@ -255,6 +264,7 @@ impl PublisherUi {
             invitation: self.invitation.trim().to_owned(),
             name: self.name.trim().to_owned(),
             route: Route::Auto,
+            account: self.account_state.credential.clone(),
         });
     }
 
@@ -439,6 +449,10 @@ impl PublisherUi {
     }
 
     fn join_form(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+        if !self.browser_invitation_open {
+            self.discord_controls(ui);
+            ui.separator();
+        }
         if self.browser_invitation_open {
             ui.heading(tr("Join your room"));
             if let Ok(invitation) = url::Url::parse(&self.invitation) {
@@ -2106,6 +2120,10 @@ impl PublisherUi {
 
     fn render(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
+        self.account_state = self.account_client.state();
+        if let Some(url) = self.account_client.take_browser_url() {
+            ctx.open_url(egui::OpenUrl::new_tab(url));
+        }
         let profile_snapshot = self.controller.snapshot();
         self.poll_profile(&profile_snapshot);
         self.profile_dialog(&ctx);
@@ -2319,7 +2337,14 @@ impl PublisherUi {
                                 .map(|c| c.participant_id.clone())
                                 .unwrap_or_default();
                             let texture = self.profile_texture(ui.ctx(), &own_id);
-                            if participant(ui, &self.name, true, state.sharing, texture).clicked() {
+                            let discord = self
+                                .profile_state
+                                .profiles
+                                .iter()
+                                .any(|p| p.participant_id == own_id && p.discord);
+                            if participant(ui, &self.name, true, state.sharing, texture, discord)
+                                .clicked()
+                            {
                                 self.open_profile();
                             }
                             for (index, name) in state.participants.iter().enumerate() {
@@ -2335,6 +2360,10 @@ impl PublisherUi {
                                     false,
                                     state.tiles.iter().any(|tile| tile.name == *name),
                                     texture,
+                                    self.profile_state
+                                        .profiles
+                                        .iter()
+                                        .any(|p| p.participant_id == id && p.discord),
                                 );
                             }
                         });
@@ -2865,6 +2894,7 @@ fn participant(
     own: bool,
     sharing: bool,
     texture: Option<egui::TextureId>,
+    discord: bool,
 ) -> egui::Response {
     ui.scope(|ui| {
         ui.spacing_mut().interact_size.y = 26.0;
@@ -2886,6 +2916,16 @@ fn participant(
             )
             .response
             .on_hover_text(name);
+            ui.label(
+                egui::RichText::new(if discord { "D" } else { "G" })
+                    .small()
+                    .color(MUTED),
+            )
+            .on_hover_text(if discord {
+                tr("Discord identity")
+            } else {
+                tr("Guest identity")
+            });
             if sharing {
                 badge(ui, tr("Live"), ACCENT);
             }
@@ -3497,6 +3537,10 @@ mod tests {
     fn app() -> PublisherUi {
         gstreamer::init().expect("Test media runtime");
         PublisherUi {
+            account_client: crate::account::Client::disabled(),
+            profile_connection_key: None,
+            account_state: Default::default(),
+            account_server: crate::account::DEFAULT_SERVER.into(),
             profile_client: None,
             profile_state: Default::default(),
             profile_textures: HashMap::new(),

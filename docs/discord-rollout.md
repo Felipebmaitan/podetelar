@@ -24,7 +24,7 @@ default; use the dashboard for exceptions, including AFK/private channels if nee
 The desktop defaults to the existing hosted backend and also supports guest links
 to other deployments. Backend discovery is not a federation mechanism.
 
-Back up the SQLite database and avatar directory before deployment. Migrations
+Back up the SQLite database, including its guest avatar bytes, before deployment. Migrations
 add tables and preserve existing room/session access. Discord sign-in and Gateway
 runtime remain optional when their configuration is absent. New credentials are
 separate from room cookies and administrator sessions. The cosmetic PC-ID spoofing

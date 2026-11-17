@@ -48,6 +48,9 @@ independent invitation sessions use the existing room access controls.
 API tests use synthetic Gateway events and local media doubles to verify
 membership, channel moves, outages, independent URL sessions and administrator
 policy. Native state tests cover suppression, selection and no media start action.
+The `native:room-smoke -- discord-voice.spec.ts` acceptance uses synthetic voice
+events with actual HTTP, browser WebRTC peers and a real local Windows SFU. It
+checks removal of the controlled peer and continued independent guest access.
 Real Discord OAuth/Gateway events across two users and actual hardware capture
 must still be checked on a configured deployment before rollout. No user OAuth
 refresh token, privileged members intent or message-content intent is needed.

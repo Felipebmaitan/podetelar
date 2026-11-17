@@ -3,6 +3,30 @@
   background: #17191f;
   color: #eef0f6;
 }
+.admin-following {
+  margin-top: 24px;
+}
+.admin-following .admin-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.admin-following table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.admin-following th,
+.admin-following td {
+  padding: 10px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.admin-following label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
 .admin-header {
   height: 68px;
   padding: 0 3.5%;

@@ -70,7 +70,7 @@ export function AdminFollowing({ onExpired }: { onExpired: () => void }) {
     }
   };
   return (
-    <section className="admin-card">
+    <section className="admin-panel admin-following">
       <h2>Automatic joining</h2>
       <p>
         Voice departures end only voice-controlled sessions. Invitation sessions

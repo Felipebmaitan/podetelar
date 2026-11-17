@@ -25,6 +25,8 @@ test("Discord sign-in binds browser state and native proof, persists opaque logi
     DISCORD_CLIENT_SECRET: "synthetic-oauth-client-secret",
   });
   config.webRoot = join(dir, "no-web");
+  let now = Date.now(),
+    expireDuringFetch = false;
   const fetcher: typeof fetch = async (url, init) => {
     if (String(url).endsWith("/oauth2/token")) {
       assert.equal(init?.method, "POST");
@@ -38,6 +40,7 @@ test("Discord sign-in binds browser state and native proof, persists opaque logi
       );
     }
     assert.equal(String(url), "https://discord.com/api/v10/users/@me");
+    if (expireDuringFetch) now += 301000;
     return new Response(
       JSON.stringify({
         id: user,
@@ -48,7 +51,11 @@ test("Discord sign-in binds browser state and native proof, persists opaque logi
     );
   };
   const build = () =>
-    buildApp(config, { usagePolling: false, discordFetch: fetcher });
+    buildApp(config, {
+      usagePolling: false,
+      discordFetch: fetcher,
+      now: () => now,
+    });
   let app = await build();
   try {
     const proof = randomBytes(32).toString("base64url"),
@@ -166,6 +173,79 @@ test("Discord sign-in binds browser state and native proof, persists opaque logi
         await app.inject({
           url: "/api/auth/session",
           headers: { authorization: `Bearer ${token}` },
+        })
+      ).statusCode,
+      401,
+    );
+  } finally {
+    await app.close();
+    const real = realpathSync(dir);
+    assert.equal(dirname(real), realpathSync(tmpdir()));
+    assert.ok(basename(real).startsWith("podetelar-auth-"));
+    rmSync(real, { recursive: true });
+  }
+});
+
+test("callback reports failure if the native handoff expires during Discord exchange", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "podetelar-auth-"));
+  let now = Date.now();
+  const config = loadConfig({
+    PUBLIC_URL: origin,
+    ADMIN_TOKEN: admin,
+    LIVEKIT_API_KEY: "auth-test-key",
+    LIVEKIT_API_SECRET: "auth-test-media-not-a-production-secret",
+    DATABASE_PATH: join(dir, "rooms.db"),
+    DISCORD_APPLICATION_ID: "223456789012345678",
+    DISCORD_PUBLIC_KEY: "0".repeat(64),
+    DISCORD_GUILD_IDS: "*",
+    DISCORD_CLIENT_SECRET: "synthetic-oauth-client-secret",
+  });
+  config.webRoot = join(dir, "no-web");
+  const app = await buildApp(config, {
+    usagePolling: false,
+    now: () => now,
+    discordFetch: async (url) => {
+      if (String(url).endsWith("/oauth2/token"))
+        return new Response(
+          JSON.stringify({
+            access_token: "synthetic",
+            token_type: "Bearer",
+            scope: "identify",
+          }),
+        );
+      now += 301000;
+      return new Response(JSON.stringify({ id: user, username: "Friend" }));
+    },
+  });
+  try {
+    const proof = randomBytes(32).toString("base64url"),
+      challenge = createHash("sha256").update(proof).digest("hex");
+    const start = await app.inject({
+        method: "POST",
+        url: "/api/auth/discord/start",
+        headers: { origin },
+        payload: { challenge },
+      }),
+      requestId = start.json().requestId;
+    const authorize = await app.inject({
+        url: `/api/auth/discord/authorize?request=${requestId}`,
+      }),
+      state = new URL(String(authorize.headers.location)).searchParams.get(
+        "state",
+      ),
+      cookie = String(authorize.headers["set-cookie"]).split(";")[0]!;
+    const callback = await app.inject({
+      url: `/api/auth/discord/callback?state=${state}&code=synthetic`,
+      headers: { cookie },
+    });
+    assert.equal(callback.headers.location, "/auth/discord/failed");
+    assert.equal(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/auth/discord/poll",
+          headers: { origin },
+          payload: { requestId, proof },
         })
       ).statusCode,
       401,

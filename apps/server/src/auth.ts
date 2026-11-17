@@ -167,8 +167,11 @@ export async function discordAuthRoutes(
           }),
         ),
       );
-      accounts.complete(flow, user);
-      return reply.redirect("/auth/discord/complete");
+      return reply.redirect(
+        accounts.complete(flow, user)
+          ? "/auth/discord/complete"
+          : "/auth/discord/failed",
+      );
     } catch {
       accounts.complete(flow, null);
       return reply.redirect("/auth/discord/failed");

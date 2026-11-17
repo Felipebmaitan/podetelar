@@ -33,14 +33,23 @@ export class VoiceIndex {
   private guilds = new Map<string, Guild>();
   private online = false;
   private revision = 0;
+  private listeners = new Set<() => void>();
+  onChange(listener: () => void) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+  private changed() {
+    this.revision++;
+    for (const listener of this.listeners) listener();
+  }
   constructor(private guildPolicy: string[] = ["*"]) {}
   connected() {
     this.online = true;
-    this.revision++;
+    this.changed();
   }
   disconnected() {
     this.online = false;
-    this.revision++;
+    this.changed();
   }
   apply(type: string, data: unknown) {
     if (type === "READY") {
@@ -59,7 +68,7 @@ export class VoiceIndex {
               voices: new Map(),
             });
       this.online = false;
-      this.revision++;
+      this.changed();
       return;
     }
     if (type === "GUILD_CREATE") {
@@ -80,6 +89,7 @@ export class VoiceIndex {
       if (g.unavailable) {
         const old = this.guilds.get(g.id);
         if (old) old.available = false;
+        this.changed();
         return;
       }
       if (this.guilds.size >= 2500 && !this.guilds.has(g.id)) return;
@@ -100,7 +110,7 @@ export class VoiceIndex {
         channels,
         voices,
       });
-      this.revision++;
+      this.changed();
       return;
     }
     if (type === "GUILD_DELETE") {
@@ -112,7 +122,7 @@ export class VoiceIndex {
         const g = this.guilds.get(parsed.data.id);
         if (g) g.available = false;
       } else this.guilds.delete(parsed.data.id);
-      this.revision++;
+      this.changed();
       return;
     }
     if (type === "VOICE_STATE_UPDATE") {
@@ -129,7 +139,7 @@ export class VoiceIndex {
       )
         g.voices.set(v.user_id, v.channel_id);
       else g.voices.delete(v.user_id);
-      if (before !== g.voices.get(v.user_id)) this.revision++;
+      if (before !== g.voices.get(v.user_id)) this.changed();
       return;
     }
     if (["CHANNEL_CREATE", "CHANNEL_UPDATE", "CHANNEL_DELETE"].includes(type)) {
@@ -143,7 +153,7 @@ export class VoiceIndex {
         for (const [u, ch] of g.voices) if (ch === c.id) g.voices.delete(u);
       } else if (g.channels.size < 1000 || g.channels.has(c.id))
         g.channels.set(c.id, c.name);
-      this.revision++;
+      this.changed();
     }
   }
   private allowed(guild: string) {

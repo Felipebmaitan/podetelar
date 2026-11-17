@@ -28,6 +28,7 @@ pub struct Admission {
     pub room_name: String,
     pub participant_id: String,
     pub public_origin: String,
+    pub invitation_url: Option<String>,
 }
 struct ProbeLease {
     client: Client,
@@ -74,6 +75,8 @@ pub struct MediaAccess {
 struct Session {
     room: Room,
     participant: ProfileParticipant,
+    #[serde(default, rename = "invitationUrl")]
+    invitation_url: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -83,6 +86,7 @@ struct ProfileParticipant {
 
 #[derive(Deserialize)]
 struct Room {
+    id: String,
     name: String,
 }
 
@@ -180,6 +184,7 @@ impl Admission {
             room_name: "test".into(),
             participant_id: "test".into(),
             public_origin: origin.into(),
+            invitation_url: None,
         }
     }
     pub async fn stream_diagnostic(
@@ -396,7 +401,27 @@ impl Admission {
         display_name: &str,
         account: Option<crate::account::Credential>,
     ) -> Result<Self> {
-        let mut invitation = Invitation::parse(invitation)?;
+        Self::join_target(invitation, display_name, account, None).await
+    }
+    pub async fn join_target(
+        invitation: &str,
+        display_name: &str,
+        account: Option<crate::account::Credential>,
+        voice: Option<crate::following::Target>,
+    ) -> Result<Self> {
+        let original_invitation = invitation.to_owned();
+        let automatic = voice.is_some();
+        let mut invitation = if let Some(target) = &voice {
+            ensure!(valid_server(&target.server), "Invalid Discord backend.");
+            Invitation {
+                origin: Url::parse(&target.server)?,
+                room_id: String::new(),
+                secret: String::new(),
+                channel: None,
+            }
+        } else {
+            Invitation::parse(invitation)?
+        };
         // Scope to the invitation's public origin, before direct-server discovery,
         // so changing the direct transport hostname does not split device history.
         let scope = invitation.origin.origin().ascii_serialization();
@@ -462,17 +487,29 @@ impl Admission {
             invitation.room_id = room.room_id;
             invitation.secret = room.secret;
         }
+        let join_path = if automatic {
+            "api/auth/voice/join".to_owned()
+        } else {
+            format!("api/rooms/{}/join", invitation.room_id)
+        };
+        let body = if let Some(target) = voice {
+            serde_json::json!({"guildId":target.location.guild_id,"channelId":target.location.channel_id,"deviceId":device_id})
+        } else {
+            serde_json::json!({"invitation":invitation.secret,"displayName":display_name,"deviceId":device_id})
+        };
+        if automatic {
+            ensure!(
+                account
+                    .as_ref()
+                    .and_then(|c| c.for_server(&scope))
+                    .is_some(),
+                "Sign in to this Discord backend first."
+            );
+        }
         let mut join_request = client
-            .post(
-                invitation
-                    .origin
-                    .join(&format!("api/rooms/{}/join", invitation.room_id))?,
-            )
+            .post(invitation.origin.join(&join_path)?)
             .header("Origin", invitation.origin.origin().ascii_serialization())
-            .json(
-                &serde_json::json!({"invitation": invitation.secret, "displayName": display_name, "deviceId": device_id}),
-            )
-            ;
+            .json(&body);
         if let Some(credential) = account
             && let Some(token) = credential.for_server(&scope)
         {
@@ -483,13 +520,22 @@ impl Admission {
             .await
             .map_err(|_| anyhow::anyhow!("Could not reach the room server."))?;
         let session: Session = read_response(response).await?;
+        ensure!(valid_token(&session.room.id, 22), "Invalid room response.");
         Ok(Self {
             client,
             origin: invitation.origin,
-            room_id: invitation.room_id,
+            room_id: session.room.id,
             room_name: session.room.name,
             participant_id: session.participant.id,
-            public_origin: scope,
+            public_origin: scope.clone(),
+            invitation_url: if automatic {
+                session.invitation_url.filter(|link| {
+                    Invitation::parse(link)
+                        .is_ok_and(|v| v.origin.origin().ascii_serialization() == scope)
+                })
+            } else {
+                Some(original_invitation)
+            },
         })
     }
 

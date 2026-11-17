@@ -206,6 +206,7 @@ pub enum Command {
         name: String,
         route: connection::Route,
         account: Option<crate::account::Credential>,
+        voice: Option<crate::following::Target>,
     },
     Start {
         source_id: String,
@@ -353,7 +354,10 @@ impl Controller {
         // Register before enqueueing: Stop must also cancel capture work that
         // has not yet reached the room worker.
         let capture = capture_pending.then(|| self.cancellation.register());
-        if matches!(command, Command::Stop | Command::Leave | Command::Shutdown) {
+        if matches!(
+            command,
+            Command::Join { .. } | Command::Stop | Command::Leave | Command::Shutdown
+        ) {
             self.cancel_capture();
         }
         if self
@@ -956,19 +960,23 @@ struct Session {
 impl Session {
     async fn join(
         invitation: &str,
-        identity: (&str, Option<crate::account::Credential>),
+        identity: (
+            &str,
+            Option<crate::account::Credential>,
+            Option<crate::following::Target>,
+        ),
         route: connection::Route,
         snapshot: Arc<Mutex<Snapshot>>,
         cancellation: Cancellation,
         recovery: Arc<AtomicU64>,
         ticket: JoinTicket,
     ) -> Result<Option<Self>> {
-        let (name, account) = identity;
+        let (name, account, voice) = identity;
         let invitation = invitation.to_owned();
         let name = name.to_owned();
         let Some(admission) = ticket
             .run(
-                async move { Admission::join_with_account(&invitation, &name, account).await },
+                async move { Admission::join_target(&invitation, &name, account, voice).await },
                 |admission| async move {
                     admission.leave().await;
                 },
@@ -1208,6 +1216,7 @@ async fn worker(
                     name,
                     route,
                     account,
+                    voice,
                 } => {
                     if let Some(job) = probe.take() {
                         job.abort();
@@ -1234,7 +1243,7 @@ async fn worker(
                     });
                     let joined = Session::join(
                         &invitation,
-                        (&name, account),
+                        (&name, account, voice),
                         route,
                         snapshot.clone(),
                         cancellation.clone(),
@@ -1445,6 +1454,30 @@ async fn worker(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn room_switch_cancels_capture_before_the_worker_handles_the_join() {
+        let (sender, mut receiver) = mpsc::channel(8);
+        let controller = Controller {
+            commands: sender,
+            snapshot: Arc::default(),
+            cancellation: Arc::default(),
+            join_cancellation: JoinCancellation::new(),
+            shutdown: Arc::default(),
+            worker: None,
+        };
+        let capture = controller.cancellation.register();
+        controller.send(Command::Join {
+            invitation: String::new(),
+            name: "Friend".into(),
+            route: connection::Route::Auto,
+            account: None,
+            voice: None,
+        });
+        assert!(capture.load(Ordering::Acquire));
+        let queued = receiver.try_recv().unwrap();
+        assert!(matches!(queued.command, Command::Join { .. }));
+        assert!(queued.capture.is_none());
+    }
 
     #[tokio::test]
     async fn shutdown_bypasses_a_full_queue_and_rejects_new_work() {

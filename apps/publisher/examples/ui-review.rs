@@ -26,6 +26,8 @@ mod device;
 mod diagnostics;
 #[path = "../src/encoding.rs"]
 mod encoding;
+#[path = "../src/following.rs"]
+mod following;
 #[path = "../src/locale.rs"]
 mod locale;
 #[path = "../src/network.rs"]

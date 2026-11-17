@@ -91,6 +91,10 @@ pub fn configure_theme(ctx: &egui::Context) {
 }
 
 pub struct PublisherUi {
+    following_client: crate::following::Client,
+    following: crate::following::Follow,
+    following_key: Option<String>,
+    next_follow_attempt: Instant,
     account_client: crate::account::Client,
     account_state: crate::account::State,
     account_server: String,
@@ -197,6 +201,10 @@ impl PublisherUi {
         });
         let link_result = link.map(crate::browser_links::Load::start);
         Self {
+            following_client: crate::following::Client::new(),
+            following: Default::default(),
+            following_key: None,
+            next_follow_attempt: Instant::now(),
             account_client: crate::account::Client::new(),
             profile_connection_key: None,
             account_state: Default::default(),
@@ -255,6 +263,7 @@ impl PublisherUi {
     }
 
     fn join(&mut self) {
+        self.following.invitation();
         self.session_name = Some(self.name.trim().to_owned());
         self.prior_room = None;
         self.browser_invitation_open = false;
@@ -265,6 +274,7 @@ impl PublisherUi {
             name: self.name.trim().to_owned(),
             route: Route::Auto,
             account: self.account_state.credential.clone(),
+            voice: None,
         });
     }
 
@@ -326,9 +336,11 @@ impl PublisherUi {
                 }
                 if state.connection == "connecting" {
                     if ui.button(tr("Cancel join")).clicked() {
+                        self.following.manual_leave();
                         self.controller.send(Command::Leave);
                     }
                 } else if connected && ui.button(tr("Leave room")).clicked() {
+                    self.following.manual_leave();
                     self.controller.send(Command::Leave);
                     self.textures.clear();
                 }
@@ -366,7 +378,7 @@ impl PublisherUi {
                     }
                         open_licenses(ui);
                     });
-                if connected {
+                if connected && !self.invitation.is_empty() {
                     let copied = self
                         .copied_until
                         .is_some_and(|until| Instant::now() < until);
@@ -2124,6 +2136,7 @@ impl PublisherUi {
         if let Some(url) = self.account_client.take_browser_url() {
             ctx.open_url(egui::OpenUrl::new_tab(url));
         }
+        self.poll_following(&ctx);
         let profile_snapshot = self.controller.snapshot();
         self.poll_profile(&profile_snapshot);
         self.profile_dialog(&ctx);
@@ -3537,6 +3550,10 @@ mod tests {
     fn app() -> PublisherUi {
         gstreamer::init().expect("Test media runtime");
         PublisherUi {
+            following_client: crate::following::Client::disabled(),
+            following: Default::default(),
+            following_key: None,
+            next_follow_attempt: Instant::now(),
             account_client: crate::account::Client::disabled(),
             profile_connection_key: None,
             account_state: Default::default(),

@@ -361,6 +361,25 @@ export class Rooms {
       )
       .all();
   }
+  channelAutomatic(guild: string, channel: string) {
+    const row = this.db
+      .prepare(
+        "SELECT auto_enabled FROM discord_channels WHERE guild_id=? AND channel_id=?",
+      )
+      .get(guild, channel) as { auto_enabled: number } | undefined;
+    return row?.auto_enabled !== 0;
+  }
+  channelGuestEnabled(guild: string, channel: string) {
+    return (
+      (
+        this.db
+          .prepare(
+            "SELECT guest_enabled FROM discord_channels WHERE guild_id=? AND channel_id=?",
+          )
+          .get(guild, channel) as { guest_enabled: number } | undefined
+      )?.guest_enabled === 1
+    );
+  }
   manageChannel(
     guild: string,
     channel: string,

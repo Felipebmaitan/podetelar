@@ -15,6 +15,7 @@ mod diagnostics;
 #[cfg(feature = "media-qualification")]
 mod encoded_fixture;
 mod encoding;
+mod following;
 mod locale;
 #[cfg(target_os = "macos")]
 mod macos;

@@ -22,6 +22,25 @@ test("Discord administration shows configuration status without exposing credent
   expect(JSON.stringify(await response.json())).not.toMatch(
     /botToken|publicKey|adminToken/,
   );
+  await page.setViewportSize({ width: 390, height: 844 });
+  const views = page.getByRole("navigation", {
+    name: "Discord administration",
+  });
+  await views.getByRole("button", { name: "Channels", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Channel rooms", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("No voice channels discovered yet.", { exact: true }),
+  ).toBeVisible();
+  await views.getByRole("button", { name: "Accounts", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Discord accounts", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("No Discord accounts yet.", { exact: true }),
+  ).toBeVisible();
+  await views.getByRole("button", { name: "Auto-join", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Automatic joining", exact: true }),
   ).toBeVisible();
@@ -52,4 +71,7 @@ test("Discord administration shows configuration status without exposing credent
   await expect(
     page.getByRole("button", { name: "Allow automatic joining", exact: true }),
   ).toHaveCount(0);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(391);
 });

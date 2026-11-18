@@ -529,28 +529,32 @@ impl PublisherUi {
                     ];
                     for (column, (page, label)) in columns.iter_mut().zip(pages) {
                         let selected = self.profile_page == page;
-                        if column
-                            .add_sized(
-                                [column.available_width(), 34.0],
-                                egui::Button::new(
-                                    skin::strong(tr(label), 13.0).color(if selected {
-                                        ACCENT
-                                    } else {
-                                        MUTED
-                                    }),
-                                )
-                                .fill(if selected {
-                                    egui::Color32::from_rgb(34, 55, 53)
-                                } else {
-                                    PANEL
-                                })
-                                .stroke(egui::Stroke::new(
-                                    1.0,
-                                    if selected { ACCENT } else { BORDER },
-                                )),
+                        let response = column.add_sized(
+                            [column.available_width(), 34.0],
+                            egui::Button::new(skin::strong(tr(label), 13.0).color(if selected {
+                                ACCENT
+                            } else {
+                                MUTED
+                            }))
+                            .fill(if selected {
+                                egui::Color32::from_rgb(34, 55, 53)
+                            } else {
+                                PANEL
+                            })
+                            .stroke(egui::Stroke::new(
+                                1.0,
+                                if selected { ACCENT } else { BORDER },
+                            )),
+                        );
+                        response.widget_info(|| {
+                            egui::WidgetInfo::selected(
+                                egui::Role::Tab,
+                                column.is_enabled(),
+                                selected,
+                                tr(label),
                             )
-                            .clicked()
-                        {
+                        });
+                        if response.clicked() {
                             self.profile_page = page;
                         }
                     }

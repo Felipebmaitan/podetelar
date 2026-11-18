@@ -117,22 +117,35 @@ export function AdminAccounts({ onExpired }: { onExpired: () => void }) {
   useEffect(() => {
     if (!open) return;
     const abort = new AbortController();
-    setSessionError("");
-    void request<{ sessions: Login[] }>(
-      `/api/admin/accounts/${open}/sessions`,
-      {
-        signal: AbortSignal.any([abort.signal, AbortSignal.timeout(15000)]),
-      },
-    )
-      .then((result) => {
-        if (!abort.signal.aborted) setSessions(result.sessions);
-      })
-      .catch((e: unknown) => {
+    let pending = false;
+    const load = async () => {
+      if (pending || document.hidden || mutation.current) return;
+      pending = true;
+      try {
+        const result = await request<{ sessions: Login[] }>(
+          `/api/admin/accounts/${open}/sessions`,
+          {
+            signal: AbortSignal.any([abort.signal, AbortSignal.timeout(15000)]),
+          },
+        );
+        if (!abort.signal.aborted) {
+          setSessions(result.sessions);
+          setSessionError("");
+        }
+      } catch (e) {
         if (abort.signal.aborted) return;
         if (e instanceof ApiError && e.status === 401) onExpired();
         else setSessionError("Could not load account logins.");
-      });
-    return () => abort.abort();
+      } finally {
+        pending = false;
+      }
+    };
+    void load();
+    const timer = setInterval(() => void load(), 5000);
+    return () => {
+      abort.abort();
+      clearInterval(timer);
+    };
   }, [open, sessionRevision]);
   const confirmation = selected && confirmations[selected.action];
   const changePage = (next: number) => {
@@ -169,6 +182,7 @@ export function AdminAccounts({ onExpired }: { onExpired: () => void }) {
                     disabled={busy}
                     onClick={() => {
                       setSessions(null);
+                      setSessionError("");
                       setOpen(expanded ? null : a.userId);
                     }}
                   >

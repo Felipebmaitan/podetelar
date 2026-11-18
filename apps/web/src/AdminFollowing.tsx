@@ -188,16 +188,13 @@ export function AdminFollowing({
                           <small>
                             {guild?.name ?? `Server ${session.guildId}`}
                           </small>
+                          <small>
+                            Discord user <code>{session.userId}</code>
+                          </small>
                         </span>
                       </summary>
                       <div className="discord-record-body">
                         <dl className="discord-session-details">
-                          <div>
-                            <dt>Discord user ID</dt>
-                            <dd>
-                              <code>{session.userId}</code>
-                            </dd>
-                          </div>
                           <div>
                             <dt>Room ID</dt>
                             <dd>

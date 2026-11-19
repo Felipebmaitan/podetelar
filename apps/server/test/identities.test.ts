@@ -34,9 +34,11 @@ test("signed-in invitation joins use the room's guild nickname, prevent override
   })();
   const target = rooms.resolveChannel(guild, channel, "Games")!;
   let memberGate: Promise<void> | undefined;
+  let memberRequested = () => {};
   class Voice extends DiscordVoice {
     override async member(guildId: string) {
       assert.equal(guildId, guild, "nickname context is the room's guild");
+      memberRequested();
       await memberGate;
       return {
         displayName: "Guild nickname",
@@ -109,7 +111,7 @@ test("signed-in invitation joins use the room's guild nickname, prevent override
         url: `${base}/discord-identity`,
         headers: { origin, cookie },
       });
-      assert.equal(unlink.statusCode, 200);
+      assert.equal(unlink.statusCode, 204);
     } finally {
       releaseMember();
     }
@@ -131,6 +133,34 @@ test("signed-in invitation joins use the room's guild nickname, prevent override
       ).statusCode,
       200,
     );
+    const waitingForMember = new Promise<void>((resolve) => {
+      memberRequested = resolve;
+    });
+    memberGate = new Promise<void>((resolve) => {
+      releaseMember = resolve;
+    });
+    const pendingBind = app.inject({
+      method: "POST",
+      url: `${base}/discord-identity`,
+      headers: { origin, cookie, authorization: `Bearer ${credential.token}` },
+    });
+    try {
+      await waitingForMember;
+      const unlink = await app.inject({
+        method: "DELETE",
+        url: `${base}/discord-identity`,
+        headers: { origin, cookie },
+      });
+      assert.equal(unlink.statusCode, 204);
+    } finally {
+      releaseMember();
+    }
+    assert.equal((await pendingBind).statusCode, 401);
+    const finalProfile = (
+      await app.inject({ url: `${base}/profiles`, headers: { cookie } })
+    ).json().profiles[0];
+    assert.equal(finalProfile.discord, false);
+    assert.equal(finalProfile.displayName, "Guest again");
   } finally {
     await app.close();
     await identities.close();

@@ -68,8 +68,11 @@ test("guild outage is unknown, removal clears state and fresh READY discards sta
   assert.deepEqual(index.lookup(user, guild).locations, []);
   index.apply("GUILD_DELETE", { id: guild });
   assert.equal(index.status().guilds.length, 0);
-  index.apply("READY", {});
+  assert.deepEqual(index.lookup(user, guild), { known: true, locations: [] });
+  index.apply("READY", { guilds: [] });
+  assert.equal(index.lookup(user, guild).known, false);
   index.connected();
+  assert.deepEqual(index.lookup(user, guild), { known: true, locations: [] });
   assert.equal(index.lookup(user).locations.length, 0);
 });
 test("guild policies and malformed events cannot create usable state", () => {

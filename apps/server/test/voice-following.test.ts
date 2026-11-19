@@ -126,6 +126,37 @@ test("voice admission follows confirmed membership, preserves outage sessions, a
     const final = await auto();
     assert.equal(final.statusCode, 200);
     const finalCookie = String(final.headers["set-cookie"]).split(";")[0]!;
+    voice.index.apply("GUILD_DELETE", { id: guild, unavailable: true });
+    assert.equal((await status(room, finalCookie)).statusCode, 200);
+    voice.index.apply("GUILD_DELETE", { id: guild });
+    assert.equal((await status(room, finalCookie)).statusCode, 401);
+    voice.index.apply("GUILD_CREATE", {
+      id: guild,
+      name: "Friends",
+      channels: [{ id: a, name: "A", type: 2 }],
+      voice_states: [{ user_id: user, channel_id: a }],
+    });
+    const rejoined = await auto();
+    assert.equal(rejoined.statusCode, 200);
+    const rejoinedCookie = String(rejoined.headers["set-cookie"]).split(
+      ";",
+    )[0]!;
+    voice.index.disconnected();
+    voice.index.apply("READY", { guilds: [] });
+    assert.equal((await status(room, rejoinedCookie)).statusCode, 200);
+    voice.index.connected();
+    assert.equal((await status(room, rejoinedCookie)).statusCode, 401);
+    assert.equal((await status(room, guestCookie)).statusCode, 200);
+    voice.index.apply("GUILD_CREATE", {
+      id: guild,
+      channels: [{ id: a, name: "A", type: 2 }],
+      voice_states: [{ user_id: user, channel_id: a }],
+    });
+    const beforeBlock = await auto();
+    assert.equal(beforeBlock.statusCode, 200);
+    const blockedCookie = String(beforeBlock.headers["set-cookie"]).split(
+      ";",
+    )[0]!;
     assert.equal(
       (await app.inject({ url: "/api/admin/discord/following" })).statusCode,
       401,
@@ -145,7 +176,7 @@ test("voice admission follows confirmed membership, preserves outage sessions, a
       payload: { action: "block", userId: user },
     });
     assert.equal(block.statusCode, 200);
-    assert.equal((await status(room, finalCookie)).statusCode, 401);
+    assert.equal((await status(room, blockedCookie)).statusCode, 401);
     assert.equal((await auto()).statusCode, 409);
     assert.equal((await status(room, guestCookie)).statusCode, 200);
   } finally {

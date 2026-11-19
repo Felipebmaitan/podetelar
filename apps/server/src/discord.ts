@@ -163,7 +163,7 @@ export async function discordRoutes(
             : `${config.publicUrl}/r/${created.room.id}#invite=${created.invitation}`;
         return message(
           `Join a PodeTelar room: <${url}>\nAnyone with this link can join. Share it only with friends.`,
-          false,
+          Boolean(location),
         );
       },
     );

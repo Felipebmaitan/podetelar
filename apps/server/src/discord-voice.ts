@@ -31,6 +31,8 @@ export type VoiceLookup = { known: boolean; locations: VoiceLocation[] };
 /** Gateway snapshots plus ordered deltas. Unknown transport/guild state never means a departure. */
 export class VoiceIndex {
   private guilds = new Map<string, Guild>();
+  private snapshotReceived = false;
+  private removedBeforeSnapshot = new Set<string>();
   private online = false;
   private revision = 0;
   private listeners = new Set<() => void>();
@@ -54,9 +56,11 @@ export class VoiceIndex {
   apply(type: string, data: unknown) {
     if (type === "READY") {
       this.guilds.clear();
+      this.removedBeforeSnapshot.clear();
       const ready = z
         .object({ guilds: z.array(z.object({ id })).max(2500) })
         .safeParse(data);
+      this.snapshotReceived = ready.success;
       if (ready.success)
         for (const guild of ready.data.guilds)
           if (this.allowed(guild.id))
@@ -86,6 +90,7 @@ export class VoiceIndex {
         .safeParse(data);
       if (!parsed.success || !this.allowed(parsed.data.id)) return;
       const g = parsed.data;
+      this.removedBeforeSnapshot.delete(g.id);
       if (g.unavailable) {
         const old = this.guilds.get(g.id);
         if (old) old.available = false;
@@ -121,7 +126,11 @@ export class VoiceIndex {
       if (parsed.data.unavailable) {
         const g = this.guilds.get(parsed.data.id);
         if (g) g.available = false;
-      } else this.guilds.delete(parsed.data.id);
+      } else {
+        const removed = this.guilds.delete(parsed.data.id);
+        if (removed && !this.snapshotReceived)
+          this.removedBeforeSnapshot.add(parsed.data.id);
+      }
       this.changed();
       return;
     }
@@ -166,7 +175,8 @@ export class VoiceIndex {
     const known =
       this.online &&
       (guildId
-        ? Boolean(guilds.length && guilds[0]!.available)
+        ? (guilds[0]?.available ??
+          (this.snapshotReceived || this.removedBeforeSnapshot.has(guildId)))
         : guilds.every((g) => g.available));
     const locations = known
       ? guilds.flatMap((g) => {

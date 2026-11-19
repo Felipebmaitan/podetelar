@@ -42,6 +42,7 @@ pub struct State {
     pub busy: bool,
     pub error: String,
     pub available: bool,
+    attempt_generation: u64,
 }
 impl Default for State {
     fn default() -> Self {
@@ -52,11 +53,12 @@ impl Default for State {
             busy: false,
             error: String::new(),
             available: false,
+            attempt_generation: 0,
         }
     }
 }
 enum Command {
-    SignIn(String),
+    SignIn(String, u64),
     SignOut,
     Cancel,
 }
@@ -83,11 +85,12 @@ impl Client {
             let Ok(runtime)=tokio::runtime::Builder::new_current_thread().enable_all().build()else{return;};
             runtime.block_on(async move{
                 let Ok(http)=Http::builder().redirect(Policy::none()).timeout(Duration::from_secs(8)).build()else{return;};
-                let mut server=server;let mut credential=match load(&server){Ok(value)=>value,Err(_)=>{set_error(&shared,"Could not read remembered Discord login from OS credential storage.");None}};let mut pending:Option<(String,String,Instant)>=None;let mut next=Instant::now();
+                let mut server=server;let mut credential=match load(&server){Ok(value)=>value,Err(_)=>{set_error(&shared,"Could not read remembered Discord login from OS credential storage.");None}};let mut pending:Option<(String,String,Instant,u64)>=None;let mut next=Instant::now();
                 while !stopped.load(Ordering::Acquire){
                     if let Ok(command)=rx.try_recv(){
                         match command{
-                            Command::SignIn(target)=>{
+                            Command::SignIn(target, generation)=>{
+                                if !shared.lock().is_ok_and(|s| s.attempt_generation == generation) { continue; }
                                 if !crate::admission::valid_server(&target)||target.len()>2048{set_error(&shared,"Choose a valid HTTPS PodeTelar server.");continue;}
                                 if credential.as_ref().is_some_and(|c|c.server!=target){set_error(&shared,"Disconnect the current Discord account before changing servers.");continue;}
                                 server=target;pending=None;let _=crate::settings::save_login_server(&server);
@@ -101,7 +104,21 @@ impl Client {
                                     ensure!(url.origin().ascii_serialization()==server&&url.path()=="/api/auth/discord/authorize"&&url.username().is_empty()&&url.password().is_none(),"Invalid login URL.");
                                     Ok::<_,anyhow::Error>(start)
                                 }.await;
-                                match result{Ok(start)=>{pending=Some((start.request_id,proof,Instant::now()+Duration::from_secs(300)));if let Ok(mut url)=launch.lock(){*url=Some(start.authorization_url);}},Err(_)=>{set_error(&shared,"Could not start Discord sign-in. Check this server's configuration.");update(&shared,|s|s.busy=false);}}
+                                update(&shared, |state| {
+                                    if state.attempt_generation != generation { return; }
+                                    match result {
+                                        Ok(start) => {
+                                            pending = Some((start.request_id, proof, Instant::now() + Duration::from_secs(300), generation));
+                                            if let Ok(mut url) = launch.lock() {
+                                                *url = Some(start.authorization_url);
+                                            }
+                                        }
+                                        Err(_) => {
+                                            state.error = "Could not start Discord sign-in. Check this server's configuration.".into();
+                                            state.busy = false;
+                                        }
+                                    }
+                                });
                                 next=Instant::now();
                             }
                             Command::SignOut=>{
@@ -113,13 +130,35 @@ impl Client {
                         }
                     }
                     if Instant::now()>=next{
-                        if let Some((id,proof,deadline))=&pending{
+                        if let Some((id,proof,deadline,generation))=&pending{
                             if Instant::now()>=*deadline{set_error(&shared,"Discord sign-in expired. Try again.");pending=None;update(&shared,|s|s.busy=false);}
                             else if let Ok(response)=http.post(format!("{server}/api/auth/discord/poll")).header("Origin",&server).json(&serde_json::json!({"requestId":id,"proof":proof})).send().await{
                                 if response.status()==reqwest::StatusCode::OK{
                                     #[derive(Deserialize)]struct Issued{token:String,account:Account}
                                     if let Ok(bytes)=checked(response).await&&let Ok(issued)=serde_json::from_slice::<Issued>(&bytes)&&valid_token(&issued.token){
-                                        {let c=Credential{server:server.clone(),token:issued.token};if save(&c).is_err(){set_error(&shared,"Discord connected for this run, but the OS could not remember the login.");}credential=Some(c.clone());update(&shared,|s|{s.account=Some(issued.account);s.credential=Some(c);s.busy=false;});pending=None;}
+                                        let issued_credential = Credential { server: server.clone(), token: issued.token };
+                                        let committed = shared.lock().is_ok_and(|mut state| {
+                                            if state.attempt_generation != *generation || stopped.load(Ordering::Acquire) {
+                                                return false;
+                                            }
+                                            if save(&issued_credential).is_err() {
+                                                state.error = "Discord connected for this run, but the OS could not remember the login.".into();
+                                            }
+                                            state.account = Some(issued.account);
+                                            state.credential = Some(issued_credential.clone());
+                                            state.busy = false;
+                                            true
+                                        });
+                                        pending = None;
+                                        if committed {
+                                            credential = Some(issued_credential);
+                                        } else {
+                                            let _ = issued_credential
+                                                .authorize(http.post(format!("{server}/api/auth/logout")))
+                                                .header("Origin", &server)
+                                                .send()
+                                                .await;
+                                        }
                                     }
                                 }else if response.status()==reqwest::StatusCode::UNAUTHORIZED{pending=None;set_error(&shared,"Discord sign-in was denied or expired. Try again.");update(&shared,|s|s.busy=false);}
                             }
@@ -160,8 +199,9 @@ impl Client {
         self.browser.lock().ok()?.take()
     }
     pub fn sign_in(&self, server: String) {
-        if let Some(tx) = &self.commands {
-            let _ = tx.send(Command::SignIn(server));
+        if let (Some(tx), Ok(mut state)) = (&self.commands, self.state.lock()) {
+            state.attempt_generation += 1;
+            let _ = tx.send(Command::SignIn(server, state.attempt_generation));
         }
     }
     pub fn sign_out(&self) {
@@ -170,6 +210,13 @@ impl Client {
         }
     }
     pub fn cancel(&self) {
+        update(&self.state, |state| {
+            state.attempt_generation += 1;
+            state.busy = false;
+            if let Ok(mut url) = self.browser.lock() {
+                *url = None;
+            }
+        });
         if let Some(tx) = &self.commands {
             let _ = tx.send(Command::Cancel);
         }

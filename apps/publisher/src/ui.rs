@@ -332,11 +332,11 @@ impl PublisherUi {
                 }
                 if state.connection == "connecting" {
                     if ui.button(tr("Cancel join")).clicked() {
-                        self.following.manual_leave();
+                        self.following.manual_leave(&self.following_client.state());
                         self.controller.send(Command::Leave);
                     }
                 } else if connected && ui.button(tr("Leave room")).clicked() {
-                    self.following.manual_leave();
+                    self.following.manual_leave(&self.following_client.state());
                     self.controller.send(Command::Leave);
                     self.textures.clear();
                 }
@@ -2148,7 +2148,8 @@ impl PublisherUi {
                 self.focused = None;
             }
         }
-        let state = self.controller.snapshot();
+        let mut state = self.controller.snapshot();
+        self.apply_profile_names(&mut state);
         for tile in &state.tiles {
             crate::stream_diagnostics::panel(&ctx, tile);
         }
@@ -2347,7 +2348,7 @@ impl PublisherUi {
                                     ui,
                                     name,
                                     false,
-                                    state.tiles.iter().any(|tile| tile.name == *name),
+                                    state.tiles.iter().any(|tile| tile.id == id),
                                     texture,
                                     self.profile_state
                                         .profiles

@@ -6,8 +6,8 @@ and [Discord accounts](discord-accounts.md).
 Discord HTTP interactions create rooms inside PodeTelar. An optional runtime
 bot Gateway connection also discovers voice membership across installed servers.
 `/stream` and `/telar` are global, server-installed commands. When voice discovery is available, they reuse the invoking user's voice-channel
-room and return its permanent invitation. Outside voice, each creates an ordinary
-room and replies in the invoking channel.
+room and return its permanent invitation in a reply visible only to the caller.
+Outside voice, each creates an ordinary room and replies in the invoking channel.
 Anyone who can read or forward the invitation can join; use a private channel.
 Embeds and automatic mentions are suppressed. Discord necessarily receives and
 stores the invitation in that message. It is not end-to-end secret from Discord.

@@ -583,6 +583,7 @@ export async function buildApp(
     if (
       request.method === "GET" &&
       (/^\/(?:r|manage)\/[A-Za-z0-9_-]{22}(?:\?.*)?$/.test(request.url) ||
+        /^\/c\/\d{17,20}\/\d{17,20}(?:\?.*)?$/.test(request.url) ||
         request.url === "/download") &&
       existsSync(config.webRoot)
     )

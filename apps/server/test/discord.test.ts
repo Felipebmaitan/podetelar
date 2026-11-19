@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
+import { DiscordVoice } from "../src/discord-voice.js";
 
 const application = "111111111111111111";
 const guild = "222222222222222222";
@@ -211,7 +212,11 @@ test("all-server mode requires the signed guild-installation owner and still rej
     DATABASE_PATH: join(directory, "rooms.db"),
   });
   config.webRoot = join(directory, "no-web");
-  const app = await buildApp(config, { usagePolling: false });
+  const voice = new DiscordVoice(undefined);
+  const app = await buildApp(config, {
+    usagePolling: false,
+    discordVoice: voice,
+  });
   t.after(async () => {
     await app.close();
   });
@@ -269,6 +274,22 @@ test("all-server mode requires the signed guild-installation owner and still rej
   ).json();
   assert.equal(second.data.flags, 4);
   assert.notEqual(first.data.content, second.data.content);
+
+  const privateVoice = "666666666666666666";
+  voice.index.apply("GUILD_CREATE", {
+    id: guild,
+    channels: [{ id: privateVoice, name: "Private voice", type: 2 }],
+    voice_states: [{ user_id: actor, channel_id: privateVoice }],
+  });
+  voice.index.connected();
+  const privateRoom = (
+    await send(command({ channel_id: "777777777777777777" }))
+  ).json();
+  assert.equal(privateRoom.data.flags, 64);
+  assert.match(
+    privateRoom.data.content,
+    new RegExp(`/c/${guild}/${privateVoice}#invite=`),
+  );
 });
 
 test("signed HTTP commands name rooms after the invoking person's visible Discord name", async (t) => {

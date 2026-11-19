@@ -3206,7 +3206,7 @@ dependencies = [
 
 [[package]]
 name = "podetelar-portable"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "sha2",
@@ -3218,7 +3218,7 @@ dependencies = [
 
 [[package]]
 name = "podetelar-publisher"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

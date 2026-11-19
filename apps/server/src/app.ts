@@ -38,6 +38,7 @@ import { discordRoutes } from "./discord.js";
 import { GuestProfiles } from "./profiles.js";
 import { guestProfileRoutes } from "./profile-routes.js";
 import { DiscordVoice } from "./discord-voice.js";
+import { channelRoutes, ChannelAnnouncements } from "./channels.js";
 
 const COOKIE = "podetelar_session";
 const MEDIA_TOKEN_TTL_SECONDS = 120;
@@ -62,6 +63,7 @@ export async function buildApp(
   const rooms = new Rooms(config.databasePath, options.now, config.adminToken);
   const profiles = new GuestProfiles(config.databasePath, options.now);
   const discordVoice = options.discordVoice ?? new DiscordVoice(config.discord);
+  const announcements = new ChannelAnnouncements(config, rooms, discordVoice);
   if (!options.discordVoice) void discordVoice.start();
   const usage = new Usage(
     config.databasePath,
@@ -78,6 +80,7 @@ export async function buildApp(
   const lifecycle = new RoomLifecycle(rooms, directory, access);
   const lifecycleSweep = setInterval(() => {
     void lifecycle.tick();
+    void announcements.tick();
   }, 5000);
   lifecycleSweep.unref();
   const previewSweep = setInterval(() => {
@@ -95,6 +98,7 @@ export async function buildApp(
   app.addHook("onClose", async () => {
     clearInterval(lifecycleSweep);
     await lifecycle.settle();
+    await announcements.close();
     clearInterval(previewSweep);
     signaling.close();
     await access.settle();
@@ -169,7 +173,8 @@ export async function buildApp(
     });
   });
 
-  await discordRoutes(app, config, rooms, options.now);
+  await discordRoutes(app, config, rooms, options.now, discordVoice);
+  channelRoutes(app, config, rooms, discordVoice);
   app.get("/api/health", async () => ({ status: "ok", phase: 8 }));
   // No credentials or cookies are needed to discover the operator's direct origin.
   app.get("/api/connection", async () => ({ directUrl: config.directUrl }));

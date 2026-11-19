@@ -10,6 +10,7 @@ import { OpenInApp } from "./OpenInApp";
 import { InvitationPage } from "./InvitationPage";
 import { DirectDownload } from "./DirectDownload";
 import { BrandMark } from "./BrandMark";
+import { ChannelInvitation } from "./ChannelInvitation";
 
 const managedRoomId = /^\/manage\/([A-Za-z0-9_-]{22})$/.exec(
   window.location.pathname,
@@ -49,6 +50,17 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export function App() {
+  const channel = /^\/c\/(\d{17,20})\/(\d{17,20})$/.exec(
+    window.location.pathname,
+  );
+  if (channel)
+    return (
+      <ChannelInvitation
+        guildId={channel[1]!}
+        channelId={channel[2]!}
+        invitation={entryInvitation}
+      />
+    );
   if (window.location.pathname === "/download")
     return <DirectDownload ticket={downloadTicket} />;
   if (entryRoomId)

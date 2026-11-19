@@ -89,6 +89,7 @@ struct Invitation {
     origin: Url,
     room_id: String,
     secret: String,
+    channel: Option<(String, String)>,
 }
 
 impl Invitation {
@@ -112,13 +113,23 @@ impl Invitation {
             .strip_prefix("/r/")
             .unwrap_or_default()
             .to_owned();
+        let channel = url
+            .path()
+            .strip_prefix("/c/")
+            .and_then(|path| path.split_once('/'))
+            .and_then(|(guild, channel)| {
+                let valid = |id: &str| {
+                    (17..=20).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_digit())
+                };
+                (valid(guild) && valid(channel)).then(|| (guild.to_owned(), channel.to_owned()))
+            });
         let secret = url
             .fragment()
             .and_then(|fragment| fragment.strip_prefix("invite="))
             .unwrap_or_default()
             .to_owned();
         ensure!(
-            valid_token(&room_id, 22) && valid_token(&secret, 43),
+            (valid_token(&room_id, 22) || channel.is_some()) && valid_token(&secret, 43),
             "The link must contain a room invitation."
         );
         url.set_path("/");
@@ -127,6 +138,7 @@ impl Invitation {
             origin: url,
             room_id,
             secret,
+            channel,
         })
     }
 }
@@ -369,9 +381,11 @@ impl Admission {
         // Scope to the invitation's public origin, before direct-server discovery,
         // so changing the direct transport hostname does not split device history.
         let scope = invitation.origin.origin().ascii_serialization();
-        let device_id = tokio::task::spawn_blocking(move || crate::device::for_server(&scope))
-            .await
-            .map_err(|_| anyhow::anyhow!("PC identity unavailable."))??;
+        let device_scope = scope.clone();
+        let device_id =
+            tokio::task::spawn_blocking(move || crate::device::for_server(&device_scope))
+                .await
+                .map_err(|_| anyhow::anyhow!("PC identity unavailable."))??;
         let client = Client::builder()
             .cookie_store(true)
             .redirect(Policy::none())
@@ -402,6 +416,32 @@ impl Admission {
                 "Direct room access requires HTTPS."
             );
             invitation.origin = direct;
+        }
+        if let Some((guild, channel)) = invitation.channel.take() {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Resolved {
+                invitation_url: String,
+            }
+            let response = client
+                .post(
+                    invitation
+                        .origin
+                        .join(&format!("api/channels/{guild}/{channel}/resolve"))?,
+                )
+                .header("Origin", invitation.origin.origin().ascii_serialization())
+                .json(&serde_json::json!({"invitation":invitation.secret}))
+                .send()
+                .await
+                .map_err(|_| anyhow::anyhow!("Could not resolve channel invitation."))?;
+            let resolved: Resolved = read_response(response).await?;
+            let room = Invitation::parse(&resolved.invitation_url)?;
+            ensure!(
+                room.channel.is_none() && room.origin.origin().ascii_serialization() == scope,
+                "Invalid channel room response."
+            );
+            invitation.room_id = room.room_id;
+            invitation.secret = room.secret;
         }
         let response = client
             .post(

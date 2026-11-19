@@ -9,6 +9,7 @@ import type { RoomLifecycle } from "./room-lifecycle.js";
 import type { GuestProfiles } from "./profiles.js";
 import { z } from "zod";
 import type { DiscordVoice } from "./discord-voice.js";
+import { channelParams } from "./channels.js";
 
 const COOKIE = "podetelar_admin";
 const TTL = 8 * 60 * 60 * 1000;
@@ -49,6 +50,62 @@ export async function adminRoutes(
           return reply.code(401).send({ error: "Sign in as administrator." });
       });
       scope.get("/api/admin/discord", async () => discordVoice.status());
+      scope.get("/api/admin/discord/channels", async () => ({
+        channels: rooms.channelDirectory(),
+      }));
+      scope.post<{ Params: { guildId: string; channelId: string } }>(
+        "/api/admin/discord/channels/:guildId/:channelId",
+        async (request, reply) => {
+          const params = channelParams.safeParse(request.params),
+            body = z
+              .object({
+                action: z.enum([
+                  "rotate",
+                  "disable",
+                  "enable",
+                  "pause",
+                  "resume",
+                  "invitation",
+                  "repair",
+                ]),
+              })
+              .strict()
+              .safeParse(request.body);
+          if (!params.success || !body.success)
+            return reply
+              .code(400)
+              .send({ error: "Choose a valid channel action." });
+          const { guildId, channelId } = params.data,
+            channel = discordVoice.index.channel(guildId, channelId);
+          if (channel)
+            rooms.channelInvitation(guildId, channelId, channel.channelName);
+          if (body.data.action === "invitation") {
+            if (!channel)
+              return reply
+                .code(503)
+                .send({ error: "Discord channel unavailable." });
+            const secret = rooms.channelInvitation(
+              guildId,
+              channelId,
+              channel.channelName,
+            );
+            if (!secret)
+              return reply.code(409).send({
+                error: "Rotate the channel invitation to recover access.",
+              });
+            return {
+              invitationUrl: `${config.publicUrl}/c/${guildId}/${channelId}#invite=${secret}`,
+            };
+          }
+          if (body.data.action === "repair") {
+            rooms.announcementResult(guildId, channelId, null, null, false);
+            return reply.code(204).send();
+          }
+          if (!rooms.manageChannel(guildId, channelId, body.data.action))
+            return reply.code(404).send({ error: "Channel unavailable." });
+          return reply.code(204).send();
+        },
+      );
       scope.post(
         "/api/admin/discord/reconnect",
         { config: { rateLimit: { max: 2, timeWindow: "1 minute" } } },

@@ -21,6 +21,7 @@
 - [Bitrate guidance](bitrate-guidance.md): tuning and bandwidth planning.
 - [Previews](previews.md): capture cadence, storage and authorization.
 - [Device usage identity](device-usage-identity.md): PC grouping and privacy.
+- [Guest profiles](guest-profiles.md): remembered nicknames, animated pictures and moderation.
 
 ## Operations
 

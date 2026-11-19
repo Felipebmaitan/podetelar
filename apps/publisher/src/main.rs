@@ -25,6 +25,7 @@ mod planar_experiment;
 mod playback;
 mod playback_qualification;
 mod preview;
+mod profile;
 mod publisher;
 mod quality;
 #[cfg(feature = "performance-experiments")]
@@ -101,6 +102,16 @@ fn run() -> Result<()> {
     gstreamer::init()
         .context("GStreamer could not initialize. Check the native runtime installation.")?;
     match std::env::args().nth(1).as_deref() {
+        Some("--profile-fixture") => {
+            let mut input = String::new();
+            std::io::stdin().take(8193).read_to_string(&mut input)?;
+            ensure!(input.len() <= 8192, "Profile fixture input is too large.");
+            let request = serde_json::from_str(&input).context("Invalid profile fixture input.")?;
+            return tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(profile::qualify(request));
+        }
         #[cfg(feature = "media-qualification")]
         Some("--publish-av1-fixture") => {
             let mut input = String::new();

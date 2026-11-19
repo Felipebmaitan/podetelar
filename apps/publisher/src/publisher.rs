@@ -147,6 +147,7 @@ pub struct SharingSelection {
 
 #[derive(Clone)]
 pub struct Snapshot {
+    pub profile_access: Option<Admission>,
     pub connection: &'static str,
     pub room_name: String,
     pub error: String,
@@ -163,6 +164,7 @@ pub struct Snapshot {
     pub applications: Vec<audio::Application>,
     pub tiles: Vec<crate::playback::Tile>,
     pub participants: Vec<String>,
+    pub participant_ids: Vec<(String, String)>,
     pub active_selection: Option<SharingSelection>,
     pub self_preview: Latest,
     pub capacity: crate::network::Capacity,
@@ -172,6 +174,7 @@ pub struct Snapshot {
 impl Default for Snapshot {
     fn default() -> Self {
         Self {
+            profile_access: None,
             connection: "disconnected",
             room_name: String::new(),
             error: String::new(),
@@ -188,6 +191,7 @@ impl Default for Snapshot {
             applications: Vec::new(),
             tiles: Vec::new(),
             participants: Vec::new(),
+            participant_ids: Vec::new(),
             active_selection: None,
             self_preview: Arc::default(),
             capacity: crate::network::Capacity::default(),
@@ -1133,11 +1137,11 @@ async fn worker(
                         update(&snapshot,|state|{state.capacity=capacity.clone();state.testing_connection=false;});
                 }
                 if let Some(joined) = &session {
-                    let mut participants: Vec<_> = joined.room.remote_participants().values().map(|p| {
-                        let name = p.name(); if name.is_empty() { "Participant".to_owned() } else { name }
+                    let mut ids:Vec<_>=joined.room.remote_participants().values().map(|p|{
+                        let name=p.name();(p.identity().to_string(),if name.is_empty(){"Participant".to_owned()}else{name})
                     }).collect();
-                    participants.sort_by_key(|name| name.to_lowercase());
-                    update(&snapshot, |state| state.participants = participants);
+                    ids.sort_by_key(|(id,name)|(name.to_lowercase(),id.clone()));
+                    update(&snapshot,|state|{state.participants=ids.iter().map(|(_,name)|name.clone()).collect();state.participant_ids=ids;});
                     if joined.room.connection_state() == ConnectionState::Connected {
                         match playback.reconcile(&joined.room, &joined.admission).await {
                             Ok(tiles) => update(&snapshot, |state| state.tiles = tiles),
@@ -1242,6 +1246,7 @@ async fn worker(
                         })));
                         update(&snapshot, |state| {
                             state.connection = "connected";
+                            state.profile_access = Some(joined.admission.clone());
                             state.room_name = joined.admission.room_name.clone();
                             state.testing_connection = true;
                         });

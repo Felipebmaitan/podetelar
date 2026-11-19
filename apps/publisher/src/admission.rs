@@ -26,6 +26,7 @@ pub struct Admission {
     origin: Url,
     room_id: String,
     pub room_name: String,
+    pub participant_id: String,
 }
 struct ProbeLease {
     client: Client,
@@ -71,6 +72,12 @@ pub struct MediaAccess {
 #[derive(Deserialize)]
 struct Session {
     room: Room,
+    participant: ProfileParticipant,
+}
+
+#[derive(Deserialize)]
+struct ProfileParticipant {
+    id: String,
 }
 
 #[derive(Deserialize)]
@@ -415,6 +422,7 @@ impl Admission {
             origin: invitation.origin,
             room_id: invitation.room_id,
             room_name: session.room.name,
+            participant_id: session.participant.id,
         })
     }
 
@@ -476,6 +484,86 @@ impl Admission {
 
     pub async fn leave(&self) {
         let _ = self.post("leave").await;
+    }
+
+    pub async fn profiles(&self) -> Result<Vec<crate::profile::Participant>> {
+        #[derive(Deserialize)]
+        struct Profiles {
+            profiles: Vec<crate::profile::Participant>,
+        }
+        let response = self
+            .client
+            .get(
+                self.origin
+                    .join(&format!("api/rooms/{}/profiles", self.room_id))?,
+            )
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .map_err(|_| anyhow::anyhow!("Could not load guest profiles."))?;
+        Ok(read_response::<Profiles>(response).await?.profiles)
+    }
+
+    pub async fn profile_avatar(&self, participant: &str, revision: &str) -> Result<Vec<u8>> {
+        let mut response = self
+            .client
+            .get(self.origin.join(&format!(
+                "api/rooms/{}/profiles/{participant}/avatar/{revision}",
+                self.room_id
+            ))?)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .map_err(|_| anyhow::anyhow!("Could not load profile picture."))?;
+        ensure!(
+            response.status().is_success(),
+            "Profile picture unavailable."
+        );
+        ensure!(
+            response.content_length().unwrap_or(0) <= 3_000_000,
+            "Profile picture too large."
+        );
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|_| anyhow::anyhow!("Could not load profile picture."))?
+        {
+            ensure!(
+                bytes.len() + chunk.len() <= 3_000_000,
+                "Profile picture too large."
+            );
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(bytes)
+    }
+
+    pub async fn edit_profile(&self, edit: crate::profile::Edit) -> Result<()> {
+        let base = format!("api/rooms/{}/profile", self.room_id);
+        let request = match edit {
+            crate::profile::Edit::Name(name) => self
+                .client
+                .patch(self.origin.join(&base)?)
+                .json(&serde_json::json!({"displayName":name})),
+            crate::profile::Edit::Picture(bytes) => self
+                .client
+                .put(self.origin.join(&(base + "/avatar"))?)
+                .header("Content-Type", "application/octet-stream")
+                .body(bytes),
+            crate::profile::Edit::Remove => {
+                self.client.delete(self.origin.join(&(base + "/avatar"))?)
+            }
+        };
+        let response = request
+            .header("Origin", self.origin.origin().ascii_serialization())
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await
+            .map_err(|_| anyhow::anyhow!("Could not update guest profile."))?;
+        if !response.status().is_success() {
+            let _: serde_json::Value = read_response(response).await?;
+        }
+        Ok(())
     }
 
     pub async fn send_preview(&self, sid: &str, bytes: Vec<u8>) -> PreviewDelivery {

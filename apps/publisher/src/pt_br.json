@@ -87,7 +87,7 @@
   "Previews first. Live video and audio only when you choose Watch.": "Primeiro, as prévias. Vídeo e áudio ao vivo somente ao escolher Assistir.",
   "Scroll to see all streams": "Role para ver todas as transmissões",
   "Close": "Fechar",
-  "Done": "Concluir",
+  "Done": "Concluído",
   "Publishing settings apply with Start sharing or Apply changes.": "Use Iniciar transmissão ou Aplicar alterações para aplicar as configurações.",
   "Licenses and library sources": "Licenças e código-fonte das bibliotecas",
   "No supported encoder": "Nenhum codificador compatível",
@@ -328,5 +328,17 @@
   "App updates": "Atualizações do aplicativo",
   "Update available": "Atualização disponível",
   "Changelog": "Novidades",
-  "Check for updates": "Verificar atualizações"
+  "Check for updates": "Verificar atualizações",
+  "User settings": "Configurações do usuário",
+  "Guest nickname": "Apelido de visitante",
+  "Save nickname": "Salvar apelido",
+  "Upload picture": "Enviar foto",
+  "Remove picture": "Remover foto",
+  "Profile pictures: PNG, JPEG, WebP or animated GIF, up to 3 MB.": "Fotos de perfil: PNG, JPEG, WebP ou GIF animado, até 3 MB.",
+  "Profile picture uploads are disabled for this PC.": "O envio de fotos de perfil está desativado para este PC.",
+  "Join a room to manage your profile picture.": "Entre em uma sala para gerenciar sua foto de perfil.",
+  "Could not remember your guest name on this PC.": "Não foi possível salvar seu apelido de visitante neste PC.",
+  "After restart, open a fresh invitation. Your guest nickname is remembered.": "Após reiniciar, abra um convite válido. Seu apelido de visitante será lembrado.",
+  "Your guest nickname is remembered on this PC.": "Seu apelido de visitante é salvo neste PC.",
+  "This invitation selects the server. Your guest nickname is remembered on this PC.": "Este convite seleciona o servidor. Seu apelido de visitante é salvo neste PC."
 }

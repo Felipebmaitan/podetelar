@@ -35,6 +35,8 @@ import { appLinkRoutes } from "./app-links.js";
 import { RoomLifecycle } from "./room-lifecycle.js";
 
 import { discordRoutes } from "./discord.js";
+import { GuestProfiles } from "./profiles.js";
+import { guestProfileRoutes } from "./profile-routes.js";
 
 const COOKIE = "podetelar_session";
 const MEDIA_TOKEN_TTL_SECONDS = 120;
@@ -56,6 +58,7 @@ export async function buildApp(
     trustProxy: config.trustedProxy ?? false,
   });
   const rooms = new Rooms(config.databasePath, options.now, config.adminToken);
+  const profiles = new GuestProfiles(config.databasePath, options.now);
   const usage = new Usage(
     config.databasePath,
     config.usageMetricsUrl ?? "http://127.0.0.1:6789/metrics",
@@ -75,6 +78,7 @@ export async function buildApp(
   lifecycleSweep.unref();
   const previewSweep = setInterval(() => {
     previews.sweep();
+    void profiles.syncNames(directory);
     void access.settle();
   }, ACCESS_SWEEP_MS);
   previewSweep.unref();
@@ -91,6 +95,7 @@ export async function buildApp(
     await access.settle();
     previews.clear();
     await usage.close();
+    await profiles.close();
     rooms.close();
   });
   await app.register(cookie);
@@ -178,7 +183,17 @@ export async function buildApp(
         .send({ error: "Use the direct server connection for this request." });
     }
   });
-  await adminRoutes(app, config, usage, rooms, access, lifecycle, options.now);
+  await adminRoutes(
+    app,
+    config,
+    usage,
+    rooms,
+    access,
+    lifecycle,
+    options.now,
+    profiles,
+  );
+  await guestProfileRoutes(app, rooms, profiles, directory);
   appLinkRoutes(app, config, rooms, directory, options.now);
   streamDiagnosticsRoutes(app, rooms, directory, options.now);
   app.get("/api/diagnostics", async (request, reply) => {
@@ -202,6 +217,12 @@ export async function buildApp(
             "Enter a room name and display name, each up to 60 characters.",
         });
       const issued = rooms.create(input.data);
+      profiles.bind(
+        issued.snapshot.room.id,
+        issued.snapshot.participant.id,
+        issued.snapshot.participant.displayName,
+        input.data.deviceId,
+      );
       usage.remember(
         issued.snapshot.room.id,
         issued.snapshot.participant.id,
@@ -239,6 +260,12 @@ export async function buildApp(
         return reply
           .code(404)
           .send({ error: "This invitation could not be accepted." });
+      profiles.bind(
+        id.data,
+        issued.snapshot.participant.id,
+        issued.snapshot.participant.displayName,
+        input.data.deviceId,
+      );
       // Rejoining from this browser replaces its previous session for this room.
       usage.remember(
         issued.snapshot.room.id,

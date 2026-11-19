@@ -13,6 +13,7 @@ export type MediaParticipant = {
   tracks: { sid: string; kind: PreviewKind; muted: boolean }[];
 };
 export interface MediaDirectory {
+  rename?(roomId: string, identity: string, displayName: string): Promise<void>;
   diagnosticParticipants?(
     roomId: string,
   ): Promise<Map<string, MediaParticipant>>;
@@ -74,6 +75,19 @@ export class LivekitDirectory implements MediaDirectory {
         }));
     } catch (error) {
       if (error instanceof TwirpError && error.code === "not_found") return [];
+      throw new MediaUnavailable();
+    }
+  }
+  async rename(
+    roomId: string,
+    identity: string,
+    displayName: string,
+  ): Promise<void> {
+    try {
+      await this.client.updateParticipant(mediaRoomName(roomId), identity, {
+        name: displayName,
+      });
+    } catch {
       throw new MediaUnavailable();
     }
   }

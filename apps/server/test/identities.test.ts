@@ -7,6 +7,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { Accounts } from "../src/accounts.js";
 import { Rooms } from "../src/rooms.js";
 import { DiscordVoice } from "../src/discord-voice.js";
+import { GuestProfiles } from "../src/profiles.js";
+import { Identities } from "../src/identities.js";
 import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 const guild = "123456789012345678",
@@ -31,9 +33,11 @@ test("signed-in invitation joins use the room's guild nickname, prevent override
     return issued;
   })();
   const target = rooms.resolveChannel(guild, channel, "Games")!;
+  let memberGate: Promise<void> | undefined;
   class Voice extends DiscordVoice {
     override async member(guildId: string) {
       assert.equal(guildId, guild, "nickname context is the room's guild");
+      await memberGate;
       return {
         displayName: "Guild nickname",
         avatarUrl: `https://cdn.discordapp.com/guilds/${guild}/users/${user}/avatars/${"a".repeat(32)}.png?size=128`,
@@ -41,6 +45,8 @@ test("signed-in invitation joins use the room's guild nickname, prevent override
     }
   }
   const voice = new Voice(undefined);
+  const profiles = new GuestProfiles(path);
+  const identities = new Identities(path, rooms, accounts, profiles, voice);
   const config = loadConfig({
     PUBLIC_URL: origin,
     ADMIN_TOKEN: admin,
@@ -92,11 +98,16 @@ test("signed-in invitation joins use the room's guild nickname, prevent override
       ).json().profiles[0].avatarRevision,
       null,
     );
+    const delayed = Promise.withResolvers<void>();
+    memberGate = delayed.promise;
+    const refresh = identities.refresh(user);
     await app.inject({
       method: "DELETE",
       url: `${base}/discord-identity`,
       headers: { origin, cookie },
     });
+    delayed.resolve();
+    await refresh;
     assert.equal(
       (
         await app.inject({ url: `${base}/profiles`, headers: { cookie } })
@@ -116,6 +127,8 @@ test("signed-in invitation joins use the room's guild nickname, prevent override
     );
   } finally {
     await app.close();
+    await identities.close();
+    await profiles.close();
     accounts.close();
     rooms.close();
     const real = realpathSync(dir);

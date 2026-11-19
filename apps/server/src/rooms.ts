@@ -1,5 +1,6 @@
 import {
   createHash,
+  createHmac,
   createCipheriv,
   createDecipheriv,
   randomBytes,
@@ -119,6 +120,16 @@ export class Rooms {
       announcement_id TEXT, announcement_state TEXT, announcement_error INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY(guild_id,channel_id)
     );`);
+    if (
+      !this.db
+        .prepare(
+          "SELECT 1 FROM pragma_table_info('discord_channels') WHERE name='guest_revision'",
+        )
+        .get()
+    )
+      this.db.exec(
+        "ALTER TABLE discord_channels ADD COLUMN guest_revision INTEGER NOT NULL DEFAULT 0",
+      );
     this.findStatement = this.db.prepare(
       "SELECT id, name, invitation_hash, invitation_enabled, created_at FROM rooms WHERE id = ?",
     );
@@ -291,7 +302,11 @@ export class Rooms {
     if (row.room_id) {
       const room = this.find(row.room_id),
         invitation = this.invitation(row.room_id);
-      if (room && invitation) return { room, invitation };
+      if (room && invitation) {
+        const handoff =
+          secret === undefined ? invitation : this.channelHandoff(room);
+        return handoff ? { room, invitation: handoff } : null;
+      }
       if (room) return null;
     }
     const created = this.insertRoom(name.slice(0, 60));
@@ -300,7 +315,25 @@ export class Rooms {
         "UPDATE discord_channels SET room_id=? WHERE guild_id=? AND channel_id=?",
       )
       .run(created.room.id, guild, channel);
-    return created;
+    if (secret === undefined) return created;
+    const handoff = this.channelHandoff(created.room);
+    return handoff ? { room: created.room, invitation: handoff } : null;
+  }
+  private channelHandoff(room: RoomRow) {
+    if (!this.invitationKey) return null;
+    const channel = this.db
+      .prepare(
+        "SELECT invitation_hash, guest_revision FROM discord_channels WHERE room_id=? AND guest_enabled=1",
+      )
+      .get(room.id) as
+      { invitation_hash: Uint8Array; guest_revision: number } | undefined;
+    return channel
+      ? createHmac("sha256", this.invitationKey)
+          .update(`discord-handoff:${room.id}:${channel.guest_revision}:`)
+          .update(room.invitation_hash)
+          .update(channel.invitation_hash)
+          .digest("base64url")
+      : null;
   }
   resolveChannel(
     guild: string,
@@ -408,9 +441,10 @@ export class Rooms {
     return (
       this.db
         .prepare(
-          `UPDATE discord_channels SET ${field}=?,announcement_state=NULL WHERE guild_id=? AND channel_id=?`,
+          `UPDATE discord_channels SET ${field}=?,announcement_state=NULL,guest_revision=guest_revision+? WHERE guild_id=? AND channel_id=?`,
         )
-        .run(Number(enabled), guild, channel).changes > 0
+        .run(Number(enabled), Number(action === "disable"), guild, channel)
+        .changes > 0
     );
   }
   announcementJobs() {
@@ -562,10 +596,15 @@ export class Rooms {
 
   acceptsInvitation(id: string, invitation: string): boolean {
     const room = this.find(id);
-    return Boolean(
-      room?.invitation_enabled &&
-      timingSafeEqual(digest(invitation), Buffer.from(room.invitation_hash)),
-    );
+    return Boolean(room && this.acceptsRoomInvitation(room, invitation));
+  }
+
+  private acceptsRoomInvitation(room: RoomRow, invitation: string): boolean {
+    if (!room.invitation_enabled) return false;
+    if (timingSafeEqual(digest(invitation), Buffer.from(room.invitation_hash)))
+      return true;
+    const handoff = this.channelHandoff(room);
+    return handoff !== null && secretsEqual(invitation, handoff);
   }
 
   join(
@@ -573,23 +612,15 @@ export class Rooms {
     invitation: string,
     displayName: string,
   ): IssuedSession | null {
-    const room = this.find(id);
-    if (
-      !room ||
-      !room.invitation_enabled ||
-      !timingSafeEqual(digest(invitation), Buffer.from(room.invitation_hash))
-    )
-      return null;
     this.expire();
-    if (
-      (
-        this.db
-          .prepare("SELECT COUNT(*) AS count FROM sessions WHERE room_id = ?")
-          .get(id) as { count: number }
-      ).count >= 32
-    )
-      return null;
-    return this.transaction(() => this.issue(room, displayName));
+    return this.transaction(() => {
+      const room = this.find(id);
+      if (!room || !this.acceptsRoomInvitation(room, invitation)) return null;
+      const count = this.db
+        .prepare("SELECT COUNT(*) AS count FROM sessions WHERE room_id = ?")
+        .get(id) as { count: number };
+      return count.count >= 32 ? null : this.issue(room, displayName);
+    });
   }
 
   session(id: string, token: string | undefined): RoomSession | null {

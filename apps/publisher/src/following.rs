@@ -150,7 +150,8 @@ pub enum Action {
     Join(Location),
 }
 impl Follow {
-    pub fn manual_leave(&mut self) {
+    pub fn manual_leave(&mut self, state: &State) {
+        self.observe(state);
         self.current = None;
         self.independent = false;
         self.paused = true;
@@ -162,6 +163,17 @@ impl Follow {
     pub fn resume(&mut self) {
         self.paused = false;
         self.independent = false;
+    }
+    fn observe(&mut self, state: &State) {
+        if !state.known {
+            return;
+        }
+        let mut observed: Vec<_> = state.locations.iter().map(Location::key).collect();
+        observed.sort();
+        if observed != self.observed {
+            self.paused = false;
+            self.observed = observed;
+        }
     }
     pub fn tick(
         &mut self,
@@ -175,17 +187,9 @@ impl Follow {
             self.selected = None;
             return self.current.take().map(|_| Action::Leave);
         }
-        if self.independent {
+        self.observe(state);
+        if self.independent || !state.known {
             return None;
-        }
-        if !state.known {
-            return None;
-        }
-        let mut observed: Vec<_> = state.locations.iter().map(Location::key).collect();
-        observed.sort();
-        if observed != self.observed {
-            self.paused = false;
-            self.observed = observed;
         }
         let eligible: Vec<_> = state
             .locations
@@ -252,6 +256,18 @@ mod tests {
         }
     }
     #[test]
+    fn leaving_an_independent_room_uses_the_current_voice_channel_as_baseline() {
+        let mut follow = Follow::default();
+        follow.invitation();
+        follow.manual_leave(&state("A"));
+        assert_eq!(follow.tick(true, &state("A"), false, false, false), None);
+        assert_eq!(
+            follow.tick(true, &state("B"), false, false, false),
+            Some(Action::Join(location("B")))
+        );
+    }
+
+    #[test]
     fn moves_join_without_carrying_media_and_unknown_state_preserves_session() {
         let mut follow = Follow::default();
         assert_eq!(
@@ -285,13 +301,13 @@ mod tests {
     fn manual_leave_pauses_until_channel_changes_or_resume() {
         let mut follow = Follow::default();
         follow.tick(true, &state("A"), false, false, false);
-        follow.manual_leave();
+        follow.manual_leave(&state("A"));
         assert_eq!(follow.tick(true, &state("A"), false, false, false), None);
         assert_eq!(
             follow.tick(true, &state("B"), false, false, false),
             Some(Action::Join(location("B")))
         );
-        follow.manual_leave();
+        follow.manual_leave(&state("B"));
         follow.resume();
         assert_eq!(
             follow.tick(true, &state("B"), false, false, false),

@@ -19,6 +19,7 @@ test("permanent channel invitations survive room closure/restart, rotate and rem
     const first = rooms.resolveChannel(guild, channel, "Games", secret)!;
     const same = rooms.resolveChannel(guild, channel, "Games")!;
     assert.equal(first.room.id, same.room.id);
+    assert.notEqual(first.invitation, same.invitation);
     const joined = rooms.join(first.room.id, first.invitation, "Guest")!;
     rooms.manageChannel(guild, channel, "pause");
     assert.equal(rooms.resolveChannel(guild, channel, "Games"), null);
@@ -28,11 +29,17 @@ test("permanent channel invitations survive room closure/restart, rotate and rem
     );
     rooms.manageChannel(guild, channel, "disable");
     assert.equal(rooms.resolveChannel(guild, channel, "Games", secret), null);
+    assert.equal(rooms.join(first.room.id, first.invitation, "Guest"), null);
     assert.ok(rooms.session(first.room.id, joined.token));
+    rooms.manageChannel(guild, channel, "enable");
+    assert.equal(rooms.join(first.room.id, first.invitation, "Guest"), null);
+    const current = rooms.resolveChannel(guild, channel, "Games", secret)!;
     rooms.manageChannel(guild, channel, "rotate");
     const replacement = rooms.channelInvitation(guild, channel, "Games")!;
     assert.notEqual(replacement, secret);
     assert.equal(rooms.resolveChannel(guild, channel, "Games", secret), null);
+    assert.equal(rooms.join(first.room.id, current.invitation, "Guest"), null);
+    assert.ok(rooms.session(first.room.id, joined.token));
     rooms.closeRoom(first.room.id);
     rooms.close();
     rooms = new Rooms(path, Date.now, key);

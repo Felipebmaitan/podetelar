@@ -13,6 +13,7 @@ type Identity = {
   avatar_url: string | null;
   avatar_revision: string | null;
   next_refresh_at: number;
+  binding_revision: string;
 };
 export class Identities {
   private db: DatabaseSync;
@@ -37,6 +38,16 @@ export class Identities {
     this.db.exec(
       `PRAGMA foreign_keys=ON;PRAGMA busy_timeout=5000;CREATE TABLE IF NOT EXISTS discord_room_identities(participant_id TEXT PRIMARY KEY,room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES discord_accounts(user_id) ON DELETE CASCADE,login_id TEXT NOT NULL,display_name TEXT NOT NULL,avatar_url TEXT,avatar_revision TEXT,next_refresh_at INTEGER NOT NULL);`,
     );
+    if (
+      !this.db
+        .prepare(
+          "SELECT 1 FROM pragma_table_info('discord_room_identities') WHERE name='binding_revision'",
+        )
+        .get()
+    )
+      this.db.exec(
+        "ALTER TABLE discord_room_identities ADD COLUMN binding_revision TEXT NOT NULL DEFAULT ''",
+      );
   }
   async display(room: string, account: Account) {
     const context = this.rooms.channelContext(room);
@@ -68,7 +79,7 @@ export class Identities {
       : null;
     this.db
       .prepare(
-        `INSERT INTO discord_room_identities VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(participant_id) DO UPDATE SET user_id=excluded.user_id,login_id=excluded.login_id,display_name=excluded.display_name,avatar_url=excluded.avatar_url,avatar_revision=excluded.avatar_revision,next_refresh_at=excluded.next_refresh_at`,
+        `INSERT INTO discord_room_identities VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(participant_id) DO UPDATE SET user_id=excluded.user_id,login_id=excluded.login_id,display_name=excluded.display_name,avatar_url=excluded.avatar_url,avatar_revision=excluded.avatar_revision,next_refresh_at=excluded.next_refresh_at,binding_revision=excluded.binding_revision`,
       )
       .run(
         participant,
@@ -79,6 +90,7 @@ export class Identities {
         display.avatarUrl,
         revision,
         this.now() + 60000,
+        randomUUID(),
       );
     this.profiles.rename(room, participant, display.displayName);
     return true;
@@ -136,18 +148,47 @@ export class Identities {
           user ?? null,
           this.now(),
         ) as Identity[];
-      await Promise.allSettled(
-        rows.map(async (row) => {
-          const account = this.accounts.bySession(row.login_id);
-          if (account)
-            await this.bind(row.room_id, row.participant_id, account);
-          else this.unbind(row.participant_id);
-        }),
-      );
+      await Promise.allSettled(rows.map((row) => this.refreshBinding(row)));
     })().finally(() => {
       this.syncing = null;
     });
     return this.syncing;
+  }
+  private async refreshBinding(row: Identity) {
+    const account = this.accounts.bySession(row.login_id);
+    if (!account) {
+      this.unbind(row.participant_id);
+      return;
+    }
+    const display = await this.display(row.room_id, account);
+    if (
+      !this.accounts.bySession(row.login_id) ||
+      !this.rooms.active(row.room_id, row.participant_id)
+    )
+      return;
+    const revision = display.avatarUrl
+      ? display.avatarUrl === row.avatar_url
+        ? row.avatar_revision
+        : randomUUID()
+      : null;
+    const updated = this.db
+      .prepare(
+        "UPDATE discord_room_identities SET display_name=?,avatar_url=?,avatar_revision=?,next_refresh_at=? WHERE participant_id=? AND binding_revision=?",
+      )
+      .run(
+        display.displayName,
+        display.avatarUrl,
+        revision,
+        this.now() + 60000,
+        row.participant_id,
+        row.binding_revision,
+      );
+    if (updated.changes)
+      this.profiles.rename(
+        row.room_id,
+        row.participant_id,
+        display.displayName,
+      );
   }
   async avatar(room: string, participant: string, revision: string) {
     const identity = this.get(participant);

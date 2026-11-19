@@ -331,6 +331,7 @@ impl PublisherUi {
                 .and(self.account_state.account.as_ref())
                 .map(|a| a.session_id.clone());
             let key = (client.participant_id.clone(), session);
+            let managed = key.1.is_some();
             if self.profile_connection_key.as_ref() != Some(&key) {
                 let was_discord = self
                     .profile_connection_key
@@ -352,7 +353,7 @@ impl PublisherUi {
                 let discord = own.discord;
                 self.observe_profile_name(&name);
                 if !discord
-                    && self.account_state.credential.is_none()
+                    && !managed
                     && self.profile_state.identity_synced
                     && self.saved_guest_name != name
                 {
@@ -366,6 +367,28 @@ impl PublisherUi {
         }
         self.profile_textures
             .retain(|revision, _| self.profile_state.avatars.contains_key(revision));
+    }
+    pub(super) fn apply_profile_names(&self, state: &mut Snapshot) {
+        for profile in &self.profile_state.profiles {
+            if let Some((index, (_, name))) = state
+                .participant_ids
+                .iter_mut()
+                .enumerate()
+                .find(|(_, (id, _))| id == &profile.participant_id)
+            {
+                name.clone_from(&profile.display_name);
+                if let Some(label) = state.participants.get_mut(index) {
+                    label.clone_from(name);
+                }
+            }
+            if let Some(tile) = state
+                .tiles
+                .iter_mut()
+                .find(|tile| tile.id == profile.participant_id)
+            {
+                tile.name.clone_from(&profile.display_name);
+            }
+        }
     }
     pub(super) fn profile_texture(
         &mut self,

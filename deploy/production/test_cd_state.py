@@ -11,6 +11,29 @@ spec.loader.exec_module(state)
 
 
 class HistoryProtection(unittest.TestCase):
+    def test_rollback_revokes_only_voice_sessions_and_queues_media_removal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            live = Path(directory) / 'live.db'
+            with closing(sqlite3.connect(live)) as db:
+                db.executescript('''
+                    CREATE TABLE sessions(room_id TEXT, participant_id TEXT);
+                    CREATE TABLE discord_voice_sessions(roomId TEXT, participantId TEXT);
+                    CREATE TABLE removals(
+                        room_id TEXT, participant_id TEXT, retry_until INTEGER,
+                        next_attempt_at INTEGER, acknowledged INTEGER DEFAULT 0,
+                        PRIMARY KEY(room_id, participant_id)
+                    );
+                    INSERT INTO sessions VALUES ('room', 'voice'), ('room', 'guest');
+                    INSERT INTO discord_voice_sessions VALUES ('room', 'voice');
+                    INSERT INTO removals VALUES ('room', 'voice', 100, 100, 1);
+                ''')
+                self.assertEqual(state.revoke_voice_sessions(live, now_ms=500), 1)
+                self.assertEqual(db.execute('SELECT * FROM sessions').fetchall(), [('room', 'guest')])
+                self.assertEqual(db.execute('SELECT * FROM removals').fetchall(), [
+                    ('room', 'voice', 30500, 500, 0)
+                ])
+                self.assertEqual(state.revoke_voice_sessions(live, now_ms=600), 0)
+
     def test_wal_backup_growth_and_destructive_updates(self):
         with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
             live = Path(directory) / 'live.db'

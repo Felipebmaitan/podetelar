@@ -62,12 +62,38 @@ def verify(before, after, now_ms=None):
     return {'durable_rooms_and_traffic_preserved': True}
 
 
+def revoke_voice_sessions(path, now_ms=None):
+    now = int(time.time() * 1000) if now_ms is None else now_ms
+    with closing(sqlite3.connect(Path(path).resolve().as_uri() + '?mode=rw', uri=True)) as db, db:
+        db.execute('BEGIN IMMEDIATE')
+        if not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='discord_voice_sessions'"
+        ).fetchone():
+            return 0
+        db.execute('''
+            INSERT INTO removals(room_id, participant_id, retry_until, next_attempt_at)
+            SELECT s.room_id, s.participant_id, ?, ? FROM sessions s
+            JOIN discord_voice_sessions v ON v.roomId=s.room_id AND v.participantId=s.participant_id
+            WHERE true
+            ON CONFLICT(room_id, participant_id) DO UPDATE
+            SET retry_until=excluded.retry_until, next_attempt_at=excluded.next_attempt_at, acknowledged=0
+        ''', (now + 30000, now))
+        count = db.execute('''
+            DELETE FROM sessions WHERE (room_id, participant_id) IN
+            (SELECT roomId, participantId FROM discord_voice_sessions)
+        ''').rowcount
+        db.execute('DELETE FROM discord_voice_sessions')
+        return count
+
+
 if __name__ == '__main__':
-    action, source, target = sys.argv[1:]
+    action, source, *rest = sys.argv[1:]
     if action == 'backup':
-        backup(source, target)
+        backup(source, *rest)
         print('WAL-aware database backup verified')
     elif action == 'verify':
-        print(json.dumps(verify(source, target)))
+        print(json.dumps(verify(source, *rest)))
+    elif action == 'revoke-discord-voice' and not rest:
+        print(f'Queued removal for {revoke_voice_sessions(source)} Discord voice sessions')
     else:
-        raise SystemExit('Expected backup or verify')
+        raise SystemExit('Expected backup, verify or revoke-discord-voice')

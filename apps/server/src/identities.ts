@@ -13,11 +13,12 @@ type Identity = {
   avatar_url: string | null;
   avatar_revision: string | null;
   next_refresh_at: number;
-  binding_revision: string;
 };
+type RefreshingIdentity = Identity & { binding_revision: Uint8Array };
 export class Identities {
   private db: DatabaseSync;
   private syncing: Promise<void> | null = null;
+  private pendingBinds = new Map<string, symbol>();
   private images = new Map<
     string,
     { bytes: Buffer; type: string; expires: number }
@@ -36,18 +37,24 @@ export class Identities {
   ) {
     this.db = new DatabaseSync(path);
     this.db.exec(
-      `PRAGMA foreign_keys=ON;PRAGMA busy_timeout=5000;CREATE TABLE IF NOT EXISTS discord_room_identities(participant_id TEXT PRIMARY KEY,room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES discord_accounts(user_id) ON DELETE CASCADE,login_id TEXT NOT NULL,display_name TEXT NOT NULL,avatar_url TEXT,avatar_revision TEXT,next_refresh_at INTEGER NOT NULL);`,
-    );
-    if (
-      !this.db
-        .prepare(
-          "SELECT 1 FROM pragma_table_info('discord_room_identities') WHERE name='binding_revision'",
-        )
-        .get()
-    )
-      this.db.exec(
-        "ALTER TABLE discord_room_identities ADD COLUMN binding_revision TEXT NOT NULL DEFAULT ''",
+      `PRAGMA foreign_keys=ON;PRAGMA busy_timeout=5000;CREATE TABLE IF NOT EXISTS discord_room_identities(participant_id TEXT PRIMARY KEY,room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES discord_accounts(user_id) ON DELETE CASCADE,login_id TEXT NOT NULL,display_name TEXT NOT NULL,avatar_url TEXT,avatar_revision TEXT,next_refresh_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS discord_identity_revisions(
+        participant_id TEXT PRIMARY KEY REFERENCES discord_room_identities(participant_id) ON DELETE CASCADE,
+        revision BLOB NOT NULL
       );
+      CREATE TRIGGER IF NOT EXISTS discord_identity_bind_insert
+        AFTER INSERT ON discord_room_identities
+        BEGIN
+          INSERT INTO discord_identity_revisions VALUES (new.participant_id, randomblob(16));
+        END;
+      CREATE TRIGGER IF NOT EXISTS discord_identity_bind_update
+        AFTER UPDATE OF login_id ON discord_room_identities
+        BEGIN
+          UPDATE discord_identity_revisions SET revision=randomblob(16) WHERE participant_id=new.participant_id;
+        END;
+      INSERT OR IGNORE INTO discord_identity_revisions
+        SELECT participant_id, randomblob(16) FROM discord_room_identities;`,
+    );
   }
   async display(room: string, account: Account) {
     const context = this.rooms.channelContext(room);
@@ -65,8 +72,18 @@ export class Identities {
     account: Account,
     knownDisplay?: { displayName: string; avatarUrl: string | null },
   ) {
-    const display = knownDisplay ?? (await this.display(room, account));
+    const attempt = Symbol();
+    this.pendingBinds.set(participant, attempt);
+    let display: Awaited<ReturnType<Identities["display"]>>;
+    let current = false;
+    try {
+      display = knownDisplay ?? (await this.display(room, account));
+    } finally {
+      current = this.pendingBinds.get(participant) === attempt;
+      if (current) this.pendingBinds.delete(participant);
+    }
     if (
+      !current ||
       !this.accounts.bySession(account.sessionId) ||
       !this.rooms.active(room, participant)
     )
@@ -79,7 +96,7 @@ export class Identities {
       : null;
     this.db
       .prepare(
-        `INSERT INTO discord_room_identities VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(participant_id) DO UPDATE SET user_id=excluded.user_id,login_id=excluded.login_id,display_name=excluded.display_name,avatar_url=excluded.avatar_url,avatar_revision=excluded.avatar_revision,next_refresh_at=excluded.next_refresh_at,binding_revision=excluded.binding_revision`,
+        `INSERT INTO discord_room_identities VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(participant_id) DO UPDATE SET user_id=excluded.user_id,login_id=excluded.login_id,display_name=excluded.display_name,avatar_url=excluded.avatar_url,avatar_revision=excluded.avatar_revision,next_refresh_at=excluded.next_refresh_at`,
       )
       .run(
         participant,
@@ -90,12 +107,12 @@ export class Identities {
         display.avatarUrl,
         revision,
         this.now() + 60000,
-        randomUUID(),
       );
     this.profiles.rename(room, participant, display.displayName);
     return true;
   }
   unbind(participant: string) {
+    this.pendingBinds.delete(participant);
     this.db
       .prepare("DELETE FROM discord_room_identities WHERE participant_id=?")
       .run(participant);
@@ -139,7 +156,11 @@ export class Identities {
     this.syncing = (async () => {
       const rows = this.db
         .prepare(
-          `SELECT i.* FROM discord_room_identities i JOIN sessions s ON s.participant_id=i.participant_id WHERE s.expires_at>? AND (? IS NULL OR i.user_id=?) AND (? IS NOT NULL OR i.next_refresh_at<=?) ORDER BY i.next_refresh_at LIMIT 8`,
+          `SELECT i.*, r.revision AS binding_revision
+          FROM discord_room_identities i JOIN sessions s ON s.participant_id=i.participant_id
+          JOIN discord_identity_revisions r ON r.participant_id=i.participant_id
+          WHERE s.expires_at>? AND (? IS NULL OR i.user_id=?) AND (? IS NOT NULL OR i.next_refresh_at<=?)
+          ORDER BY i.next_refresh_at LIMIT 8`,
         )
         .all(
           this.now(),
@@ -147,17 +168,21 @@ export class Identities {
           user ?? null,
           user ?? null,
           this.now(),
-        ) as Identity[];
+        ) as RefreshingIdentity[];
       await Promise.allSettled(rows.map((row) => this.refreshBinding(row)));
     })().finally(() => {
       this.syncing = null;
     });
     return this.syncing;
   }
-  private async refreshBinding(row: Identity) {
+  private async refreshBinding(row: RefreshingIdentity) {
     const account = this.accounts.bySession(row.login_id);
     if (!account) {
-      this.unbind(row.participant_id);
+      this.db
+        .prepare(
+          "DELETE FROM discord_room_identities WHERE participant_id=? AND login_id=?",
+        )
+        .run(row.participant_id, row.login_id);
       return;
     }
     const display = await this.display(row.room_id, account);
@@ -173,7 +198,11 @@ export class Identities {
       : null;
     const updated = this.db
       .prepare(
-        "UPDATE discord_room_identities SET display_name=?,avatar_url=?,avatar_revision=?,next_refresh_at=? WHERE participant_id=? AND binding_revision=?",
+        `UPDATE discord_room_identities AS identity
+        SET display_name=?,avatar_url=?,avatar_revision=?,next_refresh_at=?
+        WHERE participant_id=? AND EXISTS (
+          SELECT 1 FROM discord_identity_revisions r WHERE r.participant_id=identity.participant_id AND r.revision=?
+        )`,
       )
       .run(
         display.displayName,

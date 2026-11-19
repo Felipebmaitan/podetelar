@@ -98,15 +98,21 @@ test("signed-in invitation joins use the room's guild nickname, prevent override
       ).json().profiles[0].avatarRevision,
       null,
     );
-    const delayed = Promise.withResolvers<void>();
-    memberGate = delayed.promise;
-    const refresh = identities.refresh(user);
-    await app.inject({
-      method: "DELETE",
-      url: `${base}/discord-identity`,
-      headers: { origin, cookie },
+    let releaseMember = () => {};
+    memberGate = new Promise<void>((resolve) => {
+      releaseMember = resolve;
     });
-    delayed.resolve();
+    const refresh = identities.refresh(user);
+    try {
+      const unlink = await app.inject({
+        method: "DELETE",
+        url: `${base}/discord-identity`,
+        headers: { origin, cookie },
+      });
+      assert.equal(unlink.statusCode, 200);
+    } finally {
+      releaseMember();
+    }
     await refresh;
     assert.equal(
       (

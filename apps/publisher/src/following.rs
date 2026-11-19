@@ -141,7 +141,7 @@ pub struct Follow {
     pub current: Option<Location>,
     pub independent: bool,
     pub paused: bool,
-    observed: Vec<String>,
+    observed: Option<Vec<String>>,
     pub selected: Option<String>,
 }
 #[derive(Debug, PartialEq, Eq)]
@@ -170,10 +170,14 @@ impl Follow {
         }
         let mut observed: Vec<_> = state.locations.iter().map(Location::key).collect();
         observed.sort();
-        if observed != self.observed {
+        if self
+            .observed
+            .as_ref()
+            .is_some_and(|previous| previous != &observed)
+        {
             self.paused = false;
-            self.observed = observed;
         }
+        self.observed = Some(observed);
     }
     pub fn tick(
         &mut self,
@@ -185,6 +189,7 @@ impl Follow {
     ) -> Option<Action> {
         if !signed_in {
             self.selected = None;
+            self.observed = None;
             return self.current.take().map(|_| Action::Leave);
         }
         self.observe(state);
@@ -260,6 +265,18 @@ mod tests {
         let mut follow = Follow::default();
         follow.invitation();
         follow.manual_leave(&state("A"));
+        assert_eq!(follow.tick(true, &state("A"), false, false, false), None);
+        assert_eq!(
+            follow.tick(true, &state("B"), false, false, false),
+            Some(Action::Join(location("B")))
+        );
+    }
+
+    #[test]
+    fn manual_leave_during_outage_waits_for_a_confirmed_channel_change() {
+        let mut follow = Follow::default();
+        follow.invitation();
+        follow.manual_leave(&State::default());
         assert_eq!(follow.tick(true, &state("A"), false, false, false), None);
         assert_eq!(
             follow.tick(true, &state("B"), false, false, false),

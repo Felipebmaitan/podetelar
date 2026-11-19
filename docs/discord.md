@@ -1,5 +1,8 @@
 # Discord room creation
 
+For opt-in Discord login and voice following, see [automatic rooms](discord-automatic-rooms.md)
+and [Discord accounts](discord-accounts.md).
+
 Discord HTTP interactions create rooms inside PodeTelar. An optional runtime
 bot Gateway connection also discovers voice membership across installed servers.
 `/stream` and `/telar` are global, server-installed commands. When voice discovery is available, they reuse the invoking user's voice-channel

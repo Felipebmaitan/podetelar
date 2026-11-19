@@ -12,6 +12,7 @@ import type { DiscordVoice } from "./discord-voice.js";
 import { channelParams } from "./channels.js";
 import type { Accounts } from "./accounts.js";
 import type { Identities } from "./identities.js";
+import type { VoiceFollowing } from "./voice-following.js";
 
 const COOKIE = "podetelar_admin";
 const TTL = 8 * 60 * 60 * 1000;
@@ -31,6 +32,7 @@ export async function adminRoutes(
   discordVoice?: DiscordVoice,
   accounts?: Accounts,
   identities?: Identities,
+  following?: VoiceFollowing,
 ) {
   const sessions = new Map<string, number>();
   const cookie = {
@@ -124,6 +126,34 @@ export async function adminRoutes(
           return reply.code(401).send({ error: "Sign in as administrator." });
       });
       scope.get("/api/admin/discord", async () => discordVoice.status());
+      if (following) {
+        scope.get("/api/admin/discord/following", async () =>
+          following.directory(),
+        );
+        scope.post("/api/admin/discord/following", async (request, reply) => {
+          const input = z
+            .object({
+              action: z.enum(["enable", "disable", "block", "allow"]),
+              userId: z
+                .string()
+                .regex(/^\d{17,20}$/)
+                .optional(),
+            })
+            .strict()
+            .safeParse(request.body);
+          if (
+            !input.success ||
+            (["block", "allow"].includes(input.data.action) &&
+              !input.data.userId)
+          )
+            return reply
+              .code(400)
+              .send({ error: "Choose an automatic-joining action." });
+          following.manage(input.data.action, input.data.userId);
+          await access.settle();
+          return following.directory();
+        });
+      }
       scope.get("/api/admin/discord/channels", async () => ({
         channels: rooms.channelDirectory(),
       }));
@@ -177,6 +207,8 @@ export async function adminRoutes(
           }
           if (!rooms.manageChannel(guildId, channelId, body.data.action))
             return reply.code(404).send({ error: "Channel unavailable." });
+          following?.reconcile();
+          await access.settle();
           return reply.code(204).send();
         },
       );

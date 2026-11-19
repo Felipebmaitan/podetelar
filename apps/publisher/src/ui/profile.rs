@@ -11,6 +11,58 @@ pub(super) fn avatar(ui: &mut egui::Ui, name: &str, size: f32, texture: Option<e
     }
 }
 impl PublisherUi {
+    pub(super) fn poll_following(&mut self, ctx: &egui::Context) {
+        if self.closing_since.is_some() {
+            return;
+        }
+        let key = self
+            .account_state
+            .account
+            .as_ref()
+            .map(|a| format!("{}:{}", self.account_state.server, a.session_id));
+        if self.following_key != key {
+            self.following_client
+                .set_credential(self.account_state.credential.clone());
+            self.following_key = key;
+        }
+        let state = self.controller.snapshot();
+        if self.following.current.is_some()
+            && !self.browser_invitation_open
+            && state.connection == "connected"
+            && let Some(access) = &state.profile_access
+        {
+            self.invitation = access.invitation_url.clone().unwrap_or_default();
+        }
+        let voice = self.following_client.state();
+        let busy = state.busy || Instant::now() < self.next_follow_attempt;
+        if let Some(action) = self.following.tick(
+            self.account_state.account.is_some(),
+            &voice,
+            matches!(state.connection, "connected" | "reconnecting"),
+            busy,
+            self.browser_invitation_open,
+        ) {
+            self.set_fullscreen(ctx, None);
+            self.focused = None;
+            self.textures.clear();
+            match action {
+                crate::following::Action::Leave => self.controller.send(Command::Leave),
+                crate::following::Action::Join(location) => {
+                    self.next_follow_attempt = Instant::now() + Duration::from_secs(10);
+                    self.controller.send(Command::Join {
+                        invitation: String::new(),
+                        name: self.name.clone(),
+                        route: Route::Auto,
+                        account: self.account_state.credential.clone(),
+                        voice: Some(crate::following::Target {
+                            server: self.account_state.server.clone(),
+                            location,
+                        }),
+                    });
+                }
+            }
+        }
+    }
     pub(super) fn discord_controls(&mut self, ui: &mut egui::Ui) {
         ui.label(skin::strong(tr("Discord connection"), 16.0));
         if let Some(account) = &self.account_state.account {
@@ -27,6 +79,37 @@ impl PublisherUi {
             ));
             if ui.button(tr("Disconnect Discord")).clicked() {
                 self.account_client.sign_out();
+            }
+            let voice = self.following_client.state();
+            if self.following.paused || self.following.independent {
+                ui.label(tr("Automatic joining is paused."));
+                if ui.button(tr("Resume automatic joining")).clicked() {
+                    self.following.resume();
+                }
+            } else if !voice.known {
+                ui.label(tr("Waiting for Discord voice information…"));
+            } else if !voice.enabled {
+                ui.label(tr("Automatic joining is disabled by the administrator."));
+            } else if voice.locations.is_empty() {
+                ui.label(tr("Waiting for your Discord voice channel…"));
+            } else {
+                for channel in &voice.locations {
+                    ui.label(format!("{} / {}", channel.guild_name, channel.channel_name));
+                    if voice.locations.len() > 1
+                        && ui
+                            .add_enabled(
+                                channel.enabled,
+                                egui::Button::new(format!(
+                                    "{} {}",
+                                    tr("Follow channel"),
+                                    channel.channel_name
+                                )),
+                            )
+                            .clicked()
+                    {
+                        self.following.selected = Some(channel.key());
+                    }
+                }
             }
         } else {
             ui.label(tr("Sign in with Discord or continue as a guest."));

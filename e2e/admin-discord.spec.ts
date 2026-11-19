@@ -22,4 +22,34 @@ test("Discord administration shows configuration status without exposing credent
   expect(JSON.stringify(await response.json())).not.toMatch(
     /botToken|publicKey|adminToken/,
   );
+  await expect(
+    page.getByRole("heading", { name: "Automatic joining", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", {
+      name: "Pause automatic joining everywhere",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Enable automatic joining", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Enable automatic joining", exact: true })
+    .click();
+  await page
+    .getByLabel("Discord user ID", { exact: true })
+    .fill("323456789012345678");
+  await page
+    .getByRole("button", { name: "Pause for user", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Allow automatic joining", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Allow automatic joining", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Allow automatic joining", exact: true }),
+  ).toHaveCount(0);
 });

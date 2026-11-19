@@ -10,6 +10,7 @@ import type { GuestProfiles } from "./profiles.js";
 import { z } from "zod";
 import type { DiscordVoice } from "./discord-voice.js";
 import { channelParams } from "./channels.js";
+import type { Accounts } from "./accounts.js";
 
 const COOKIE = "podetelar_admin";
 const TTL = 8 * 60 * 60 * 1000;
@@ -27,6 +28,7 @@ export async function adminRoutes(
   now = Date.now,
   profiles?: GuestProfiles,
   discordVoice?: DiscordVoice,
+  accounts?: Accounts,
 ) {
   const sessions = new Map<string, number>();
   const cookie = {
@@ -43,6 +45,71 @@ export async function adminRoutes(
       (sessions.get(hash(token)) ?? 0) > now(),
     );
   };
+  if (accounts)
+    await app.register(async (scope) => {
+      scope.addHook("preHandler", async (request, reply) => {
+        if (!authenticated(request))
+          return reply.code(401).send({ error: "Sign in as administrator." });
+      });
+      scope.get<{ Querystring: { offset?: string } }>(
+        "/api/admin/accounts",
+        async (request, reply) => {
+          const offset = request.query.offset ?? "0";
+          if (!/^(0|[1-9][0-9]{0,8})$/.test(offset))
+            return reply
+              .code(400)
+              .send({ error: "Invalid account directory offset." });
+          return accounts.directory(Number(offset));
+        },
+      );
+      scope.get<{ Params: { userId: string } }>(
+        "/api/admin/accounts/:userId/sessions",
+        async (request, reply) => {
+          if (!/^\d{17,20}$/.test(request.params.userId))
+            return reply.code(400).send({ error: "Invalid account." });
+          return { sessions: accounts.sessions(request.params.userId) };
+        },
+      );
+      scope.post<{ Params: { userId: string } }>(
+        "/api/admin/accounts/:userId",
+        async (request, reply) => {
+          const input = z
+            .object({
+              action: z.enum([
+                "disable",
+                "enable",
+                "revoke",
+                "delete",
+                "hide-avatar",
+                "show-avatar",
+                "revoke-session",
+              ]),
+              sessionId: z.uuid().optional(),
+            })
+            .strict()
+            .safeParse(request.body);
+          if (!/^\d{17,20}$/.test(request.params.userId) || !input.success)
+            return reply
+              .code(400)
+              .send({ error: "Choose a valid account action." });
+          const changed =
+            input.data.action === "revoke-session"
+              ? Boolean(
+                  input.data.sessionId &&
+                  accounts.revokeSession(
+                    request.params.userId,
+                    input.data.sessionId,
+                  ),
+                )
+              : accounts.manage(request.params.userId, input.data.action);
+          if (!changed)
+            return reply
+              .code(404)
+              .send({ error: "Account or login unavailable." });
+          return reply.code(204).send();
+        },
+      );
+    });
   if (discordVoice)
     await app.register(async (scope) => {
       scope.addHook("preHandler", async (request, reply) => {

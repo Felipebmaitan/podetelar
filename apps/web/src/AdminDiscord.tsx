@@ -3,6 +3,11 @@ import { ApiError, request } from "./api";
 import { AdminChannels } from "./AdminChannels";
 import { AdminAccounts } from "./AdminAccounts";
 import { AdminFollowing } from "./AdminFollowing";
+import { EmptyState, SectionHeader, StatusLabel } from "./discord-admin-ui";
+import "./discord-admin.css";
+
+const views = ["Overview", "Channels", "Accounts", "Auto-join"] as const;
+type View = (typeof views)[number];
 type Status = {
   configured: boolean;
   online: boolean;
@@ -16,6 +21,7 @@ type Status = {
   }[];
 };
 export function AdminDiscord({ onExpired }: { onExpired: () => void }) {
+  const [view, setView] = useState<View>("Overview");
   const [data, setData] = useState<Status | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -72,69 +78,139 @@ export function AdminDiscord({ onExpired }: { onExpired: () => void }) {
       if (!abort.signal.aborted) setBusy(false);
     }
   };
+  const guilds = data?.guilds ?? [];
+  const synchronized = guilds.filter((guild) => guild.available).length;
+  const channelCount = guilds.reduce(
+    (count, guild) => count + guild.channels.length,
+    0,
+  );
   return (
-    <main className="admin-main">
-      <div className="admin-heading">
-        <div>
-          <h1>Discord</h1>
-          <p>Bot connection and voice-channel discovery.</p>
-        </div>
-        <button
-          disabled={!data?.configured || busy}
-          onClick={() => void reconnect()}
-        >
-          Reconnect and resynchronize
-        </button>
-      </div>
-      {error && <p role="alert">{error}</p>}
-      {!data ? (
-        <p role="status">Loading Discord status…</p>
-      ) : (
-        <>
-          <p role="status">
-            {!data.configured
-              ? "Bot connection not configured"
-              : data.online
-                ? "Connected to Discord"
-                : "Discord voice state unavailable"}
-          </p>
-          {data.error && <p role="alert">{data.error}</p>}
-          {!data.configured && (
-            <p>
-              Configure the bot token in the server's private environment to
-              enable automatic voice discovery.
-            </p>
-          )}
-          {data.guilds.map((g) => (
-            <section className="admin-panel" key={g.id}>
-              <h2>{g.name}</h2>
-              <p>
-                {g.available ? "Synchronized" : "Unavailable"} ·{" "}
-                {g.channels.length} voice channels
+    <main className="admin-main discord-admin">
+      <h1>Discord</h1>
+      <nav className="discord-nav" aria-label="Discord administration">
+        {views.map((item) => (
+          <button
+            key={item}
+            aria-pressed={view === item}
+            onClick={() => setView(item)}
+          >
+            {item}
+          </button>
+        ))}
+      </nav>
+      {view === "Overview" && (
+        <section className="discord-view">
+          <article className="discord-surface discord-connection">
+            <SectionHeader title="Bot connection">
+              <button
+                disabled={!data?.configured || busy}
+                onClick={() => void reconnect()}
+              >
+                {busy ? "Reconnecting…" : "Reconnect and resynchronize"}
+              </button>
+            </SectionHeader>
+            <div role="status">
+              <StatusLabel
+                tone={
+                  data?.online
+                    ? "good"
+                    : data?.configured
+                      ? "attention"
+                      : "neutral"
+                }
+              >
+                {!data
+                  ? "Checking connection"
+                  : !data.configured
+                    ? "Bot connection not configured"
+                    : data.online
+                      ? "Connected to Discord"
+                      : "Discord voice state unavailable"}
+              </StatusLabel>
+            </div>
+            {error && (
+              <p className="discord-feedback" role="alert">
+                {error}
               </p>
-              <ul>
-                {g.channels.map((c) => (
-                  <li key={c.id}>
-                    {c.name} ·{" "}
-                    {g.available ? `${c.members} in voice` : "Presence unknown"}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-          <AdminChannels
-            observed={data.guilds.flatMap((g) =>
-              g.channels.map((c) => ({
-                guildId: g.id,
-                channelId: c.id,
-                name: `${g.name} / ${c.name}`,
-              })),
             )}
-            onExpired={onExpired}
-          />
-          <AdminAccounts onExpired={onExpired} />
-          <AdminFollowing onExpired={onExpired} />
-        </>
+            {data?.error && (
+              <p className="discord-feedback" role="alert">
+                {data.error}
+              </p>
+            )}
+            {data && !data.configured && (
+              <p className="discord-feedback">
+                Set the bot token in the server environment to enable voice
+                discovery.
+              </p>
+            )}
+            {data?.configured && (
+              <dl className="discord-metrics">
+                <div>
+                  <dt>Discord servers</dt>
+                  <dd>{guilds.length}</dd>
+                </div>
+                <div>
+                  <dt>Synchronized</dt>
+                  <dd>{synchronized}</dd>
+                </div>
+                <div>
+                  <dt>Voice channels</dt>
+                  <dd>{channelCount}</dd>
+                </div>
+              </dl>
+            )}
+          </article>
+          {data?.configured && (
+            <section>
+              <SectionHeader title="Discord servers" />
+              {guilds.length ? (
+                <div className="discord-records">
+                  {guilds.map((guild) => (
+                    <details className="discord-record" key={guild.id}>
+                      <summary>
+                        <span className="discord-record-name">
+                          <strong>{guild.name}</strong>
+                          <small>{guild.channels.length} voice channels</small>
+                        </span>
+                        <StatusLabel
+                          tone={guild.available ? "good" : "attention"}
+                        >
+                          {guild.available ? "Synchronized" : "Unavailable"}
+                        </StatusLabel>
+                      </summary>
+                      {guild.channels.length ? (
+                        <ul className="discord-list">
+                          {guild.channels.map((channel) => (
+                            <li key={channel.id}>
+                              <span>{channel.name}</span>
+                              <small>
+                                {guild.available
+                                  ? `${channel.members} in voice`
+                                  : "Presence unknown"}
+                              </small>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <EmptyState>No voice channels reported.</EmptyState>
+                      )}
+                    </details>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState>No Discord servers discovered yet.</EmptyState>
+              )}
+            </section>
+          )}
+        </section>
+      )}
+      {view === "Channels" && (
+        <AdminChannels guilds={guilds} onExpired={onExpired} />
+      )}
+      {view === "Accounts" && <AdminAccounts onExpired={onExpired} />}
+      {view === "Auto-join" && (
+        <AdminFollowing guilds={guilds} onExpired={onExpired} />
       )}
     </main>
   );

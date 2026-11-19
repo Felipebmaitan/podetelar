@@ -104,6 +104,7 @@ pub struct PublisherUi {
     profile_textures: HashMap<String, (usize, egui::TextureHandle)>,
     profile_started: Instant,
     profile_open: bool,
+    profile_page: profile::SettingsPage,
     profile_name: String,
     saved_guest_name: String,
     updates: crate::updates::Client,
@@ -215,6 +216,7 @@ impl PublisherUi {
             profile_textures: HashMap::new(),
             profile_started: Instant::now(),
             profile_open: false,
+            profile_page: profile::SettingsPage::Profile,
             profile_name: String::new(),
             saved_guest_name: crate::settings::guest_name(),
             updates: crate::updates::Client::new(),
@@ -283,45 +285,39 @@ impl PublisherUi {
         ui.horizontal(|ui| {
             brand_mark(ui);
             ui.label(skin::strong("PodeTelar", 20.0));
-            ui.separator();
-            let room_label = format!(
-                "{}  ·  {} {}",
-                if state.room_name.is_empty() {
-                    tr("Your private room")
-                } else if state.room_name == "Friends" {
-                    tr("Friends")
-                } else {
-                    &state.room_name
-                },
-                if connected {
-                    state.participants.len() + 1
-                } else {
-                    0
-                },
-                tr("in room")
-            );
-            let room_button = ui
-                .add_sized(
-                    [260.0, 32.0],
-                    egui::Button::new("")
-                        .left_text(skin::strong(&room_label, 14.0))
-                        .truncate()
-                        .frame(false),
-                )
-                .on_hover_text(&room_label);
-            egui::Popup::menu(&room_button)
-                .frame(skin::menu_frame())
-                .show(|ui| {
-                    if connected {
+            if connected {
+                ui.separator();
+                let room_label = format!(
+                    "{}  ·  {} {}",
+                    if state.room_name.is_empty() {
+                        tr("Your private room")
+                    } else if state.room_name == "Friends" {
+                        tr("Friends")
+                    } else {
+                        &state.room_name
+                    },
+                    state.participants.len() + 1,
+                    tr("in room")
+                );
+                let room_button = ui
+                    .add_sized(
+                        [260.0, 32.0],
+                        egui::Button::new("")
+                            .left_text(skin::strong(&room_label, 14.0))
+                            .truncate()
+                            .frame(false),
+                    )
+                    .on_hover_text(&room_label);
+                egui::Popup::menu(&room_button)
+                    .frame(skin::menu_frame())
+                    .show(|ui| {
                         ui.label(egui::RichText::new(tr("People in this room")).strong());
                         ui.label(format!("{} ({})", self.name, tr("you")));
                         for name in &state.participants {
                             ui.label(name);
                         }
-                    } else {
-                        ui.label(tr("Join a room to see its members."));
-                    }
-                });
+                    });
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 self.update_badge(ui);
                 let mut pt = crate::locale::portuguese();
@@ -461,10 +457,6 @@ impl PublisherUi {
     }
 
     fn join_form(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
-        if !self.browser_invitation_open {
-            self.discord_controls(ui);
-            ui.separator();
-        }
         if self.browser_invitation_open {
             ui.heading(tr("Join your room"));
             if let Ok(invitation) = url::Url::parse(&self.invitation) {
@@ -496,16 +488,8 @@ impl PublisherUi {
             ));
             return;
         }
-        ui.heading(tr("Join your room"));
-        ui.label(
-            egui::RichText::new(tr(
-                "Paste an invitation from a friend, then choose your name.",
-            ))
-            .color(MUTED),
-        );
-        ui.add_space(8.0);
         let invitation_label = ui.horizontal(|ui| {
-            let label = ui.label(tr("Room invitation"));
+            let label = ui.label(tr("Invitation link"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.add_enabled(!state.busy, egui::Button::new(if self.show_invitation { tr("Hide") } else { tr("Show") })).on_hover_text(tr("Reveal this private invitation only when it is safe to show your screen")).clicked() {
                     self.show_invitation = !self.show_invitation;
@@ -560,9 +544,6 @@ impl PublisherUi {
         {
             self.join();
         }
-        ui.small(tr(
-            "Open a room link from /stream or /telar in Discord, or paste an invitation. Nothing is restored from a previous launch.",
-        ));
     }
 
     fn selection(&self) -> SharingSelection {
@@ -900,11 +881,6 @@ impl PublisherUi {
     }
 
     fn sharing_menu(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
-        if !matches!(state.connection, "connected" | "reconnecting") {
-            self.clear_picker();
-            self.join_form(ui, state);
-            return;
-        }
         ui.horizontal(|ui| {
             ui.label(skin::strong(tr("Share your screen").to_uppercase(), 12.0));
         });
@@ -2303,18 +2279,18 @@ impl PublisherUi {
                     }
                 });
         }
-        egui::Panel::left("sharing-menu")
-            .default_size(252.0)
-            .min_size(236.0)
-            .max_size(300.0)
-            .resizable(true)
-            .frame(
-                egui::Frame::new()
-                    .fill(PANEL)
-                    .inner_margin(egui::Margin::symmetric(16, 10)),
-            )
-            .show(root, |ui| {
-                if matches!(state.connection, "connected" | "reconnecting") {
+        if matches!(state.connection, "connected" | "reconnecting") {
+            egui::Panel::left("sharing-menu")
+                .default_size(252.0)
+                .min_size(236.0)
+                .max_size(300.0)
+                .resizable(true)
+                .frame(
+                    egui::Frame::new()
+                        .fill(PANEL)
+                        .inner_margin(egui::Margin::symmetric(16, 10)),
+                )
+                .show(root, |ui| {
                     let pinned_actions = ui.available_height() < 600.0 || state.sharing;
                     let footer = 56.0
                         + if pinned_actions {
@@ -2440,15 +2416,16 @@ impl PublisherUi {
                         );
                         ui.separator();
                     });
-                } else {
-                    egui::ScrollArea::vertical()
-                        .id_salt("joining-scroll")
-                        .show(ui, |ui| self.sharing_menu(ui, &state));
-                }
-            });
+                });
+        }
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(CANVAS).inner_margin(egui::Margin::symmetric(14,14)))
             .show(root, |ui| {
+                if !matches!(state.connection, "connected" | "reconnecting") {
+                    self.clear_picker();
+                    self.join_landing(ui, &state);
+                    return;
+                }
                 ui.horizontal(|ui| {
                     ui.heading(if self.focused.is_some(){tr("Focused stream")}else{tr("Streams")});
                     ui.add_space(8.0);
@@ -3563,6 +3540,7 @@ mod tests {
             profile_textures: HashMap::new(),
             profile_started: Instant::now(),
             profile_open: false,
+            profile_page: profile::SettingsPage::Profile,
             profile_name: String::new(),
             saved_guest_name: String::new(),
             updates: crate::updates::Client::new(),

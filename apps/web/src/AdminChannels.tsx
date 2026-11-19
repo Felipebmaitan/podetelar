@@ -1,5 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError, request } from "./api";
+import {
+  ActionGroup,
+  EmptyState,
+  SectionHeader,
+  StatusLabel,
+} from "./discord-admin-ui";
+
+type Guild = {
+  id: string;
+  name: string;
+  available: boolean;
+  channels: { id: string; name: string }[];
+};
 type Channel = {
   guildId: string;
   channelId: string;
@@ -10,16 +23,19 @@ type Channel = {
   announcementError: number;
 };
 export function AdminChannels({
-  observed,
+  guilds,
   onExpired,
 }: {
-  observed: { guildId: string; channelId: string; name: string }[];
+  guilds: Guild[];
   onExpired: () => void;
 }) {
-  const [rows, setRows] = useState<Channel[]>([]),
+  const [rows, setRows] = useState<Channel[] | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [revision, setRevision] = useState(0),
+    [query, setQuery] = useState(""),
+    [open, setOpen] = useState<string | null>(null),
+    [feedback, setFeedback] = useState(""),
     [invitation, setInvitation] = useState("");
   const mutation = useRef<AbortController | null>(null);
   useEffect(() => () => mutation.current?.abort(), []);
@@ -63,6 +79,7 @@ export function AdminChannels({
     setBusy(true);
     setError("");
     setInvitation("");
+    setFeedback("");
     try {
       const result = await request<{ invitationUrl?: string }>(
         `/api/admin/discord/channels/${c.guildId}/${c.channelId}`,
@@ -76,10 +93,13 @@ export function AdminChannels({
       if (result?.invitationUrl) {
         try {
           await navigator.clipboard.writeText(result.invitationUrl);
+          if (!abort.signal.aborted) setFeedback("Invitation copied.");
         } catch {
-          setInvitation(result.invitationUrl);
+          if (!abort.signal.aborted) setInvitation(result.invitationUrl);
         }
       }
+      if (abort.signal.aborted) return;
+      if (action === "repair") setFeedback("Announcement repair requested.");
       setRevision((v) => v + 1);
     } catch (e) {
       if (!abort.signal.aborted) {
@@ -94,87 +114,201 @@ export function AdminChannels({
       if (!abort.signal.aborted) setBusy(false);
     }
   };
-  const combined = [
-    ...observed.map(
-      (c) =>
-        rows.find(
-          (r) => r.guildId === c.guildId && r.channelId === c.channelId,
-        ) ?? {
-          ...c,
-          roomId: null,
-          guestEnabled: 1,
-          autoEnabled: 1,
-          announcementError: 0,
-        },
-    ),
-    ...rows.filter(
-      (r) =>
-        !observed.some(
-          (c) => c.guildId === r.guildId && c.channelId === r.channelId,
-        ),
-    ),
-  ];
+  const key = (c: { guildId: string; channelId: string }) =>
+    `${c.guildId}:${c.channelId}`;
+  const channels = new Map(
+    (rows ?? []).map((channel) => [key(channel), channel]),
+  );
+  const knownGuilds = new Map(guilds.map((guild) => [guild.id, guild]));
+  for (const guild of guilds) {
+    for (const channel of guild.channels) {
+      const ids = { guildId: guild.id, channelId: channel.id };
+      const saved = channels.get(key(ids));
+      channels.set(
+        key(ids),
+        saved
+          ? { ...saved, name: channel.name }
+          : {
+              ...ids,
+              name: channel.name,
+              roomId: null,
+              guestEnabled: 1,
+              autoEnabled: 1,
+              announcementError: 0,
+            },
+      );
+    }
+  }
+  const groups = new Map<string, Channel[]>();
+  const filter = query.trim().toLocaleLowerCase();
+  for (const channel of channels.values()) {
+    const guild = knownGuilds.get(channel.guildId);
+    if (
+      !`${guild?.name ?? channel.guildId} ${channel.name}`
+        .toLocaleLowerCase()
+        .includes(filter)
+    )
+      continue;
+    const group = groups.get(channel.guildId) ?? [];
+    group.push(channel);
+    groups.set(channel.guildId, group);
+  }
   return (
-    <section>
-      <h2>Channel rooms and invitations</h2>
-      {error && <p role="alert">{error}</p>}
-      {invitation && (
-        <label>
-          Copy channel invitation
+    <section className="discord-view">
+      <SectionHeader
+        title="Channel rooms"
+        description="Manage invitations and automatic joining for each voice channel."
+      >
+        {channels.size > 0 && (
           <input
-            readOnly
-            value={invitation}
-            onFocus={(e) => e.currentTarget.select()}
+            className="discord-search"
+            type="search"
+            aria-label="Find a voice channel"
+            placeholder="Search channels…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
           />
-        </label>
+        )}
+      </SectionHeader>
+      {error && (
+        <p className="discord-feedback" role="alert">
+          {error}
+        </p>
       )}
-      {combined.map((c) => (
-        <article className="admin-panel" key={`${c.guildId}:${c.channelId}`}>
-          <h3>{c.name}</h3>
-          <p>
-            {c.roomId ? "Room open" : "No current room"} ·{" "}
-            {c.autoEnabled
-              ? "Automatic joins enabled"
-              : "Automatic joins paused"}{" "}
-            ·{" "}
-            {c.guestEnabled
-              ? "Guest invitation enabled"
-              : "Guest invitation disabled"}
-          </p>
-          <div className="admin-profile-actions">
-            <button disabled={busy} onClick={() => void act(c, "invitation")}>
-              Copy permanent invitation
-            </button>
-            <button disabled={busy} onClick={() => void act(c, "rotate")}>
-              Replace invitation
-            </button>
-            <button
-              disabled={busy}
-              onClick={() => void act(c, c.guestEnabled ? "disable" : "enable")}
-            >
-              {c.guestEnabled
-                ? "Disable guest invitation"
-                : "Enable guest invitation"}
-            </button>
-            <button
-              disabled={busy}
-              onClick={() => void act(c, c.autoEnabled ? "pause" : "resume")}
-            >
-              {c.autoEnabled
-                ? "Pause automatic joins"
-                : "Resume automatic joins"}
-            </button>
-            <button disabled={busy} onClick={() => void act(c, "repair")}>
-              Repair announcement
-            </button>
-          </div>
-          {Boolean(c.announcementError) && (
-            <p role="alert">
-              Announcement unavailable. Check bot message permissions.
-            </p>
-          )}
-        </article>
-      ))}
+      {rows === null && !error && (
+        <EmptyState>Loading channel rooms…</EmptyState>
+      )}
+      {rows !== null && !groups.size && (
+        <EmptyState>
+          {filter
+            ? "No channels match your search."
+            : "No voice channels discovered yet."}
+        </EmptyState>
+      )}
+      {rows !== null &&
+        Array.from(groups, ([guildId, group]) => (
+          <section key={guildId} className="discord-channel-group">
+            <h3>{knownGuilds.get(guildId)?.name ?? `Server ${guildId}`}</h3>
+            <div className="discord-records">
+              {group
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((c) => {
+                  const id = key(c),
+                    expanded = open === id;
+                  return (
+                    <article className="discord-record" key={id}>
+                      <button
+                        className="discord-record-toggle"
+                        aria-expanded={expanded}
+                        disabled={busy}
+                        onClick={() => {
+                          setOpen(expanded ? null : id);
+                          setInvitation("");
+                          setFeedback("");
+                          setError("");
+                        }}
+                      >
+                        <span className="discord-record-name">
+                          <strong>{c.name}</strong>
+                        </span>
+                        <StatusLabel tone={c.roomId ? "good" : "neutral"}>
+                          {c.roomId ? "Room open" : "Idle"}
+                        </StatusLabel>
+                      </button>
+                      {expanded && (
+                        <div className="discord-record-body">
+                          <ActionGroup
+                            title="Guest invitation"
+                            description={
+                              c.guestEnabled
+                                ? "Anyone with the link can use it to join independently."
+                                : "Guest invitation disabled."
+                            }
+                          >
+                            <button
+                              className="discord-primary"
+                              disabled={busy || !c.guestEnabled}
+                              onClick={() => void act(c, "invitation")}
+                            >
+                              Copy invitation
+                            </button>
+                            <button
+                              disabled={busy}
+                              onClick={() => void act(c, "rotate")}
+                            >
+                              {c.guestEnabled
+                                ? "Replace link"
+                                : "Replace and enable link"}
+                            </button>
+                            <button
+                              disabled={busy}
+                              onClick={() =>
+                                void act(
+                                  c,
+                                  c.guestEnabled ? "disable" : "enable",
+                                )
+                              }
+                            >
+                              {c.guestEnabled ? "Disable link" : "Enable link"}
+                            </button>
+                          </ActionGroup>
+                          {invitation && (
+                            <label className="discord-invite">
+                              Select and copy the invitation
+                              <input
+                                readOnly
+                                value={invitation}
+                                onFocus={(e) => e.currentTarget.select()}
+                              />
+                            </label>
+                          )}
+                          <ActionGroup
+                            title="Automatic joining"
+                            description={
+                              c.autoEnabled
+                                ? "Signed-in members can follow this channel."
+                                : "Automatic joining paused for this channel."
+                            }
+                          >
+                            <button
+                              disabled={busy}
+                              onClick={() =>
+                                void act(c, c.autoEnabled ? "pause" : "resume")
+                              }
+                            >
+                              {c.autoEnabled
+                                ? "Pause automatic joins"
+                                : "Resume automatic joins"}
+                            </button>
+                          </ActionGroup>
+                          <ActionGroup
+                            title="Discord announcement"
+                            description={
+                              c.announcementError
+                                ? "Announcement unavailable. Check the bot’s message permissions."
+                                : undefined
+                            }
+                          >
+                            <button
+                              disabled={busy}
+                              onClick={() => void act(c, "repair")}
+                            >
+                              Repair announcement
+                            </button>
+                          </ActionGroup>
+                          {feedback && (
+                            <p className="discord-feedback" role="status">
+                              {feedback}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
+            </div>
+          </section>
+        ))}
     </section>
   );
 }

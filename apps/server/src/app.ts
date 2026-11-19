@@ -37,6 +37,7 @@ import { RoomLifecycle } from "./room-lifecycle.js";
 import { discordRoutes } from "./discord.js";
 import { GuestProfiles } from "./profiles.js";
 import { guestProfileRoutes } from "./profile-routes.js";
+import { DiscordVoice } from "./discord-voice.js";
 
 const COOKIE = "podetelar_session";
 const MEDIA_TOKEN_TTL_SECONDS = 120;
@@ -48,6 +49,7 @@ export async function buildApp(
     logger?: boolean;
     mediaDirectory?: MediaDirectory;
     usagePolling?: boolean;
+    discordVoice?: DiscordVoice;
   } = {},
 ) {
   const publisher = await loadPublisher(config.publisherDirectory);
@@ -59,6 +61,8 @@ export async function buildApp(
   });
   const rooms = new Rooms(config.databasePath, options.now, config.adminToken);
   const profiles = new GuestProfiles(config.databasePath, options.now);
+  const discordVoice = options.discordVoice ?? new DiscordVoice(config.discord);
+  if (!options.discordVoice) void discordVoice.start();
   const usage = new Usage(
     config.databasePath,
     config.usageMetricsUrl ?? "http://127.0.0.1:6789/metrics",
@@ -83,6 +87,7 @@ export async function buildApp(
   }, ACCESS_SWEEP_MS);
   previewSweep.unref();
   app.addHook("preClose", async () => {
+    await discordVoice.close();
     clearInterval(lifecycleSweep);
     clearInterval(previewSweep);
     signaling.close();
@@ -192,6 +197,7 @@ export async function buildApp(
     lifecycle,
     options.now,
     profiles,
+    discordVoice,
   );
   await guestProfileRoutes(app, rooms, profiles, directory);
   appLinkRoutes(app, config, rooms, directory, options.now);

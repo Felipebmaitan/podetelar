@@ -8,6 +8,7 @@ import type { Access } from "./access.js";
 import type { RoomLifecycle } from "./room-lifecycle.js";
 import type { GuestProfiles } from "./profiles.js";
 import { z } from "zod";
+import type { DiscordVoice } from "./discord-voice.js";
 
 const COOKIE = "podetelar_admin";
 const TTL = 8 * 60 * 60 * 1000;
@@ -24,6 +25,7 @@ export async function adminRoutes(
   lifecycle: RoomLifecycle,
   now = Date.now,
   profiles?: GuestProfiles,
+  discordVoice?: DiscordVoice,
 ) {
   const sessions = new Map<string, number>();
   const cookie = {
@@ -40,6 +42,22 @@ export async function adminRoutes(
       (sessions.get(hash(token)) ?? 0) > now(),
     );
   };
+  if (discordVoice)
+    await app.register(async (scope) => {
+      scope.addHook("preHandler", async (request, reply) => {
+        if (!authenticated(request))
+          return reply.code(401).send({ error: "Sign in as administrator." });
+      });
+      scope.get("/api/admin/discord", async () => discordVoice.status());
+      scope.post(
+        "/api/admin/discord/reconnect",
+        { config: { rateLimit: { max: 2, timeWindow: "1 minute" } } },
+        async () => {
+          void discordVoice.reconnect();
+          return { reconnecting: true };
+        },
+      );
+    });
   if (profiles) {
     await app.register(async (scope) => {
       scope.addHook("preHandler", async (request, reply) => {

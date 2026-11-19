@@ -11,6 +11,7 @@ import { z } from "zod";
 import type { DiscordVoice } from "./discord-voice.js";
 import { channelParams } from "./channels.js";
 import type { Accounts } from "./accounts.js";
+import type { Identities } from "./identities.js";
 
 const COOKIE = "podetelar_admin";
 const TTL = 8 * 60 * 60 * 1000;
@@ -29,6 +30,7 @@ export async function adminRoutes(
   profiles?: GuestProfiles,
   discordVoice?: DiscordVoice,
   accounts?: Accounts,
+  identities?: Identities,
 ) {
   const sessions = new Map<string, number>();
   const cookie = {
@@ -83,6 +85,7 @@ export async function adminRoutes(
                 "hide-avatar",
                 "show-avatar",
                 "revoke-session",
+                "refresh-profile",
               ]),
               sessionId: z.uuid().optional(),
             })
@@ -92,6 +95,10 @@ export async function adminRoutes(
             return reply
               .code(400)
               .send({ error: "Choose a valid account action." });
+          if (input.data.action === "refresh-profile") {
+            await identities?.refresh(request.params.userId);
+            return reply.code(204).send();
+          }
           const changed =
             input.data.action === "revoke-session"
               ? Boolean(

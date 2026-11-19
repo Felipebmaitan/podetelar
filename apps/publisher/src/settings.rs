@@ -11,6 +11,27 @@ fn guest_path() -> Option<PathBuf> {
     root.is_absolute()
         .then(|| root.join("PodeTelar").join("guest-name.json"))
 }
+pub fn login_server() -> Option<String> {
+    let path = guest_path()?.with_file_name("login-server.json");
+    if std::fs::metadata(&path).ok()?.len() > 4096 {
+        return None;
+    }
+    let server: String = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    crate::admission::valid_server(&server).then_some(server)
+}
+pub fn save_login_server(server: &str) -> std::io::Result<()> {
+    if !crate::admission::valid_server(server) {
+        return Err(std::io::Error::other("Invalid server"));
+    }
+    if let Some(path) = guest_path() {
+        std::fs::create_dir_all(path.parent().expect("profile directory"))?;
+        std::fs::write(
+            path.with_file_name("login-server.json"),
+            serde_json::to_vec(server)?,
+        )?;
+    }
+    Ok(())
+}
 
 pub fn valid_name(name: &str) -> bool {
     let name = name.trim();

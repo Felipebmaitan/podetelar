@@ -205,6 +205,7 @@ pub enum Command {
         invitation: String,
         name: String,
         route: connection::Route,
+        account: Option<crate::account::Credential>,
     },
     Start {
         source_id: String,
@@ -955,18 +956,19 @@ struct Session {
 impl Session {
     async fn join(
         invitation: &str,
-        name: &str,
+        identity: (&str, Option<crate::account::Credential>),
         route: connection::Route,
         snapshot: Arc<Mutex<Snapshot>>,
         cancellation: Cancellation,
         recovery: Arc<AtomicU64>,
         ticket: JoinTicket,
     ) -> Result<Option<Self>> {
+        let (name, account) = identity;
         let invitation = invitation.to_owned();
         let name = name.to_owned();
         let Some(admission) = ticket
             .run(
-                async move { Admission::join(&invitation, &name).await },
+                async move { Admission::join_with_account(&invitation, &name, account).await },
                 |admission| async move {
                     admission.leave().await;
                 },
@@ -1205,6 +1207,7 @@ async fn worker(
                     invitation,
                     name,
                     route,
+                    account,
                 } => {
                     if let Some(job) = probe.take() {
                         job.abort();
@@ -1231,7 +1234,7 @@ async fn worker(
                     });
                     let joined = Session::join(
                         &invitation,
-                        &name,
+                        (&name, account),
                         route,
                         snapshot.clone(),
                         cancellation.clone(),

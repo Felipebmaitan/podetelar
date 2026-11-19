@@ -27,6 +27,7 @@ pub struct Admission {
     room_id: String,
     pub room_name: String,
     pub participant_id: String,
+    pub public_origin: String,
 }
 struct ProbeLease {
     client: Client,
@@ -170,6 +171,17 @@ pub fn media_diagnostic(error: impl std::fmt::Display) -> String {
 }
 
 impl Admission {
+    #[cfg(test)]
+    pub(crate) fn profile_test(origin: &str) -> Self {
+        Self {
+            client: Client::new(),
+            origin: Url::parse(origin).unwrap(),
+            room_id: "test".into(),
+            room_name: "test".into(),
+            participant_id: "test".into(),
+            public_origin: origin.into(),
+        }
+    }
     pub async fn stream_diagnostic(
         &self,
         method: reqwest::Method,
@@ -377,6 +389,13 @@ impl Admission {
         measured
     }
     pub async fn join(invitation: &str, display_name: &str) -> Result<Self> {
+        Self::join_with_account(invitation, display_name, None).await
+    }
+    pub async fn join_with_account(
+        invitation: &str,
+        display_name: &str,
+        account: Option<crate::account::Credential>,
+    ) -> Result<Self> {
         let mut invitation = Invitation::parse(invitation)?;
         // Scope to the invitation's public origin, before direct-server discovery,
         // so changing the direct transport hostname does not split device history.
@@ -443,7 +462,7 @@ impl Admission {
             invitation.room_id = room.room_id;
             invitation.secret = room.secret;
         }
-        let response = client
+        let mut join_request = client
             .post(
                 invitation
                     .origin
@@ -453,6 +472,13 @@ impl Admission {
             .json(
                 &serde_json::json!({"invitation": invitation.secret, "displayName": display_name, "deviceId": device_id}),
             )
+            ;
+        if let Some(credential) = account
+            && let Some(token) = credential.for_server(&scope)
+        {
+            join_request = join_request.bearer_auth(token);
+        }
+        let response = join_request
             .send()
             .await
             .map_err(|_| anyhow::anyhow!("Could not reach the room server."))?;
@@ -463,6 +489,7 @@ impl Admission {
             room_id: invitation.room_id,
             room_name: session.room.name,
             participant_id: session.participant.id,
+            public_origin: scope,
         })
     }
 
@@ -581,6 +608,21 @@ impl Admission {
     pub async fn edit_profile(&self, edit: crate::profile::Edit) -> Result<()> {
         let base = format!("api/rooms/{}/profile", self.room_id);
         let request = match edit {
+            crate::profile::Edit::Discord(Some(credential)) => {
+                let Some(token) = credential.for_server(&self.public_origin) else {
+                    return Ok(());
+                };
+                self.client
+                    .post(
+                        self.origin
+                            .join(&(base.replace("/profile", "/discord-identity")))?,
+                    )
+                    .bearer_auth(token)
+            }
+            crate::profile::Edit::Discord(None) => self.client.delete(
+                self.origin
+                    .join(&(base.replace("/profile", "/discord-identity")))?,
+            ),
             crate::profile::Edit::Name(name) => self
                 .client
                 .patch(self.origin.join(&base)?)

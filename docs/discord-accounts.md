@@ -34,3 +34,29 @@ expiry, hashed credential persistence, administrator isolation and revocation. T
 use synthetic Discord responses. Actual consent/callback behavior must still be
 checked with the deployed Discord application and a real user; no live OAuth
 qualification is implied by those tests.
+
+## Desktop identity
+
+Startup offers Discord sign-in alongside guest invitation entry. It defaults to
+`https://stream.maitan.me`; settings can select another trusted HTTPS backend
+(loopback HTTP is allowed for development). The native worker opens the system
+browser and polls with a random native-held proof. Only the PodeTelar credential
+is remembered in Windows Credential Manager or macOS Keychain. The backend origin
+preference contains no token. Invitations to another backend use a guest identity
+and never receive that credential. Disconnect revokes the current server login
+and removes the OS entry, reporting storage/network failures.
+
+The settings gear or your own sidebar name opens guest and Discord settings.
+Guests retain their saved nickname and uploaded avatar when connecting Discord.
+In channel-associated rooms the bot resolves the member's room guild nickname
+and guild avatar, falling back to their Discord global profile if unavailable.
+Names refresh at most once per minute. Authenticated names and pictures cannot be
+overridden through the cosmetic guest endpoints. Signing out restores guest editing.
+The dashboard can force a room-profile refresh and hide Discord avatars as well
+as manage logins and accounts. Discord avatars use fixed CDN paths, bounded
+download size and concurrency, and an expiring memory cache.
+
+Windows OS credential round-trip tests exercise actual credential storage.
+Synthetic API tests verify guild nickname selection, read-only identity and avatar
+moderation. Live Discord consent, bot member permissions and macOS Keychain still
+require platform checks.

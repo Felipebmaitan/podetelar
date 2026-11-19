@@ -121,6 +121,12 @@ export function AdminAccounts({ onExpired }: { onExpired: () => void }) {
                 </button>
                 <button
                   disabled={busy}
+                  onClick={() => void act(a.userId, "refresh-profile")}
+                >
+                  Refresh room profiles
+                </button>
+                <button
+                  disabled={busy}
                   onClick={() => void act(a.userId, "revoke")}
                 >
                   Revoke all logins

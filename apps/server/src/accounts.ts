@@ -180,6 +180,42 @@ export class Accounts {
       .prepare("DELETE FROM discord_logins WHERE token_hash=? AND issuer=?")
       .run(hash(token), this.origin);
   }
+  bySession(id: string): Account | null {
+    const row = this.db
+      .prepare(
+        `SELECT a.*,l.id AS session_id,l.expires_at FROM discord_logins l JOIN discord_accounts a ON a.user_id=l.user_id WHERE l.id=? AND l.issuer=? AND l.expires_at>? AND a.disabled=0`,
+      )
+      .get(id, this.origin, this.now()) as
+      | {
+          user_id: string;
+          display_name: string;
+          avatar_hash: string | null;
+          avatar_hidden: number;
+          session_id: string;
+          expires_at: number;
+        }
+      | undefined;
+    if (!row) return null;
+    return {
+      userId: row.user_id,
+      displayName: row.display_name,
+      avatarUrl:
+        row.avatar_hash && !row.avatar_hidden
+          ? `https://cdn.discordapp.com/avatars/${row.user_id}/${row.avatar_hash}.${row.avatar_hash.startsWith("a_") ? "gif" : "png"}?size=128`
+          : null,
+      sessionId: row.session_id,
+      expiresAt: row.expires_at,
+    };
+  }
+  avatarAllowed(user: string) {
+    return Boolean(
+      this.db
+        .prepare(
+          "SELECT 1 FROM discord_accounts WHERE user_id=? AND disabled=0 AND avatar_hidden=0",
+        )
+        .get(user),
+    );
+  }
   sessions(user: string) {
     return this.db
       .prepare(

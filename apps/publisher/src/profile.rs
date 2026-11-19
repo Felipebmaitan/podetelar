@@ -19,6 +19,8 @@ use std::{
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Participant {
+    #[serde(default)]
+    pub discord: bool,
     pub participant_id: String,
     pub display_name: String,
     pub avatar_revision: Option<String>,
@@ -79,13 +81,23 @@ pub fn decode(bytes: &[u8]) -> Result<Animation> {
 }
 
 pub enum Edit {
+    Discord(Option<crate::account::Credential>),
     Name(String),
     Picture(Vec<u8>),
     Remove,
 }
+type PendingIdentity = (
+    Option<crate::account::Credential>,
+    Option<String>,
+    Instant,
+    u32,
+    u64,
+);
+
 enum Command {
     Edit(Edit),
     Choose,
+    Connect(Option<crate::account::Credential>, Option<String>, u64),
 }
 #[derive(Clone, Default)]
 pub struct State {
@@ -93,9 +105,13 @@ pub struct State {
     pub avatars: HashMap<String, Arc<Animation>>,
     pub error: String,
     pub busy: bool,
+    pub identity_synced: bool,
+    pub identity_generation: u64,
+    pub acknowledged_generation: Option<u64>,
 }
 pub struct Client {
     pub participant_id: String,
+    pub server: String,
     state: Arc<Mutex<State>>,
     commands: mpsc::Sender<Command>,
     stop: Arc<AtomicBool>,
@@ -104,6 +120,7 @@ pub struct Client {
 impl Client {
     pub fn new(admission: Admission) -> Self {
         let participant_id = admission.participant_id.clone();
+        let server = admission.public_origin.clone();
         let state = Arc::new(Mutex::new(State::default()));
         let stop = Arc::new(AtomicBool::new(false));
         let (commands, receiver) = mpsc::channel();
@@ -121,6 +138,8 @@ impl Client {
                 runtime.block_on(async move {
                     let mut next = Instant::now();
                     let mut avatars: HashMap<String, Arc<Animation>> = HashMap::new();
+                    let mut identity_ack = None;
+                    let mut identity: Option<PendingIdentity> = None;
                     while !stopped.load(Ordering::Acquire) {
                         if let Ok(command) = receiver.try_recv() {
                             if let Ok(mut state) = worker_state.lock() {
@@ -129,6 +148,12 @@ impl Client {
                             }
                             let edit = match command {
                                 Command::Edit(edit) => Ok(Some(edit)),
+                                Command::Connect(credential, guest, generation) => {
+                                    identity =
+                                        Some((credential, guest, Instant::now(), 0, generation));
+                                    identity_ack = None;
+                                    Ok(None)
+                                }
                                 Command::Choose => {
                                     choose_picture().map(|bytes| bytes.map(Edit::Picture))
                                 }
@@ -146,6 +171,40 @@ impl Client {
                             }
                             next = Instant::now();
                         }
+                        if let Some((credential, guest, due, attempt, generation)) = &mut identity
+                            && Instant::now() >= *due
+                        {
+                            let result = async {
+                                admission
+                                    .edit_profile(Edit::Discord(credential.clone()))
+                                    .await?;
+                                if credential.is_none()
+                                    && let Some(name) = guest
+                                {
+                                    admission.edit_profile(Edit::Name(name.clone())).await?;
+                                }
+                                Ok::<_, anyhow::Error>(())
+                            }
+                            .await;
+                            match result {
+                                Ok(()) => {
+                                    identity_ack = Some(*generation);
+                                    identity = None;
+                                    if let Ok(mut state) = worker_state.lock() {
+                                        state.error.clear();
+                                    }
+                                }
+                                Err(error) => {
+                                    *attempt = attempt.saturating_add(1);
+                                    *due = Instant::now()
+                                        + Duration::from_secs((1u64 << (*attempt).min(5)).min(30));
+                                    if let Ok(mut state) = worker_state.lock() {
+                                        state.error = error.to_string();
+                                    }
+                                }
+                            }
+                            next = Instant::now();
+                        }
                         if Instant::now() >= next {
                             if let Ok(profiles) = admission.profiles().await {
                                 avatars.retain(|revision, _| {
@@ -155,6 +214,7 @@ impl Client {
                                 });
                                 // Publish removals before fetching new pictures, including administrator deletion.
                                 if let Ok(mut state) = worker_state.lock() {
+                                    state.acknowledged_generation = identity_ack;
                                     state.profiles = profiles.clone();
                                     state.avatars = avatars.clone();
                                 }
@@ -187,6 +247,7 @@ impl Client {
             .expect("profile worker");
         Self {
             participant_id,
+            server,
             state,
             commands,
             stop,
@@ -194,11 +255,32 @@ impl Client {
         }
     }
     pub fn state(&self) -> State {
-        self.state.lock().map(|s| s.clone()).unwrap_or_default()
+        self.state
+            .lock()
+            .map(|s| {
+                let mut state = s.clone();
+                state.identity_synced =
+                    state.acknowledged_generation == Some(state.identity_generation);
+                state
+            })
+            .unwrap_or_default()
     }
     pub fn name(&self, name: String) {
         let _ = self.commands.send(Command::Edit(Edit::Name(name)));
     }
+    pub fn connect(&self, credential: Option<crate::account::Credential>, guest: Option<String>) {
+        let generation = if let Ok(mut state) = self.state.lock() {
+            state.identity_generation = state.identity_generation.wrapping_add(1);
+            state.identity_synced = false;
+            state.identity_generation
+        } else {
+            return;
+        };
+        let _ = self
+            .commands
+            .send(Command::Connect(credential, guest, generation));
+    }
+
     pub fn choose(&self) {
         let _ = self.commands.send(Command::Choose);
     }
@@ -287,6 +369,105 @@ pub async fn qualify(request: Qualification) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn stale_identity_response_cannot_acknowledge_a_new_transition() {
+        let (commands, _receiver) = mpsc::channel();
+        let state = Arc::new(Mutex::new(State {
+            acknowledged_generation: Some(0),
+            ..Default::default()
+        }));
+        let client = Client {
+            participant_id: "test".into(),
+            server: "https://test.invalid".into(),
+            state: state.clone(),
+            commands,
+            stop: Arc::new(AtomicBool::new(false)),
+            worker: None,
+        };
+        assert!(client.state().identity_synced);
+        client.connect(None, Some("Remembered guest".into()));
+        // An earlier HTTP operation finishes after the new command was queued.
+        state.lock().unwrap().acknowledged_generation = Some(0);
+        assert!(!client.state().identity_synced);
+        state.lock().unwrap().acknowledged_generation = Some(1);
+        assert!(client.state().identity_synced);
+    }
+    #[test]
+    fn identity_detach_retries_and_acknowledges_only_the_restored_profile() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::atomic::AtomicUsize;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let stopped = Arc::new(AtomicBool::new(false));
+        let done = stopped.clone();
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let calls = attempts.clone();
+        let server = std::thread::spawn(move || {
+            let mut restored = false;
+            while !done.load(Ordering::Acquire) {
+                let Ok((mut socket, _)) = listener.accept() else {
+                    std::thread::sleep(Duration::from_millis(10));
+                    continue;
+                };
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut bytes = [0u8; 8192];
+                let size = socket.read(&mut bytes).unwrap();
+                let request = String::from_utf8_lossy(&bytes[..size]);
+                let (status, body) = if request.starts_with("DELETE ") {
+                    if calls.fetch_add(1, Ordering::AcqRel) == 0 {
+                        ("503 Service Unavailable", "{}".into())
+                    } else {
+                        ("204 No Content", String::new())
+                    }
+                } else if request.starts_with("PATCH ") {
+                    restored = true;
+                    ("200 OK", "{}".into())
+                } else {
+                    (
+                        "200 OK",
+                        format!(
+                            r#"{{"profiles":[{{"participantId":"test","displayName":"{}","avatarRevision":null,"uploadsBlocked":false,"discord":false}}]}}"#,
+                            if restored {
+                                "Remembered guest"
+                            } else {
+                                "Old Discord name"
+                            }
+                        ),
+                    )
+                };
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = socket.write_all(response.as_bytes());
+            }
+        });
+        let client = Client::new(Admission::profile_test(&origin));
+        client.connect(None, Some("Remembered guest".into()));
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let result = loop {
+            let state = client.state();
+            if state.identity_synced {
+                break state
+                    .profiles
+                    .first()
+                    .is_some_and(|p| p.display_name == "Remembered guest");
+            }
+            if Instant::now() > deadline {
+                break false;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        drop(client);
+        stopped.store(true, Ordering::Release);
+        server.join().unwrap();
+        assert!(result);
+        assert!(attempts.load(Ordering::Acquire) >= 2);
+    }
     #[test]
     fn animated_gif_decodes_frames_with_timing() {
         let mut bytes = Vec::new();

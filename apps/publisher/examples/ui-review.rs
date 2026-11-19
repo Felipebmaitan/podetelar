@@ -2,6 +2,8 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 #![allow(dead_code)]
 
+#[path = "../src/account.rs"]
+mod account;
 #[path = "../src/activation.rs"]
 mod activation;
 #[path = "../../activation_protocol.rs"]

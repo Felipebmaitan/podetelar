@@ -15,6 +15,7 @@ export function copyEncryptionSourceNotices(root, notices) {
     "src/room/mod.rs",
     "src/room/e2ee/manager.rs",
     "src/room/publication/remote.rs",
+    "src/room/publication/mod.rs",
     "src/room/track/local_video_track.rs",
     "src/room/track/remote_audio_track.rs",
     "src/room/track/remote_video_track.rs",

@@ -79,6 +79,41 @@ const protectedTrailerChanges = [
 ];
 const protectedReceiverTrailerChanges = [
   [
+    "    data_packet_cryptor: Option<DataPacketCryptor>,",
+    "    remote_owners: HashMap<(ParticipantIdentity, TrackSid), std::sync::Weak<crate::room::publication::TrackPublicationInner>>,\n    data_packet_cryptor: Option<DataPacketCryptor>,",
+  ],
+  [
+    "                frame_cryptors: HashMap::new(),",
+    "                frame_cryptors: HashMap::new(),\n                remote_owners: HashMap::new(),",
+  ],
+  [
+    "        inner.frame_cryptors.clear();",
+    "        inner.frame_cryptors.clear();\n        inner.remote_owners.clear();",
+  ],
+  [
+    "        participant: RemoteParticipant,\n    ) {\n        let identity = participant.identity();",
+    "        identity: ParticipantIdentity,\n    ) {",
+  ],
+  [
+    "        inner.frame_cryptors.insert((identity, publication.sid()), frame_cryptor.clone());\n    }\n\n    pub(crate) fn on_local_track_published(",
+    "        inner.remote_owners.insert((identity.clone(), publication.sid()), publication.weak_inner());\n        inner.frame_cryptors.insert((identity, publication.sid()), frame_cryptor.clone());\n    }\n\n    pub(crate) fn on_local_track_published(",
+  ],
+  [
+    "        participant: RemoteParticipant,\n    ) {\n        self.remove_frame_cryptor(participant.identity(), publication.sid());",
+    `        participant: RemoteParticipant,
+    ) {
+        self.release_remote_slot(participant.identity(), &publication);
+    }
+
+    pub(in crate::room) fn release_remote_slot(&self, identity: ParticipantIdentity, publication: &RemoteTrackPublication) {
+        let key = (identity, publication.sid());
+        let mut inner = self.inner.lock();
+        if inner.remote_owners.get(&key).is_some_and(|owner| owner.ptr_eq(&publication.weak_inner())) {
+            inner.remote_owners.remove(&key);
+            inner.frame_cryptors.remove(&key);
+        }`,
+  ],
+  [
     "    pub fn frame_cryptors(&self) ->",
     `    /// Check one publication without cloning every participant's cryptor.
     pub fn frame_cryptor_enabled(&self, identity: ParticipantIdentity, sid: TrackSid) -> bool {
@@ -134,17 +169,23 @@ const participantReceiverChanges = [
     "        transceiver: RtpTransceiver,\n        receiver_encryption: crate::room::e2ee::manager::E2eeManager,\n    ) {\n",
   ],
   [
-    "            self.add_publication(TrackPublication::Remote(remote_publication.clone()));\n            track.enable();\n",
-    `            // Security preparation is mandatory, not a removable notification
-            // callback. Even a retired publication's late attachment must keep
-            // its actual receiver encrypted before enabling/exposing the track.
-            receiver_encryption.on_track_subscribed(track.clone(), remote_publication.clone(), self.clone());
-            self.add_publication(TrackPublication::Remote(remote_publication.clone()));
+    `            self.add_publication(TrackPublication::Remote(remote_publication.clone()));
             track.enable();
+
+            remote_publication.set_track(Some(track)); // This will fire TrackSubscribed on the
+                                                       // publication
 `,
+    `            self.add_publication(TrackPublication::Remote(remote_publication.clone()));
+            remote_publication.attach_track(track, &receiver_encryption, self.identity());
+`,
+  ],
+  [
+    "                publication.set_track(None);",
+    "                publication.clear_track();",
   ],
 ];
 const publicationChanges = [
+  ["            self.set_track(None);", "            self.clear_track();"],
   [
     "struct RemoteInner {\n",
     "struct RemoteInner {\n    track_update: Mutex<()>,\n",
@@ -155,7 +196,24 @@ const publicationChanges = [
   ],
   [
     "    pub(crate) fn set_track(&self, track: Option<RemoteTrack>) {\n",
-    "    pub(crate) fn set_track(&self, track: Option<RemoteTrack>) {\n        let _update = self.remote.track_update.lock();\n",
+    `    pub(in crate::room) fn weak_inner(&self) -> std::sync::Weak<TrackPublicationInner> {
+        Arc::downgrade(&self.inner)
+    }
+
+    pub(crate) fn attach_track(&self, track: RemoteTrack, encryption: &crate::room::e2ee::manager::E2eeManager, identity: ParticipantIdentity) {
+        self.update_track(Some(track), |track| {
+            encryption.on_track_subscribed(track.clone(), self.clone(), identity);
+            track.enable();
+        });
+    }
+
+    pub(crate) fn clear_track(&self) {
+        self.update_track(None, |_| {});
+    }
+
+    fn update_track(&self, track: Option<RemoteTrack>, prepare: impl FnOnce(&RemoteTrack)) {
+        let _update = self.remote.track_update.lock();
+`,
   ],
   [
     `        super::set_track(
@@ -170,11 +228,11 @@ const publicationChanges = [
             }
         }
 `,
-    `        // Encryption is installed directly by the receiver attachment path.
-        // Serialize notifications and expose each replacement only when its
-        // synchronous subscription callback has completed.
+    `        // Remove the old slot first. Installing before unsubscribe would remove
+        // the replacement cryptor when two receivers share the publication SID.
         super::set_track(&self.inner, &TrackPublication::Remote(self.clone()), None);
         if let Some(track) = track.as_ref() {
+            prepare(track);
             if let Some(subscribed) = self.remote.events.subscribed.lock().as_ref() {
                 subscribed(self.clone(), track.clone());
             }
@@ -362,7 +420,9 @@ mod podetelar_sender_encryption_tests {
     participantPatched = participantPatched.replace(marker, replacement);
   }
   if (hash(participantPatched) !== pin.participantPatchedSourceSha256)
-    throw new Error("Native SDK receiver participant patch checksum mismatch.");
+    throw new Error(
+      `Native SDK receiver participant patch checksum mismatch: ${hash(participantPatched)}`,
+    );
   writeFileSync(participantTarget, participantPatched);
   const managerTarget = join(source, "src/room/e2ee/manager.rs");
   const managerOriginal = readFileSync(managerTarget, "utf8").replaceAll(
@@ -385,7 +445,7 @@ mod podetelar_sender_encryption_tests {
   }
   if (hash(managerPatched) !== pin.managerPatchedSourceSha256)
     throw new Error(
-      "Native SDK mandatory receiver cryptor patch checksum mismatch.",
+      `Native SDK mandatory receiver cryptor patch checksum mismatch: ${hash(managerPatched)}`,
     );
   writeFileSync(managerTarget, managerPatched);
   const publicationTarget = join(source, "src/room/publication/remote.rs");
@@ -462,6 +522,22 @@ ${marker}`,
       original.replace(marker, `    pub(crate) fn ${method}(`),
     );
   }
+  const publications = join(source, "src/room/publication/mod.rs");
+  const genericSetter = `    #[allow(dead_code)]
+    pub(crate) fn set_track(&self, track: Option<Track>) {
+        match self {
+            TrackPublication::Local(p) => p.set_track(track),
+            TrackPublication::Remote(p) => p.set_track(track.map(|t| t.try_into().unwrap())),
+        }
+    }
+`;
+  const originalPublications = readFileSync(publications, "utf8").replaceAll(
+    "\r\n",
+    "\n",
+  );
+  if (originalPublications.split(genericSetter).length !== 2)
+    throw Error("Unexpected generic publication setter");
+  writeFileSync(publications, originalPublications.replace(genericSetter, ""));
   const actualTree = treeHash(source);
   if (actualTree !== pin.treeSha256)
     throw new Error(

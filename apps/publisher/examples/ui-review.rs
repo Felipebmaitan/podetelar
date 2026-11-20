@@ -38,6 +38,8 @@ mod playback;
 mod preview;
 #[path = "../src/profile.rs"]
 mod profile;
+#[path = "../src/protection.rs"]
+mod protection;
 #[path = "../src/publisher.rs"]
 mod publisher;
 #[path = "../src/quality.rs"]

@@ -45,6 +45,9 @@ mod playback;
 #[path = "../src/preview.rs"]
 mod preview;
 #[cfg(feature = "performance-experiments")]
+#[path = "../src/protection.rs"]
+mod protection;
+#[cfg(feature = "performance-experiments")]
 #[path = "../src/publisher.rs"]
 mod publisher;
 #[cfg(feature = "performance-experiments")]

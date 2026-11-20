@@ -1,3 +1,4 @@
+#[path = "admission/voice_code.rs"]
 pub(crate) mod voice_code;
 use anyhow::{Context, Result, bail, ensure};
 use reqwest::{Client, Response, redirect::Policy};

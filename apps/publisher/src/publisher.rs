@@ -1038,7 +1038,7 @@ impl Session {
             crate::protection::PREFIX,
             crate::admission::voice_code::PREFIX,
         ]
-        .iter()
+        .into_iter()
         .any(|prefix| invitation.trim().starts_with(prefix));
         let name = request.name.clone();
         let account = request.account.clone();

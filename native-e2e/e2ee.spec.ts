@@ -51,6 +51,20 @@ async function protect(invitationUrl: string): Promise<string> {
 function hasVideo(result: Watched) {
   return result.samples.some((s) => s.streams.some((t) => t.frames > 5));
 }
+function advancingCodec(
+  result: Watched,
+  codec: string,
+  include: (sample: Watched["samples"][number]) => boolean,
+) {
+  const frames = result.samples
+    .filter(include)
+    .flatMap((s) =>
+      s.streams
+        .filter((t) => t.watching && t.codec.toLowerCase() === codec)
+        .map((t) => t.frames),
+    );
+  return frames.length >= 2 && frames.at(-1)! - frames[0]! > 5;
+}
 async function attachPlayback(label: string, result: Watched) {
   const trace = result.samples.map((s) => ({
     second: s.second,
@@ -67,12 +81,10 @@ async function attachPlayback(label: string, result: Watched) {
       watching: t.watching,
     })),
   }));
-  await test
-    .info()
-    .attach(label, {
-      contentType: "application/json",
-      body: JSON.stringify(trace),
-    });
+  await test.info().attach(label, {
+    contentType: "application/json",
+    body: JSON.stringify(trace),
+  });
 }
 async function requireDecode(
   client: ReturnType<typeof nativeRequest>,
@@ -163,24 +175,9 @@ test("only private invitation holders can request protected codec fallback", asy
     ]);
     await attachPlayback("fallback-observer", watched);
     await attachPlayback("fallback-member", compatible);
-    const sawCodec = (
-      result: Watched,
-      codec: string,
-      start: number,
-      end: number,
-    ) => {
-      const frames = result.samples
-        .filter((s) => s.second >= start && s.second <= end)
-        .flatMap((s) =>
-          s.streams
-            .filter((t) => t.watching && t.codec.toLowerCase() === codec)
-            .map((t) => t.frames),
-        );
-      return frames.length >= 2 && frames.at(-1)! - frames[0]! > 5;
-    };
-    expect(sawCodec(watched, "video/av1", 0, 42)).toBe(true);
-    expect(sawCodec(watched, "video/h264", 0, 42)).toBe(true);
-    expect(sawCodec(compatible, "video/h264", 3, 17)).toBe(true);
+    expect(advancingCodec(watched, "video/av1", () => true)).toBe(true);
+    expect(advancingCodec(watched, "video/h264", () => true)).toBe(true);
+    expect(advancingCodec(compatible, "video/h264", () => true)).toBe(true);
     expect(sent.codec).toBe("h264");
     expect(sent.finalSid).not.toBe(sent.initialSid);
   } finally {
@@ -318,17 +315,24 @@ for (const codec of ["h264", "h265", "av1"] as const) {
         sender.result as Promise<Sent>,
         receiver.result as Promise<Watched>,
       ]);
+      await attachPlayback(`protected-${codec}`, watched);
       expect(sent.captureStopped).toBe(true);
       expect(sent.previewUploads).toBe(1);
       expect(watched.previewBeforeWatching).toBe(true);
       if (codec === "h264") expect(watched.cryptorDisableRejected).toBe(true);
-      expect(hasVideo(watched)).toBe(true);
+      expect(sent.codec).toBe(codec);
       expect(
-        watched.samples.some(
-          (s) =>
-            s.phaseSecond !== null &&
-            s.phaseSecond >= 10 &&
-            s.streams.some((t) => t.frames > 5),
+        advancingCodec(
+          watched,
+          `video/${codec}`,
+          (s) => s.phaseSecond !== null && s.phaseSecond < 5,
+        ),
+      ).toBe(true);
+      expect(
+        advancingCodec(
+          watched,
+          `video/${codec}`,
+          (s) => s.phaseSecond !== null && s.phaseSecond >= 8,
         ),
       ).toBe(true);
       const stopped = watched.samples.find((s) => s.phaseSecond === 6);

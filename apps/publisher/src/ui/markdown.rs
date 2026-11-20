@@ -34,6 +34,7 @@ enum Span {
 
 pub(super) fn render(ui: &mut egui::Ui, markdown: &str) {
     let blocks = parse_blocks(markdown);
+    ui.spacing_mut().item_spacing.y = 3.0;
     let mut prev_was_list = false;
     for (index, block) in blocks.iter().enumerate() {
         let is_list = matches!(block, Block::Bullet { .. } | Block::Ordered { .. });
@@ -151,6 +152,8 @@ fn render_inline(ui: &mut egui::Ui, text: &str, size: f32, heading: bool, base_c
     // When inline links are present, flow spans horizontally with wrapping so
     // each link remains individually clickable while preserving styling.
     ui.horizontal_wrapped(|ui| {
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+        ui.spacing_mut().interact_size.y = size;
         ui.spacing_mut().item_spacing = egui::vec2(0.0, 2.0);
         let mut buffer = LayoutJob::default();
         let flush = |ui: &mut egui::Ui, job: &mut LayoutJob| {
@@ -161,23 +164,17 @@ fn render_inline(ui: &mut egui::Ui, text: &str, size: f32, heading: bool, base_c
         };
         for span in spans {
             match span {
-                Span::Link { label, url } => {
+                Span::Link { ref label, ref url } => {
                     flush(ui, &mut buffer);
                     let safe = url.starts_with("https://") || url.starts_with("http://");
-                    let rich = egui::RichText::new(&label)
-                        .font(if heading {
-                            skin::semibold(size)
-                        } else {
-                            FontId::proportional(size)
-                        })
-                        .color(ACCENT)
-                        .underline();
+                    let mut rich = LayoutJob::default();
+                    append_span(&mut rich, &span, size, heading, base_color);
                     if safe {
-                        if ui.add(egui::Link::new(rich)).on_hover_text(&url).clicked() {
+                        if ui.add(egui::Link::new(rich)).on_hover_text(url).clicked() {
                             ui.ctx().open_url(egui::OpenUrl::new_tab(url));
                         }
                     } else {
-                        ui.label(rich);
+                        ui.label(label);
                     }
                 }
                 other => append_span(&mut buffer, &other, size, heading, base_color),

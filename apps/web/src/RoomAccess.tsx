@@ -51,6 +51,25 @@ export function RoomAccess({ roomId }: { roomId: string }) {
     );
     await refresh();
   };
+  const changeInvitation = (invitation: "rotate" | "disable") => {
+    const action =
+      invitation === "rotate"
+        ? "Replace the current invitation?"
+        : "Disable the current invitation?";
+    const consequence = revokeSessions
+      ? "The current link will stop working and all current sessions will end."
+      : "The current link will stop working.";
+    if (!window.confirm(action + " " + consequence)) return;
+    void act(async () =>
+      changed(
+        await request<ChangedAccess>(`/api/rooms/${roomId}/access`, {
+          method: "POST",
+          ...options(),
+          body: JSON.stringify({ invitation, revokeSessions }),
+        }),
+      ),
+    );
+  };
   return (
     <section className="panel invitation-card access-panel">
       <CardBrand />
@@ -85,20 +104,22 @@ export function RoomAccess({ roomId }: { roomId: string }) {
               {busy ? "Loading…" : "Load access"}
             </button>
           )}
-          <button
-            type="button"
-            className="button secondary"
-            disabled={busy || !key}
-            onClick={() => {
-              setKey("");
-              setState(null);
-              setInvitation("");
-              setFeedback("");
-              setRevokeSessions(false);
-            }}
-          >
-            Lock
-          </button>
+          {(state || key) && (
+            <button
+              type="button"
+              className="button secondary"
+              disabled={busy || !key}
+              onClick={() => {
+                setKey("");
+                setState(null);
+                setInvitation("");
+                setFeedback("");
+                setRevokeSessions(false);
+              }}
+            >
+              Lock
+            </button>
+          )}
         </div>
       </form>
       {state && (
@@ -128,46 +149,14 @@ export function RoomAccess({ roomId }: { roomId: string }) {
             <button
               className="button"
               disabled={busy}
-              onClick={() =>
-                void act(async () =>
-                  changed(
-                    await request<ChangedAccess>(
-                      `/api/rooms/${roomId}/access`,
-                      {
-                        method: "POST",
-                        ...options(),
-                        body: JSON.stringify({
-                          invitation: "rotate",
-                          revokeSessions,
-                        }),
-                      },
-                    ),
-                  ),
-                )
-              }
+              onClick={() => changeInvitation("rotate")}
             >
               Rotate invitation
             </button>
             <button
               className="button secondary"
               disabled={busy}
-              onClick={() =>
-                void act(async () =>
-                  changed(
-                    await request<ChangedAccess>(
-                      `/api/rooms/${roomId}/access`,
-                      {
-                        method: "POST",
-                        ...options(),
-                        body: JSON.stringify({
-                          invitation: "disable",
-                          revokeSessions,
-                        }),
-                      },
-                    ),
-                  ),
-                )
-              }
+              onClick={() => changeInvitation("disable")}
             >
               Disable invitation
             </button>

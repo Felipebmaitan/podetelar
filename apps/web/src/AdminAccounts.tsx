@@ -254,7 +254,10 @@ export function AdminAccounts({ onExpired }: { onExpired: () => void }) {
                           {sessions?.map((session) => (
                             <li key={session.id}>
                               <span className="discord-record-name">
-                                <strong>Login {session.id.slice(0, 8)}</strong>
+                                <strong>
+                                  Login ·{" "}
+                                  {session.id.replace(/^login-/, "").slice(-8)}
+                                </strong>
                                 <small>
                                   Created{" "}
                                   {new Date(
@@ -268,6 +271,7 @@ export function AdminAccounts({ onExpired }: { onExpired: () => void }) {
                               </span>
                               <button
                                 disabled={busy}
+                                aria-label={`Revoke this login for ${a.userId}, ending in ${session.id.slice(-8)}`}
                                 onClick={() =>
                                   void act(
                                     a.userId,

@@ -74,6 +74,20 @@ export function AdminChannels({
     action: string,
   ) => {
     if (mutation.current) return;
+    if (
+      action === "rotate" &&
+      !window.confirm(
+        "Replace this channel invitation? The previous link will stop working.",
+      )
+    )
+      return;
+    if (
+      action === "disable" &&
+      !window.confirm(
+        "Disable this channel invitation? People using this link will lose access to join.",
+      )
+    )
+      return;
     const abort = new AbortController();
     mutation.current = abort;
     setBusy(true);

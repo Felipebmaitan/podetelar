@@ -639,7 +639,7 @@ impl PublisherUi {
         }
     }
 
-    fn profile_cards(&mut self, ui: &mut egui::Ui) {
+    fn profile_cards(&mut self, ui: &mut egui::Ui, connected: bool) {
         let own = self
             .profile_client
             .as_ref()
@@ -707,9 +707,13 @@ impl PublisherUi {
                         });
                     } else {
                         ui.label(
-                            egui::RichText::new(tr("Join a room to manage your profile picture."))
-                                .size(12.0)
-                                .color(MUTED),
+                            egui::RichText::new(tr(if connected {
+                                "Profile pictures are unavailable in this room."
+                            } else {
+                                "Join a room to manage your profile picture."
+                            }))
+                            .size(12.0)
+                            .color(MUTED),
                         );
                     }
                     if own.as_ref().is_some_and(|p| p.uploads_blocked) {
@@ -735,7 +739,7 @@ impl PublisherUi {
         }
     }
 
-    pub(super) fn profile_dialog(&mut self, ctx: &egui::Context) {
+    pub(super) fn profile_dialog(&mut self, ctx: &egui::Context, connected: bool) {
         if !self.profile_open {
             return;
         }
@@ -813,7 +817,7 @@ impl PublisherUi {
                     })
                     .max_height(max_body_height)
                     .show(ui, |ui| match self.profile_page {
-                        SettingsPage::Profile => self.profile_cards(ui),
+                        SettingsPage::Profile => self.profile_cards(ui, connected),
                         SettingsPage::Discord => {
                             surface_card(ui, |ui| self.discord_account(ui));
                             if self.account_state.account.is_some() {

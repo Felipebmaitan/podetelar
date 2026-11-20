@@ -15,6 +15,9 @@ test("room management fits the viewport and Lock clears operator authority", asy
     name: "Also end every current session",
   });
   await expect(load).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Lock", exact: true }),
+  ).toHaveCount(0);
   await page
     .getByLabel("Server access key", { exact: true })
     .fill(process.env.ADMIN_TOKEN!);
@@ -28,6 +31,19 @@ test("room management fits the viewport and Lock clears operator authority", asy
     ),
   ).toBe(true);
   await revoke.check();
+  const mutationRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/access"))
+      mutationRequests.push(request.method());
+  });
+  const warning = page.waitForEvent("dialog").then(async (dialog) => {
+    const message = dialog.message();
+    await dialog.dismiss();
+    return message;
+  });
+  await page.getByRole("button", { name: "Disable invitation" }).click();
+  expect(await warning).toContain("all current sessions will end");
+  expect(mutationRequests).toHaveLength(0);
   await page.getByRole("button", { name: "Lock", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Current sessions", exact: true }),

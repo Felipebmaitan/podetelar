@@ -385,6 +385,13 @@ input::placeholder {
   text-decoration: none;
 }
 
+.button:disabled {
+  opacity: 1;
+  color: var(--ink-2);
+  border-color: var(--line);
+  background: var(--surface-2);
+}
+
 .button.secondary {
   background: var(--surface-2);
   border-color: var(--line-strong);

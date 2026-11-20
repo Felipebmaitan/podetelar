@@ -31,7 +31,9 @@
   font-weight: 500;
 }
 
-.discord-admin .discord-nav button:hover:not(:disabled) {
+.discord-admin
+  .discord-nav
+  button:hover:not(:disabled):not([aria-pressed="true"]) {
   background: transparent;
   border-color: transparent;
   color: var(--ink);
@@ -422,7 +424,7 @@
   .discord-nav {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0;
+    gap: 4px;
     margin-bottom: 16px;
   }
   .discord-admin .discord-nav button {

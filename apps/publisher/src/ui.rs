@@ -43,6 +43,7 @@ pub fn configure_theme(ctx: &egui::Context) {
     style.visuals = egui::Visuals::dark();
     style.visuals.override_text_color = Some(TEXT);
     style.visuals.weak_text_color = Some(MUTED);
+    style.visuals.disabled_alpha = 0.84;
     style.visuals.panel_fill = PANEL;
     style.visuals.window_fill = CARD;
     style.visuals.extreme_bg_color = CANVAS;
@@ -332,7 +333,7 @@ impl PublisherUi {
                 );
                 let room_button = ui
                     .add_sized(
-                        [240.0, 32.0],
+                        [(ui.available_width() - 375.0).clamp(80.0, 240.0), 32.0],
                         egui::Button::new("")
                             .left_text(skin::strong(&room_label, 13.5).color(TEXT))
                             .truncate()
@@ -375,7 +376,11 @@ impl PublisherUi {
                     self.setup_open = false;
                     self.roster_open = false;
                 }
-                let room_options = skin::icon_button(ui, Icon::More, tr("Room options"));
+                let room_options = if connected {
+                    skin::icon_button(ui, Icon::More, tr("Room options"))
+                } else {
+                    skin::icon_button(ui, Icon::Settings, tr("Settings"))
+                };
                 egui::Popup::menu(&room_options)
                     .frame(skin::menu_frame())
                     .show(|ui| {
@@ -1323,18 +1328,20 @@ impl PublisherUi {
                                 .active_selection
                                 .as_ref()
                                 .is_some_and(|active| active != &self.selection());
-                        ui.add_sized(
-                            [width - 186.0, 44.0],
-                            egui::Label::new(
-                                egui::RichText::new(tr(if dirty {
-                                    "Updates your current stream."
-                                } else {
-                                    "Ready for your next stream."
-                                }))
-                                .size(12.0)
-                                .color(MUTED),
-                            )
-                            .wrap(),
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(width - 186.0, 44.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.label(
+                                    egui::RichText::new(tr(if dirty {
+                                        "Updates your current stream."
+                                    } else {
+                                        "Ready for your next stream."
+                                    }))
+                                    .size(12.0)
+                                    .color(MUTED),
+                                );
+                            },
                         );
                         if ui
                             .add_enabled(
@@ -1578,13 +1585,7 @@ impl PublisherUi {
         });
         let mut muted = volume == 0;
         if skin::mute_switch(ui, tr("Mute"), &mut muted).changed() {
-            if muted {
-                self.remembered_volume.insert(tile.id.clone(), volume);
-                volume = 0;
-            } else {
-                volume = self.remembered_volume.get(&tile.id).copied().unwrap_or(100);
-            }
-            tile.volume.store(volume, Ordering::Relaxed);
+            self.toggle_volume(tile);
         }
         skin::menu_separator(ui);
         if skin::menu_row(
@@ -1655,6 +1656,29 @@ impl PublisherUi {
         }
     }
 
+    fn toggle_volume(&mut self, tile: &Tile) {
+        let previous = tile.volume.load(Ordering::Relaxed);
+        let next = if previous == 0 {
+            self.remembered_volume.get(&tile.id).copied().unwrap_or(100)
+        } else {
+            self.remembered_volume.insert(tile.id.clone(), previous);
+            0
+        };
+        tile.volume.store(next, Ordering::Relaxed);
+    }
+
+    fn volume_button(&mut self, ui: &mut egui::Ui, tile: &Tile) {
+        let muted = tile.volume.load(Ordering::Relaxed) == 0;
+        let label = format!(
+            "{} · {}",
+            tr(if muted { "Unmute" } else { "Mute" }),
+            tile.name
+        );
+        if skin::icon_button(ui, if muted { Icon::Muted } else { Icon::Volume }, &label).clicked() {
+            self.toggle_volume(tile);
+        }
+    }
+
     fn fullscreen_view(&mut self, root: &mut egui::Ui, tile: &Tile) {
         let ctx = root.ctx().clone();
         self.clear_picker();
@@ -1719,18 +1743,20 @@ impl PublisherUi {
                                 ui.horizontal(|ui| {
                                     ui.label(skin::strong(&tile.name, 13.5).color(TEXT));
                                     ui.add_space(6.0);
+                                    self.volume_button(ui, tile);
                                     let mut volume = tile.volume.load(Ordering::Relaxed);
-                                    let (v_rect, _) = ui.allocate_exact_size(
-                                        egui::vec2(16.0, 20.0),
-                                        egui::Sense::hover(),
-                                    );
-                                    skin::icon(ui.painter(), v_rect, Icon::Volume, MUTED);
                                     ui.spacing_mut().slider_width = 110.0;
-                                    if ui
-                                        .add(egui::Slider::new(&mut volume, 0..=100).suffix("%"))
-                                        .on_hover_text(tr("This stream's volume"))
-                                        .changed()
-                                    {
+                                    let slider = skin::mint_slider(ui, &mut volume, 0..=100)
+                                        .on_hover_text(tr("This stream's volume"));
+                                    let value = ui.label(format!("{volume}%"));
+                                    slider.widget_info(|| {
+                                        egui::WidgetInfo::slider(
+                                            ui.is_enabled(),
+                                            volume.into(),
+                                            tr("Volume"),
+                                        )
+                                    });
+                                    if slider.labelled_by(value.id).changed() {
                                         tile.volume.store(volume, Ordering::Relaxed);
                                     }
                                     ui.add_space(4.0);
@@ -1904,7 +1930,7 @@ impl PublisherUi {
             if tile.watching {
                 let controls = egui::Rect::from_min_size(
                     rect.left_bottom() + egui::vec2(12.0, -44.0),
-                    egui::vec2(88.0, 34.0),
+                    egui::vec2(124.0, 34.0),
                 );
                 let mut hud = ui.new_child(
                     egui::UiBuilder::new()
@@ -1925,6 +1951,7 @@ impl PublisherUi {
                                 self.set_fullscreen(ui.ctx(), Some(tile.id.clone()));
                             }
                             let options_label = format!("{} · {}", tr("Stream options"), tile.name);
+                            self.volume_button(ui, tile);
                             let trigger = skin::icon_button(ui, Icon::More, &options_label);
                             let menu = egui::Popup::menu(&trigger)
                                 .frame(skin::menu_frame())
@@ -2099,7 +2126,7 @@ impl PublisherUi {
                     .show(ui, |ui| {
                         egui::ScrollArea::vertical()
                             .id_salt("update-notes")
-                            .max_height((ctx.content_rect().height() - 340.0).clamp(80.0, 320.0))
+                            .max_height((ctx.content_rect().height() - 290.0).clamp(80.0, 380.0))
                             .show(ui, |ui| {
                                 ui.set_width((width - 46.0).max(120.0));
                                 if status.notes.trim().is_empty() {
@@ -2337,7 +2364,7 @@ impl PublisherUi {
         self.poll_following(&ctx);
         let profile_snapshot = self.controller.snapshot();
         self.poll_profile(&profile_snapshot);
-        self.profile_dialog(&ctx);
+        self.profile_dialog(&ctx, profile_snapshot.connection == "connected");
         ctx.request_repaint_after(Duration::from_secs(1));
         if let Some(started) = self.closing_since {
             egui::CentralPanel::default().show(root, |ui| {
@@ -2364,6 +2391,13 @@ impl PublisherUi {
                 self.profile_open = false;
             } else if self.advanced_open {
                 self.advanced_open = false;
+            } else if let Some(tile) = profile_snapshot.tiles.iter().rev().find(|tile| {
+                tile.watching && tile.presentation.diagnostics.open.load(Ordering::Relaxed)
+            }) {
+                tile.presentation
+                    .diagnostics
+                    .open
+                    .store(false, Ordering::Relaxed);
             } else if self.fullscreen.is_some() {
                 if self.stream_menu.is_some() {
                     self.stream_menu = None;
@@ -2947,7 +2981,7 @@ impl PublisherUi {
                             );
                             let mut sub_job = egui::text::LayoutJob::simple(
                                 setup_summary,
-                                egui::FontId::proportional(10.5),
+                                egui::FontId::proportional(12.0),
                                 if dirty { WARNING } else { MUTED },
                                 (sr.width() - 58.0).max(40.0),
                             );
@@ -3072,7 +3106,9 @@ impl PublisherUi {
                                         egui::Stroke::NONE
                                     }),
                             );
-                            if !self.roster_open && people_resp.hovered() {
+                            if !self.roster_open
+                                && (people_resp.hovered() || people_resp.has_focus())
+                            {
                                 ui.painter()
                                     .rect_filled(people_resp.rect, 8.0, skin::SURFACE_3);
                             }
@@ -3142,6 +3178,13 @@ impl PublisherUi {
                                 4.0,
                                 egui::Stroke::new(1.5, PANEL),
                             );
+                            if av_resp.has_focus() || av_resp.hovered() {
+                                ui.painter().circle_stroke(
+                                    av_rect.center(),
+                                    16.0,
+                                    egui::Stroke::new(1.5, ACCENT),
+                                );
+                            }
                             av_resp.widget_info(|| {
                                 egui::WidgetInfo::labeled(
                                     egui::Role::Button,
@@ -3159,8 +3202,13 @@ impl PublisherUi {
     }
 
     fn broadcast_setup_popover(&mut self, ctx: &egui::Context, state: &Snapshot) {
-        let max_height = (ctx.content_rect().height() - 170.0).clamp(200.0, 480.0);
-        egui::Area::new(egui::Id::unique("broadcast-setup"))
+        let footer_height = if state.sharing || state.capture_pending {
+            162.0
+        } else {
+            76.0
+        };
+        let max_height = (ctx.content_rect().height() - 170.0 - footer_height).clamp(100.0, 480.0);
+        let panel = egui::Area::new(egui::Id::unique("broadcast-setup"))
             .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(26.0, -74.0))
             .order(egui::Order::Foreground)
             .interactable(true)
@@ -3190,10 +3238,23 @@ impl PublisherUi {
                             .auto_shrink([false, true])
                             .show(ui, |ui| {
                                 self.sharing_menu(ui, state);
-                                self.sharing_actions(ui, state);
                             });
+                        self.sharing_actions(ui, state);
                     });
             });
+        let dock_top = ctx.content_rect().bottom() - 70.0;
+        if !egui::Popup::is_any_open(ctx)
+            && ctx.input(|input| {
+                input.pointer.any_pressed()
+                    && input
+                        .pointer
+                        .interact_pos()
+                        .is_some_and(|pos| !panel.response.rect.contains(pos) && pos.y < dock_top)
+            })
+        {
+            self.setup_open = false;
+            self.clear_picker();
+        }
     }
 }
 
@@ -3276,7 +3337,7 @@ fn badge(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
         .corner_radius(5)
         .inner_margin(egui::Margin::symmetric(7, 3))
         .show(ui, |ui| {
-            ui.label(skin::strong(text, 11.0).color(color));
+            ui.label(skin::strong(text, 12.0).color(color));
         });
 }
 
@@ -3551,47 +3612,53 @@ fn participant(
     texture: Option<egui::TextureId>,
     discord: bool,
 ) -> egui::Response {
-    ui.scope(|ui| {
-        ui.spacing_mut().interact_size.y = 26.0;
-        ui.spacing_mut().item_spacing.y = 3.0;
-        ui.horizontal(|ui| {
-            profile::avatar(ui, name, 26.0, texture);
-            let label = if own {
-                format!("{} ({})", name, tr("you"))
-            } else {
-                name.to_owned()
-            };
-            let width = (ui.available_width() - if sharing { 66.0 } else { 0.0 }).max(20.0);
-            ui.allocate_ui_with_layout(
-                egui::vec2(width, 26.0),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    ui.add(egui::Label::new(egui::RichText::new(label).size(12.0)).truncate());
-                },
-            )
-            .response
-            .on_hover_text(name);
-            ui.label(
-                egui::RichText::new(if discord { "D" } else { "G" })
-                    .small()
-                    .color(MUTED),
-            )
-            .on_hover_text(if discord {
-                tr("Discord identity")
-            } else {
-                tr("Guest identity")
+    let response = ui
+        .scope(|ui| {
+            ui.spacing_mut().interact_size.y = 26.0;
+            ui.spacing_mut().item_spacing.y = 3.0;
+            ui.horizontal(|ui| {
+                profile::avatar(ui, name, 26.0, texture);
+                let label = if own {
+                    format!("{} ({})", name, tr("you"))
+                } else {
+                    name.to_owned()
+                };
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if sharing {
+                        badge(ui, tr("Live"), ACCENT);
+                    }
+                    ui.label(
+                        egui::RichText::new(if discord { "Discord" } else { tr("Guest") })
+                            .size(12.0)
+                            .color(MUTED),
+                    );
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.add(egui::Label::new(egui::RichText::new(label).size(12.0)).truncate())
+                            .on_hover_text(name);
+                    });
+                });
             });
-            if sharing {
-                badge(ui, tr("Live"), ACCENT);
-            }
+        })
+        .response
+        .interact(if own {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
         });
-    })
-    .response
-    .interact(if own {
-        egui::Sense::click()
-    } else {
-        egui::Sense::hover()
-    })
+    if own {
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), tr("User settings"))
+        });
+        if response.has_focus() {
+            ui.painter().rect_stroke(
+                response.rect,
+                4.0,
+                egui::Stroke::new(1.5, ACCENT),
+                egui::StrokeKind::Inside,
+            );
+        }
+    }
+    response
 }
 
 fn settings_divider(ui: &mut egui::Ui) {
@@ -4290,6 +4357,7 @@ mod tests {
             id: "second".into(),
             name: "Second".into(),
             watching: false,
+            volume: std::sync::Arc::new(63.into()),
             ..first.clone()
         };
         let ctx = egui::Context::default();
@@ -4341,6 +4409,11 @@ mod tests {
             matches!(next_command(), Some(Command::Watch { id, enabled: true }) if id == second.id)
         );
         second.watching = true;
+        activate(&second, &format!("{} · Second", tr("Mute")));
+        assert_eq!(second.volume.load(Ordering::Relaxed), 0);
+        activate(&second, &format!("{} · Second", tr("Unmute")));
+        assert_eq!(second.volume.load(Ordering::Relaxed), 63);
+        assert_eq!(first.volume.load(Ordering::Relaxed), 0);
         activate(&second, &format!("{} · Second", tr("Stream options")));
         activate(&second, tr("Stop watching"));
         assert!(

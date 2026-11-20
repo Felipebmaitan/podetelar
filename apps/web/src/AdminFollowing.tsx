@@ -129,6 +129,7 @@ export function AdminFollowing({
                 <input
                   value={user}
                   inputMode="numeric"
+                  placeholder="17–20 digit ID"
                   maxLength={20}
                   onChange={(e) => setUser(e.target.value)}
                 />
@@ -144,6 +145,7 @@ export function AdminFollowing({
                     <code>{id}</code>
                     <button
                       disabled={busy}
+                      aria-label={`Allow automatic joining for ${id}`}
                       onClick={() => void act("allow", id)}
                     >
                       Allow automatic joining
@@ -201,6 +203,7 @@ export function AdminFollowing({
                         </dl>
                         <button
                           disabled={busy}
+                          aria-label={`End and pause for user ${session.userId}`}
                           onClick={() => void act("block", session.userId)}
                         >
                           End and pause for user

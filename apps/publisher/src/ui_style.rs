@@ -53,6 +53,7 @@ pub fn install_fonts(ctx: &egui::Context) {
 #[derive(Clone, Copy)]
 pub enum Icon {
     Volume,
+    Muted,
     Close,
     Info,
     Window,
@@ -123,7 +124,7 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
                 p.circle_filled(c, 2.0, color);
             }
         }
-        Icon::Volume => {
+        Icon::Volume | Icon::Muted => {
             p.add(egui::Shape::line(
                 vec![
                     point(-8.0, -3.0),
@@ -136,6 +137,11 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
                 ],
                 stroke,
             ));
+            if matches!(icon, Icon::Muted) {
+                line((4.0, -3.0), (10.0, 3.0));
+                line((4.0, 3.0), (10.0, -3.0));
+                return;
+            }
             p.add(egui::Shape::line(
                 vec![point(4.0, -4.0), point(6.0, 0.0), point(4.0, 4.0)],
                 stroke,
@@ -329,9 +335,25 @@ pub fn field_label(ui: &mut egui::Ui, label: &str, symbol: Icon) -> egui::Respon
 pub fn help_label(ui: &mut egui::Ui, label: &str, help: &str) -> egui::Response {
     ui.horizontal(|ui| {
         let response = ui.label(strong(label, 13.0).color(INK));
-        let (rect, hover) = ui.allocate_exact_size(egui::vec2(15.0, 18.0), egui::Sense::hover());
-        icon(ui.painter(), rect, Icon::Info, SECONDARY);
-        hover.on_hover_text(help);
+        let (rect, info) = ui.allocate_exact_size(egui::vec2(18.0, 20.0), egui::Sense::click());
+        icon(
+            ui.painter(),
+            rect,
+            Icon::Info,
+            if info.has_focus() { AMBER } else { SECONDARY },
+        );
+        info.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::Role::Button,
+                ui.is_enabled(),
+                format!("{label} · {help}"),
+            )
+        });
+        if info.has_focus() || info.clicked() {
+            egui::Tooltip::for_widget(&info).show(|ui| ui.label(help));
+        } else {
+            info.on_hover_text(help);
+        }
         response
     })
     .inner

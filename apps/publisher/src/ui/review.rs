@@ -184,8 +184,8 @@ pub fn run() -> Result<()> {
                 active_selection: Some(active_selection),
                 participants: vec!["Felipe".into(), "Marina".into(), "Lucas".into()],
                 participant_ids: vec![
-                    ("p-felipe".into(), "Felipe".into()),
-                    ("p-marina".into(), "Marina".into()),
+                    ("layout-fixture".into(), "Felipe".into()),
+                    ("layout-fixture-2".into(), "Marina".into()),
                     ("p-lucas".into(), "Lucas".into()),
                 ],
                 tiles,

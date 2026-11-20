@@ -339,12 +339,13 @@ pub fn panel(ctx: &eframe::egui::Context, tile: &crate::playback::Tile) {
     egui::Window::new(tr("Advanced information"))
         .id(egui::Id::unique(("stats", &tile.id)))
         .open(&mut open)
+        .collapsible(false)
         .default_width(560.0)
-        .default_height((ctx.viewport_rect().height() - 100.0).clamp(260.0, 620.0))
-        .max_height((ctx.viewport_rect().height() - 80.0).clamp(260.0, 640.0))
+        .default_height((ctx.content_rect().height() - 220.0).clamp(180.0, 520.0))
+        .max_height((ctx.content_rect().height() - 220.0).clamp(180.0, 600.0))
         .default_pos(eframe::egui::pos2(
             ((ctx.viewport_rect().width() - 580.0) / 2.0).max(8.0),
-            32.0,
+            60.0,
         ))
         .frame(
             skin::menu_frame()

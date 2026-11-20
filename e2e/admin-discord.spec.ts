@@ -63,13 +63,22 @@ test("Discord administration shows configuration status without exposing credent
     .getByRole("button", { name: "Pause for user", exact: true })
     .click();
   await expect(
-    page.getByRole("button", { name: "Allow automatic joining", exact: true }),
+    page.getByRole("button", {
+      name: "Allow automatic joining for 323456789012345678",
+      exact: true,
+    }),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: "Allow automatic joining", exact: true })
+    .getByRole("button", {
+      name: "Allow automatic joining for 323456789012345678",
+      exact: true,
+    })
     .click();
   await expect(
-    page.getByRole("button", { name: "Allow automatic joining", exact: true }),
+    page.getByRole("button", {
+      name: "Allow automatic joining for 323456789012345678",
+      exact: true,
+    }),
   ).toHaveCount(0);
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),

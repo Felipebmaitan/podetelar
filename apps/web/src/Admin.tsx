@@ -159,9 +159,9 @@ export function Admin() {
         </header>
       )}
       {auth === "loading" ? (
-        <div className="admin-center" role="status">
-          Checking administrator access…
-        </div>
+        <main className="admin-center">
+          <span role="status">Checking administrator access…</span>
+        </main>
       ) : auth === "ready" ? (
         <>
           <div className="admin-top-error">
@@ -228,7 +228,7 @@ export function Admin() {
           )}
         </>
       ) : (
-        <div className="admin-center">
+        <main className="admin-center">
           <div className="admin-login-wrap">
             {auth === "error" ? (
               <section className="admin-panel admin-login">
@@ -276,7 +276,6 @@ export function Admin() {
                       name="password"
                       type={showPassword ? "text" : "password"}
                       autoComplete="current-password"
-                      placeholder="Enter administrator password"
                       required
                       maxLength={256}
                       value={password}
@@ -304,7 +303,7 @@ export function Admin() {
               </form>
             )}
           </div>
-        </div>
+        </main>
       )}
     </div>
   );
@@ -635,18 +634,18 @@ function TrafficChart({
   const id = useId();
   const [hover, setHover] = useState<number | null>(null);
   const svg = useRef<SVGSVGElement>(null);
-  const [narrow, setNarrow] = useState(compact);
+  const [width, setWidth] = useState(compact ? 400 : 1000);
   useEffect(() => {
     const element = svg.current;
     if (!element) return;
     const observer = new ResizeObserver(([entry]) =>
-      setNarrow(compact || entry!.contentRect.width < 600),
+      setWidth(Math.max(1, Math.round(entry!.contentRect.width))),
     );
     observer.observe(element);
     return () => observer.disconnect();
   }, [compact]);
-  const width = narrow ? 400 : 1000,
-    height = narrow ? 180 : 225,
+  const narrow = compact || width < 600;
+  const height = narrow ? 180 : 225,
     left = 42,
     right = 12,
     top = 25,
@@ -756,6 +755,24 @@ function TrafficChart({
         viewBox={`0 0 ${width} ${height}`}
         role="img"
         aria-labelledby={id}
+        aria-describedby={`${id}-detail`}
+        tabIndex={points.length ? 0 : undefined}
+        onFocus={() => setHover(0)}
+        onBlur={() => setHover(null)}
+        onKeyDown={(event) => {
+          if (!points.length) return;
+          const index = hover ?? 0;
+          const last = points.length - 1;
+          const next = {
+            ArrowLeft: Math.max(0, index - 1),
+            ArrowRight: Math.min(last, index + 1),
+            Home: 0,
+            End: last,
+          }[event.key];
+          if (next === undefined) return;
+          event.preventDefault();
+          setHover(next);
+        }}
         onMouseMove={(e) => select(e.clientX)}
         onMouseLeave={() => setHover(null)}
         onTouchStart={(e) => e.touches[0] && select(e.touches[0].clientX)}
@@ -839,7 +856,7 @@ function TrafficChart({
           </>
         )}
       </svg>
-      <p className="admin-chart-detail">
+      <p id={`${id}-detail`} className="admin-chart-detail">
         {active && hover !== null
           ? active.durationMs
             ? `${time(active.at)} · To server ${rates[hover]!.up.toFixed(2)} Mb/s (${dataSize(active.uploadedBytes)}) · From server ${rates[hover]!.down.toFixed(2)} Mb/s (${dataSize(active.downloadedBytes)})`

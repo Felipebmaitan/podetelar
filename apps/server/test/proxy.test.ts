@@ -7,7 +7,7 @@ import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 
 test("only the configured proxy peer can supply per-viewer rate-limit addresses", async () => {
-  const root = mkdtempSync(join(tmpdir(), "freedomstream-proxy-"));
+  const root = mkdtempSync(join(tmpdir(), "podetelar-proxy-"));
   const config = loadConfig({
     TRUSTED_PROXY: "172.30.77.1",
     ADMIN_TOKEN: "test-administrator-secret-with-32-characters",
@@ -17,6 +17,7 @@ test("only the configured proxy peer can supply per-viewer rate-limit addresses"
   });
   const app = await buildApp(config, {
     mediaDirectory: {
+      members: async () => [],
       async participant() {
         return null;
       },
@@ -48,7 +49,7 @@ test("only the configured proxy peer can supply per-viewer rate-limit addresses"
     await app.close();
     const resolved = realpathSync(root);
     assert.equal(dirname(resolved), realpathSync(tmpdir()));
-    assert.ok(basename(resolved).startsWith("freedomstream-proxy-"));
+    assert.ok(basename(resolved).startsWith("podetelar-proxy-"));
     rmSync(resolved, { recursive: true });
   }
 });

@@ -44,6 +44,8 @@ export function relayConfiguration(env, secret) {
     );
   return {
     livekit: `port: 7880
+room:
+  sync_streams: true
 prometheus:
   port: 6789
 bind_addresses: [0.0.0.0]
@@ -68,8 +70,8 @@ tls-listening-port=${port}
 listening-port=3478
 min-port=30000
 max-port=30127
-realm=freedomstream
-server-name=freedomstream
+realm=podetelar
+server-name=podetelar
 use-auth-secret
 static-auth-secret=${secret}
 fingerprint

@@ -9,7 +9,7 @@ import { loadConfig } from "../src/config.js";
 const password = "test-administrator-password-not-for-production";
 const origin = "https://admin.example";
 test("single-administrator sessions protect all usage, reject CSRF, expire and revoke on logout/restart", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "freedomstream-admin-"));
+  const dir = mkdtempSync(join(tmpdir(), "podetelar-admin-"));
   const config = loadConfig({
     PUBLIC_URL: origin,
     ADMIN_TOKEN: password,
@@ -27,7 +27,8 @@ test("single-administrator sessions protect all usage, reject CSRF, expire and r
       headers: { origin },
       payload: { password: value },
     });
-  const url = `/api/admin/usage?from=${now - 60000}&to=${now}`;
+  // A closed range exercises a warm report cache through logout and expiry.
+  const url = `/api/admin/usage?from=${now - 120000}&to=${Math.floor(now / 60000) * 60000}`;
   try {
     assert.equal((await app.inject(url)).statusCode, 401);
     assert.equal(
@@ -86,7 +87,12 @@ test("single-administrator sessions protect all usage, reject CSRF, expire and r
       ).statusCode,
       400,
     );
-    const report = (await app.inject({ url, headers: { cookie } })).json();
+    const response = await app.inject({ url, headers: { cookie } });
+    assert.match(
+      String(response.headers["content-type"]),
+      /^application\/json/,
+    );
+    const report = response.json();
     assert.equal(report.available, false);
     assert.equal(report.uploadedBytes, 0);
     assert.deepEqual(report.users, []);
@@ -138,7 +144,7 @@ test("single-administrator sessions protect all usage, reject CSRF, expire and r
     await app.close();
     const resolved = realpathSync(dir);
     assert.equal(dirname(resolved), realpathSync(tmpdir()));
-    assert.ok(basename(resolved).startsWith("freedomstream-admin-"));
+    assert.ok(basename(resolved).startsWith("podetelar-admin-"));
     rmSync(resolved, { recursive: true });
   }
 });

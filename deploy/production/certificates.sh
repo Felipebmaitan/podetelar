@@ -1,26 +1,30 @@
 #!/bin/bash
 set -euo pipefail
 umask 077
-root=${FREEDOMSTREAM_ROOT:-/opt/freedomstream}
-[[ "$root" == /opt/freedomstream ]] || { echo 'Unexpected installation root.' >&2; exit 1; }
+root=${PODETELAR_ROOT:-/opt/podetelar}
+[[ "$root" == /opt/podetelar ]] || { echo 'Unexpected installation root.' >&2; exit 1; }
 state=$root/shared
 action=${1:-check}
-host=$(sed -n 's|^PUBLIC_URL=https://\([^:]*\):8443$|\1|p' "$state/.env")
+host=$(sed -n 's|^PUBLIC_URL=https://\([^:/]*\)\(:[0-9]*\)\?$|\1|p' "$state/.env")
+direct_host=$(sed -n 's|^DIRECT_URL=https://\([^:/]*\)\(:[0-9]*\)\?$|\1|p' "$state/.env")
+direct_host=${direct_host:-$host}
 turn_host=$(sed -n 's/^TURN_HOST=//p' "$state/.env")
 [[ "$host" =~ ^[a-zA-Z0-9.-]+$ ]] || exit 1
+[[ "$direct_host" =~ ^[a-zA-Z0-9.-]+$ ]] || exit 1
 [[ "$turn_host" =~ ^[a-zA-Z0-9.-]+$ ]] || exit 1
 certbot_image=certbot/certbot:v5.9.0
 certbot() {
   docker run --rm --user 1000:1000 --cpus=0.5 --memory=256m --pids-limit=64 --cap-drop=ALL \
-    -v "$state/certbot:/etc/letsencrypt" -v /var/www/freedomstream-acme:/webroot \
+    -v "$state/certbot:/etc/letsencrypt" -v /var/www/podetelar-acme:/webroot \
     --tmpfs /var/lib/letsencrypt:rw,size=16m,mode=1777 --tmpfs /var/log/letsencrypt:rw,size=16m,mode=1777 \
     "$certbot_image" "$@"
 }
 case "$action" in
   issue|staging)
-    args=(certonly --non-interactive --agree-tos --register-unsafely-without-email --webroot -w /webroot --cert-name freedomstream --preferred-profile shortlived --expand)
+    args=(certonly --non-interactive --agree-tos --register-unsafely-without-email --webroot -w /webroot --cert-name podetelar --preferred-profile shortlived --expand)
     if [[ "$host" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then args+=(--ip-address "$host"); else args+=(-d "$host"); fi
     if [[ "$turn_host" != "$host" ]]; then args+=(-d "$turn_host"); fi
+    if [[ "$direct_host" != "$host" && "$direct_host" != "$turn_host" ]]; then args+=(-d "$direct_host"); fi
     # Staging uses an independent lineage/config tree and is never installed.
     if [[ "$action" == staging ]]; then args+=(--staging --config-dir /etc/letsencrypt/staging); fi
     certbot "${args[@]}"
@@ -30,10 +34,11 @@ case "$action" in
   check) ;;
   *) echo 'Usage: certificates.sh issue|staging|renew|check' >&2; exit 1 ;;
 esac
-source_dir=$state/certbot/live/freedomstream
+source_dir=$state/certbot/live/podetelar
 openssl x509 -in "$source_dir/fullchain.pem" -noout -checkend 86400 >/dev/null
 if [[ "$host" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then openssl x509 -in "$source_dir/fullchain.pem" -noout -checkip "$host" >/dev/null; else openssl x509 -in "$source_dir/fullchain.pem" -noout -checkhost "$host" >/dev/null; fi
 openssl x509 -in "$source_dir/fullchain.pem" -noout -checkhost "$turn_host" >/dev/null
+if [[ "$direct_host" != "$host" ]]; then openssl x509 -in "$source_dir/fullchain.pem" -noout -checkhost "$direct_host" >/dev/null; fi
 cert_pub=$(openssl x509 -in "$source_dir/fullchain.pem" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | cut -d' ' -f1)
 key_pub=$(openssl pkey -in "$source_dir/privkey.pem" -pubout -outform DER | sha256sum | cut -d' ' -f1)
 [[ "$cert_pub" == "$key_pub" ]] || { echo 'Certificate/key mismatch.' >&2; exit 1; }
@@ -53,11 +58,11 @@ ln -sfn "$fingerprint" "$state/tls/current.new"
 mv -Tf "$state/tls/current.new" "$state/tls/current"
 # Record application only after BOTH consumers reload successfully. If either
 # fails, the next timer retries even though the copied certificate is unchanged.
-if [[ -f /etc/nginx/conf.d/freedomstream-https.conf && -f "$root/current/deploy/production/compose.yaml" ]]; then
+if [[ -f /etc/nginx/conf.d/podetelar-https.conf && -f "$root/current/deploy/production/compose.yaml" ]]; then
   nginx -t
   systemctl reload nginx
   docker compose --env-file "$state/.env" --env-file "$state/release.env" -f "$root/current/deploy/production/compose.yaml" restart relay
   printf '%s\n' "$fingerprint" > "$state/tls/applied.new"
   mv -Tf "$state/tls/applied.new" "$state/tls/applied"
 fi
-echo 'Installed the renewed FreedomStream certificate.'
+echo 'Installed the renewed PodeTelar certificate.'

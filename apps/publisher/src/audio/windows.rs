@@ -65,6 +65,26 @@ pub fn identity_from_handle(pid: u32, handle: HANDLE) -> Result<Identity> {
 }
 
 pub fn inventory() -> Result<Inventory> {
+    inventory_using(|_, _, handle, path| query_image(handle, path))
+}
+
+fn query_image(handle: HANDLE, path: &mut [u16]) -> Option<String> {
+    let mut size = path.len() as u32;
+    unsafe {
+        QueryFullProcessImageNameW(
+            handle,
+            PROCESS_NAME_WIN32,
+            PWSTR(path.as_mut_ptr()),
+            &mut size,
+        )
+    }
+    .ok()?;
+    Some(String::from_utf16_lossy(&path[..size as usize]).to_lowercase())
+}
+
+fn inventory_using(
+    mut image: impl FnMut(Identity, &str, HANDLE, &mut [u16]) -> Option<String>,
+) -> Result<Inventory> {
     unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).ok() }
         .context("Audio process discovery could not initialize.")?;
     let _com = Com;
@@ -95,20 +115,7 @@ pub fn inventory() -> Result<Inventory> {
             if let Ok(identity) = identity_from_handle(pid, handle.0) {
                 process.identity = identity;
             }
-            let mut size = path.len() as u32;
-            if unsafe {
-                QueryFullProcessImageNameW(
-                    handle.0,
-                    PROCESS_NAME_WIN32,
-                    PWSTR(path.as_mut_ptr()),
-                    &mut size,
-                )
-            }
-            .is_ok()
-            {
-                process.image =
-                    Some(String::from_utf16_lossy(&path[..size as usize]).to_lowercase());
-            }
+            process.image = image(process.identity, &process.name, handle.0, &mut path);
         }
         processes.insert(pid, process);
         available = unsafe { Process32NextW(snapshot.0, &mut entry) }.is_ok();
@@ -139,4 +146,50 @@ pub fn inventory() -> Result<Inventory> {
         processes,
         sessions,
     })
+}
+
+#[cfg(feature = "performance-experiments")]
+pub fn inventory_benchmark() -> Result<serde_json::Value> {
+    let mut cache = HashMap::<(Identity, String), String>::new();
+    let mut rows = Vec::new();
+    for pair in 1..=5 {
+        for cached in if pair % 2 == 1 {
+            [false, true]
+        } else {
+            [true, false]
+        } {
+            let started = std::time::Instant::now();
+            let mut query_count = 0;
+            let mut processes = 0;
+            for _ in 0..20 {
+                let current = inventory_using(|identity, name, handle, path| {
+                    let key = (identity, name.to_owned());
+                    if cached
+                        && identity.created != 0
+                        && let Some(image) = cache.get(&key)
+                    {
+                        return Some(image.clone());
+                    }
+                    query_count += 1;
+                    let result = query_image(handle, path);
+                    if identity.created != 0
+                        && let Some(image) = &result
+                    {
+                        cache.insert(key, image.clone());
+                    }
+                    result
+                })?;
+                processes = current.processes.len();
+                cache.retain(|(identity, name), _| {
+                    current.processes.get(&identity.pid).is_some_and(|process| {
+                        process.identity == *identity && process.name == *name
+                    })
+                });
+            }
+            rows.push(serde_json::json!({"pair":pair,"cached":cached,"iterations":20,"wallMs":started.elapsed().as_secs_f64()*1000.0,"freshImageQueries":query_count,"processCount":processes,"boundedCacheEntries":cache.len()}));
+        }
+    }
+    Ok(
+        serde_json::json!({"runs":rows,"limits":"Benchmark-only image-name cache. Every snapshot, parent/name, current creation identity, access result and audio endpoint/session remains fresh. Unknown identities never reuse cache; entries pruned every sweep. No process identifiers or names exported. Rename/relocation and protected-process qualification still required; default capture uses uncached queries."}),
+    )
 }

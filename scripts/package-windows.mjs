@@ -1,3 +1,4 @@
+import { copyEncryptionSourceNotices } from "./native-encryption-notices.mjs";
 import { execFileSync as runFile } from "node:child_process";
 const execFileSync = (file, args, options = {}) =>
   runFile(file, args, { ...options, windowsHide: true });
@@ -17,6 +18,7 @@ import { preparePortableRuntime } from "./portable-runtime.mjs";
 if (process.platform !== "win32")
   throw new Error("Build the Windows release on Windows.");
 const root = resolve(import.meta.dirname, "..");
+const cargoTarget = resolve(root, process.env.CARGO_TARGET_DIR ?? "target");
 const commit = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: root,
   encoding: "utf8",
@@ -65,7 +67,17 @@ mkdirSync(notices);
 const decoderPatch = join(notices, "source-patches", "native-decoder");
 mkdirSync(decoderPatch, { recursive: true });
 for (const file of [
-  "apps/publisher/decoder/freedomstream_decoder.h",
+  "apps/publisher/decoder/podetelar_decoder.h",
+  "apps/publisher/decoder/podetelar_macos_decoder.h",
+  "apps/publisher/decoder/deferred_i420.h",
+  "apps/publisher/decoder/bounded_readback.h",
+  "apps/publisher/decoder/native_output_guard.h",
+  "apps/publisher/decoder/native_output_mixer.h",
+  "scripts/patch-native-output.mjs",
+  "scripts/setup-native-audio.mjs",
+  "scripts/setup-native-sdk.mjs",
+  "deploy/native-sdk.json",
+  "deploy/native-audio.json",
   "scripts/setup-native-decoder.mjs",
   "deploy/native-decoder.json",
 ]) {
@@ -73,32 +85,9 @@ for (const file of [
 }
 writeFileSync(
   join(decoderPatch, "README.txt"),
-  "FreedomStream modifies webrtc-sys 0.3.53 (Apache-2.0) to use native Direct3D11 decoders through the dynamically linked GStreamer runtime. The adapter is MIT licensed. The included setup script and checksum pin reproduce the change from the original crate. No browser runtime is included.\n",
+  "PodeTelar modifies webrtc-sys 0.3.53 (Apache-2.0) for native Direct3D11 decoders through dynamically linked GStreamer, expired weak track pruning, output-only Windows audio, remote track gain and output delay qualification. The PodeTelar adapter headers and patch scripts are MIT licensed. The included headers, setup/patch scripts and checksum pins reproduce the adapters from the original crates. libwebrtc 0.4.0 exposes a typed audio handle; LiveKit 0.10.1 adds read-only negotiated stream association accessors for qualification. Existing WebRTC runtime and third-party licenses still apply. No browser runtime is included.\n",
 );
-const sdkPatch = join(notices, "source-patches", "livekit");
-copyFileSync(
-  join(root, ".local/native-sdk/webrtc-sys/src/frame_cryptor.cpp"),
-  join(decoderPatch, "frame_cryptor.cpp"),
-);
-mkdirSync(sdkPatch, { recursive: true });
-for (const file of ["scripts/setup-native-sdk.mjs", "deploy/native-sdk.json"]) {
-  copyFileSync(join(root, file), join(sdkPatch, basename(file)));
-}
-for (const file of [
-  "src/room/participant/local_participant.rs",
-  "src/room/participant/remote_participant.rs",
-  "src/room/mod.rs",
-  "src/room/e2ee/manager.rs",
-  "src/room/publication/remote.rs",
-]) {
-  const destination = join(sdkPatch, file);
-  mkdirSync(resolve(destination, ".."), { recursive: true });
-  copyFileSync(join(root, ".local/native-sdk/livekit", file), destination);
-}
-writeFileSync(
-  join(sdkPatch, "README.txt"),
-  "FreedomStream modifies LiveKit 0.10.1 (Apache-2.0) for stereo publication and mandatory media encryption boundaries. These are all changed source files, the reproducible setup script and checksum pins. Upstream copyright and license notices are retained.\n",
-);
+copyEncryptionSourceNotices(root, notices);
 const { dumpbin } = await preparePortableRuntime(root, output, notices);
 const sha256 = (path) =>
   createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -110,7 +99,7 @@ execFileSync(
     "--locked",
     "--release",
     "-p",
-    "freedomstream-portable",
+    "podetelar-portable",
     "--target",
     "x86_64-pc-windows-msvc",
     "--target-dir",
@@ -130,7 +119,7 @@ execFileSync(
 );
 const launcher = join(
   root,
-  ".local/portable-target/x86_64-pc-windows-msvc/release/freedomstream-portable.exe",
+  ".local/portable-target/x86_64-pc-windows-msvc/release/podetelar-portable.exe",
 );
 if (
   /^\s+(?:MSVCP|VCRUNTIME|api-ms-win-crt-).*\.dll\s*$/im.test(
@@ -146,7 +135,11 @@ if (
   throw new Error(
     "The launcher must resolve its Windows imports from System32.",
   );
-copyFileSync(join(root, "LICENSE"), join(notices, "FreedomStream-MIT.txt"));
+copyFileSync(join(root, "LICENSE"), join(notices, "PodeTelar-MIT.txt"));
+copyFileSync(
+  join(root, "assets/fonts/OFL-Inter.txt"),
+  join(notices, "Inter-OFL.txt"),
+);
 const metadata = JSON.parse(
   execFileSync(
     "cargo",
@@ -163,13 +156,15 @@ const included = new Set(metadata.resolve.nodes.map((node) => node.id));
 const index = [
   "# Windows publisher dependency notices",
   "",
-  "FreedomStream is MIT licensed. Each dependency retains its own license. The curated runtime, complete corresponding library sources and build recipes accompany this executable. See RUNTIME.md and sources/README.md. No codec patent license or hardware qualification is implied.",
+  "PodeTelar is MIT licensed. Each dependency retains its own license. The curated runtime, complete corresponding library sources and build recipes accompany this executable. See RUNTIME.md and sources/README.md. No codec patent license or hardware qualification is implied.",
+  "",
+  "Inter Regular and SemiBold fonts: SIL Open Font License 1.1. Copyright 2020 The Inter Project Authors. See Inter-OFL.txt.",
   "",
 ];
 for (const pkg of metadata.packages
   .filter((pkg) => included.has(pkg.id))
   .sort((a, b) => a.id.localeCompare(b.id))) {
-  if (["freedomstream-publisher", "freedomstream-portable"].includes(pkg.name))
+  if (["podetelar-publisher", "podetelar-portable"].includes(pkg.name))
     continue;
   const directory = resolve(pkg.manifest_path, "..");
   const files = readdirSync(directory, {
@@ -234,7 +229,7 @@ for (const pkg of metadata.packages
     copyFileSync(source, destination);
   }
 }
-const buildRoot = join(root, "target/release/build");
+const buildRoot = join(cargoTarget, "release/build");
 const webrtc = readdirSync(buildRoot, {
   recursive: true,
   withFileTypes: true,
@@ -280,7 +275,7 @@ writeFileSync(
 );
 // Quote a literal path, not a command assembled from user-supplied values.
 const quote = (value) => "'" + value.replaceAll("'", "''") + "'";
-const archive = join(resolve(output, ".."), `freedomstream-payload-${id}.zip`);
+const archive = join(resolve(output, ".."), `podetelar-payload-${id}.zip`);
 execFileSync(
   "powershell.exe",
   [
@@ -294,10 +289,10 @@ const payload = readFileSync(archive);
 const footer = Buffer.alloc(56);
 footer.writeBigUInt64LE(BigInt(payload.length));
 createHash("sha256").update(payload).digest().copy(footer, 8);
-footer.write("FREEDOMSTREAM01!", 40, "ascii");
+footer.write("PODETELAR000001!", 40, "ascii");
 const executable = join(
   resolve(output, ".."),
-  `freedomstream-windows-x64-${id}.exe`,
+  `podetelar-windows-x64-${id}.exe`,
 );
 writeFileSync(
   executable,

@@ -1,34 +1,53 @@
 [package]
-name = "freedomstream-publisher"
+name = "podetelar-publisher"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+performance-experiments = []
+ui-review = []
+media-qualification = []
+
 [dependencies]
-image = { version = "=0.25.10", default-features = false, features = ["jpeg"] }
+image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+rfd = { version = "0.17", default-features = false }
+keyring = { version = "=3.6.3", default-features = false, features = ["windows-native", "apple-native"] }
+base64 = "0.22"
+rand = "0.9"
 anyhow = "1.0"
-eframe = { version = "=0.37.0", default-features = false, features = ["clipboard", "default_fonts", "glow", "x11", "wayland"] }
+bytemuck = "=1.25.2"
+bytes = "=1.12.1"
+eframe = { version = "=0.37.0", default-features = false, features = ["clipboard", "default_fonts", "glow", "links", "x11", "wayland"] }
 gstreamer = { version = "=0.25.4", features = ["v1_28"] }
 gstreamer-app = { version = "=0.25.2", features = ["v1_28"] }
 gstreamer-video = { version = "=0.25.4", features = ["v1_28"] }
 livekit = { version = "=0.10.1", features = ["rustls-tls-native-roots"] }
+webrtc-sys = "=0.3.53"
 reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "rustls-tls-native-roots", "stream"] }
 regex = "1.13"
 log = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.10"
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "sync", "time", "io-std", "io-util", "signal"] }
 url = "2.5"
 tempfile = "3.27"
 futures-util = "0.3"
-base64 = "0.22"
 ring = "0.17.14"
 zeroize = "1.8"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+winit = { version = "=0.30.13", default-features = false }
+
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_System_Threading", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_Media_Audio", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_Security", "Win32_Security_Cryptography"] }
+windows = { version = "0.62", features = ["System_Profile", "Storage_Streams", "Security_Cryptography", "Win32_System_WinRT", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_System_Threading", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_Media_Audio", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_Security", "Win32_Security_Cryptography"] }
 
 [build-dependencies]
 winresource = "=0.1.34"
+
+[[example]]
+name = "ui-review"
+required-features = ["ui-review"]

@@ -8,10 +8,10 @@ import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 
 test("release downloads require current room authority and verify the installed bytes", async () => {
-  const root = mkdtempSync(join(tmpdir(), "freedomstream-release-"));
+  const root = mkdtempSync(join(tmpdir(), "podetelar-release-"));
   const archive = Buffer.from("operator-installed test archive");
   const manifest = {
-    filename: "freedomstream-windows-x64-0.1.0-aaaaaaaaaaaa.exe",
+    filename: "podetelar-windows-x64-0.1.0-aaaaaaaaaaaa.exe",
     version: "0.1.0",
     commit: "a".repeat(40),
     sha256: createHash("sha256").update(archive).digest("hex"),
@@ -30,6 +30,7 @@ test("release downloads require current room authority and verify the installed 
   });
   const app = await buildApp(config, {
     mediaDirectory: {
+      members: async () => [],
       async participant() {
         return null;
       },
@@ -92,6 +93,6 @@ test("release downloads require current room authority and verify the installed 
   await assert.rejects(buildApp(config), /release manifest/);
   const resolved = realpathSync(root);
   assert.equal(dirname(resolved), realpathSync(tmpdir()));
-  assert.ok(basename(resolved).startsWith("freedomstream-release-"));
+  assert.ok(basename(resolved).startsWith("podetelar-release-"));
   rmSync(resolved, { recursive: true });
 });

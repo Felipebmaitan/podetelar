@@ -34,7 +34,7 @@ const addition = `                if let libwebrtc::audio_source::RtcAudioSource
 `;
 const encryptionMarker =
   "        let track_info = self.inner.rtc_engine.add_track(req).await?;\n";
-const encryptionCheck = `        if EncryptionType::from(track_info.encryption()) != self.local.encryption_type {
+const encryptionCheck = `        if !negotiated_track_encryption_matches(self.local.encryption_type, track_info.encryption) {
             track.disable();
             return Err(RoomError::Internal("SFU changed requested track encryption".into()));
         }
@@ -79,11 +79,24 @@ const protectedTrailerChanges = [
 ];
 const protectedReceiverTrailerChanges = [
   [
+    "    pub fn frame_cryptors(&self) ->",
+    `    /// Check one publication without cloning every participant's cryptor.
+    pub fn frame_cryptor_enabled(&self, identity: ParticipantIdentity, sid: TrackSid) -> bool {
+        self.inner.lock().frame_cryptors.get(&(identity, sid)).is_some_and(FrameCryptor::enabled)
+    }
+
+    pub fn frame_cryptors(&self) ->`,
+  ],
+  [
     "        let needs_packet_trailer_handler = needs_video_receiver_packet_trailer_handler(\n",
     "        let needs_packet_trailer_handler = !self.initialized() && needs_video_receiver_packet_trailer_handler(\n",
   ],
 ];
 const roomReceiverChanges = [
+  [
+    "            key_provider.set_sif_trailer(join_response.sif_trailer);",
+    "            // Protected rooms never authorize server-injected frames.\n            key_provider.set_sif_trailer(Vec::new());",
+  ],
   [
     `        if let Some(remote_participant) = remote_participant {
             tokio::spawn(async move {
@@ -275,8 +288,32 @@ if (existsSync(destination)) {
       throw new Error("Native SDK protected sender trailer marker mismatch.");
     patched = patched.replace(marker, replacement);
   }
+  patched += `
+fn negotiated_track_encryption_matches(expected: EncryptionType, received: i32) -> bool {
+    proto::encryption::Type::from(expected) as i32 == received
+}
+
+#[cfg(test)]
+mod podetelar_sender_encryption_tests {
+    use super::*;
+
+    #[test]
+    fn podetelar_encryption_reply_must_exactly_match_requested_mode() {
+        let gcm = proto::encryption::Type::Gcm as i32;
+        let none = proto::encryption::Type::None as i32;
+        assert!(negotiated_track_encryption_matches(EncryptionType::Gcm, gcm));
+        assert!(!negotiated_track_encryption_matches(EncryptionType::Gcm, none));
+        assert!(!negotiated_track_encryption_matches(EncryptionType::Gcm, 0x7fff));
+        assert!(negotiated_track_encryption_matches(EncryptionType::None, none));
+        assert!(!negotiated_track_encryption_matches(EncryptionType::None, gcm));
+        assert!(!negotiated_track_encryption_matches(EncryptionType::None, 0x7fff));
+    }
+}
+`;
   if (hash(patched) !== pin.patchedSourceSha256)
-    throw new Error("The native SDK patch checksum did not match the pin.");
+    throw new Error(
+      `Native SDK patched sender checksum mismatch: ${hash(patched)}`,
+    );
   writeFileSync(target, patched);
   const roomTarget = join(source, "src/room/mod.rs");
   const roomOriginal = readFileSync(roomTarget, "utf8").replaceAll(
@@ -298,7 +335,9 @@ if (existsSync(destination)) {
     roomPatched = roomPatched.replace(marker, replacement);
   }
   if (hash(roomPatched) !== pin.roomPatchedSourceSha256)
-    throw new Error("Native SDK protected reconnect patch checksum mismatch.");
+    throw new Error(
+      `Native SDK patched room checksum mismatch: ${hash(roomPatched)}`,
+    );
   writeFileSync(roomTarget, roomPatched);
   const participantTarget = join(
     source,
@@ -366,6 +405,55 @@ if (existsSync(destination)) {
   if (hash(publicationPatched) !== pin.publicationPatchedSourceSha256)
     throw new Error("Native SDK receiver publication patch checksum mismatch.");
   writeFileSync(publicationTarget, publicationPatched);
+  // Read-only association used by opt-in local qualification. Never log IDs.
+  for (const [file, kind] of [
+    ["remote_audio_track.rs", "RtcAudioTrack"],
+    ["remote_video_track.rs", "RtcVideoTrack"],
+  ]) {
+    const path = join(source, "src/room/track", file);
+    const original = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+    const marker = `    pub fn rtc_track(&self) -> ${kind} {`;
+    if (original.split(marker).length !== 2)
+      throw new Error("Native sync association marker changed.");
+    const audioGeneration =
+      kind === "RtcAudioTrack"
+        ? `    /// Native receiver generation, never resolved from a reused SSRC here.
+    pub fn native_playback_generation(&self) -> u64 {
+        self.transceiver().map_or(0, |t| t.playback_generation())
+    }
+
+`
+        : "";
+    writeFileSync(
+      path,
+      original.replace(
+        marker,
+        audioGeneration +
+          `    /// PodeTelar qualification adapter: negotiated receiver stream associations.
+    pub fn sync_stream_ids(&self) -> Vec<String> {
+        self.transceiver().map_or_else(Vec::new, |t| t.receiver().stream_ids())
+    }
+
+${marker}`,
+      ),
+    );
+  }
+  // These lazy instrumentation APIs replace an existing RTP transform. Keep them
+  // out of the application API until they can compose with the frame cryptor.
+  for (const [file, method] of [
+    ["local_video_track.rs", "publish_timing_events"],
+    ["remote_video_track.rs", "subscribe_timing_events"],
+  ]) {
+    const path = join(source, "src/room/track", file);
+    const original = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+    const marker = `    pub fn ${method}(`;
+    if (original.split(marker).length !== 2)
+      throw new Error("Unexpected SDK timing API.");
+    writeFileSync(
+      path,
+      original.replace(marker, `    pub(crate) fn ${method}(`),
+    );
+  }
   const actualTree = treeHash(source);
   if (actualTree !== pin.treeSha256)
     throw new Error(

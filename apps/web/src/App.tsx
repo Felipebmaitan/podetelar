@@ -1,11 +1,16 @@
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { invitationSchema, roomIdSchema } from "@freedomstream/contracts";
-import type { CreatedRoom, RoomSession } from "@freedomstream/contracts";
+import { invitationSchema, roomIdSchema } from "@podetelar/contracts";
+import type { CreatedRoom, RoomSession } from "@podetelar/contracts";
 import { ApiError, request } from "./api";
 import { RoomAccess } from "./RoomAccess";
 import { PublisherDownload } from "./PublisherDownload";
 import { Admin } from "./Admin";
+import { OpenInApp } from "./OpenInApp";
+import { InvitationPage } from "./InvitationPage";
+import { DirectDownload } from "./DirectDownload";
+import { BrandMark } from "./BrandMark";
+import { ChannelInvitation } from "./ChannelInvitation";
 
 const managedRoomId = /^\/manage\/([A-Za-z0-9_-]{22})$/.exec(
   window.location.pathname,
@@ -20,6 +25,9 @@ const invitation = new URLSearchParams(window.location.hash.slice(1)).get(
 const entryInvitation = invitationSchema.safeParse(invitation).success
   ? invitation!
   : undefined;
+const downloadTicket = new URLSearchParams(window.location.hash.slice(1)).get(
+  "ticket",
+);
 // Keep the invitation in memory only; never leave it in history or browser storage.
 if (window.location.hash)
   window.history.replaceState(
@@ -42,6 +50,21 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export function App() {
+  const channel = /^\/c\/(\d{17,20})\/(\d{17,20})$/.exec(
+    window.location.pathname,
+  );
+  if (channel)
+    return (
+      <ChannelInvitation
+        guildId={channel[1]!}
+        channelId={channel[2]!}
+        invitation={entryInvitation}
+      />
+    );
+  if (window.location.pathname === "/download")
+    return <DirectDownload ticket={downloadTicket} />;
+  if (entryRoomId)
+    return <InvitationPage roomId={entryRoomId} invitation={entryInvitation} />;
   return window.location.pathname === "/" ? <Admin /> : <RoomApp />;
 }
 
@@ -158,10 +181,8 @@ function RoomApp() {
     <div className="app-shell">
       <aside className="sidebar">
         <a className="brand" href="/">
-          <span className="brand-mark" aria-hidden="true">
-            f
-          </span>
-          <span>freedomstream</span>
+          <BrandMark className="brand-mark" />
+          <span>PodeTelar</span>
         </a>
         <div className="room-navigation">
           <p className="eyebrow">YOUR ROOM</p>
@@ -172,7 +193,7 @@ function RoomApp() {
         </div>
         <div className="sidebar-footer">
           <span className="avatar" aria-hidden="true">
-            {session?.participant.displayName.slice(0, 1).toUpperCase() ?? "F"}
+            {session?.participant.displayName.slice(0, 1).toUpperCase() ?? "P"}
           </span>
           <div>
             <strong>{session?.participant.displayName ?? "Welcome"}</strong>
@@ -184,7 +205,7 @@ function RoomApp() {
       </aside>
       <main>
         <header className="topbar">
-          <span>{session?.room.name ?? "Welcome to FreedomStream"}</span>
+          <span>{session?.room.name ?? "Welcome to PodeTelar"}</span>
           <span className="privacy-label">Invite only</span>
         </header>
         {error && (
@@ -218,7 +239,7 @@ function RoomApp() {
             <section className="room-stage">
               <h2>Share and watch in the desktop app</h2>
               <p>
-                Download FreedomStream, then paste your room invitation into the
+                Download PodeTelar, then paste your room invitation into the
                 app. Native capture and playback keep your room experience
                 consistent.
               </p>
@@ -253,6 +274,14 @@ function RoomApp() {
                 </>
               )}
             </section>
+            {invitationUrl && (
+              <OpenInApp
+                roomId={session.room.id}
+                invitation={new URL(invitationUrl).hash.slice(
+                  "#invite=".length,
+                )}
+              />
+            )}
             <PublisherDownload roomId={session.room.id} />
           </div>
         ) : entryRoomId ? (
@@ -268,7 +297,7 @@ function RoomApp() {
         ) : (
           <div className="centered">
             <h1>That room link doesn't look right.</h1>
-            <a href="/">Return to FreedomStream</a>
+            <a href="/">Return to PodeTelar</a>
           </div>
         )}
       </main>
@@ -428,6 +457,7 @@ function JoinRoom({
   };
   return (
     <div className="centered">
+      {secret && <OpenInApp roomId={roomId} invitation={secret} />}
       <form className="panel join-panel" onSubmit={(event) => void join(event)}>
         <p className="eyebrow">YOU'RE INVITED</p>
         <h1>Take your place.</h1>

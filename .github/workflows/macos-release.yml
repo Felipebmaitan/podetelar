@@ -1,0 +1,104 @@
+name: macOS Apple Silicon
+on:
+  pull_request:
+    paths:
+      - apps/publisher/**
+      - apps/macos/**
+      - apps/installed-launcher/**
+      - apps/*protocol.rs
+      - scripts/*macos*
+      - scripts/setup-native-*.mjs
+      - scripts/patch-native-output.mjs
+      - deploy/macos/**
+      - deploy/native-*.json
+      - deploy/portable-runtime.json
+      - deploy/license-overrides.json
+      - Cargo.lock
+      - Cargo.toml
+      - rust-toolchain.toml
+      - package.json
+      - package-lock.json
+      - .github/workflows/macos-release.yml
+  release:
+    types: [published]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            apps/installed-launcher/target
+            .local/downloads
+          key: macos-arm64-${{ hashFiles('Cargo.lock', 'apps/installed-launcher/Cargo.lock', 'deploy/macos/runtime.json', 'deploy/native-*.json') }}
+      - run: brew install pkgconf
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+      - run: npm ci
+      - run: npm run check
+      - run: npm run native:setup
+      - run: npm run native:check
+      - run: npm run native:test
+      - run: cargo fmt --manifest-path apps/installed-launcher/Cargo.toml --check
+      - run: cargo clippy --locked --manifest-path apps/installed-launcher/Cargo.toml -- -D warnings
+      - run: cargo test --locked --manifest-path apps/installed-launcher/Cargo.toml
+      - run: node scripts/qualify-macos-updates.mjs
+      - name: Package self-contained macOS app and update feed
+        run: npm run native:package:macos
+        env:
+          INSTALLER_BUILD_NUMBER: ${{ github.run_number }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: .local/macos/releases/*/public/*
+          if-no-files-found: error
+          retention-days: 14
+  publish:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-arm64
+          path: macos-release
+      - name: Attach macOS installer, update package, feed and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          checksums=(macos-release/**/SHA256SUMS-macos)
+          [[ ${#checksums[@]} == 1 ]]
+          cd "$(dirname -- "${checksums[0]}")"
+          sha256sum --check --strict SHA256SUMS-macos
+          assets=(*.dmg *-full.nupkg releases.osx-arm64.json macos-manifest.json SHA256SUMS-macos)
+          [[ ${#assets[@]} == 5 ]]
+          gh release upload "$RELEASE_TAG" "${assets[@]}"

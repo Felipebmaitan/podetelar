@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleName</key><string>PodeTelar</string>
+<key>CFBundleDisplayName</key><string>PodeTelar</string>
+<key>CFBundleIdentifier</key><string>app.podetelar.desktop</string>
+<key>CFBundleIconFile</key><string>PodeTelar.icns</string>
+<key>CFBundleExecutable</key><string>PodeTelar</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>0.1.4</string>
+<key>CFBundleVersion</key><string>0.1.4</string>
+<key>LSMinimumSystemVersion</key><string>14.0</string>
+<key>NSLocalNetworkUsageDescription</key><string>PodeTelar connects to your room media server.</string>
+<key>NSHighResolutionCapable</key><true/>
+<key>NSScreenCaptureUsageDescription</key><string>PodeTelar shares the display or window you choose with your room.</string>
+<key>NSAudioCaptureUsageDescription</key><string>PodeTelar shares audio from the applications you choose, excluding Discord and its own playback.</string>
+<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>PodeTelar room invitation</string><key>CFBundleURLSchemes</key><array><string>podetelar</string></array></dict></array>
+</dict></plist>

@@ -3,10 +3,11 @@
 The native Windows app publishes and watches streams in existing LiveKit rooms.
 GStreamer captures D3D11 textures and uses NVIDIA NVENC or AMD AMF. A pinned
 WebRTC decoder adapter provides native H.264/HEVC/AV1 playback through GStreamer.
-AV1 receivers without a registered GPU decoder use the SDK dav1d CPU decoder.
+Only available hardware decoders authorize reception; software AV1 availability
+does not count as support.
 Audio uses WASAPI. LiveKit forwards compressed media without server transcoding.
 There is no embedded/external browser or CPU encoder fallback. The website handles
-invitations, access management and portable app downloads.
+invitations, access management and app downloads.
 
 ## Development
 
@@ -24,15 +25,22 @@ npm run native:run
 Setup verifies and installs the pinned GStreamer 1.28.8 development runtime into
 ignored `.local/gstreamer`, and prepares checksum-verified SDK source patches for
 native stereo and the D3D11 decoder bridge in `.local/native-sdk`. Generated source
-changes are rejected. See the [stereo SDK decision](adr/0003-native-stereo-publication-feature.md)
-and `deploy/native-decoder.json`. Friends use the [self-contained portable EXE](distribution.md);
+changes are rejected. See [SDK maintenance](development.md#native-dependency-maintenance)
+and `deploy/native-decoder.json`. Friends use [Setup](distribution.md);
 the raw Cargo executable still requires its runtime. Both production executables
 use the GUI subsystem. Helper processes run hidden.
 
-Paste an invitation and name once. After a successful join these are encrypted
-for your Windows user; reopening automatically joins the saved room. Sharing and
-watching remain explicit. Room options → Forget saved room removes the saved profile
-and leaves. See [saved access and firewall behavior](distribution.md#saved-room-and-launch-behavior).
+Open a room invitation from `/stream` or `/telar` in Discord, or paste a link and
+enter your nickname. Each invitation selects its backend; the last successful guest
+nickname is remembered locally. Discord sign-in defaults to the hosted backend and
+uses the system browser. The selected login backend is remembered separately;
+its credential uses OS credential storage scoped to that exact public origin.
+No room or language preference is saved. See [Discord accounts](discord-accounts.md).
+Guest pictures and live nickname editing are described in [guest profiles](guest-profiles.md).
+Later links may reuse the nickname
+and join when idle while the app remains open. An active room requires confirmation
+before switching. Sharing and watching remain explicit. See
+[launch and firewall behavior](distribution.md#invitations-and-launch-behavior).
 
 The initial 1280×720 viewport has sharing controls on the left and larger native
 stream tiles on the right. Watch sits in the center of each still preview. Stop
@@ -44,24 +52,29 @@ visible slider offers 15–120 FPS; codec/bitrate live in Advanced. Auto starts 
 6 Mbps AV1/HEVC or 8 Mbps H.264 for 1080p60 motion, with a 35 Mbps ceiling. Manual
 1–100 Mbps remains available. A shared watching allowance and receiver feedback
 can reduce the one publication for all watchers without rewriting resolution/FPS.
-See [quality behavior](quality.md) and [bitrate research](bitrate-guidance.md).
+See [quality behavior](quality.md) and [bitrate guidance](bitrate-guidance.md).
 
 Audio follows the source: a selected window's process tree or the approved desktop
 application mix. Discord and native playback are excluded, and the microphone is
 never acquired. See [automatic source audio](audio.md). Monitor capture uses DXGI;
 windows use Windows Graphics Capture. No injection into games is implemented.
 
-An incompatible/stalled AV1 or HEVC watcher requests a whole-publication H.264 fallback;
-its Watch intent survives replacement. This is one shared encoding, not a second
-encoder or server transcode. Native receive path tests are required alongside
-capability probing. SDR only; HDR fidelity and physical 4K120 remain unqualified.
-AMD factories being present in the runtime does not constitute AMD qualification.
+Rooms rank available codecs AV1 → HEVC → H.264 within the sender's preference
+and every connected member's explicitly advertised hardware decoders. The server
+includes these capabilities in the initial native media token so a joining member
+does not briefly appear H.264-only. Missing/older capabilities remain pending;
+starting a stream requires every member to report hardware support. A live stream
+keeps its current codec until explicit capabilities exclude it or the streamer
+applies settings. Interruptions and departures alone do not change codecs.
+This remains one shared encoding,
+with Watch intent and preview cadence preserved across replacements. SDR only;
+HDR fidelity and physical 4K120 remain unqualified.
 
-AV1 publication requires a runtime-probed NVIDIA NVENC or AMD AMF AV1 encoder.
-Desktop support begins with RTX 40 / RX 7000; GPU decoding starts with RTX 30 /
-most RX 6000 (RX 6400/6500 XT are exceptions). See [vendor research and workload
-calculations](research/av1-hardware.md). CPU fallback does not imply low CPU use
-while gaming or receiving multiple streams; see [AV1 verification](verification/phase-14.md).
+AV1 publication requires a runtime-probed hardware encoder. Receivers without a
+registered AV1 GPU decoder constrain the room to another common hardware codec.
+The SDK's bundled software decoder is not used by the app's subscription policy.
+The presence of
+AMD factories in the runtime does not establish AMD hardware qualification.
 
 ## Verification tools
 
@@ -78,18 +91,22 @@ under Node 24 on Windows. It downloads a checksum-pinned official Windows LiveKi
 v1.13.11 test server and runs the current API and native clients on isolated local
 ports (3010 and 17880–17882). It does not change Docker, Windows settings or the
 VPS. The selected local adapter must be reachable; override its discovery with
-`FREEDOMSTREAM_TEST_NODE_IP` if needed. A working default playback device is needed
+`PODETELAR_TEST_NODE_IP` if needed. A working default playback device is needed
 for audio checks. Native invitation authority travels through bounded stdin only.
 
 The AV1 acceptance suite (`native:room-smoke -- av1.spec.ts`) checks actual GPU
-and forced dav1d decoder implementations, Stop/rewatch traffic, reconnect frame
-advancement and H.264 replacement. `FREEDOMSTREAM_AV1_DECODER=software` bypasses
-the custom AV1 GPU factory for CPU qualification; unset it for normal selection.
+decoding, exclusion of software-only AV1 support, Stop/rewatch traffic, reconnect
+frame advancement and H.264 replacement. `PODETELAR_AV1_DECODER=software` masks
+AV1 hardware availability for qualification; the app must then use another common
+hardware codec, never dav1d. Unset it for normal selection.
 These tests require an AV1 hardware encoder, and the GPU case requires a decoder.
+`codec-adaptation.spec.ts` checks room-wide hardware restrictions and stable codec
+selection after departures. `codec-interruptions.spec.ts` uses an isolated SFU's
+explicit test-only mute/unmute permission to verify real AV1/HEVC recovery after
+nine seconds without frames, preserving the publication and capability set.
 
-Set `FREEDOMSTREAM_NATIVE_EXE` to test another built/portable executable. For
-portable audio fixtures, also set `FREEDOMSTREAM_NATIVE_TONE_EXE` to its extracted
+Set `PODETELAR_NATIVE_EXE` to test another built/portable executable. For
+portable audio fixtures, also set `PODETELAR_NATIVE_TONE_EXE` to its extracted
 publisher executable, so Game.exe/Discord.exe fixture process names remain real.
-The old browser media suites have been replaced with native room acceptance;
-historical browser/TURN evidence is retained in the phase verification documents.
-Native TURN/TLS, larger groups, real games and A/V latency need new qualification.
+Native TURN/TLS, larger groups, real games and physical A/V latency require
+separate qualification; local SFU checks do not establish those properties.

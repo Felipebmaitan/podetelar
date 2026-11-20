@@ -9,7 +9,7 @@ import sys
 import tarfile
 import tempfile
 
-ROOT = Path('/opt/freedomstream')
+ROOT = Path('/opt/podetelar')
 command = os.environ.get('SSH_ORIGINAL_COMMAND', '')
 if command == 'current':
     current = (ROOT / 'current').resolve().name

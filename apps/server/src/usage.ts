@@ -1,8 +1,14 @@
 import { DatabaseSync } from "node:sqlite";
-import type { UsageReport, UsagePoint } from "@freedomstream/contracts";
+import {
+  deviceIdSchema,
+  type UsageReport,
+  type UsagePoint,
+} from "@podetelar/contracts";
 
 const MINUTE = 60_000;
 const RETENTION = 400 * 86400000;
+const REPORT_CACHE_BYTES = 2 * 1024 * 1024;
+type CachedReport = { from: number; to: number; suffix: string; bytes: number };
 type Counter = {
   room: string;
   participant: string;
@@ -16,13 +22,13 @@ export function parseUsageMetrics(body: string): {
   counters: Counter[];
   generation: number;
 } {
-  if (!/^freedomstream_usage_enabled 1\s*$/m.test(body))
+  if (!/^podetelar_usage_enabled 1\s*$/m.test(body))
     throw new Error("Usage metrics unavailable");
   const result: Counter[] = [];
   for (const line of body.split("\n")) {
-    if (!line.startsWith("freedomstream_participant_bytes_total{")) continue;
+    if (!line.startsWith("podetelar_participant_bytes_total{")) continue;
     const match =
-      /^freedomstream_participant_bytes_total\{([^}]+)\} ([0-9.e+]+)\s*$/.exec(
+      /^podetelar_participant_bytes_total\{([^}]+)\} ([0-9.e+]+)\s*$/.exec(
         line,
       );
     if (!match) throw new Error("Invalid usage counter");
@@ -31,7 +37,7 @@ export function parseUsageMetrics(body: string): {
     );
     const bytes = Number(match[2]);
     if (
-      !/^freedomstream_[A-Za-z0-9_-]{22}$/.test(labels.room ?? "") ||
+      !/^podetelar_[A-Za-z0-9_-]{22}$/.test(labels.room ?? "") ||
       !/^[0-9a-f-]{36}$/.test(labels.participant ?? "") ||
       !["incoming", "outgoing"].includes(labels.direction ?? "") ||
       !Number.isSafeInteger(bytes) ||
@@ -39,14 +45,14 @@ export function parseUsageMetrics(body: string): {
     )
       continue;
     result.push({
-      room: labels.room!.slice(14),
+      room: labels.room!.slice("podetelar_".length),
       participant: labels.participant!,
       direction: labels.direction as Counter["direction"],
       bytes,
     });
   }
   const generation = Number(
-    /^freedomstream_usage_started_seconds ([0-9.e+-]+)\s*$/m.exec(body)?.[1],
+    /^podetelar_usage_started_seconds ([0-9.e+-]+)\s*$/m.exec(body)?.[1],
   );
   if (!Number.isFinite(generation) || generation <= 0)
     throw new Error("Usage generation unavailable");
@@ -63,6 +69,8 @@ export class Usage {
   private generation: number | null = null;
   private prunedAt = 0;
   private observedSince = 0;
+  private reports = new Map<string, CachedReport>();
+  private reportBytes = 0;
   constructor(
     path: string,
     private url: string,
@@ -74,14 +82,26 @@ export class Usage {
       CREATE TABLE IF NOT EXISTS usage_minutes (minute INTEGER NOT NULL, user TEXT NOT NULL, uploaded REAL NOT NULL, downloaded REAL NOT NULL, PRIMARY KEY(minute,user));
       CREATE TABLE IF NOT EXISTS usage_coverage (minute INTEGER PRIMARY KEY, milliseconds INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS usage_user_minutes ON usage_minutes(user,minute);`);
+    // Keep byte buckets and SFU baselines keyed by session. Only reporting groups
+    // sessions, so concurrent instances and counter resets cannot overwrite data.
+    const columns = this.db.prepare("PRAGMA table_info(usage_users)").all();
+    if (!columns.some((column) => column.name === "device_id"))
+      this.db.exec("ALTER TABLE usage_users ADD COLUMN device_id TEXT");
+    this.db.exec(
+      "CREATE INDEX IF NOT EXISTS usage_identity ON usage_users(COALESCE(device_id,id),admitted_at)",
+    );
     this.db.exec(
       "INSERT OR IGNORE INTO usage_users(id,room,name) SELECT participant_id, room_id, display_name FROM sessions;",
     );
   }
-  remember(room: string, participant: string, name: string) {
+  remember(room: string, participant: string, name: string, deviceId?: string) {
+    if (deviceId !== undefined) deviceIdSchema.parse(deviceId);
     this.db
-      .prepare("INSERT OR IGNORE INTO usage_users VALUES (?,?,?,?)")
-      .run(participant, room, name, this.now());
+      .prepare(
+        "INSERT OR IGNORE INTO usage_users(id,room,name,admitted_at,device_id) VALUES (?,?,?,?,?)",
+      )
+      .run(participant, room, name, this.now(), deviceId ?? null);
+    this.clearReports();
   }
   start() {
     void this.sample();
@@ -125,6 +145,7 @@ export class Usage {
   /** Cumulative counters become deltas once. Gaps/resets establish a fresh baseline. */
   record(counters: Counter[], at: number, generation = 1) {
     const previous = this.lastSample;
+    const previousPrunedAt = this.prunedAt;
     const continuous =
       this.generation === generation &&
       previous !== null &&
@@ -191,8 +212,18 @@ export class Usage {
       }
       this.db.exec("COMMIT");
     } catch (error) {
+      this.clearReports();
       this.db.exec("ROLLBACK");
       throw error;
+    }
+    // A successful prune can change any historical range, including user names.
+    // Otherwise only minute buckets touched by this observation can change.
+    if (this.prunedAt !== previousPrunedAt) this.clearReports();
+    else if (previous !== null) {
+      const from = Math.floor(Math.min(previous, at) / MINUTE) * MINUTE;
+      const to = Math.ceil(Math.max(previous, at) / MINUTE) * MINUTE;
+      for (const [key, entry] of this.reports)
+        if (entry.from < to && entry.to > from) this.removeReport(key);
     }
     this.baseline = next;
     this.lastSample = at;
@@ -229,7 +260,7 @@ export class Usage {
     const points = (user?: string): UsagePoint[] => {
       const rows = this.db
         .prepare(
-          `SELECT CAST((minute-?)/? AS INTEGER) AS bucket, SUM(uploaded) AS uploaded, SUM(downloaded) AS downloaded FROM usage_minutes WHERE minute>=? AND minute<? ${user ? "AND user=?" : ""} GROUP BY bucket`,
+          `SELECT CAST((minute-?)/? AS INTEGER) AS bucket, SUM(uploaded) AS uploaded, SUM(downloaded) AS downloaded FROM usage_minutes m JOIN usage_users u ON u.id=m.user WHERE minute>=? AND minute<? ${user ? "AND COALESCE(u.device_id,u.id)=?" : ""} GROUP BY bucket`,
         )
         .all(from, width, from, to, ...(user ? [user] : [])) as {
         bucket: number;
@@ -249,7 +280,7 @@ export class Usage {
     };
     const sum = this.db
       .prepare(
-        "SELECT COALESCE(SUM(uploaded),0) AS uploadedBytes, COALESCE(SUM(downloaded),0) AS downloadedBytes, COUNT(DISTINCT user) AS userCount FROM usage_minutes WHERE minute>=? AND minute<?",
+        "SELECT COALESCE(SUM(uploaded),0) AS uploadedBytes, COALESCE(SUM(downloaded),0) AS downloadedBytes, COUNT(DISTINCT COALESCE(u.device_id,u.id)) AS userCount FROM usage_minutes m JOIN usage_users u ON u.id=m.user WHERE minute>=? AND minute<?",
       )
       .get(from, to) as {
       uploadedBytes: number;
@@ -258,12 +289,12 @@ export class Usage {
     };
     const users = this.db
       .prepare(
-        "SELECT u.id, u.room AS roomId, u.name AS displayName, SUM(m.uploaded) AS uploadedBytes, SUM(m.downloaded) AS downloadedBytes FROM usage_minutes m JOIN usage_users u ON u.id=m.user WHERE minute>=? AND minute<? GROUP BY u.id ORDER BY SUM(m.uploaded+m.downloaded) DESC, u.id LIMIT 24 OFFSET ?",
+        "SELECT COALESCE(u.device_id,u.id) AS id, CASE WHEN u.device_id IS NULL THEN 'session' ELSE 'device' END AS identityKind, COUNT(DISTINCT u.id) AS sessionCount, SUM(m.uploaded) AS uploadedBytes, SUM(m.downloaded) AS downloadedBytes FROM usage_minutes m JOIN usage_users u ON u.id=m.user WHERE minute>=? AND minute<? GROUP BY COALESCE(u.device_id,u.id) ORDER BY SUM(m.uploaded+m.downloaded) DESC, COALESCE(u.device_id,u.id) LIMIT 24 OFFSET ?",
       )
       .all(from, to, page * 24) as {
       id: string;
-      roomId: string;
-      displayName: string;
+      identityKind: "device" | "session";
+      sessionCount: number;
       uploadedBytes: number;
       downloadedBytes: number;
     }[];
@@ -278,14 +309,78 @@ export class Usage {
         this.now() - this.lastSample < 15000,
       ...sum,
       points: points(),
-      users: users.map((u) => ({ ...u, points: points(u.id) })),
+      users: users.map((u) => {
+        // Bound drill-down size independently of lifetime session churn. All
+        // totals and graphs include every session, including those beyond 50.
+        const sessions = this.db
+          .prepare(
+            "SELECT u.id, u.room AS roomId, u.name AS displayName, u.admitted_at AS admittedAt, SUM(m.uploaded) AS uploadedBytes, SUM(m.downloaded) AS downloadedBytes FROM usage_minutes m JOIN usage_users u ON u.id=m.user WHERE minute>=? AND minute<? AND COALESCE(u.device_id,u.id)=? GROUP BY u.id ORDER BY u.admitted_at DESC,u.id DESC LIMIT 50",
+          )
+          .all(from, to, u.id) as UsageReport["users"][number]["sessions"];
+        return {
+          ...u,
+          displayName: sessions[0]!.displayName,
+          sessions: sessions.map((session) => ({ ...session })),
+          points: points(u.id),
+        };
+      }),
       page,
       retentionDays: 400,
     };
   }
+  /** Cache closed history only; collector status and HTTP authorization stay live. */
+  reportJson(from: number, to: number, page = 0): string {
+    from = Math.floor(from / MINUTE) * MINUTE;
+    to = Math.ceil(to / MINUTE) * MINUTE;
+    if (to > Math.floor(this.now() / MINUTE) * MINUTE)
+      return JSON.stringify(this.report(from, to, page));
+    const key = `${from}/${to}/${page}`;
+    let entry = this.reports.get(key);
+    if (entry) {
+      this.reports.delete(key);
+      this.reports.set(key, entry);
+    } else {
+      const {
+        lastSampleAt: _last,
+        available: _available,
+        ...stable
+      } = this.report(from, to, page);
+      const suffix = JSON.stringify(stable).slice(1);
+      // Account conservatively for UTF-16 strings, keys and fixed entry data.
+      // This bounds retained content, not the JavaScript engine's total heap.
+      const bytes = (suffix.length + key.length) * 2 + 64;
+      entry = { from, to, suffix, bytes };
+      if (bytes <= REPORT_CACHE_BYTES) {
+        while (
+          this.reports.size >= 4 ||
+          this.reportBytes + bytes > REPORT_CACHE_BYTES
+        )
+          this.removeReport(this.reports.keys().next().value!);
+        this.reports.set(key, entry);
+        this.reportBytes += bytes;
+      }
+    }
+    const available =
+      this.available &&
+      this.lastSample !== null &&
+      this.now() - this.lastSample < 15000;
+    return `{"lastSampleAt":${this.lastSample},"available":${available},${entry.suffix}`;
+  }
+  private removeReport(key: string) {
+    const entry = this.reports.get(key);
+    if (entry) {
+      this.reportBytes -= entry.bytes;
+      this.reports.delete(key);
+    }
+  }
+  private clearReports() {
+    this.reports.clear();
+    this.reportBytes = 0;
+  }
   async close() {
     if (this.timer) clearInterval(this.timer);
     await this.work;
+    this.clearReports();
     this.db.close();
   }
 }

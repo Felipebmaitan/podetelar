@@ -58,7 +58,8 @@ export class Signaling {
           if (
             queryToken &&
             request.headers.origin &&
-            request.headers.origin !== config.publicUrl
+            request.headers.origin !== config.publicUrl &&
+            request.headers.origin !== config.directUrl
           )
             return reply
               .code(403)
@@ -73,7 +74,7 @@ export class Signaling {
           try {
             const claims = await verifier.verify(token, 0);
             const room = claims.video?.room?.match(
-              /^freedomstream_([A-Za-z0-9_-]{22})$/,
+              /^podetelar_([A-Za-z0-9_-]{22})$/,
             )?.[1];
             if (
               !room ||
@@ -184,6 +185,7 @@ export class Signaling {
                 peer.close();
                 return;
               }
+              this.rooms.signalingConnected(member.room);
               for (const { data, binary } of queue) send(target, data, binary);
               queue = [];
               queuedBytes = 0;

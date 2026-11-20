@@ -1,22 +1,54 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
+mod account;
+mod activation;
+#[path = "../../activation_protocol.rs"]
+mod activation_protocol;
 mod admission;
 mod audio;
+mod av_qualification;
+mod browser_links;
+mod codec_policy;
 mod connection;
 mod delivery;
+mod device;
 mod diagnostics;
+#[cfg(any(debug_assertions, feature = "media-qualification"))]
+mod discord_protection_fixture;
+#[cfg(feature = "media-qualification")]
+mod encoded_fixture;
 mod encoding;
+mod following;
 mod locale;
+#[cfg(target_os = "macos")]
+mod macos;
+mod native_output;
 mod network;
+#[cfg(feature = "performance-experiments")]
+#[allow(dead_code)]
+mod planar_experiment;
 mod playback;
+mod playback_qualification;
 mod preview;
+mod profile;
 mod protection;
 mod publisher;
 mod quality;
+#[cfg(feature = "performance-experiments")]
+#[allow(dead_code)]
+mod resource_experiment;
 mod settings;
+mod source_picker;
 mod sources;
+mod stream_diagnostics;
 mod ui;
+mod ui_style;
+#[path = "../../update_protocol.rs"]
+mod update_protocol;
+mod updates;
+mod video_image;
 #[cfg(windows)]
 mod win32;
+mod worker;
 
 use anyhow::{Context, Result, bail, ensure};
 use encoding::{Codec, Encoding, Metrics, Mode};
@@ -35,7 +67,7 @@ fn main() {
     if let Err(error) = run() {
         // Only application errors reach here; network/token-bearing SDK errors
         // are deliberately replaced with bounded messages at admission/publication.
-        eprintln!("FreedomStream: {error}");
+        eprintln!("PodeTelar: {error}");
         #[cfg(windows)]
         if std::env::args_os().nth(1).is_none() {
             // A normal GUI launch has no stderr console. Keep authority-bearing
@@ -48,9 +80,9 @@ fn main() {
                 let _ = MessageBoxW(
                     None,
                     w!(
-                        "FreedomStream could not start. Check your graphics driver and app files, then try again."
+                        "PodeTelar could not start. Check your graphics driver and app files, then try again."
                     ),
-                    w!("FreedomStream"),
+                    w!("PodeTelar"),
                     MB_OK | MB_ICONERROR,
                 );
             }
@@ -69,7 +101,7 @@ fn run() -> Result<()> {
         // pixels, including mixed-DPI desktops. A packaged manifest may set this first.
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
-    if std::env::var("FREEDOMSTREAM_DIAGNOSTICS").as_deref() == Ok("1") {
+    if std::env::var("PODETELAR_DIAGNOSTICS").as_deref() == Ok("1") {
         diagnostics::enable();
     }
     gstreamer::init()
@@ -93,6 +125,54 @@ fn run() -> Result<()> {
                 "{}",
                 serde_json::json!({"invitationUrl":protection::protect_invitation(&request.invitation_url)?})
             );
+        }
+        #[cfg(any(debug_assertions, feature = "media-qualification"))]
+        Some("--protect-discord-fixture") => {
+            let mut input = String::new();
+            std::io::stdin().take(8193).read_to_string(&mut input)?;
+            ensure!(input.len() <= 8192, "Discord fixture input is too large.");
+            let voice = serde_json::from_str(&input)
+                .map_err(|_| anyhow::anyhow!("Invalid Discord fixture input."))?;
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(discord_protection_fixture::create(voice))?;
+        }
+        Some("--profile-fixture") => {
+            let mut input = String::new();
+            std::io::stdin().take(8193).read_to_string(&mut input)?;
+            ensure!(input.len() <= 8192, "Profile fixture input is too large.");
+            let request = serde_json::from_str(&input).context("Invalid profile fixture input.")?;
+            return tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(profile::qualify(request));
+        }
+        #[cfg(feature = "media-qualification")]
+        Some("--publish-av1-fixture") => {
+            let mut input = String::new();
+            std::io::stdin().take(8193).read_to_string(&mut input)?;
+            ensure!(input.len() <= 8192, "Encoded fixture input is too large.");
+            let request = serde_json::from_str(&input).context("Invalid encoded fixture input.")?;
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(encoded_fixture::publish(request))?;
+        }
+        Some("--av-timing-source") => av_qualification::source(
+            std::env::args()
+                .nth(2)
+                .map(|s| s.parse::<u64>())
+                .transpose()?
+                .unwrap_or(60),
+        )?,
+        Some("--qualify-playback") => {
+            let legacy = match std::env::args().nth(2).as_deref() {
+                None => false,
+                Some("legacy") => true,
+                _ => bail!("Use --qualify-playback [legacy]."),
+            };
+            playback_qualification::run(legacy)?;
         }
         Some("--probe") => println!(
             "{}",
@@ -150,6 +230,11 @@ fn run() -> Result<()> {
                 format!(
                     "audiotestsrc is-live=true freq={frequency} volume=0.02 samplesperbuffer=480 ! audio/x-raw,rate=48000,channels=2 ! wasapi2sink low-latency=true"
                 )
+            };
+            let description = if cfg!(target_os = "macos") {
+                description.replace("wasapi2sink low-latency=true", "osxaudiosink")
+            } else {
+                description
             };
             let pipeline = gstreamer::parse::launch(&description)?
                 .downcast::<gstreamer::Pipeline>()
@@ -217,7 +302,7 @@ fn run() -> Result<()> {
             let encoders = encoding::encoders();
             ensure!(
                 !encoders.is_empty(),
-                "No NVIDIA/AMD hardware encoders were detected."
+                "No supported hardware encoders were detected."
             );
             for encoder in encoders {
                 let stop = Arc::new(AtomicBool::new(false));
@@ -266,29 +351,48 @@ fn run() -> Result<()> {
                 .build()?;
             runtime.block_on(publish_fixture(request))?;
         }
-        Some(_) => bail!(
+        Some(value) if value != "--browser-link" => bail!(
             "Unknown option. Use --probe, --sources, --audio-apps, --qualify, --qualify-audio or --publish-fixture / --watch-fixture."
         ),
-        None => {
+        _ => {
+            let browser_link = if std::env::args().nth(1).as_deref() == Some("--browser-link") {
+                ensure!(
+                    std::env::args_os().len() == 3,
+                    "Invalid browser invitation."
+                );
+                Some(
+                    std::env::args()
+                        .nth(2)
+                        .context("Invalid browser invitation.")?,
+                )
+            } else {
+                None
+            };
             let options = eframe::NativeOptions {
                 viewport: eframe::egui::ViewportBuilder::default()
                     .with_icon(eframe::egui::IconData {
-                        rgba: include_bytes!("../../../assets/windows/freedomstream-64.rgba")
-                            .to_vec(),
+                        rgba: include_bytes!("../../../assets/windows/podetelar-64.rgba").to_vec(),
                         width: 64,
                         height: 64,
                     })
                     .with_inner_size([1280.0, 720.0])
                     .with_min_inner_size([960.0, 540.0]),
+                #[cfg(target_os = "macos")]
+                event_loop_builder: Some(Box::new(|builder| {
+                    use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS};
+                    builder.with_activation_policy(ActivationPolicy::Regular);
+                })),
                 renderer: eframe::Renderer::Glow,
                 ..Default::default()
             };
             eframe::run_native(
-                "FreedomStream",
+                "PodeTelar",
                 options,
-                Box::new(|context| {
+                Box::new(move |context| {
+                    #[cfg(target_os = "macos")]
+                    macos::request_capture_permission();
                     ui::configure_theme(&context.egui_ctx);
-                    Ok(Box::new(ui::PublisherUi::new()))
+                    Ok(Box::new(ui::PublisherUi::with_browser_link(browser_link)))
                 }),
             )
             .map_err(|_| anyhow::anyhow!("Could not open the publisher window."))?;
@@ -300,14 +404,14 @@ fn run() -> Result<()> {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FixtureRequest {
+    #[cfg(any(debug_assertions, feature = "media-qualification"))]
+    discord: Option<discord_protection_fixture::Voice>,
     #[serde(default)]
     exercise_encryption_disable: bool,
     #[serde(default)]
-    media_server_url: Option<String>,
-    #[serde(default)]
-    media_token: Option<String>,
-    #[serde(default)]
     sample_rates: bool,
+    #[serde(default)]
+    source_audio: bool,
     #[serde(default)]
     upload_limit_bps: Option<u64>,
     #[serde(default)]
@@ -355,14 +459,35 @@ struct AudioRequest {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct WatchRequest {
+    sample_audio: Option<bool>,
+    #[serde(default)]
+    sample_rates: bool,
     #[serde(default)]
     exercise_encryption_disable: bool,
-    invitation_url: String,
     #[serde(default)]
-    media_server_url: Option<String>,
+    soak: bool,
+    #[serde(default)]
+    output_pause_after_seconds: Option<u64>,
+    #[serde(default)]
+    output_switch_after_seconds: Option<u64>,
+    #[serde(default)]
+    continuous_watch: bool,
+    #[serde(default)]
+    watch_schedule: Vec<FixtureWatch>,
+    #[serde(default)]
+    measure_output_audio: bool,
+    #[serde(default)]
+    volume_schedule: Vec<FixtureVolume>,
+    #[serde(default)]
+    audiovisual_timing: bool,
+    #[serde(default)]
+    diagnostics: bool,
+    invitation_url: String,
     seconds: u64,
     #[serde(default)]
     h264_only: bool,
+    #[serde(default)]
+    hevc_only: bool,
     #[serde(default)]
     wait_for_preview: bool,
     #[serde(default)]
@@ -375,71 +500,88 @@ struct WatchRequest {
     reconnect_after_seconds: Option<u64>,
 }
 
-/// Local-only signaling fault injection for native fixtures. Product admission,
-/// room options and UI never call this helper or accept these override fields.
-fn fixture_media_access(
-    invitation: &str,
-    mut access: admission::MediaAccess,
-    server_url: Option<&str>,
-    token: Option<&str>,
-) -> Result<admission::MediaAccess> {
-    if server_url.is_none() && token.is_none() {
-        return Ok(access);
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct FixtureVolume {
+    second: u64,
+    percent: u32,
+    #[serde(default)]
+    display_name: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct FixtureWatch {
+    second: u64,
+    enabled: bool,
+    display_name: String,
+}
+
+fn fixture_sync_groups(room: &Room) -> serde_json::Value {
+    let mut groups = Vec::new();
+    let mut mismatched = 0;
+    for participant in room.remote_participants().values() {
+        let tracks = participant.track_publications();
+        let video = tracks
+            .values()
+            .find(|p| p.source() == TrackSource::Screenshare)
+            .and_then(|p| p.track());
+        let audio = tracks
+            .values()
+            .find(|p| p.source() == TrackSource::ScreenshareAudio)
+            .and_then(|p| p.track());
+        if let (Some(RemoteTrack::Video(video)), Some(RemoteTrack::Audio(audio))) = (video, audio) {
+            let audio_ids = audio.sync_stream_ids();
+            if let Some(group) = video
+                .sync_stream_ids()
+                .into_iter()
+                .find(|id| audio_ids.contains(id))
+            {
+                groups.push(group);
+            } else {
+                mismatched += 1;
+            }
+        }
     }
-    let (legacy, _) = protection::unwrap_invitation(invitation)?;
-    let (origin, _) = admission::invitation_context(&legacy)?;
-    let origin =
-        url::Url::parse(&origin).map_err(|_| anyhow::anyhow!("Invalid local fixture origin."))?;
-    let loopback =
-        |host: Option<&str>| matches!(host, Some("localhost" | "127.0.0.1" | "::1" | "[::1]"));
-    ensure!(
-        origin.scheme() == "http" && loopback(origin.host_str()),
-        "Signaling overrides require a localhost HTTP fixture room."
-    );
-    let server_url = server_url
-        .ok_or_else(|| anyhow::anyhow!("A token override requires a local signaling proxy."))?;
-    ensure!(server_url.len() <= 256, "Invalid local signaling proxy.");
-    let proxy = url::Url::parse(server_url)
-        .map_err(|_| anyhow::anyhow!("Invalid local signaling proxy."))?;
-    ensure!(
-        proxy.scheme() == "ws"
-            && loopback(proxy.host_str())
-            && proxy.port().is_some_and(|port| port >= 1024)
-            && proxy.username().is_empty()
-            && proxy.password().is_none()
-            && matches!(proxy.path(), "" | "/")
-            && proxy.query().is_none()
-            && proxy.fragment().is_none(),
-        "Signaling overrides require a localhost WebSocket proxy."
-    );
-    access.server_url = proxy.to_string();
-    if let Some(token) = token {
-        ensure!(
-            !token.is_empty()
-                && token.len() <= 4096
-                && token
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.')),
-            "Invalid local fixture media token."
-        );
-        access.token = token.to_owned();
-    }
-    Ok(access)
+    let distinct = groups
+        .iter()
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    serde_json::json!({"pairedPublishers": groups.len(), "mismatchedPublishers": mismatched, "distinctGroups":distinct})
 }
 
 async fn watch_fixture(request: WatchRequest) -> Result<()> {
     ensure!(
-        (10..=120).contains(&request.seconds),
-        "Watcher duration must be 10–120 seconds."
+        request.watch_schedule.len() <= 32
+            && request
+                .watch_schedule
+                .iter()
+                .all(|step| step.second <= request.seconds),
+        "Invalid fixture watch schedule."
+    );
+    ensure!(
+        request.volume_schedule.len() <= 32
+            && request
+                .volume_schedule
+                .iter()
+                .all(|step| step.percent <= 100 && step.second <= request.seconds),
+        "Invalid fixture volume schedule."
+    );
+    ensure!(
+        (10..=if request.soak { 2000 } else { 120 }).contains(&request.seconds)
+            && (!request.soak || request.audiovisual_timing && request.continuous_watch),
+        "Invalid watcher qualification duration."
     );
     let admission =
         admission::Admission::join(&request.invitation_url, "Native playback check").await?;
-    let access = fixture_media_access(
-        &request.invitation_url,
-        admission.media_access().await?,
-        request.media_server_url.as_deref(),
-        None,
-    )?;
+    let mut playback = playback::Playback::new();
+    playback.compatibility_only(request.h264_only);
+    if request.hevc_only {
+        playback.disable_av1();
+    }
+    let access = admission
+        .media_access_with_decoders(playback.decoders())
+        .await?;
     let (room, mut events) = Room::connect(
         &access.server_url,
         &access.token,
@@ -447,16 +589,12 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     )
     .await
     .map_err(|error| {
-        if request.media_server_url.is_some() {
-            return anyhow::anyhow!("Local signaling fixture connection failed.");
-        }
         anyhow::anyhow!(
             "Native watcher connection failed: {}",
             admission::media_diagnostic(error)
         )
     })?;
     admission.announce_protection(&room).await?;
-    let mut playback = playback::Playback::new();
     let recovery = playback.recovery_signal();
     let events_recovery = recovery.clone();
     let event_task = tokio::spawn(async move {
@@ -466,8 +604,19 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
             }
         }
     });
-    playback.compatibility_only(request.h264_only);
-    playback.measure_audio();
+    if request.sample_audio.unwrap_or(true) {
+        playback.measure_audio();
+    }
+    let timing = (request.audiovisual_timing || request.measure_output_audio)
+        .then(av_qualification::Events::new);
+    if let Some(timing) = &timing {
+        playback.measure_av(timing.clone());
+    }
+    let observer = if let Some(timing) = &timing {
+        Some(av_qualification::Observer::start(timing.clone())?)
+    } else {
+        None
+    };
     ensure!(
         request
             .download_limit_mbps
@@ -486,11 +635,12 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     let mut preview_before_watching = false;
     let mut reconnected = false;
     let mut disable_exercised = false;
+    let mut output_paused = false;
+    let mut output_switched = false;
+    let mut alternate_output_available = false;
     let mut received = std::collections::HashMap::<String, RemoteTrack>::new();
     let mut byte_totals = std::collections::HashMap::<String, u64>::new();
     let mut previous_bytes = std::collections::HashMap::<String, u64>::new();
-    let mut known = std::collections::HashSet::new();
-    let mut previous_watching = false;
     let result: Result<()> = async {
         while started.elapsed().as_secs() < request.seconds {
             let elapsed = started.elapsed().as_secs();
@@ -498,6 +648,13 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                 reconnected = true;
                 room.simulate_scenario(livekit::rtc_engine::SimulateScenario::FullReconnect).await
                     .map_err(|_| anyhow::anyhow!("Could not exercise watcher recovery."))?;
+            }
+            if !output_paused && request.output_pause_after_seconds.is_some_and(|second| elapsed >= second) {
+                output_paused = native_output::qualification_pause(3);
+            }
+            if !output_switched && request.output_switch_after_seconds.is_some_and(|second| elapsed >= second) {
+                alternate_output_available = native_output::qualification_switch(3);
+                output_switched = true;
             }
             let tiles = playback.reconcile(&room, &admission).await?;
             if request.exercise_encryption_disable && !disable_exercised {
@@ -509,19 +666,24 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                     disable_exercised = true;
                 }
             }
+            ensure!(!request.audiovisual_timing || tiles.len() <= 1, "A/V timing qualification requires one isolated publisher.");
             if watch_after.is_none() {
                 let preview_ready = tiles.iter().any(|tile| !tile.watching && tile.picture.lock().is_ok_and(|picture| picture.is_some()));
                 if preview_ready || elapsed >= 8 { watch_after = Some(elapsed); preview_before_watching = preview_ready; }
             }
             let phase = watch_after.filter(|after| elapsed >= *after).map(|after| elapsed - after);
-            let watching = !request.preview_only && phase.is_some_and(|phase| !(5..8).contains(&phase));
+            let watching = !request.preview_only && phase.is_some_and(|phase| request.continuous_watch || !(5..8).contains(&phase));
             for tile in &tiles {
-                if watching != previous_watching || (watching && !known.contains(&tile.id)) { playback.watch(tile.id.clone(), watching)?; }
-                known.insert(tile.id.clone());
+                if tile.watching { tile.presentation.request(); }
+                if request.diagnostics { tile.presentation.diagnostics.open.store(tile.watching, Ordering::Relaxed); }
+                let tile_watching = request.watch_schedule.iter().filter(|step| step.second <= elapsed && step.display_name == tile.name).max_by_key(|step| step.second).map_or(watching, |step| step.enabled);
+                if tile_watching != tile.watching { playback.watch(tile.id.clone(), tile_watching)?; }
+                let requested_volume = request.volume_schedule.iter().filter(|step| step.second <= elapsed && step.display_name.as_ref().is_none_or(|name| name == &tile.name)).max_by_key(|step| step.second).map_or(100, |step| step.percent);
+                playback.set_volume(&tile.id, requested_volume);
             }
-            previous_watching = watching;
             if elapsed >= next_sample {
                 let mut decoders = Vec::new();
+                let mut media_timing = Vec::new();
                 for participant in room.remote_participants().values() {
                     for publication in participant.track_publications().values() {
                         if let Some(track) = publication.track() && received.len() < 64 { received.insert(publication.sid().to_string(), track); }
@@ -531,6 +693,19 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                     let stats = match track { RemoteTrack::Video(track) => track.get_stats().await, RemoteTrack::Audio(track) => track.get_stats().await };
                     if let Ok(stats) = stats {
                         for stat in &stats {
+                            if let livekit::webrtc::stats::RtcStats::InboundRtp(stat) = stat {
+                                media_timing.push(serde_json::json!({
+                                    "kind": stat.stream.kind,
+                                    "bytes": stat.inbound.bytes_received,
+                                    "packets": stat.received.packets_received,
+                                    "lost": stat.received.packets_lost,
+                                    "jitterSeconds": stat.received.jitter,
+                                    "jitterBufferDelaySeconds": stat.inbound.jitter_buffer_delay,
+                                    "jitterBufferEmitted": stat.inbound.jitter_buffer_emitted_count,
+                                    "decodeSeconds": stat.inbound.total_decode_time,
+                                    "decodedFrames": stat.inbound.frames_decoded,
+                                }));
+                            }
                             if let livekit::webrtc::stats::RtcStats::InboundRtp(stat) = stat
                                 && !stat.inbound.decoder_implementation.is_empty() {
                                 decoders.push(serde_json::json!({"implementation": stat.inbound.decoder_implementation, "hardware": stat.inbound.power_efficient_decoder}));
@@ -544,9 +719,20 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                         }
                     }
                 }
-                samples.push(serde_json::json!({"second": elapsed, "recoveries": recovery.load(Ordering::Acquire), "connected": room.connection_state() == ConnectionState::Connected, "phaseSecond": phase, "watching": watching,"receivedBytes":byte_totals.values().sum::<u64>(), "decoders":decoders, "streams": tiles.iter().map(|tile| serde_json::json!({"codec":tile.codec,"frames":tile.frames.load(Ordering::Relaxed),"watching":tile.watching,"pictureSize":tile.picture.lock().ok().and_then(|p|p.as_ref().map(|image|image.size)),"audio":tile.audio.lock().map(|m|m.clone()).unwrap_or_default()})).collect::<Vec<_>>() }));
+                samples.push(serde_json::json!({"second": elapsed, "nativeAudio":native_output::audit(),"syncGroups":fixture_sync_groups(&room), "mediaTiming":media_timing, "recoveries": recovery.load(Ordering::Acquire), "connected": room.connection_state() == ConnectionState::Connected, "phaseSecond": phase, "watching": watching,"receivedBytes":byte_totals.values().sum::<u64>(), "decoders":decoders, "streams": tiles.iter().map(|tile| serde_json::json!({"diagnosticRates":tile.presentation.diagnostics.rates.lock().ok().and_then(|v|*v),"diagnosticAttempts":tile.presentation.diagnostics.attempts.load(Ordering::Relaxed),"diagnosticSuccesses":tile.presentation.diagnostics.successes.load(Ordering::Relaxed),"diagnosticSender":tile.presentation.diagnostics.sender.lock().ok().and_then(|value|value.as_ref().map(|(_,value)|value.clone())),"status":tile.status,"codec":tile.codec,"frames":tile.frames.load(Ordering::Relaxed),"watching":tile.watching,"pictureSize":tile.picture.lock().ok().and_then(|p|p.as_ref().map(|image|image.size)),"audio":tile.audio.lock().map(|m|m.clone()).unwrap_or_default()})).collect::<Vec<_>>() }));
+                if request.sample_rates {
+                    let sample = samples.last_mut().expect("just pushed sample");
+                    let millis = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis();
+                    sample["measurementTimeMs"] = u64::try_from(millis)?.into();
+                }
                 if request.consume_pictures { for tile in &tiles { if let Ok(mut picture) = tile.picture.lock() { picture.take(); } } }
-                next_sample = elapsed + 1;
+                if request.soak {
+                    eprintln!("soak-progress second={} video={} audio={} rendering={}",elapsed,
+                        tiles.iter().map(|t|t.frames.load(Ordering::Relaxed)).sum::<u64>(),
+                        tiles.iter().map(|t|t.audio.lock().map_or(0,|m|m.frames)).sum::<u64>(),
+                        native_output::audit()["rendering"].as_bool().unwrap_or(false));
+                }
+                next_sample = elapsed + if request.soak { 30 } else { 1 };
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
@@ -560,15 +746,16 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     result?;
     println!(
         "{}",
-        serde_json::json!({"samples":samples,"closed":true,"previewBeforeWatching":preview_before_watching,"cryptorDisableRejected":disable_exercised})
+        serde_json::json!({"samples":samples,"cryptorDisableRejected":disable_exercised,"closed":true,"outputPauseApplied":output_paused,"alternateOutputAvailable":alternate_output_available,"nativeAudioAfterClose":native_output::audit(),"previewBeforeWatching":preview_before_watching,"audiovisualTiming":timing.as_ref().map(|timing|timing.report())})
     );
+    drop(observer);
     Ok(())
 }
 
 async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     ensure!(
-        (1..=900).contains(&request.seconds),
-        "Fixture duration must be between 1 and 900 seconds."
+        (1..=2100).contains(&request.seconds),
+        "Fixture duration must be between 1 and 2100 seconds."
     );
     ensure!(
         request.linger_seconds <= 8
@@ -591,14 +778,19 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             && request.reconfigure_after_seconds.is_some() == request.next_quality.is_some(),
         "Choose one complete fixture transition."
     );
+    #[cfg(any(debug_assertions, feature = "media-qualification"))]
+    let admission = match request.discord {
+        Some(voice) => {
+            voice
+                .join(&request.invitation_url, &request.display_name)
+                .await?
+        }
+        None => admission::Admission::join(&request.invitation_url, &request.display_name).await?,
+    };
+    #[cfg(not(any(debug_assertions, feature = "media-qualification")))]
     let admission =
         admission::Admission::join(&request.invitation_url, &request.display_name).await?;
-    let access = fixture_media_access(
-        &request.invitation_url,
-        admission.media_access().await?,
-        request.media_server_url.as_deref(),
-        request.media_token.as_deref(),
-    )?;
+    let access = admission.media_access().await?;
     let options = admission.room_options(request.route);
     let (room, mut events) = tokio::time::timeout(
         Duration::from_secs(15),
@@ -607,9 +799,6 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     .await
     .context("Fixture media connection timed out.")?
     .map_err(|error| {
-        if request.media_server_url.is_some() {
-            return anyhow::anyhow!("Local signaling fixture connection failed.");
-        }
         anyhow::anyhow!(
             "Fixture media connection failed: {}",
             admission::media_diagnostic(error)
@@ -617,6 +806,9 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     })?;
     admission.announce_protection(&room).await?;
     let cancellation = Arc::new(publisher::CaptureCancellation::default());
+    // The publisher fixture is a room member even when it does not watch.
+    let mut capabilities = playback::Playback::new();
+    capabilities.reconcile(&room, &admission).await?;
     let stop = cancellation.register();
     let cancel = cancellation.clone();
     let republished = Arc::new(AtomicU64::new(0));
@@ -651,7 +843,8 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
         }
     };
     let result = async {
-        let config=publisher::StreamConfig { source,encoder:encoder.clone(),quality:request.quality,audio:request.audio,exclusions:request.exclusions };
+        let audio = if request.source_audio { audio::for_source(&source)? } else {request.audio};
+        let config=publisher::StreamConfig { source,encoder:encoder.clone(),quality:request.quality,audio,exclusions:request.exclusions };
         ensure!(request.upload_limit_bps.is_none_or(|v|(64_000..=100_000_000).contains(&v)),"Invalid fixture upload ceiling.");
         let mut active = if request.upload_limit_bps.is_some() {
             publisher::Stream::start_with_upload_cap(&room, config.clone(), stop, request.upload_limit_bps).await?
@@ -695,13 +888,14 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             tokio::time::sleep(Duration::from_secs(request.seconds - after)).await;
         } else { active = serve_fixture(&room, &admission, active, request.seconds, cancellation.clone(), request.sample_rates).await?; }
         let preview_uploads = active.preview_uploads.clone(); let audio_metrics = active.audio_metrics.clone(); let delivery = active.delivery.clone();
+        let preview_captures = active.preview_captures();
         let mode=active.mode;
         let encoder=active.encoder().clone();
         let final_sid=active.sid();
         let delivered=delivery.lock().map(|value|value.clone()).unwrap_or_default();
         let metrics = active.stop(&room).await?;
         let audio = audio_metrics.lock().map(|value| value.clone()).unwrap_or_default();
-        println!("{}", serde_json::json!({"encoder": encoder.factory, "codec": encoder.codec, "initialSid":initial_sid,"finalSid":final_sid,"mode":mode,"delivery":delivered,"metrics": metrics, "audio": audio, "captureStopped": true, "republished": republished.load(Ordering::Relaxed), "previewUploads": preview_uploads.load(Ordering::Relaxed)}));
+        println!("{}", serde_json::json!({"encoder": encoder.factory, "codec": encoder.codec, "initialSid":initial_sid,"finalSid":final_sid,"mode":mode,"delivery":delivered,"metrics": metrics, "audio": audio, "captureStopped": true, "republished": republished.load(Ordering::Relaxed), "previewUploads": preview_uploads.load(Ordering::Relaxed), "previewCaptures": preview_captures}));
         tokio::time::sleep(Duration::from_secs(request.linger_seconds)).await;
         Ok::<_, anyhow::Error>(())
     }.await;
@@ -742,8 +936,7 @@ async fn serve_fixture(
         if active.cancelled() {
             break;
         }
-        if active.encoder().codec != Codec::H264 && playback::needs_h264(room) {
-            let config = active.fallback_config()?;
+        if let Some(config) = active.compatible_config(room)? {
             active = active
                 .fallback(room, admission.clone(), stop, config)
                 .await?;
@@ -751,69 +944,4 @@ async fn serve_fixture(
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
     Ok(active)
-}
-
-#[cfg(test)]
-mod signaling_fixture_tests {
-    use super::*;
-
-    fn access() -> admission::MediaAccess {
-        admission::MediaAccess {
-            server_url: "ws://127.0.0.1:17880/".into(),
-            token: "fixture.token.value".into(),
-        }
-    }
-    fn invitation(origin: &str) -> String {
-        format!("{origin}/r/{}#invite={}", "a".repeat(22), "b".repeat(43))
-    }
-
-    #[test]
-    fn fault_injection_is_bound_to_local_http_admission_and_loopback_ws_proxy() {
-        let local = invitation("http://localhost:3010");
-        let private = protection::protect_invitation(&local).unwrap();
-        for link in [&local, &private] {
-            let overridden = fixture_media_access(
-                link,
-                access(),
-                Some("ws://127.0.0.1:49153/"),
-                Some("other.fixture.token"),
-            )
-            .unwrap();
-            assert_eq!(overridden.server_url, "ws://127.0.0.1:49153/");
-            assert_eq!(overridden.token, "other.fixture.token");
-        }
-        for origin in ["https://example.test", "https://localhost:3010"] {
-            assert!(
-                fixture_media_access(
-                    &invitation(origin),
-                    access(),
-                    Some("ws://localhost:49153"),
-                    None
-                )
-                .is_err()
-            );
-        }
-        for proxy in [
-            "ws://example.test:49153",
-            "wss://localhost:49153",
-            "ws://localhost:80",
-            "ws://localhost",
-            "ws://user:password@localhost:49153",
-            "ws://localhost:49153/rtc",
-            "ws://localhost:49153/?token=value",
-            "ws://localhost:49153/#secret",
-        ] {
-            assert!(fixture_media_access(&local, access(), Some(proxy), None).is_err());
-        }
-        assert!(fixture_media_access(&local, access(), None, Some("other.fixture.token")).is_err());
-        assert!(
-            fixture_media_access(
-                &local,
-                access(),
-                Some("ws://localhost:49153"),
-                Some("token with spaces")
-            )
-            .is_err()
-        );
-    }
 }

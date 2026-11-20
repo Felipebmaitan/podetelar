@@ -1,7 +1,11 @@
 import { writeFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { createTestRoom } from "../scripts/test-room.js";
-import { nativeRequest, toneFixtures } from "./fixtures.js";
+import {
+  backgroundAudioExclusions,
+  nativeRequest,
+  toneFixtures,
+} from "./fixtures.js";
 
 type Stream = {
   codec: string;
@@ -30,6 +34,7 @@ type Sent = {
   captureStopped: boolean;
   mode: { width: number; height: number; fps: number };
   previewUploads: number;
+  previewCaptures: number;
 };
 const quality = {
   resolution: "p1080",
@@ -74,7 +79,7 @@ for (const codec of ["h265", "h264"] as const) {
         contentType: "application/json",
       });
       expect(sent.captureStopped).toBe(true);
-      expect(sent.previewUploads).toBe(1);
+      expect(sent.previewCaptures).toBe(1);
       expect(watched.closed).toBe(true);
       expect(
         watched.samples.some(
@@ -135,6 +140,7 @@ test("an H.264-only watcher triggers publication fallback and keeps watching", a
       sender.result as Promise<Sent>,
       receiver.result as Promise<Received>,
     ]);
+    // Departure alone does not invalidate the compatible live codec.
     expect(sent.codec).toBe("h264");
     expect(sent.finalSid).not.toBe(sent.initialSid);
     expect(
@@ -160,6 +166,7 @@ test("native playback receives stereo game audio while rejecting Discord", async
   const created = await createTestRoom(request, baseURL!, "Native stereo");
   const { invitationUrl } = await created.json();
   const tones = toneFixtures(testInfo.outputPath("tones"));
+  const exclusions = await backgroundAudioExclusions();
   const sender = nativeRequest("--publish-fixture", {
     invitationUrl,
     displayName: "Publisher",
@@ -167,6 +174,7 @@ test("native playback receives stereo game audio while rejecting Discord", async
     seconds: 18,
     quality,
     audio: { mode: "desktop" },
+    exclusions,
   });
   await sender.reported;
   const receiver = nativeRequest("--watch-fixture", {
@@ -286,7 +294,7 @@ test("an unwatched preview returns after reconnect without another publisher cap
       ),
     ).toBe(true);
     expect(watched.samples.every((s) => s.receivedBytes === 0)).toBe(true);
-    expect(sent.previewUploads).toBe(1);
+    expect(sent.previewCaptures).toBe(1);
   } finally {
     sender.child.kill();
     receiver.child.kill();

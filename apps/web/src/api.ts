@@ -1,4 +1,4 @@
-import type { ApiErrorBody } from "@freedomstream/contracts";
+import type { ApiErrorBody } from "@podetelar/contracts";
 
 export class ApiError extends Error {
   constructor(

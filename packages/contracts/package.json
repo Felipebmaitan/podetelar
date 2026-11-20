@@ -1,6 +1,6 @@
 {
-  "name": "@freedomstream/contracts",
-  "version": "0.1.0",
+  "name": "@podetelar/contracts",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "license": "MIT",

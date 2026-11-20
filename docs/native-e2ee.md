@@ -18,15 +18,35 @@ an HTTPS link. Keep them in the native application and the trusted channel used
 to invite friends. Never paste one into the room website. Website JavaScript can
 read URL fragments; a fragment is not secret from the website operator.
 
-The native application sends only the separate legacy admission credential to
-the API. The private root stays local, including in the existing Windows DPAPI
-saved-room envelope. Forget saved room removes that saved authority. Copying an
-invitation deliberately puts the secret in the user's clipboard, just as sharing
-any bearer invitation does.
+The native application sends the separate admission credential to the API.
+**Remember private invitation on this device** stores one private invitation
+in Windows Credential Manager or macOS Keychain. The ordinary server, account
+and nickname preferences contain no room key. Forget removes the saved entry.
+Copying a private invitation puts it on the clipboard. Browser handoff, launcher
+arguments and Discord bot announcements carry only ordinary admission material.
 
-The server-mediated browser handoff in PR #20 is for legacy invitations only. It
-must never transport a protected invitation or its root. Legacy rooms remain
-explicitly unprotected; clients must not infer protection from server metadata.
+## Discord voice rooms
+
+Discord sign-in and voice presence authorize access to a PodeTelar session.
+The server controls that session and supplies the displayed account identity.
+Neither proves possession of a media key. The native app generates that key
+material independently and keeps it out of Discord OAuth, Gateway and bot traffic.
+
+A single Discord channel can host a succession of PodeTelar rooms. When guest
+access is enabled, a voice-admitted organizer can create a private invitation
+using the current room's revocable guest handoff. The permanent channel link
+continues to open whichever room the channel currently uses. A private invitation
+is valid only for the original public server origin and concrete room. When guest
+access is disabled the server withholds both guest links. Share the private code
+through a channel trusted to carry it. Anyone who can read it can use its keys.
+
+A saved private invitation lets a matching voice admission use encryption again.
+Automatic admission cannot supply, replace or reset the private root. Changing
+channels stops media, and a different concrete room needs its own private
+invitation. A guest joining by invitation has independent admission. Discord voice
+departure and login revocation govern sessions obtained through voice following.
+A legacy participant can still publish their own unprotected stream in the same
+server room. The native protection indicator describes this client's media.
 
 ## Cryptographic boundary
 
@@ -47,8 +67,7 @@ marked as plaintext.
 The pinned SDK patch also attaches receiver cryptors independently of remote
 encryption metadata. Playback checks actual cryptor readiness before retaining
 any pump, so changing a publication label cannot turn plaintext into protected
-content. The native client clears server-provided injected-frame bypass material
-before subscriptions.
+content. The SDK discards the server-injected frame trailer at connection setup.
 
 The pinned SDK installs encryption directly in the receiver attachment path,
 before enabling or exposing the track. Protection does not depend on a removable
@@ -65,9 +84,16 @@ streams do not install the optional standalone packet-timing transformer or
 advertise its trailers. Legacy transports do not create frame cryptors and retain
 their existing behavior.
 
-Future instrumentation must not call SDK `publish_timing_events()` or
-`subscribe_timing_events()` on protected tracks without preserving an enforcing
-cryptor chain. These lazy helpers currently have no application callsites.
+The SDK's standalone packet-timing helpers are private to the SDK. Native audio
+receivers start muted, and the playback controller grants speaker output only
+to a watched, authorized publication. It closes output on replacement or stop.
+
+The version 1 key schedule remains compatible with the initial PR, including
+its original protocol labels after the application rename. The client performs
+HKDF extraction once per parsed secret and keeps the descriptor authentication
+key for the connection. Repeated valid descriptors use a bounded per-connection
+cache. Each new sender session has its own media key. Reconciliation looks up
+cryptor readiness for the selected track without copying the whole SDK map.
 
 Previews use separate authenticated encryption. The native sender encrypts its
 bounded JPEG before uploading. The server stores only an opaque bounded `FSP1`
@@ -108,7 +134,7 @@ wrong/missing-root rejection with valid admission, plaintext and descriptor
 tampering rejection, reconnect/republish/fallback, concurrent sender sessions and
 actual Stop/rewatch traffic. Unit tests must cover cross-context substitution,
 versions, authentication and decode bounds. Qualify H.264, HEVC and AV1 separately.
-Record DPAPI save/reopen/Forget and exact runtime provenance. Record unavailable
+Record OS credential save/reopen/Forget and exact runtime provenance. Record unavailable
 checks honestly; compilation and mocked media are not substitutes.
 
 CPU impact at approximately 35 Mbps requires an encryption-on/off comparison in

@@ -4,6 +4,20 @@ use serde::{Deserialize, de::DeserializeOwned};
 use std::{sync::Arc, time::Duration};
 use url::Url;
 
+pub(crate) fn valid_server(input: &str) -> bool {
+    let Ok(url) = Url::parse(input) else {
+        return false;
+    };
+    let local = matches!(
+        url.host_str(),
+        Some("localhost" | "127.0.0.1" | "[::1]" | "::1")
+    );
+    (url.scheme() == "https" || (local && url.scheme() == "http"))
+        && url.origin().ascii_serialization() == input
+        && url.username().is_empty()
+        && url.password().is_none()
+}
+
 // Credentials stay in this client's in-memory cookie jar. Never derive Debug
 // or pass invitations, cookies or media tokens to a process command line.
 #[derive(Clone)]
@@ -13,6 +27,10 @@ pub struct Admission {
     room_id: String,
     pub room_name: String,
     pub protection: Option<Arc<crate::protection::Session>>,
+    pub participant_id: String,
+    pub public_origin: String,
+    pub invitation_url: Option<Arc<str>>,
+    pub room_invitation_url: Option<Arc<str>>,
 }
 struct ProbeLease {
     client: Client,
@@ -42,6 +60,16 @@ impl Drop for ProbeLease {
     }
 }
 
+/// A fresh voice snapshot or an explicit new invitation is needed before retrying.
+#[derive(Debug)]
+pub struct PrivateRoomMismatch;
+impl std::fmt::Display for PrivateRoomMismatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("The private invitation does not match this Discord room or server.")
+    }
+}
+impl std::error::Error for PrivateRoomMismatch {}
+
 pub enum PreviewDelivery {
     Sent,
     Retry(Duration),
@@ -58,16 +86,21 @@ pub struct MediaAccess {
 #[derive(Deserialize)]
 struct Session {
     room: Room,
-    participant: Participant,
+    participant: ProfileParticipant,
+    #[serde(default, rename = "invitationUrl")]
+    invitation_url: Option<String>,
+    #[serde(default, rename = "roomInvitationUrl")]
+    room_invitation_url: Option<String>,
 }
 
 #[derive(Deserialize)]
-struct Participant {
+struct ProfileParticipant {
     id: String,
 }
 
 #[derive(Deserialize)]
 struct Room {
+    id: String,
     name: String,
 }
 
@@ -76,6 +109,7 @@ struct Invitation {
     room_id: String,
     secret: String,
     protection: Option<crate::protection::RoomSecret>,
+    channel: Option<(String, String)>,
 }
 
 impl Invitation {
@@ -89,6 +123,7 @@ impl Invitation {
         input: &str,
         protection: Option<crate::protection::RoomSecret>,
     ) -> Result<Self> {
+        ensure!(input.len() <= 2048, "Invitation link is too long.");
         let mut url = Url::parse(input.trim())
             .map_err(|_| anyhow::anyhow!("Enter a valid invitation link."))?;
         let local = matches!(
@@ -108,13 +143,23 @@ impl Invitation {
             .strip_prefix("/r/")
             .unwrap_or_default()
             .to_owned();
+        let channel = url
+            .path()
+            .strip_prefix("/c/")
+            .and_then(|path| path.split_once('/'))
+            .and_then(|(guild, channel)| {
+                let valid = |id: &str| {
+                    (17..=20).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_digit())
+                };
+                (valid(guild) && valid(channel)).then(|| (guild.to_owned(), channel.to_owned()))
+            });
         let secret = url
             .fragment()
             .and_then(|fragment| fragment.strip_prefix("invite="))
             .unwrap_or_default()
             .to_owned();
         ensure!(
-            valid_token(&room_id, 22) && valid_token(&secret, 43),
+            (valid_token(&room_id, 22) || channel.is_some()) && valid_token(&secret, 43),
             "The link must contain a room invitation."
         );
         url.set_path("/");
@@ -124,6 +169,7 @@ impl Invitation {
             room_id,
             secret,
             protection,
+            channel,
         })
     }
 }
@@ -139,8 +185,24 @@ pub fn valid_invitation(input: &str) -> bool {
     Invitation::parse(input).is_ok()
 }
 
+pub fn valid_legacy_invitation(input: &str) -> bool {
+    Invitation::parse_legacy(input, None).is_ok()
+}
+
+fn room_url_matches(input: &str, origin: &str, room_id: &str) -> bool {
+    Invitation::parse_legacy(input, None).is_ok_and(|parsed| {
+        parsed.origin.origin().ascii_serialization() == origin
+            && parsed.channel.is_none()
+            && parsed.room_id == room_id
+    })
+}
+
 pub fn invitation_context(input: &str) -> Result<(String, String)> {
     let invitation = Invitation::parse_legacy(input, None)?;
+    ensure!(
+        invitation.channel.is_none(),
+        "Private invitations require a specific room."
+    );
     Ok((
         invitation.origin.origin().ascii_serialization(),
         invitation.room_id,
@@ -163,6 +225,105 @@ pub fn media_diagnostic(error: impl std::fmt::Display) -> String {
 }
 
 impl Admission {
+    pub fn accepts_private_invitation(&self, input: &str) -> bool {
+        Invitation::parse(input).is_ok_and(|parsed| {
+            parsed.protection.is_some()
+                && parsed.room_id == self.room_id
+                && parsed.origin.origin().ascii_serialization() == self.public_origin
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn profile_test(origin: &str) -> Self {
+        Self {
+            client: Client::new(),
+            origin: Url::parse(origin).unwrap(),
+            room_id: "test".into(),
+            room_name: "test".into(),
+            participant_id: "test".into(),
+            public_origin: origin.into(),
+            invitation_url: None,
+            room_invitation_url: None,
+            protection: None,
+        }
+    }
+    pub async fn stream_diagnostic(
+        &self,
+        method: reqwest::Method,
+        owner: &str,
+        sid: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<serde_json::Value> {
+        ensure!(
+            owner.len() <= 128
+                && sid.len() <= 131
+                && owner
+                    .bytes()
+                    .chain(sid.bytes())
+                    .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'),
+            "Invalid publication."
+        );
+        let url = self.origin.join(&format!(
+            "api/rooms/{}/stream-diagnostics/{owner}/{sid}",
+            self.room_id
+        ))?;
+        let mut request = self
+            .client
+            .request(method, url)
+            .header("Origin", self.origin.origin().ascii_serialization())
+            .timeout(Duration::from_secs(2));
+        if let Some(body) = body {
+            request = request.json(body);
+        }
+        // A bounded retry avoids phase-locking several three-second samplers
+        // against the server's per-publication exclusion. Never delay media work.
+        let response = tokio::time::timeout(Duration::from_secs(2), async {
+            let mut response = request
+                .try_clone()
+                .context("Diagnostic request unavailable.")?
+                .send()
+                .await?;
+            for _ in 0..2 {
+                if response.status() != reqwest::StatusCode::TOO_MANY_REQUESTS {
+                    break;
+                }
+                let jitter = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .subsec_nanos() as u64
+                    % 250;
+                tokio::time::sleep(Duration::from_millis(100 + jitter)).await;
+                response = request
+                    .try_clone()
+                    .context("Diagnostic request unavailable.")?
+                    .send()
+                    .await?;
+            }
+            Ok::<_, anyhow::Error>(response)
+        })
+        .await??;
+        ensure!(response.status().is_success(), "Diagnostics unavailable.");
+        if response.status() == reqwest::StatusCode::NO_CONTENT {
+            return Ok(serde_json::Value::Null);
+        }
+        ensure!(
+            response.content_length().unwrap_or(0) <= 8192,
+            "Diagnostic response too large."
+        );
+        use futures_util::StreamExt;
+        let mut bytes = Vec::new();
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            ensure!(
+                bytes.len() + chunk.len() <= 8192,
+                "Diagnostic response too large."
+            );
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(serde_json::from_slice(&bytes)?)
+    }
+
     pub async fn measure_connection(&self) -> crate::network::Capacity {
         use crate::network::{Capacity, PROBE_BYTES, PROBE_CAP_BPS};
         #[derive(Deserialize)]
@@ -245,8 +406,12 @@ impl Admission {
                 ((bytes as f64 * 8.0 / began.elapsed().as_secs_f64().max(0.001)) as u64).min(cap),
             );
             let stream = futures_util::stream::unfold(
-                (0usize, std::time::Instant::now()),
-                move |(sent, start)| async move {
+                (
+                    0usize,
+                    std::time::Instant::now(),
+                    bytes::Bytes::from(vec![0x5a; 65_536]),
+                ),
+                move |(sent, start, chunk)| async move {
                     if sent >= byte_limit || start.elapsed() >= Duration::from_secs(2) {
                         return None;
                     }
@@ -256,8 +421,8 @@ impl Admission {
                     }
                     let size = (byte_limit - sent).min(65_536);
                     Some((
-                        Ok::<_, std::io::Error>(vec![0x5a; size]),
-                        (sent + size, start),
+                        Ok::<_, std::io::Error>(chunk.slice(..size)),
+                        (sent + size, start, chunk),
                     ))
                 },
             );
@@ -289,44 +454,238 @@ impl Admission {
         measured
     }
     pub async fn join(invitation: &str, display_name: &str) -> Result<Self> {
-        let invitation = Invitation::parse(invitation)?;
+        Self::join_with_account(invitation, display_name, None).await
+    }
+    pub async fn join_with_account(
+        invitation: &str,
+        display_name: &str,
+        account: Option<crate::account::Credential>,
+    ) -> Result<Self> {
+        Self::join_target(invitation, display_name, account, None).await
+    }
+    pub async fn join_target(
+        invitation: &str,
+        display_name: &str,
+        account: Option<crate::account::Credential>,
+        voice: Option<crate::following::Target>,
+    ) -> Result<Self> {
+        let original_invitation = invitation.trim().to_owned();
+        let automatic = voice.is_some();
+        let voice_channel = voice.as_ref().map(|target| {
+            (
+                target.location.guild_id.clone(),
+                target.location.channel_id.clone(),
+            )
+        });
+        let mut invitation = match &voice {
+            Some(target) => {
+                ensure!(valid_server(&target.server), "Invalid Discord backend.");
+                if original_invitation.is_empty() {
+                    Invitation {
+                        origin: Url::parse(&target.server)?,
+                        room_id: String::new(),
+                        secret: String::new(),
+                        channel: None,
+                        protection: None,
+                    }
+                } else {
+                    let local = Invitation::parse(&original_invitation)?;
+                    ensure!(
+                        local.protection.is_some()
+                            && local.channel.is_none()
+                            && local.origin.origin().ascii_serialization() == target.server,
+                        PrivateRoomMismatch
+                    );
+                    local
+                }
+            }
+            None => Invitation::parse(&original_invitation)?,
+        };
+        let mut resolved_room_url = None;
+        // Scope to the invitation's public origin, before direct-server discovery,
+        // so changing the direct transport hostname does not split device history.
+        let scope = invitation.origin.origin().ascii_serialization();
+        let device_scope = scope.clone();
+        let device_id =
+            tokio::task::spawn_blocking(move || crate::device::for_server(&device_scope))
+                .await
+                .map_err(|_| anyhow::anyhow!("PC identity unavailable."))??;
         let client = Client::builder()
             .cookie_store(true)
             .redirect(Policy::none())
             .timeout(Duration::from_secs(12))
             .build()
             .context("Could not initialize secure room access.")?;
-        let response = client
-            .post(
-                invitation
-                    .origin
-                    .join(&format!("api/rooms/{}/join", invitation.room_id))?,
-            )
+        // Resolve before sending any invitation/session authority. Older servers
+        // lack discovery; failures other than 404 must never silently use a CDN.
+        let connection = client
+            .get(invitation.origin.join("api/connection")?)
+            .send()
+            .await
+            .context("Could not resolve the direct room server.")?;
+        if connection.status() != reqwest::StatusCode::NOT_FOUND {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Connection {
+                direct_url: String,
+            }
+            let connection: Connection = read_response(connection).await?;
+            ensure!(
+                valid_server(&connection.direct_url),
+                "Invalid direct room server."
+            );
+            let direct = Url::parse(&connection.direct_url)?;
+            ensure!(
+                invitation.origin.scheme() != "https" || direct.scheme() == "https",
+                "Direct room access requires HTTPS."
+            );
+            invitation.origin = direct;
+        }
+        if let Some((guild, channel)) = invitation.channel.take() {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Resolved {
+                invitation_url: String,
+            }
+            let response = client
+                .post(
+                    invitation
+                        .origin
+                        .join(&format!("api/channels/{guild}/{channel}/resolve"))?,
+                )
+                .header("Origin", invitation.origin.origin().ascii_serialization())
+                .json(&serde_json::json!({"invitation":invitation.secret}))
+                .send()
+                .await
+                .map_err(|_| anyhow::anyhow!("Could not resolve channel invitation."))?;
+            let resolved: Resolved = read_response(response).await?;
+            let room = Invitation::parse_legacy(&resolved.invitation_url, None)?;
+            ensure!(
+                room.channel.is_none() && room.origin.origin().ascii_serialization() == scope,
+                "Invalid channel room response."
+            );
+            invitation.room_id = room.room_id;
+            invitation.secret = room.secret;
+            resolved_room_url = Some(resolved.invitation_url);
+        }
+        let join_path = if automatic {
+            "api/auth/voice/join".to_owned()
+        } else {
+            format!("api/rooms/{}/join", invitation.room_id)
+        };
+        let body = if let Some(target) = voice {
+            serde_json::json!({"guildId":target.location.guild_id,"channelId":target.location.channel_id,"deviceId":device_id})
+        } else {
+            serde_json::json!({"invitation":invitation.secret,"displayName":display_name,"deviceId":device_id})
+        };
+        if automatic {
+            ensure!(
+                account
+                    .as_ref()
+                    .and_then(|c| c.for_server(&scope))
+                    .is_some(),
+                "Sign in to this Discord backend first."
+            );
+        }
+        let mut join_request = client
+            .post(invitation.origin.join(&join_path)?)
             .header("Origin", invitation.origin.origin().ascii_serialization())
-            .json(
-                &serde_json::json!({"invitation": invitation.secret, "displayName": display_name}),
-            )
+            .json(&body);
+        if let Some(credential) = account
+            && let Some(token) = credential.for_server(&scope)
+        {
+            join_request = join_request.bearer_auth(token);
+        }
+        let response = join_request
             .send()
             .await
             .map_err(|_| anyhow::anyhow!("Could not reach the room server."))?;
         let session: Session = read_response(response).await?;
+        ensure!(valid_token(&session.room.id, 22), "Invalid room response.");
+        if !invitation.room_id.is_empty() && invitation.room_id != session.room.id {
+            // A stale channel mapping or a moved voice session may already have issued
+            // a cookie for this different room. End it without ever creating an RTC peer.
+            let _ = client
+                .post(
+                    invitation
+                        .origin
+                        .join(&format!("api/rooms/{}/leave", session.room.id))?,
+                )
+                .header("Origin", invitation.origin.origin().ascii_serialization())
+                .timeout(Duration::from_secs(2))
+                .send()
+                .await;
+            if automatic {
+                bail!(PrivateRoomMismatch);
+            }
+            bail!(
+                "This invitation belongs to a different room. Open the matching private invitation."
+            );
+        }
         let protection = invitation
             .protection
             .map(|secret| {
-                crate::protection::Session::new(secret, session.participant.id).map(Arc::new)
+                crate::protection::Session::new(secret, session.participant.id.clone())
+                    .map(Arc::new)
             })
             .transpose()?;
+        let share_url = if automatic && protection.is_none() {
+            session.invitation_url.filter(|link| {
+                Invitation::parse_legacy(link, None).is_ok_and(|parsed| {
+                    parsed.origin.origin().ascii_serialization() == scope
+                        && parsed.channel.as_ref() == voice_channel.as_ref()
+                        && parsed.channel.is_some()
+                })
+            })
+        } else {
+            Some(original_invitation)
+        };
+        let share_url = share_url.map(Arc::<str>::from);
+        let room_invitation_url = if protection.is_some() {
+            share_url.clone()
+        } else if automatic && share_url.is_some() {
+            session
+                .room_invitation_url
+                .filter(|link| room_url_matches(link, &scope, &session.room.id))
+                .map(Arc::from)
+        } else {
+            resolved_room_url
+                .map(Arc::from)
+                .or_else(|| share_url.clone())
+        };
         Ok(Self {
             client,
             origin: invitation.origin,
-            room_id: invitation.room_id,
+            room_id: session.room.id,
             room_name: session.room.name,
             protection,
+            room_invitation_url,
+            participant_id: session.participant.id,
+            public_origin: scope,
+            invitation_url: share_url,
         })
     }
 
     pub async fn media_access(&self) -> Result<MediaAccess> {
-        let response = self.post("native-media-token").await?;
+        self.media_access_with_decoders(crate::playback::Playback::new().decoders())
+            .await
+    }
+
+    pub async fn media_access_with_decoders(
+        &self,
+        decoders: crate::codec_policy::Codecs,
+    ) -> Result<MediaAccess> {
+        let response = self
+            .client
+            .post(
+                self.origin
+                    .join(&format!("api/rooms/{}/native-media-token", self.room_id))?,
+            )
+            .header("Origin", self.origin.origin().ascii_serialization())
+            .json(&serde_json::json!({"hardwareDecoders": decoders.names()}))
+            .send()
+            .await
+            .map_err(|_| anyhow::anyhow!("Could not reach the room server."))?;
         ensure!(
             response.status().as_u16() != 404,
             "This room server needs an update before native playback can be used."
@@ -378,6 +737,101 @@ impl Admission {
     pub async fn announce_protection(&self, room: &livekit::Room) -> Result<()> {
         if let Some(protection) = &self.protection {
             protection.announce(room).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn profiles(&self) -> Result<Vec<crate::profile::Participant>> {
+        #[derive(Deserialize)]
+        struct Profiles {
+            profiles: Vec<crate::profile::Participant>,
+        }
+        let response = self
+            .client
+            .get(
+                self.origin
+                    .join(&format!("api/rooms/{}/profiles", self.room_id))?,
+            )
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .map_err(|_| anyhow::anyhow!("Could not load guest profiles."))?;
+        Ok(read_response::<Profiles>(response).await?.profiles)
+    }
+
+    pub async fn profile_avatar(&self, participant: &str, revision: &str) -> Result<Vec<u8>> {
+        let mut response = self
+            .client
+            .get(self.origin.join(&format!(
+                "api/rooms/{}/profiles/{participant}/avatar/{revision}",
+                self.room_id
+            ))?)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .map_err(|_| anyhow::anyhow!("Could not load profile picture."))?;
+        ensure!(
+            response.status().is_success(),
+            "Profile picture unavailable."
+        );
+        ensure!(
+            response.content_length().unwrap_or(0) <= 3_000_000,
+            "Profile picture too large."
+        );
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|_| anyhow::anyhow!("Could not load profile picture."))?
+        {
+            ensure!(
+                bytes.len() + chunk.len() <= 3_000_000,
+                "Profile picture too large."
+            );
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(bytes)
+    }
+
+    pub async fn edit_profile(&self, edit: crate::profile::Edit) -> Result<()> {
+        let base = format!("api/rooms/{}/profile", self.room_id);
+        let request = match edit {
+            crate::profile::Edit::Discord(Some(credential)) => {
+                let Some(token) = credential.for_server(&self.public_origin) else {
+                    return Ok(());
+                };
+                self.client
+                    .post(
+                        self.origin
+                            .join(&(base.replace("/profile", "/discord-identity")))?,
+                    )
+                    .bearer_auth(token)
+            }
+            crate::profile::Edit::Discord(None) => self.client.delete(
+                self.origin
+                    .join(&(base.replace("/profile", "/discord-identity")))?,
+            ),
+            crate::profile::Edit::Name(name) => self
+                .client
+                .patch(self.origin.join(&base)?)
+                .json(&serde_json::json!({"displayName":name})),
+            crate::profile::Edit::Picture(bytes) => self
+                .client
+                .put(self.origin.join(&(base + "/avatar"))?)
+                .header("Content-Type", "application/octet-stream")
+                .body(bytes),
+            crate::profile::Edit::Remove => {
+                self.client.delete(self.origin.join(&(base + "/avatar"))?)
+            }
+        };
+        let response = request
+            .header("Origin", self.origin.origin().ascii_serialization())
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await
+            .map_err(|_| anyhow::anyhow!("Could not update guest profile."))?;
+        if !response.status().is_success() {
+            let _: serde_json::Value = read_response(response).await?;
         }
         Ok(())
     }
@@ -537,8 +991,176 @@ async fn read_response<T: DeserializeOwned>(mut response: Response) -> Result<T>
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    #[ignore = "requires a local HTTP device-usage qualification fixture"]
+    async fn qualifies_device_identity_and_admission_in_an_independent_process() {
+        #[derive(Deserialize)]
+        struct Fixture {
+            invitation: String,
+            output: String,
+        }
+        let path = std::env::var_os("PODETELAR_DEVICE_FIXTURE").expect("Local fixture path");
+        let fixture: Fixture = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let invitation = Invitation::parse(&fixture.invitation).unwrap();
+        let origin = invitation.origin.origin().ascii_serialization();
+        assert!(matches!(
+            invitation.origin.host_str(),
+            Some("localhost" | "127.0.0.1")
+        ));
+        let scope = origin.clone();
+        let device_id = tokio::task::spawn_blocking(move || crate::device::for_server(&scope))
+            .await
+            .unwrap()
+            .unwrap();
+        let admission = Admission::join(&fixture.invitation, "Native PC qualification")
+            .await
+            .expect("Actual native admission");
+        let session: serde_json::Value = read_response(
+            admission
+                .client
+                .get(
+                    admission
+                        .origin
+                        .join(&format!("api/rooms/{}/session", admission.room_id))
+                        .unwrap(),
+                )
+                .send()
+                .await
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert!(session.get("deviceId").is_none());
+        admission.leave().await;
+        // Private local fixture only, never stdout or an application log. The
+        // driver compares independent processes/copies and server-side binding.
+        std::fs::write(
+            fixture.output,
+            serde_json::to_vec(&serde_json::json!({
+                "deviceId": device_id, "participant": session["participant"]["id"]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires two independently running API backends"]
+    async fn invitation_links_select_two_live_backends_without_saved_configuration() {
+        #[derive(Deserialize)]
+        struct Fixture {
+            link: String,
+            origin: String,
+            name: String,
+        }
+        let path = std::env::var_os("PODETELAR_MULTI_SERVER_FIXTURE").expect("Local fixture path");
+        let fixtures: Vec<Fixture> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(fixtures.len(), 2);
+        assert_ne!(fixtures[0].origin, fixtures[1].origin);
+        let mut admissions = Vec::new();
+        for fixture in &fixtures {
+            let link = crate::browser_links::Link::parse(&fixture.link).unwrap();
+            let invitation = link
+                .redeem()
+                .await
+                .expect("Redeem this backend's one-use link");
+            let admission = Admission::join(&invitation, "Session-only nickname")
+                .await
+                .expect("Admit on invitation-selected backend");
+            assert_eq!(
+                admission.origin.origin().ascii_serialization(),
+                fixture.origin
+            );
+            assert_eq!(admission.room_name, fixture.name);
+            assert!(link.redeem().await.is_err(), "Handoff remains single-use");
+            admissions.push(admission);
+        }
+        let foreign = admissions[1]
+            .origin
+            .join(&format!("api/rooms/{}/session", admissions[1].room_id))
+            .unwrap();
+        assert_eq!(
+            admissions[0]
+                .client
+                .get(foreign)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            reqwest::StatusCode::UNAUTHORIZED
+        );
+        for admission in admissions {
+            admission.leave().await;
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a live split-origin API fixture"]
+    async fn joins_discovered_direct_server() {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Fixture {
+            invitation: String,
+            direct_url: String,
+        }
+        let path = std::env::var_os("PODETELAR_DIRECT_FIXTURE").expect("Local fixture path");
+        let fixture: Fixture =
+            serde_json::from_slice(&std::fs::read(path).expect("Read local fixture"))
+                .expect("Valid fixture");
+        let admission = Admission::join(&fixture.invitation, "Native direct verification")
+            .await
+            .expect("Join direct API");
+        assert_eq!(
+            admission.origin.origin().ascii_serialization(),
+            fixture.direct_url
+        );
+        let measured = admission.measure_connection().await;
+        assert!(
+            measured.download_bps.is_some(),
+            "Direct download measurement must complete"
+        );
+        assert!(
+            measured.upload_bps.is_some(),
+            "Direct upload measurement must complete"
+        );
+        admission.leave().await;
+    }
+
     fn link(origin: &str) -> String {
         format!("{origin}/r/{}#invite={}", "r".repeat(22), "s".repeat(43))
+    }
+
+    #[test]
+    fn private_roots_cannot_enter_through_server_provided_invitation_urls() {
+        let origin = "https://example.test";
+        let room = "r".repeat(22);
+        let legacy = link(origin);
+        let private = crate::protection::protect_invitation(&legacy).unwrap();
+        let channel = format!(
+            "{origin}/c/{}/{}#invite={}",
+            "1".repeat(17),
+            "2".repeat(18),
+            "s".repeat(43)
+        );
+        assert!(valid_invitation(&private));
+        assert!(!valid_legacy_invitation(&private));
+        let mut admitted = Admission::profile_test(origin);
+        admitted.room_id.clone_from(&room);
+        assert!(admitted.accepts_private_invitation(&private));
+        assert!(!admitted.accepts_private_invitation(&legacy));
+        admitted.public_origin = "https://other.test".into();
+        assert!(!admitted.accepts_private_invitation(&private));
+        assert!(valid_legacy_invitation(&channel));
+        assert!(invitation_context(&channel).is_err());
+        assert!(room_url_matches(&legacy, origin, &room));
+        for candidate in [
+            private,
+            channel,
+            link("https://direct.test"),
+            legacy.replace(&room, &"q".repeat(22)),
+        ] {
+            assert!(!room_url_matches(&candidate, origin, &room));
+        }
     }
 
     #[test]

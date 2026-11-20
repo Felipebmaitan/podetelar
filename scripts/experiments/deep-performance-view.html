@@ -1,0 +1,146 @@
+<style>
+  #deep-performance-view {
+    display: grid;
+    gap: calc(var(--font-size-base, 14px) * 1);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+  }
+  #deep-performance-view .context {
+    display: grid;
+    gap: calc(var(--font-size-base, 14px) * 0.5);
+  }
+  #deep-performance-view .note {
+    color: var(--muted-foreground);
+  }
+  #deep-performance-view [data-viz-container] {
+    min-width: 0;
+  }
+  #deep-performance-view p {
+    margin: 0;
+  }
+</style>
+<div id="deep-performance-view">
+  <div class="viz-controls">
+    <label class="form-label"
+      >Experiment
+      <select class="form-select" id="deep-case" disabled></select
+    ></label>
+  </div>
+  <div class="context" aria-live="polite">
+    <p id="deep-status"></p>
+    <p id="deep-note" class="note"></p>
+  </div>
+  <section data-viz-composition>
+    <div id="deep-cost" data-viz-container></div>
+  </section>
+  <p id="deep-work" class="note"></p>
+  <div class="viz-controls">
+    <label class="form-label"
+      >Inspect original units
+      <select class="form-select" id="deep-metric" disabled></select
+    ></label>
+  </div>
+  <section data-viz-composition>
+    <div id="deep-pairs" data-viz-container></div>
+  </section>
+  <p class="note">
+    RTX 5080 · Ryzen 7 9800X3D · latest optimized baseline. CPU 100% = one core.
+    Private memory = commit; resident RAM = working set. GPU engines are
+    separate. GL API bytes and picture handoffs are not physical traffic or
+    displayed FPS. Native metrics cover the measured app process; server cases
+    cover the API process. Live plane storage counts buffer bytes.
+  </p>
+  <p class="note">
+    E6 pool tracing found no exercised pool-full/output-copy classification; no
+    pool-size change was adopted. AMD, physical 4K120, real-game FPS, device
+    removal and physical A/V remain unqualified.
+  </p>
+  <!-- DEEP_DATA -->
+  <!-- DEEP_CONFIGS -->
+</div>
+<script type="module">
+  import { mountChart } from "https://persistent.oaistatic.com/plugins/visualize/charts/1.1.6/element.js";
+  const root = document.getElementById("deep-performance-view");
+  const cases = JSON.parse(
+    document.getElementById("deep-view-data").textContent,
+  );
+  const configs = new Map(
+    [...root.querySelectorAll("[data-viz-chart]")].map((e) => {
+      const c = JSON.parse(e.textContent);
+      return [c.id, c];
+    }),
+  );
+  const choice = root.querySelector("#deep-case"),
+    metric = root.querySelector("#deep-metric");
+  const status = root.querySelector("#deep-status"),
+    note = root.querySelector("#deep-note"),
+    work = root.querySelector("#deep-work");
+  let costChart, pairChart;
+  const optionLabel = (label) =>
+    label
+      .replace("shared decoder device", "share")
+      .replace("historical report cache", "history cache")
+      .replace("actual GL upload confirmation", "GL uploads")
+      .replace("all-visible sustained control", "all visible")
+      .replace("synthetic GPU contention", "GPU load")
+      .replace("publish + watch + audio", "pub/watch/audio")
+      .replace("polling readback", "polling")
+      .replace("native flush + polling", "native flush")
+      .replace("idle heap optimization", "idle heap");
+  for (const c of cases) choice.add(new Option(optionLabel(c.label), c.id));
+  function renderMetric() {
+    const c = cases.find((c) => c.id === choice.value),
+      m = c.metrics.find((m) => m.key === metric.value);
+    const config = configs.get(m.configId);
+    if (pairChart) pairChart.config = config;
+    else pairChart = mountChart(root.querySelector("#deep-pairs"), config);
+  }
+  function renderCase(metricKey) {
+    const c = cases.find((c) => c.id === choice.value);
+    status.textContent = `${c.label} · ${c.status}`;
+    note.textContent = c.note;
+    work.textContent = c.work;
+    metric.replaceChildren(
+      ...c.metrics.map((m) => new Option(`${m.name} (${m.unit})`, m.key)),
+    );
+    if (c.metrics.some((m) => m.key === metricKey)) metric.value = metricKey;
+    const config = configs.get(c.costId);
+    if (costChart) costChart.config = config;
+    else costChart = mountChart(root.querySelector("#deep-cost"), config);
+    renderMetric();
+  }
+  function restore(saved) {
+    if (
+      !saved ||
+      saved.version !== 1 ||
+      !cases.some((c) => c.id === saved.case)
+    )
+      return;
+    choice.value = saved.case;
+    renderCase(saved.metric);
+  }
+  function save() {
+    window.openai
+      ?.setWidgetState?.({
+        modelContent: { version: 1, case: choice.value, metric: metric.value },
+        privateContent: null,
+      })
+      .catch(() => {});
+  }
+  choice.value = cases[0].id;
+  renderCase();
+  restore(window.openai?.widgetState?.modelContent);
+  choice.addEventListener("change", () => {
+    renderCase(metric.value);
+    save();
+  });
+  metric.addEventListener("change", () => {
+    renderMetric();
+    save();
+  });
+  window.addEventListener("openai:set_globals", (event) =>
+    restore(event.detail?.globals?.widgetState?.modelContent),
+  );
+  choice.disabled = false;
+  metric.disabled = false;
+</script>

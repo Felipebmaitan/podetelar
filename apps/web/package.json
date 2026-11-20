@@ -1,6 +1,6 @@
 {
-  "name": "@freedomstream/web",
-  "version": "0.1.0",
+  "name": "@podetelar/web",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -8,10 +8,10 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc -p tsconfig.test.json --noEmit",
-    "test": "node --import tsx --experimental-test-module-mocks --test test/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@freedomstream/contracts": "0.1.0",
+    "@podetelar/contracts": "0.1.4",
     "livekit-client": "2.23.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"

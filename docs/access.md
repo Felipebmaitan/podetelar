@@ -10,7 +10,14 @@ Open **Manage room access**, or `/manage/<room-id>`, and supply the server acces
 - **End session** revokes one browser/publisher and leaves other participants connected. A holder of a still-valid invitation can join again; rotate or disable a leaked invitation when ending its sessions.
 - Leaving, rejoining in the same browser and expiry also revoke the old session's media authority.
 
-Only invitation/session hashes enter SQLite. Schema version 3 preserves version-1 rooms/sessions while adding invitation state and a durable removal queue. Migration DDL and its version update commit together, with rollback on failure. Version-2 qualification databases gain persisted retry scheduling in the same transaction. Each room admits at most 32 current sessions.
+SQLite stores invitation/session hashes for admission. Managed invitations are
+also encrypted with a room-bound key derived from `ADMIN_TOKEN` so administrators
+can copy them again. Changing that key or encountering legacy hash-only invitations
+requires an explicit replacement invitation. Each room admits at most 32 sessions.
+
+New rooms await their first join. Afterward, 60 seconds of observed SFU absence
+closes the room and revokes its invitations, sessions and media access. Presence
+failures and server restarts reset the grace period; usage history remains available.
 
 ## Signaling admission
 
@@ -20,7 +27,7 @@ Only `/media/rtc`, `/media/rtc/v1` and their `/validate` endpoints are exposed. 
 
 **Keep the SFU HTTP/WebSocket listener private.** A public route directly to it bypasses the app's admission checks. Checked-in Compose configurations bind that listener to loopback. A production reverse proxy must send `/media/*`, including upgrades, to the app and must not publish SFU administration/signaling. Existing room cookies remain HttpOnly/SameSite/HTTPS-protected.
 
-`PUBLIC_URL` derives the public gateway address. Remove the old direct `LIVEKIT_URL` setting. `LIVEKIT_INTERNAL_URL` supplies the private HTTP(S) SFU origin for signaling/administration. Vite proxies `/media` upgrades. HTTP localhost development advertises explicit IPv4 loopback because the native WebSocket transport otherwise attempts `::1` against the IPv4 Docker listener. Production HTTPS hosts are preserved.
+`DIRECT_URL` (or `PUBLIC_URL` when unset) derives the native gateway address. Remove the old direct `LIVEKIT_URL` setting. `LIVEKIT_INTERNAL_URL` supplies the private HTTP(S) SFU origin for signaling/administration. Vite proxies `/media` upgrades. HTTP localhost development advertises explicit IPv4 loopback because the native WebSocket transport otherwise attempts `::1` against the IPv4 Docker listener. Production HTTPS hosts are preserved.
 
 ## Ending established access
 

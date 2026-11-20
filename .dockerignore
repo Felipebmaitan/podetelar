@@ -9,3 +9,6 @@ target
 data
 docs
 test-results
+
+**/target
+*.log

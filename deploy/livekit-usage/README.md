@@ -9,7 +9,7 @@ image, not an additional Windows application dependency.
 Build from the repository root:
 
 ```sh
-docker build -f deploy/livekit-usage/Dockerfile -t freedomstream/livekit-usage:COMMIT .
+docker build -f deploy/livekit-usage/Dockerfile -t podetelar/livekit-usage:COMMIT .
 ```
 
 Use the immutable resulting image tag as `LIVEKIT_USAGE_IMAGE` in the production
@@ -50,9 +50,12 @@ Unobserved data cannot be reconstructed and is excluded, never invented.
 Totals cover **recorded SFU media/data traffic**, not every byte on the VPS NIC.
 They exclude HTTPS downloads/speed tests, signaling, IP/UDP/TCP/TLS framing and
 extra TURN relay legs. The UI states this scope. Do not present them as provider
-bandwidth billing or whole-host usage. Users are distinct participant sessions,
-even if display names match; reopening with a new session creates a new entry.
-The existing system has no permanent friend accounts.
+bandwidth billing or whole-host usage. SFU counters remain keyed by distinct
+participant sessions. The administrator report combines sessions carrying the
+same PC identifier across rooms, names and app instances; older/unidentified
+sessions stay separate. There are no permanent friend accounts. See
+[PC usage identity](../../docs/device-usage-identity.md) for persistence, privacy,
+compatibility and verification limits.
 
 Do not activate this release until its base is coordinated with the parallel
 friends-beta/fullscreen work. In particular, preserve that release's negotiated

@@ -2,7 +2,11 @@ import { expect, test } from "@playwright/test";
 import { RoomServiceClient } from "livekit-server-sdk";
 import { setTimeout as delay } from "node:timers/promises";
 import { createTestRoom } from "../scripts/test-room.js";
-import { nativeRequest, toneFixtures } from "./fixtures.js";
+import {
+  backgroundAudioExclusions,
+  nativeRequest,
+  toneFixtures,
+} from "./fixtures.js";
 
 type Watched = {
   cryptorDisableRejected?: boolean;
@@ -12,6 +16,7 @@ type Watched = {
     second: number;
     phaseSecond: number | null;
     receivedBytes: number;
+    nativeAudio: { outputUsers: number; rendering: boolean };
     streams: {
       frames: number;
       watching: boolean;
@@ -21,7 +26,13 @@ type Watched = {
     }[];
   }[];
 };
-type Sent = { captureStopped: boolean; previewUploads: number; codec: string };
+type Sent = {
+  captureStopped: boolean;
+  previewUploads: number;
+  codec: string;
+  initialSid: string;
+  finalSid: string;
+};
 const quality = {
   resolution: "p1080",
   fps: 60,
@@ -41,7 +52,7 @@ function hasVideo(result: Watched) {
 }
 function mediaAdmin() {
   return new RoomServiceClient(
-    process.env.FREEDOMSTREAM_TEST_SFU_URL ?? "http://127.0.0.1:17880",
+    process.env.PODETELAR_TEST_SFU_URL ?? "http://127.0.0.1:17880",
     process.env.LIVEKIT_API_KEY!,
     process.env.LIVEKIT_API_SECRET!,
   );
@@ -49,6 +60,11 @@ function mediaAdmin() {
 function noContent(result: Watched) {
   expect(result.closed).toBe(true);
   expect(hasVideo(result)).toBe(false);
+  expect(
+    result.samples.every(
+      (s) => s.nativeAudio.outputUsers === 0 && !s.nativeAudio.rendering,
+    ),
+  ).toBe(true);
   expect(result.previewBeforeWatching).toBe(false);
   expect(
     result.samples.every((s) =>
@@ -88,6 +104,7 @@ test("protected AV1 to H.264 compatibility fallback retains encryption and watch
       receiver.result as Promise<Watched>,
     ]);
     expect(sent.codec).toBe("h264");
+    expect(sent.finalSid).not.toBe(sent.initialSid);
     expect(
       watched.samples.some((s) =>
         s.streams.some(
@@ -129,7 +146,7 @@ test("removing an authenticated descriptor stops an existing protected subscript
     await delay(5000);
     const admin = mediaAdmin();
     const participants = await admin.listParticipants(
-      `freedomstream_${room.room.id}`,
+      `podetelar_${room.room.id}`,
     );
     const publisher = participants.find(
       (p) =>
@@ -137,7 +154,7 @@ test("removing an authenticated descriptor stops an existing protected subscript
     );
     expect(Boolean(publisher)).toBe(true);
     await admin.updateParticipant(
-      `freedomstream_${room.room.id}`,
+      `podetelar_${room.room.id}`,
       publisher!.identity,
       { attributes: { "freedomstream.e2ee.v1": "" } },
     );
@@ -191,17 +208,17 @@ for (const codec of ["h264", "h265", "av1"] as const) {
           .poll(
             async () => {
               const participants = await admin.listParticipants(
-                `freedomstream_${room.room.id}`,
+                `podetelar_${room.room.id}`,
               );
               const publisher = participants.find((p) =>
                 Boolean(
                   p.attributes["freedomstream.e2ee.v1"] &&
-                  p.attributes["freedomstream.preview.screen"],
+                  p.attributes["podetelar.preview.screen"],
                 ),
               );
               if (!publisher) return false;
               const descriptor = JSON.parse(
-                publisher.attributes["freedomstream.preview.screen"]!,
+                publisher.attributes["podetelar.preview.screen"]!,
               );
               previewPath = `/api/rooms/${room.room.id}/previews/${publisher.identity}/screen/${descriptor.revision}`;
               return true;
@@ -358,7 +375,7 @@ test("server-tampered sender descriptor cannot grant a protected subscription", 
     .poll(
       async () => {
         publisher = (
-          await admin.listParticipants(`freedomstream_${room.room.id}`)
+          await admin.listParticipants(`podetelar_${room.room.id}`)
         ).find(
           (p) =>
             Boolean(p.attributes["freedomstream.e2ee.v1"]) &&
@@ -370,7 +387,7 @@ test("server-tampered sender descriptor cannot grant a protected subscription", 
     )
     .toBe(true);
   await admin.updateParticipant(
-    `freedomstream_${room.room.id}`,
+    `podetelar_${room.room.id}`,
     publisher!.identity,
     { attributes: { "freedomstream.e2ee.v1": '{"version":0}' } },
   );
@@ -396,6 +413,7 @@ test("protected native stereo audio reaches only a correct-root viewer", async (
   const created = await createTestRoom(request, baseURL!, "Protected audio");
   const room = await created.json();
   const invitationUrl = await protect(room.invitationUrl);
+  const otherRoot = await protect(room.invitationUrl);
   const tones = toneFixtures(testInfo.outputPath("tones"));
   const sender = nativeRequest("--publish-fixture", {
     invitationUrl,
@@ -404,6 +422,7 @@ test("protected native stereo audio reaches only a correct-root viewer", async (
     seconds: 22,
     quality,
     audio: { mode: "desktop" },
+    exclusions: await backgroundAudioExclusions(),
   });
   await sender.reported;
   tones.game();
@@ -412,11 +431,28 @@ test("protected native stereo audio reaches only a correct-root viewer", async (
     invitationUrl,
     seconds: 18,
   });
+  const speaker = nativeRequest("--watch-fixture", {
+    invitationUrl,
+    seconds: 18,
+    sampleAudio: false,
+  });
+  const other = nativeRequest("--watch-fixture", {
+    invitationUrl: otherRoot,
+    seconds: 18,
+  });
   try {
-    const [, watched] = await Promise.all([
+    const [, watched, unauthorized, speakerResult] = await Promise.all([
       sender.result,
       receiver.result as Promise<Watched>,
+      other.result as Promise<Watched>,
+      speaker.result as Promise<Watched>,
     ]);
+    noContent(unauthorized);
+    expect(
+      speakerResult.samples.some(
+        (s) => s.nativeAudio.outputUsers === 1 && s.nativeAudio.rendering,
+      ),
+    ).toBe(true);
     expect(hasVideo(watched)).toBe(true);
     const audio = watched.samples
       .flatMap((s) => s.streams)
@@ -427,6 +463,8 @@ test("protected native stereo audio reaches only a correct-root viewer", async (
   } finally {
     sender.child.kill();
     receiver.child.kill();
+    other.child.kill();
+    speaker.child.kill();
     tones.stop();
   }
 });

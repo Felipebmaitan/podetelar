@@ -13,11 +13,12 @@ import { Rooms, SESSION_TTL_MS } from "../src/rooms.js";
 const ORIGIN = "http://localhost:5173";
 const ADMIN = "test-admin-key-only-not-a-production-secret";
 const MEDIA_SECRET = "test-livekit-secret-only-not-for-production";
+const HARDWARE_CAPABILITIES = "podetelar.decode.hardware.v1";
 const cookieFrom = (response: { headers: Record<string, unknown> }) =>
   String(response.headers["set-cookie"]).split(";")[0]!;
 
 async function fixture(t: TestContext) {
-  const directory = mkdtempSync(join(tmpdir(), "freedomstream-"));
+  const directory = mkdtempSync(join(tmpdir(), "podetelar-"));
   const config = loadConfig({
     PUBLIC_URL: ORIGIN,
     ADMIN_TOKEN: ADMIN,
@@ -29,6 +30,9 @@ async function fixture(t: TestContext) {
   config.webRoot = join(directory, "no-web-build");
   let now = Date.now();
   const mediaDirectory = {
+    async members() {
+      return [];
+    },
     async remove() {},
     async participant() {
       return null;
@@ -43,7 +47,7 @@ async function fixture(t: TestContext) {
     if (
       dirname(resolved).toLowerCase() !==
         realpathSync(tmpdir()).toLowerCase() ||
-      !basename(resolved).startsWith("freedomstream-")
+      !basename(resolved).startsWith("podetelar-")
     )
       throw new Error("Refusing unexpected cleanup path");
     rmSync(resolved, { recursive: true });
@@ -79,6 +83,62 @@ async function fixture(t: TestContext) {
     },
   };
 }
+
+test("native media admission carries explicit hardware capabilities in initial participant attributes", async (t) => {
+  const f = await fixture(t);
+  const created = await f.create();
+  const url = `/api/rooms/${created.body.room.id}/native-media-token`;
+  const headers = { origin: ORIGIN, cookie: created.cookie };
+  const verifier = new TokenVerifier("test-api-key", MEDIA_SECRET);
+  for (const [hardwareDecoders, encoded] of [
+    [["av1", "hevc", "h264"], "av1,hevc,h264"],
+    [["hevc", "h264"], "hevc,h264"],
+    [[], "none"],
+  ] as const) {
+    const response = await f.app.inject({
+      method: "POST",
+      url,
+      headers,
+      payload: { hardwareDecoders },
+    });
+    assert.equal(response.statusCode, 200);
+    const claims = await verifier.verify(response.json().token);
+    assert.equal(claims.attributes?.[HARDWARE_CAPABILITIES], encoded);
+    assert.equal(claims.sub, created.body.participant.id);
+  }
+  for (const payload of [
+    { hardwareDecoders: ["vp9"] },
+    { hardwareDecoders: ["av1", "av1"] },
+    { hardwareDecoders: "av1" },
+    { hardwareDecoders: [], extra: true },
+    {},
+  ]) {
+    assert.equal(
+      (await f.app.inject({ method: "POST", url, headers, payload }))
+        .statusCode,
+      400,
+    );
+  }
+  assert.equal(
+    (
+      await f.app.inject({
+        method: "POST",
+        url,
+        headers: { origin: ORIGIN },
+        payload: { hardwareDecoders: ["av1"] },
+      })
+    ).statusCode,
+    401,
+  );
+  const legacy = await f.app.inject({ method: "POST", url, headers });
+  assert.equal(legacy.statusCode, 200);
+  assert.equal(
+    (await verifier.verify(legacy.json().token)).attributes?.[
+      HARDWARE_CAPABILITIES
+    ],
+    undefined,
+  );
+});
 
 test("document/static requests do not spend the API quota, while API throttling stays enforced", async (t) => {
   const f = await fixture(t);
@@ -352,11 +412,18 @@ test("leaving revokes the current session and rejoining replaces an old cookie",
 test("media tokens have verified signatures, fixed room/identity and short lifetime", async (t) => {
   const f = await fixture(t);
   const created = await f.create();
-  const response = await f.app.inject({
+  const forged = await f.app.inject({
     method: "POST",
     url: `/api/rooms/${created.body.room.id}/native-media-token`,
     headers: { origin: ORIGIN, cookie: created.cookie },
     payload: { room: "someone-elses-room", identity: "forged" },
+  });
+  assert.equal(forged.statusCode, 400);
+  const response = await f.app.inject({
+    method: "POST",
+    url: `/api/rooms/${created.body.room.id}/native-media-token`,
+    headers: { origin: ORIGIN, cookie: created.cookie },
+    payload: { hardwareDecoders: ["av1", "hevc", "h264"] },
   });
   assert.equal(response.statusCode, 200);
   const body = response.json();
@@ -365,7 +432,7 @@ test("media tokens have verified signatures, fixed room/identity and short lifet
     MEDIA_SECRET,
   ).verify(body.token);
   assert.equal(claims.sub, created.body.participant.id);
-  assert.equal(claims.video?.room, `freedomstream_${created.body.room.id}`);
+  assert.equal(claims.video?.room, `podetelar_${created.body.room.id}`);
   assert.equal(claims.video?.roomJoin, true);
   assert.equal(claims.video?.canPublish, true);
   assert.equal(claims.video?.canSubscribe, true);
@@ -456,4 +523,99 @@ test("browser tokens cannot publish or subscribe and browser fetch cannot obtain
     });
     assert.equal(response.statusCode, 403);
   }
+});
+
+test("app handoff tickets are private, single-use, expiring and revoked by invitation changes", async (t) => {
+  const f = await fixture(t);
+  const created = await f.create();
+  const url = `/api/rooms/${created.body.room.id}/app-link`;
+  const issue = async (invitation = created.invitation) =>
+    f.app.inject({
+      method: "POST",
+      url,
+      headers: { origin: ORIGIN },
+      payload: { invitation },
+    });
+  const redeem = async (ticket: string, extra = {}) =>
+    f.app.inject({
+      method: "POST",
+      url: "/api/app-links/redeem",
+      headers: { origin: ORIGIN, ...extra },
+      payload: { ticket },
+    });
+  assert.equal(
+    (
+      await f.app.inject({
+        method: "POST",
+        url,
+        payload: { invitation: created.invitation },
+      })
+    ).statusCode,
+    403,
+  );
+  assert.equal((await issue("x".repeat(43))).statusCode, 404);
+  const issued = await issue();
+  assert.equal(issued.statusCode, 200);
+  assert.equal(issued.headers["cache-control"], "no-store");
+  assert.ok(!issued.body.includes(created.invitation));
+  const link = new URL(issued.json().appUrl);
+  assert.equal(link.protocol, "podetelar:");
+  assert.equal(link.searchParams.get("server"), ORIGIN);
+  const ticket = link.hash.slice("#handoff=".length);
+  assert.equal(ticket.length, 43);
+  assert.equal(
+    (await redeem(ticket, { "sec-fetch-mode": "cors" })).statusCode,
+    403,
+  );
+  const consumed = await redeem(ticket);
+  assert.equal(consumed.statusCode, 200);
+  assert.equal(consumed.json().invitationUrl, created.body.invitationUrl);
+  assert.equal((await redeem(ticket)).statusCode, 404);
+  const expiring = new URL((await issue()).json().appUrl).hash.slice(
+    "#handoff=".length,
+  );
+  f.advance(60000);
+  assert.equal((await redeem(expiring)).statusCode, 404);
+  const revoked = new URL((await issue()).json().appUrl).hash.slice(
+    "#handoff=".length,
+  );
+  await f.app.inject({
+    method: "POST",
+    url: `/api/rooms/${created.body.room.id}/access`,
+    headers: { origin: ORIGIN, authorization: `Bearer ${ADMIN}` },
+    payload: { invitation: "rotate", revokeSessions: false },
+  });
+  assert.equal((await redeem(revoked)).statusCode, 404);
+  assert.equal((await issue()).statusCode, 404);
+});
+
+test("app handoff memory is bounded, expiry frees capacity and restart discards tickets", async (t) => {
+  const f = await fixture(t);
+  const created = await f.create();
+  const issue = async (index: number) =>
+    f.app.inject({
+      method: "POST",
+      url: `/api/rooms/${created.body.room.id}/app-link`,
+      remoteAddress: `127.0.1.${index}`,
+      headers: { origin: ORIGIN },
+      payload: { invitation: created.invitation },
+    });
+  for (let i = 1; i <= 128; i++) assert.equal((await issue(i)).statusCode, 200);
+  assert.equal((await issue(129)).statusCode, 503);
+  f.advance(60001);
+  const fresh = await issue(130);
+  assert.equal(fresh.statusCode, 200);
+  const ticket = new URL(fresh.json().appUrl).hash.slice("#handoff=".length);
+  await f.restart();
+  assert.equal(
+    (
+      await f.app.inject({
+        method: "POST",
+        url: "/api/app-links/redeem",
+        headers: { origin: ORIGIN },
+        payload: { ticket },
+      })
+    ).statusCode,
+    404,
+  );
 });

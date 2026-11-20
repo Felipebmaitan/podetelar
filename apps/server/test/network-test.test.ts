@@ -9,7 +9,7 @@ import { loadConfig } from "../src/config.js";
 import { PROBE_BPS, PROBE_BYTES } from "../src/network-test.js";
 
 test("real connection transfers authenticate early, share one lease, pace download and enforce cooldown", async () => {
-  const root = mkdtempSync(join(tmpdir(), "freedomstream-network-"));
+  const root = mkdtempSync(join(tmpdir(), "podetelar-network-"));
   const origin = "http://localhost:5173";
   const config = loadConfig({
     PUBLIC_URL: origin,
@@ -20,6 +20,7 @@ test("real connection transfers authenticate early, share one lease, pace downlo
   });
   const app = await buildApp(config, {
     mediaDirectory: {
+      members: async () => [],
       async participant() {
         return null;
       },
@@ -294,7 +295,7 @@ test("real connection transfers authenticate early, share one lease, pace downlo
     app.server.closeAllConnections();
     await app.close();
     assert.equal(dirname(resolve(root)), resolve(tmpdir()));
-    assert.ok(basename(root).startsWith("freedomstream-network-"));
+    assert.ok(basename(root).startsWith("podetelar-network-"));
     rmSync(root, { recursive: true, force: true });
   }
 });

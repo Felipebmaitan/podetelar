@@ -23,14 +23,28 @@ pub struct Source {
 }
 
 #[cfg(windows)]
+#[path = "sources/windows.rs"]
 mod windows;
 
 pub fn enumerate() -> Vec<Source> {
     #[cfg(windows)]
     {
-        windows::enumerate()
+        let sources = windows::enumerate();
+        #[cfg(feature = "performance-experiments")]
+        let sources = {
+            let mut sources = sources;
+            if std::env::var("PODETELAR_PERFORMANCE_FIXTURE").is_ok_and(|value| value == "1") {
+                sources.push(fixture());
+            }
+            sources
+        };
+        sources
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos::enumerate()
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         Vec::new()
     }
@@ -41,7 +55,11 @@ pub fn validate(source: &Source) -> bool {
     {
         windows::validate(source)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos::validate(source)
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         matches!(source.target, Target::Pattern)
     }

@@ -2,8 +2,13 @@
   "version": "0.3.53",
   "url": "https://static.crates.io/crates/webrtc-sys/webrtc-sys-0.3.53.crate",
   "sha256": "dbfe2c11c98bfd4839242abf9a4b8ddb16a7ff3cbf87416f40928a06886eb5c7",
-  "adapterSha256": "2fcdb41a77c70a4e1d471c31e586480855106ac7cbbe95f73fc4e63a9e5c22c3",
-  "treeSha256": "55d9b86db55e018b2c5b4bdd23c0469e97447b79d9888615d1a81906380add76",
+  "adapterSha256": "17324300e534cab7f4b33f4b83960ee8798348314fbe33cfec194e747ac6fc13",
+  "treeSha256": "adbe5ae79758b18325b5da926fbdd5555b5fce8bcc02e724372c95f4ab848db1",
+  "deferredI420Sha256": "b99c2927dc4115b80a4831b7bad47c2845cdf6d5a4ccf874d1e32f16aabfc93c",
+  "readbackSha256": "9bc985f501c1e1562d81bfb49746160ed1520c3ec32ed4eecf6a8fc2615ec0a0",
+  "outputGuardSha256": "c1a91808c2e64f7bbf738d971e067a8fe307fdf4f677abbb0f911e5f73926c54",
+  "outputMixerSha256": "182318620e348300b8083a1f1e9425a637f233ce2a13bb6b0a50f5d6f476d553",
+  "macosAdapterSha256": "1098f9e2f389cf9b071edd8cd4f08b3a5ffba7944c4689a2c804bdc9401ae1f9",
   "frameCryptorOriginalSha256": "530d12a1b19b245db2aa08fd93cac5fd6fcc37ae7cff951a7861a81d93797f15",
   "frameCryptorPatchedSha256": "3f095e1fb3fb7feab57b643dcf0a86e4b299710509df89f385d5aded0e9d3c3e"
 }

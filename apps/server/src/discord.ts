@@ -1,0 +1,186 @@
+import { createPublicKey, verify } from "node:crypto";
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import type { Config } from "./config.js";
+import type { Rooms } from "./rooms.js";
+import type { DiscordVoice } from "./discord-voice.js";
+
+const snowflake = z.string().regex(/^\d{17,20}$/);
+const interaction = z.object({
+  id: snowflake,
+  application_id: snowflake,
+  type: z.number().int(),
+  guild_id: snowflake.optional(),
+  context: z.number().int().optional(),
+  authorizing_integration_owners: z
+    .object({ "0": snowflake.optional() })
+    .optional(),
+  member: z
+    .object({
+      nick: z.string().max(128).nullable().optional(),
+      user: z.object({
+        id: snowflake,
+        username: z.string().max(128).optional(),
+        global_name: z.string().max(128).nullable().optional(),
+      }),
+    })
+    .optional(),
+  data: z
+    .object({
+      name: z.enum(["stream", "telar"]),
+      type: z.literal(1),
+      options: z.array(z.unknown()).max(0).optional(),
+    })
+    .optional(),
+});
+const message = (content: string, ephemeral = true) => ({
+  type: 4,
+  data: { content, flags: ephemeral ? 64 : 4, allowed_mentions: { parse: [] } },
+});
+
+/** Discord signatures authenticate raw bytes; this scope alone bypasses browser Origin checks. */
+export async function discordRoutes(
+  app: FastifyInstance,
+  config: Config,
+  rooms: Rooms,
+  now = Date.now,
+  voice?: DiscordVoice,
+) {
+  if (!config.discord) return;
+  const discord = config.discord;
+  const key = createPublicKey({
+    key: Buffer.concat([
+      Buffer.from("302a300506032b6570032100", "hex"),
+      Buffer.from(discord.publicKey, "hex"),
+    ]),
+    format: "der",
+    type: "spki",
+  });
+  await app.register(async (scope) => {
+    scope.removeContentTypeParser("application/json");
+    scope.addContentTypeParser(
+      "application/json",
+      { parseAs: "buffer", bodyLimit: 32768 },
+      (_request, body, done) => done(null, body),
+    );
+    scope.post(
+      "/api/discord/interactions",
+      { bodyLimit: 32768 },
+      async (request, reply) => {
+        const signature = request.headers["x-signature-ed25519"];
+        const timestamp = request.headers["x-signature-timestamp"];
+        const body = request.body;
+        if (
+          typeof signature !== "string" ||
+          !/^[a-fA-F0-9]{128}$/.test(signature) ||
+          typeof timestamp !== "string" ||
+          !/^\d{10}$/.test(timestamp) ||
+          Math.abs(now() - Number(timestamp) * 1000) > 5 * 60_000 ||
+          !Buffer.isBuffer(body) ||
+          !verify(
+            null,
+            Buffer.concat([Buffer.from(timestamp), body]),
+            key,
+            Buffer.from(signature, "hex"),
+          )
+        )
+          return reply.code(401).send({ error: "Invalid Discord signature." });
+        let raw: unknown;
+        try {
+          raw = JSON.parse(body.toString("utf8"));
+        } catch {
+          return reply.code(400).send({ error: "Invalid interaction." });
+        }
+        const parsed = interaction.safeParse(raw);
+        if (
+          !parsed.success ||
+          parsed.data.application_id !== discord.applicationId
+        )
+          return reply.code(400).send({ error: "Invalid interaction." });
+        const input = parsed.data;
+        if (input.type === 1) return { type: 1 };
+        if (input.type !== 2 || !input.data)
+          return reply.code(400).send({ error: "Unsupported interaction." });
+        if (
+          !input.guild_id ||
+          (input.context !== undefined && input.context !== 0) ||
+          !(
+            discord.guildIds.includes(input.guild_id) ||
+            (discord.guildIds.includes("*") &&
+              input.authorizing_integration_owners?.["0"] === input.guild_id)
+          ) ||
+          !input.member
+        )
+          return message(
+            "Room creation is unavailable in this Discord server.",
+          );
+        const lookup = voice?.index.lookup(
+          input.member.user.id,
+          input.guild_id,
+        );
+        if (voice?.status().configured && !lookup?.known)
+          return message(
+            "Discord voice discovery is reconnecting. Please try again shortly.",
+          );
+        const location = voice?.index.lookup(
+          input.member.user.id,
+          input.guild_id,
+        ).locations[0];
+        const created = rooms.createFromDiscord(
+          input.id,
+          input.guild_id,
+          input.member.user.id,
+          discordRoomName(input.member),
+          location
+            ? {
+                guildId: location.guildId,
+                channelId: location.channelId,
+                name: location.channelName,
+              }
+            : undefined,
+        );
+        if (created === "duplicate")
+          return message(
+            "This command was already handled. Use /stream or /telar for a new room.",
+          );
+        if (created === "limited")
+          return message("Too many rooms created. Try again in a minute.");
+        if (created === "unavailable")
+          return message(
+            "Room invitations are unavailable for this voice channel. Ask the administrator to check room access.",
+          );
+        // Angle brackets and SUPPRESS_EMBEDS prevent link unfurling. The secret is fragment-only.
+        const permanent = location
+          ? rooms.channelInvitation(
+              location.guildId,
+              location.channelId,
+              location.channelName,
+            )
+          : null;
+        const url =
+          permanent && location
+            ? `${config.publicUrl}/c/${location.guildId}/${location.channelId}#invite=${permanent}`
+            : `${config.publicUrl}/r/${created.room.id}#invite=${created.invitation}`;
+        return message(
+          `Join a PodeTelar room: <${url}>\nAnyone with this link can join. Share it only with friends.`,
+          Boolean(location),
+        );
+      },
+    );
+  });
+}
+
+/** Prefer the name shown in the invoking guild. Never use a shared placeholder. */
+function discordRoomName(
+  member: NonNullable<z.infer<typeof interaction>["member"]>,
+) {
+  const name = [
+    member.nick,
+    member.user.global_name,
+    member.user.username,
+    member.user.id,
+  ]
+    .map((value) => value?.replace(/[\p{Cc}\p{Cf}]/gu, "").trim())
+    .find((value) => value);
+  return `${name!.slice(0, 53).replace(/[\uD800-\uDBFF]$/u, "")}'s room`;
+}

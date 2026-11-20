@@ -183,6 +183,11 @@
       "sha256": "694661d2e182d29a8f42772c56baddb1a58c187ce63afd5296b40b4b87178808"
     },
     {
+      "path": "lib/gstreamer-1.0/gstimagefreeze.dll",
+      "component": "gstreamer",
+      "sha256": "9bdbe29c44ba84e9c8304454cf76e885e4b74e5bfafc4cd5cc44c96972084cea"
+    },
+    {
       "path": "lib/gstreamer-1.0/gstjpeg.dll",
       "component": "gstreamer",
       "sha256": "a24d6f36a05543ef0564c5c13e8ae4d3be972fd9ee75a340d8a147d31d74fcc4"

@@ -1,20 +1,24 @@
 import {
   createHash,
+  createHmac,
+  createCipheriv,
+  createDecipheriv,
   randomBytes,
   randomUUID,
   timingSafeEqual,
 } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type StatementSync } from "node:sqlite";
 import type {
   CreateRoomInput,
   ManagedRoom,
   Room,
   RoomSession,
-} from "@freedomstream/contracts";
+} from "@podetelar/contracts";
 
 export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+export const EMPTY_ROOM_GRACE_MS = 60_000;
 const digest = (value: string) => createHash("sha256").update(value).digest();
 export const secretsEqual = (left: string, right: string) =>
   timingSafeEqual(digest(left), digest(right));
@@ -37,9 +41,13 @@ type IssuedSession = { snapshot: RoomSession; token: string };
 /** Owns room admission and persistence. Raw invitation/session secrets never enter SQLite. */
 export class Rooms {
   private readonly db: DatabaseSync;
+  private readonly findStatement: StatementSync;
+  private readonly sessionStatement: StatementSync;
+  private readonly activeStatement: StatementSync;
   constructor(
     path: string,
     private readonly now: () => number = Date.now,
+    private readonly invitationKey?: string,
   ) {
     mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
@@ -49,11 +57,9 @@ export class Rooms {
     const version = this.db.prepare("PRAGMA user_version").get() as {
       user_version: number;
     };
-    if (version.user_version > 3) {
+    if (version.user_version > 4) {
       this.db.close();
-      throw new Error(
-        "The database was created by a newer FreedomStream version.",
-      );
+      throw new Error("The database was created by a newer PodeTelar version.");
     }
     try {
       if (version.user_version < 3)
@@ -85,11 +91,54 @@ export class Rooms {
           PRAGMA user_version = 3;
         `);
         });
+      if (version.user_version < 4)
+        this.transaction(() => {
+          this.db.exec(`
+            CREATE TABLE IF NOT EXISTS room_lifecycle (
+              room_id TEXT PRIMARY KEY REFERENCES rooms(id) ON DELETE CASCADE,
+              joined_at INTEGER, empty_since INTEGER, invitation_cipher BLOB
+            );
+            INSERT OR IGNORE INTO room_lifecycle(room_id, joined_at)
+              SELECT id, COALESCE((SELECT MIN(expires_at) - ${SESSION_TTL_MS} FROM sessions WHERE room_id = rooms.id), created_at) FROM rooms;
+            PRAGMA user_version = 4;
+          `);
+        });
       this.expire();
+      this.db.exec("UPDATE room_lifecycle SET empty_since = NULL");
     } catch (error) {
       this.db.close();
       throw error;
     }
+    this.db.exec(`CREATE TABLE IF NOT EXISTS discord_interactions (
+      id TEXT PRIMARY KEY, guild_id TEXT NOT NULL, actor_id TEXT NOT NULL, created_at INTEGER NOT NULL
+    ); CREATE INDEX IF NOT EXISTS discord_interactions_time ON discord_interactions(created_at);`);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS discord_channels (
+      guild_id TEXT NOT NULL, channel_id TEXT NOT NULL, name TEXT NOT NULL,
+      room_id TEXT UNIQUE REFERENCES rooms(id) ON DELETE SET NULL,
+      invitation_hash BLOB NOT NULL, invitation_cipher BLOB,
+      guest_enabled INTEGER NOT NULL DEFAULT 1, auto_enabled INTEGER NOT NULL DEFAULT 1,
+      announcement_id TEXT, announcement_state TEXT, announcement_error INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY(guild_id,channel_id)
+    );`);
+    if (
+      !this.db
+        .prepare(
+          "SELECT 1 FROM pragma_table_info('discord_channels') WHERE name='guest_revision'",
+        )
+        .get()
+    )
+      this.db.exec(
+        "ALTER TABLE discord_channels ADD COLUMN guest_revision INTEGER NOT NULL DEFAULT 0",
+      );
+    this.findStatement = this.db.prepare(
+      "SELECT id, name, invitation_hash, invitation_enabled, created_at FROM rooms WHERE id = ?",
+    );
+    this.sessionStatement = this.db.prepare(
+      "SELECT participant_id, display_name, expires_at FROM sessions WHERE token_hash = ? AND room_id = ? AND expires_at > ?",
+    );
+    this.activeStatement = this.db.prepare(
+      "SELECT 1 FROM sessions WHERE room_id = ? AND participant_id = ? AND expires_at > ?",
+    );
   }
 
   private insertRoom(name: string) {
@@ -106,6 +155,11 @@ export class Rooms {
         "INSERT INTO rooms(id, name, invitation_hash, created_at) VALUES (?, ?, ?, ?)",
       )
       .run(room.id, room.name, room.invitation_hash, room.created_at);
+    this.db
+      .prepare(
+        "INSERT INTO room_lifecycle(room_id, invitation_cipher) VALUES (?, ?)",
+      )
+      .run(room.id, this.encryptInvitation(room.id, invitation));
     return { room, invitation };
   }
 
@@ -116,16 +170,412 @@ export class Rooms {
     });
   }
 
+  createFromDiscord(
+    id: string,
+    guildId: string,
+    actorId: string,
+    roomName: string,
+    channel?: { guildId: string; channelId: string; name: string },
+  ):
+    | { room: Room; invitation: string }
+    | "duplicate"
+    | "limited"
+    | "unavailable" {
+    return this.transaction(() => {
+      const now = this.now();
+      this.db
+        .prepare("DELETE FROM discord_interactions WHERE created_at < ?")
+        .run(now - 10 * 60_000);
+      if (
+        this.db
+          .prepare("SELECT 1 FROM discord_interactions WHERE id = ?")
+          .get(id)
+      )
+        return "duplicate";
+      const count = (
+        this.db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM discord_interactions WHERE created_at > ? AND (guild_id = ? OR actor_id = ?)",
+          )
+          .get(now - 60_000, guildId, actorId) as { count: number }
+      ).count;
+      if (count >= 5) return "limited";
+      this.db
+        .prepare("INSERT INTO discord_interactions VALUES (?, ?, ?, ?)")
+        .run(id, guildId, actorId, now);
+      const channelSecret = channel
+        ? this.channelInvitation(
+            channel.guildId,
+            channel.channelId,
+            channel.name,
+          )
+        : null;
+      const resolved =
+        channel && channelSecret
+          ? this.resolveChannelInner(
+              channel.guildId,
+              channel.channelId,
+              channel.name,
+              channelSecret,
+            )
+          : null;
+      if (channel && !resolved) return "unavailable";
+      const { room, invitation } = resolved ?? this.insertRoom(roomName);
+      return {
+        room: {
+          id: room.id,
+          name: room.name,
+          createdAt: new Date(room.created_at).toISOString(),
+        },
+        invitation,
+      };
+    });
+  }
+
   createManaged(name: string): { room: Room; invitation: string } {
-    const { room, invitation } = this.insertRoom(name);
-    return {
-      room: {
-        id: room.id,
-        name: room.name,
-        createdAt: new Date(room.created_at).toISOString(),
-      },
-      invitation,
+    return this.transaction(() => {
+      const { room, invitation } = this.insertRoom(name);
+      return {
+        room: {
+          id: room.id,
+          name: room.name,
+          createdAt: new Date(room.created_at).toISOString(),
+        },
+        invitation,
+      };
+    });
+  }
+
+  private ensureChannel(guild: string, channel: string, name: string) {
+    const secret = randomSecret();
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO discord_channels(guild_id,channel_id,name,invitation_hash,invitation_cipher)
+      VALUES (?,?,?,?,?)`,
+      )
+      .run(
+        guild,
+        channel,
+        name,
+        digest(secret),
+        this.encryptInvitation(`discord:${guild}:${channel}`, secret),
+      );
+    this.db
+      .prepare(
+        "UPDATE discord_channels SET name=? WHERE guild_id=? AND channel_id=?",
+      )
+      .run(name, guild, channel);
+  }
+  private resolveChannelInner(
+    guild: string,
+    channel: string,
+    name: string,
+    secret?: string,
+  ) {
+    if (
+      secret !== undefined &&
+      !this.db
+        .prepare(
+          "SELECT 1 FROM discord_channels WHERE guild_id=? AND channel_id=?",
+        )
+        .get(guild, channel)
+    )
+      return null;
+    this.ensureChannel(guild, channel, name);
+    const row = this.db
+      .prepare(
+        "SELECT * FROM discord_channels WHERE guild_id=? AND channel_id=?",
+      )
+      .get(guild, channel) as {
+      room_id: string | null;
+      guest_enabled: number;
+      auto_enabled: number;
+      invitation_hash: Uint8Array;
     };
+    if (
+      secret !== undefined
+        ? !row.guest_enabled ||
+          !timingSafeEqual(digest(secret), Buffer.from(row.invitation_hash))
+        : !row.auto_enabled
+    )
+      return null;
+    if (row.room_id) {
+      const room = this.find(row.room_id),
+        invitation = this.invitation(row.room_id);
+      if (room && invitation) {
+        const handoff =
+          secret === undefined ? invitation : this.channelHandoff(room);
+        return handoff ? { room, invitation: handoff } : null;
+      }
+      if (room) return null;
+    }
+    const created = this.insertRoom(name.slice(0, 60));
+    this.db
+      .prepare(
+        "UPDATE discord_channels SET room_id=? WHERE guild_id=? AND channel_id=?",
+      )
+      .run(created.room.id, guild, channel);
+    if (secret === undefined) return created;
+    const handoff = this.channelHandoff(created.room);
+    return handoff ? { room: created.room, invitation: handoff } : null;
+  }
+  channelGuestRoomInvitation(roomId: string) {
+    const room = this.find(roomId);
+    return room?.invitation_enabled ? this.channelHandoff(room) : null;
+  }
+  private channelHandoff(room: RoomRow) {
+    if (!this.invitationKey) return null;
+    const channel = this.db
+      .prepare(
+        "SELECT invitation_hash, guest_revision FROM discord_channels WHERE room_id=? AND guest_enabled=1",
+      )
+      .get(room.id) as
+      { invitation_hash: Uint8Array; guest_revision: number } | undefined;
+    return channel
+      ? createHmac("sha256", this.invitationKey)
+          .update(`discord-handoff:${room.id}:${channel.guest_revision}:`)
+          .update(room.invitation_hash)
+          .update(channel.invitation_hash)
+          .digest("base64url")
+      : null;
+  }
+  resolveChannel(
+    guild: string,
+    channel: string,
+    name: string,
+    secret?: string,
+  ) {
+    return this.transaction(() =>
+      this.resolveChannelInner(guild, channel, name, secret),
+    );
+  }
+  channelContext(room: string) {
+    return this.db
+      .prepare(
+        "SELECT guild_id AS guildId,channel_id AS channelId FROM discord_channels WHERE room_id=?",
+      )
+      .get(room) as { guildId: string; channelId: string } | undefined;
+  }
+  channelName(guild: string, channel: string) {
+    return (
+      this.db
+        .prepare(
+          "SELECT name FROM discord_channels WHERE guild_id=? AND channel_id=?",
+        )
+        .get(guild, channel) as { name: string } | undefined
+    )?.name;
+  }
+  channelInvitation(guild: string, channel: string, name: string) {
+    this.ensureChannel(guild, channel, name);
+    const row = this.db
+      .prepare(
+        "SELECT invitation_cipher FROM discord_channels WHERE guild_id=? AND channel_id=?",
+      )
+      .get(guild, channel) as { invitation_cipher: Uint8Array | null };
+    if (!row.invitation_cipher || !this.invitationKey) return null;
+    try {
+      const data = Buffer.from(row.invitation_cipher),
+        decipher = createDecipheriv(
+          "aes-256-gcm",
+          digest(`invitation:${this.invitationKey}`),
+          data.subarray(0, 12),
+        );
+      decipher.setAAD(Buffer.from(`discord:${guild}:${channel}`));
+      decipher.setAuthTag(data.subarray(data.length - 16));
+      return Buffer.concat([
+        decipher.update(data.subarray(12, -16)),
+        decipher.final(),
+      ]).toString("utf8");
+    } catch {
+      return null;
+    }
+  }
+  channelDirectory() {
+    return this.db
+      .prepare(
+        `SELECT guild_id AS guildId,channel_id AS channelId,name,room_id AS roomId,
+    guest_enabled AS guestEnabled,auto_enabled AS autoEnabled,announcement_error AS announcementError FROM discord_channels ORDER BY guild_id,name LIMIT 1000`,
+      )
+      .all();
+  }
+  channelAutomatic(guild: string, channel: string) {
+    const row = this.db
+      .prepare(
+        "SELECT auto_enabled FROM discord_channels WHERE guild_id=? AND channel_id=?",
+      )
+      .get(guild, channel) as { auto_enabled: number } | undefined;
+    return row?.auto_enabled !== 0;
+  }
+  channelGuestEnabled(guild: string, channel: string) {
+    return (
+      (
+        this.db
+          .prepare(
+            "SELECT guest_enabled FROM discord_channels WHERE guild_id=? AND channel_id=?",
+          )
+          .get(guild, channel) as { guest_enabled: number } | undefined
+      )?.guest_enabled === 1
+    );
+  }
+  manageChannel(
+    guild: string,
+    channel: string,
+    action: "rotate" | "disable" | "enable" | "pause" | "resume",
+  ) {
+    if (action === "rotate") {
+      const secret = randomSecret();
+      return (
+        this.db
+          .prepare(
+            "UPDATE discord_channels SET invitation_hash=?,invitation_cipher=?,guest_enabled=1,announcement_state=NULL WHERE guild_id=? AND channel_id=?",
+          )
+          .run(
+            digest(secret),
+            this.encryptInvitation(`discord:${guild}:${channel}`, secret),
+            guild,
+            channel,
+          ).changes > 0
+      );
+    }
+    const field =
+        action === "pause" || action === "resume"
+          ? "auto_enabled"
+          : "guest_enabled",
+      enabled = action === "enable" || action === "resume";
+    return (
+      this.db
+        .prepare(
+          `UPDATE discord_channels SET ${field}=?,announcement_state=NULL,guest_revision=guest_revision+? WHERE guild_id=? AND channel_id=?`,
+        )
+        .run(Number(enabled), Number(action === "disable"), guild, channel)
+        .changes > 0
+    );
+  }
+  announcementJobs() {
+    return this.db
+      .prepare(
+        "SELECT guild_id AS guildId,channel_id AS channelId,name,room_id AS roomId,announcement_id AS messageId,announcement_state AS state,guest_enabled AS guestEnabled FROM discord_channels LIMIT 1000",
+      )
+      .all() as {
+      guildId: string;
+      channelId: string;
+      name: string;
+      roomId: string | null;
+      messageId: string | null;
+      state: string | null;
+      guestEnabled: number;
+    }[];
+  }
+  announcementResult(
+    guild: string,
+    channel: string,
+    message: string | null,
+    state: string | null,
+    failed: boolean,
+  ) {
+    this.db
+      .prepare(
+        "UPDATE discord_channels SET announcement_id=COALESCE(?,announcement_id),announcement_state=?,announcement_error=? WHERE guild_id=? AND channel_id=?",
+      )
+      .run(message, state, Number(failed), guild, channel);
+  }
+
+  /** Ciphertext is recoverable only by the server holding ADMIN_TOKEN. */
+  private encryptInvitation(id: string, invitation: string): Buffer | null {
+    if (!this.invitationKey) return null;
+    const iv = randomBytes(12);
+    const cipher = createCipheriv(
+      "aes-256-gcm",
+      digest(`invitation:${this.invitationKey}`),
+      iv,
+    );
+    cipher.setAAD(Buffer.from(id));
+    return Buffer.concat([
+      iv,
+      cipher.update(invitation, "utf8"),
+      cipher.final(),
+      cipher.getAuthTag(),
+    ]);
+  }
+
+  invitation(id: string): string | null {
+    if (!this.invitationKey || !this.find(id)?.invitation_enabled) return null;
+    const row = this.db
+      .prepare("SELECT invitation_cipher FROM room_lifecycle WHERE room_id = ?")
+      .get(id) as { invitation_cipher: Uint8Array | null } | undefined;
+    if (!row?.invitation_cipher) return null;
+    try {
+      const data = Buffer.from(row.invitation_cipher);
+      const cipher = createDecipheriv(
+        "aes-256-gcm",
+        digest(`invitation:${this.invitationKey}`),
+        data.subarray(0, 12),
+      );
+      cipher.setAAD(Buffer.from(id));
+      cipher.setAuthTag(data.subarray(-16));
+      const invitation = Buffer.concat([
+        cipher.update(data.subarray(12, -16)),
+        cipher.final(),
+      ]).toString("utf8");
+      return this.acceptsInvitation(id, invitation) ? invitation : null;
+    } catch {
+      return null;
+    }
+  }
+
+  lifecycle(id: string): { joined: boolean; emptySince: number | null } | null {
+    const row = this.db
+      .prepare(
+        "SELECT joined_at, empty_since FROM room_lifecycle WHERE room_id = ?",
+      )
+      .get(id) as
+      { joined_at: number | null; empty_since: number | null } | undefined;
+    return row
+      ? { joined: row.joined_at !== null, emptySince: row.empty_since }
+      : null;
+  }
+
+  observePresence(id: string, occupied: boolean): boolean {
+    const state = this.lifecycle(id);
+    if (!state || !state.joined) return false;
+    if (occupied) {
+      this.db
+        .prepare(
+          "UPDATE room_lifecycle SET empty_since = NULL WHERE room_id = ?",
+        )
+        .run(id);
+    } else if (state.emptySince === null) {
+      this.db
+        .prepare("UPDATE room_lifecycle SET empty_since = ? WHERE room_id = ?")
+        .run(this.now(), id);
+    } else if (this.now() - state.emptySince >= EMPTY_ROOM_GRACE_MS) {
+      return this.closeRoom(id);
+    }
+    return false;
+  }
+
+  presenceUnavailable(id: string): void {
+    // Unknown time cannot count toward a continuously observed empty period.
+    this.db
+      .prepare("UPDATE room_lifecycle SET empty_since = NULL WHERE room_id = ?")
+      .run(id);
+  }
+
+  signalingConnected(id: string): void {
+    // SDK reconnects reuse their session. An older empty SFU response must not
+    // expire a connection that has just been admitted upstream.
+    this.db
+      .prepare("UPDATE room_lifecycle SET empty_since = NULL WHERE room_id = ?")
+      .run(id);
+  }
+
+  closeRoom(id: string): boolean {
+    if (!this.find(id)) return false;
+    this.transaction(() => {
+      this.revokeRows("room_id = ?", [id]);
+      this.db.prepare("DELETE FROM rooms WHERE id = ?").run(id);
+    });
+    return true;
   }
 
   list(offset: number): { rooms: ManagedRoom[]; nextOffset: number | null } {
@@ -148,38 +598,40 @@ export class Rooms {
     };
   }
 
+  acceptsInvitation(id: string, invitation: string): boolean {
+    const room = this.find(id);
+    return Boolean(room && this.acceptsRoomInvitation(room, invitation));
+  }
+
+  private acceptsRoomInvitation(room: RoomRow, invitation: string): boolean {
+    if (!room.invitation_enabled) return false;
+    if (timingSafeEqual(digest(invitation), Buffer.from(room.invitation_hash)))
+      return true;
+    const handoff = this.channelHandoff(room);
+    return handoff !== null && secretsEqual(invitation, handoff);
+  }
+
   join(
     id: string,
     invitation: string,
     displayName: string,
   ): IssuedSession | null {
-    const room = this.find(id);
-    if (
-      !room ||
-      !room.invitation_enabled ||
-      !timingSafeEqual(digest(invitation), Buffer.from(room.invitation_hash))
-    )
-      return null;
     this.expire();
-    if (
-      (
-        this.db
-          .prepare("SELECT COUNT(*) AS count FROM sessions WHERE room_id = ?")
-          .get(id) as { count: number }
-      ).count >= 32
-    )
-      return null;
-    return this.issue(room, displayName);
+    return this.transaction(() => {
+      const room = this.find(id);
+      if (!room || !this.acceptsRoomInvitation(room, invitation)) return null;
+      const count = this.db
+        .prepare("SELECT COUNT(*) AS count FROM sessions WHERE room_id = ?")
+        .get(id) as { count: number };
+      return count.count >= 32 ? null : this.issue(room, displayName);
+    });
   }
 
   session(id: string, token: string | undefined): RoomSession | null {
     if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
     const room = this.find(id);
-    const session = this.db
-      .prepare(
-        "SELECT participant_id, display_name, expires_at FROM sessions WHERE token_hash = ? AND room_id = ? AND expires_at > ?",
-      )
-      .get(digest(token), id, this.now()) as SessionRow | undefined;
+    const session = this.sessionStatement.get(digest(token), id, this.now()) as
+      SessionRow | undefined;
     return room && session ? this.snapshot(room, session) : null;
   }
 
@@ -189,13 +641,7 @@ export class Rooms {
   }
 
   active(id: string, identity: string): boolean {
-    return Boolean(
-      this.db
-        .prepare(
-          "SELECT 1 FROM sessions WHERE room_id = ? AND participant_id = ? AND expires_at > ?",
-        )
-        .get(id, identity, this.now()),
-    );
+    return Boolean(this.activeStatement.get(id, identity, this.now()));
   }
   access(id: string) {
     const room = this.find(id);
@@ -227,6 +673,11 @@ export class Rooms {
           "UPDATE rooms SET invitation_hash = ?, invitation_enabled = ? WHERE id = ?",
         )
         .run(digest(invitation ?? randomSecret()), invitation ? 1 : 0, id);
+      this.db
+        .prepare(
+          "UPDATE room_lifecycle SET invitation_cipher = ? WHERE room_id = ?",
+        )
+        .run(invitation ? this.encryptInvitation(id, invitation) : null, id);
       if (change.revokeSessions) this.revokeRows("room_id = ?", [id]);
     });
     return invitation ? { invitation } : {};
@@ -313,11 +764,7 @@ export class Rooms {
   }
 
   private find(id: string): RoomRow | undefined {
-    return this.db
-      .prepare(
-        "SELECT id, name, invitation_hash, invitation_enabled, created_at FROM rooms WHERE id = ?",
-      )
-      .get(id) as RoomRow | undefined;
+    return this.findStatement.get(id) as RoomRow | undefined;
   }
 
   private issue(room: RoomRow, displayName: string): IssuedSession {
@@ -338,6 +785,11 @@ export class Rooms {
         session.display_name,
         session.expires_at,
       );
+    this.db
+      .prepare(
+        "UPDATE room_lifecycle SET joined_at = ?, empty_since = NULL WHERE room_id = ?",
+      )
+      .run(this.now(), room.id);
     return { token, snapshot: this.snapshot(room, session) };
   }
 

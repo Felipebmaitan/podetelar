@@ -1,6 +1,6 @@
-// FreedomStream regression test, MIT licensed. Appended to the patched SDK.
+// PodeTelar regression test, MIT licensed. Appended to the patched SDK.
 #[cfg(test)]
-mod freedomstream_receiver_publication_tests {
+mod podetelar_encryption_receiver_tests {
     use super::*;
     use libwebrtc::video_source::{RtcVideoSource, VideoResolution, native::NativeVideoSource};
     use std::{sync::mpsc, thread, time::Duration};

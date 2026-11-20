@@ -21,11 +21,18 @@ export async function preparePortableRuntime(root, output, notices) {
   const manifest = JSON.parse(
     readFileSync(join(root, "deploy/portable-runtime.json")),
   );
-  const runtime = join(root, ".local/gstreamer");
+  const runtimeOverride =
+    process.env.PODETELAR_PORTABLE_RUNTIME ?? process.env.PODETELAR_GSTREAMER;
+  const runtime = runtimeOverride
+    ? resolve(runtimeOverride)
+    : join(root, ".local/gstreamer");
   mkdirSync(join(output, "bin"), { recursive: true });
   copyFileSync(
-    join(root, "target/release/freedomstream-publisher.exe"),
-    join(output, "bin/freedomstream-publisher.exe"),
+    join(
+      resolve(root, process.env.CARGO_TARGET_DIR ?? "target"),
+      "release/podetelar-publisher.exe",
+    ),
+    join(output, "bin/podetelar-publisher.exe"),
   );
   const inventory = readFileSync(join(runtime, "share/versions.txt"), "utf8");
   if (
@@ -247,6 +254,13 @@ export async function preparePortableRuntime(root, output, notices) {
     ),
     GST_REGISTRY_1_0: join(sourceCache, "qualification-registry.bin"),
   };
+  // Window/WGC capture uses this cadence element even though the synthetic
+  // encoder probe does not. Reject incomplete bundles before creating an EXE.
+  execFileSync(
+    join(output, "bin/gst-inspect-1.0.exe"),
+    ["--exists", "imagefreeze"],
+    { env },
+  );
   for (const file of manifest.files.filter((file) =>
     file.path.startsWith("lib/gstreamer-1.0/"),
   )) {

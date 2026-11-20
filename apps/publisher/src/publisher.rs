@@ -28,8 +28,8 @@ use tokio::{
     task::JoinHandle,
 };
 
-const TRACK_NAME: &str = "FreedomStream screen";
-const AUDIO_TRACK_NAME: &str = "FreedomStream application audio";
+const TRACK_NAME: &str = "PodeTelar screen";
+const AUDIO_TRACK_NAME: &str = "PodeTelar application audio";
 #[derive(Default)]
 pub(crate) struct CaptureCancellation(Mutex<Vec<Weak<AtomicBool>>>);
 
@@ -148,8 +148,10 @@ pub struct SharingSelection {
 
 #[derive(Clone)]
 pub struct Snapshot {
+    pub profile_access: Option<Admission>,
     pub connection: &'static str,
     pub protected: bool,
+    pub voice_private_mismatch: bool,
     pub room_name: String,
     pub error: String,
     pub busy: bool,
@@ -165,6 +167,7 @@ pub struct Snapshot {
     pub applications: Vec<audio::Application>,
     pub tiles: Vec<crate::playback::Tile>,
     pub participants: Vec<String>,
+    pub participant_ids: Vec<(String, String)>,
     pub active_selection: Option<SharingSelection>,
     pub self_preview: Latest,
     pub capacity: crate::network::Capacity,
@@ -174,8 +177,10 @@ pub struct Snapshot {
 impl Default for Snapshot {
     fn default() -> Self {
         Self {
+            profile_access: None,
             connection: "disconnected",
             protected: false,
+            voice_private_mismatch: false,
             room_name: String::new(),
             error: String::new(),
             busy: false,
@@ -191,6 +196,7 @@ impl Default for Snapshot {
             applications: Vec::new(),
             tiles: Vec::new(),
             participants: Vec::new(),
+            participant_ids: Vec::new(),
             active_selection: None,
             self_preview: Arc::default(),
             capacity: crate::network::Capacity::default(),
@@ -204,6 +210,8 @@ pub enum Command {
         invitation: String,
         name: String,
         route: connection::Route,
+        account: Option<crate::account::Credential>,
+        voice: Option<crate::following::Target>,
     },
     Start {
         source_id: String,
@@ -229,7 +237,7 @@ pub enum Command {
     },
     Stop,
     Leave,
-    Refresh,
+    RefreshSources,
     Shutdown,
 }
 
@@ -238,6 +246,22 @@ pub struct Controller {
     snapshot: Arc<Mutex<Snapshot>>,
     cancellation: Cancellation,
     join_cancellation: JoinCancellation,
+    shutdown: Arc<Shutdown>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+
+#[derive(Default)]
+struct Shutdown {
+    requested: AtomicBool,
+    finished: AtomicBool,
+    wake: tokio::sync::Notify,
+}
+
+struct WorkerCompletion(Arc<Shutdown>);
+impl Drop for WorkerCompletion {
+    fn drop(&mut self) {
+        self.0.finished.store(true, Ordering::Release);
+    }
 }
 
 struct QueuedCommand {
@@ -259,18 +283,17 @@ impl Controller {
         let cancellation = Arc::new(CaptureCancellation::default());
         let state = snapshot.clone();
         let cancel = cancellation.clone();
-        let join_cancellation = JoinCancellation::new();
-        let reconnect_cancellation = join_cancellation.clone();
-        std::thread::Builder::new()
-            .name("freedomstream-room".into())
+        let shutdown = Arc::new(Shutdown::default());
+        let closing = shutdown.clone();
+        let worker = std::thread::Builder::new()
+            .name("podetelar-room".into())
             .spawn(move || {
+                let _completion = WorkerCompletion(closing.clone());
                 let runtime = tokio::runtime::Builder::new_multi_thread()
                     .enable_all()
                     .build();
                 match runtime {
-                    Ok(runtime) => {
-                        runtime.block_on(worker(receiver, state, cancel, reconnect_cancellation))
-                    }
+                    Ok(runtime) => runtime.block_on(worker(receiver, state, cancel, closing)),
                     Err(_) => update(&state, |state| {
                         state.error = "Could not start the publisher worker.".into()
                     }),
@@ -281,7 +304,9 @@ impl Controller {
             commands,
             snapshot,
             cancellation,
-            join_cancellation,
+            join_cancellation: JoinCancellation::new(),
+            shutdown,
+            worker: Some(worker),
         }
     }
 
@@ -293,13 +318,31 @@ impl Controller {
     }
 
     pub fn send(&self, command: Command) {
+        if matches!(command, Command::Shutdown) {
+            self.begin_shutdown();
+            return;
+        }
+        if self.shutdown.requested.load(Ordering::Acquire) {
+            return;
+        }
+        if matches!(command, Command::RefreshSources) {
+            // Metadata refresh is best-effort and must not disable/close the picker,
+            // overwrite operation feedback, or allocate capture authority.
+            let _ = self.commands.try_send(QueuedCommand {
+                command,
+                capture: None,
+                join: None,
+            });
+            return;
+        }
         if matches!(
             command,
             Command::Join { .. } | Command::Leave | Command::Shutdown
         ) {
             self.join_cancellation.cancel();
         }
-        let join = matches!(command, Command::Join { .. }).then(|| self.join_cancellation.ticket());
+        let is_join = matches!(command, Command::Join { .. });
+        let join = is_join.then(|| self.join_cancellation.ticket());
         let operation = match &command {
             Command::Join { .. } => "Joining room…",
             Command::Start { .. } => "Starting your stream…",
@@ -307,7 +350,7 @@ impl Controller {
             Command::Stop => "Stopping your stream…",
             Command::Leave => "Leaving the room…",
             Command::Shutdown => "Closing…",
-            Command::Refresh => "Refreshing available sources…",
+            Command::RefreshSources => "Refreshing available sources…",
             Command::DownloadBudget { .. } => "Updating your watching allowance…",
             Command::MeasureConnection => "Measuring your connection…",
             Command::Watch { enabled: true, .. } => "Starting playback…",
@@ -317,7 +360,10 @@ impl Controller {
         // Register before enqueueing: Stop must also cancel capture work that
         // has not yet reached the room worker.
         let capture = capture_pending.then(|| self.cancellation.register());
-        if matches!(command, Command::Stop | Command::Leave | Command::Shutdown) {
+        if matches!(
+            command,
+            Command::Join { .. } | Command::Stop | Command::Leave | Command::Shutdown
+        ) {
             self.cancel_capture();
         }
         if self
@@ -336,6 +382,9 @@ impl Controller {
             update(&self.snapshot, |state| {
                 state.busy = true;
                 state.operation = operation;
+                if is_join {
+                    state.voice_private_mismatch = false;
+                }
                 state.capture_pending |= capture_pending;
                 state.error.clear();
             });
@@ -345,17 +394,65 @@ impl Controller {
     fn cancel_capture(&self) {
         self.cancellation.cancel();
     }
+
+    pub fn begin_shutdown(&self) {
+        self.join_cancellation.cancel();
+        self.cancel_capture();
+        if !self.shutdown.requested.swap(true, Ordering::AcqRel) {
+            self.shutdown.wake.notify_one();
+        }
+    }
+
+    pub fn shutdown_finished(&self) -> bool {
+        self.worker.as_ref().map_or_else(
+            || self.shutdown.finished.load(Ordering::Acquire),
+            crate::worker::finished,
+        )
+    }
+
+    #[cfg(any(test, feature = "ui-review"))]
+    pub(crate) fn recording_for_test(state: Snapshot) -> (Self, impl FnMut() -> Option<Command>) {
+        let (commands, mut receiver) = mpsc::channel::<QueuedCommand>(8);
+        let shutdown = Arc::new(Shutdown::default());
+        shutdown.finished.store(true, Ordering::Release);
+        (
+            Self {
+                commands,
+                snapshot: Arc::new(Mutex::new(state)),
+                cancellation: Arc::default(),
+                join_cancellation: JoinCancellation::new(),
+                shutdown,
+                worker: None,
+            },
+            move || receiver.try_recv().ok().map(|queued| queued.command),
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_shutdown_for_test() -> (Self, impl Fn()) {
+        let (commands, _) = mpsc::channel(8);
+        let shutdown = Arc::new(Shutdown::default());
+        let completed = shutdown.clone();
+        (
+            Self {
+                commands,
+                snapshot: Arc::default(),
+                cancellation: Arc::default(),
+                join_cancellation: JoinCancellation::new(),
+                shutdown,
+                worker: None,
+            },
+            move || completed.finished.store(true, Ordering::Release),
+        )
+    }
 }
 
 impl Drop for Controller {
     fn drop(&mut self) {
-        self.join_cancellation.cancel();
-        self.cancel_capture();
-        let _ = self.commands.try_send(QueuedCommand {
-            command: Command::Shutdown,
-            capture: None,
-            join: None,
-        });
+        self.begin_shutdown();
+        // Paint fixtures must not let native initialization/cleanup outlive the harness.
+        #[cfg(test)]
+        crate::worker::drain_fixture(self.worker.take());
     }
 }
 
@@ -368,6 +465,35 @@ pub struct StreamConfig {
     pub exclusions: Vec<String>,
 }
 impl StreamConfig {
+    fn negotiate(&mut self, room: &Room, preferred: &Encoder, available: &[Encoder]) -> Result<()> {
+        let shared = crate::playback::room_codecs(room)
+            .context("Waiting for every room member's hardware decoder capabilities. Update older apps and retry.")?;
+        self.negotiate_codecs(shared, preferred, available)
+    }
+    fn negotiate_codecs(
+        &mut self,
+        shared: crate::codec_policy::Codecs,
+        preferred: &Encoder,
+        available: &[Encoder],
+    ) -> Result<()> {
+        let codec = shared.best(preferred.codec, |codec| available.iter().any(|encoder| {
+            encoder.codec == codec && self.quality.resolve(&self.source.info, codec).is_ok_and(|mode| encoder.supports(mode))
+        })).context("No codec can be hardware encoded at this resolution/frame rate and hardware decoded by every room member.")?;
+        self.encoder = available
+            .iter()
+            .filter(|encoder| {
+                encoder.codec == codec
+                    && self
+                        .quality
+                        .resolve(&self.source.info, codec)
+                        .is_ok_and(|mode| encoder.supports(mode))
+            })
+            .min_by_key(|encoder| encoder.factory != preferred.factory)
+            .context("No compatible hardware encoder is available.")?
+            .clone();
+        self.mode()?;
+        Ok(())
+    }
     fn live_mode(&self, current: &Self, mode: Mode) -> Result<Option<Mode>> {
         if current.source.info.id != self.source.info.id
             || current.encoder.factory != self.encoder.factory
@@ -410,6 +536,9 @@ impl StreamConfig {
     }
 }
 pub struct Stream {
+    preferred_encoder: Encoder,
+    available_encoders: Vec<Encoder>,
+    preview_capture: preview::Capture,
     stop: StopOnDrop,
     task: JoinHandle<Result<Metrics>>,
     video: LocalVideoTrack,
@@ -421,6 +550,7 @@ pub struct Stream {
     pub preview_uploads: Arc<AtomicU64>,
     pub delivery: Arc<Mutex<delivery::Metrics>>,
     delivery_task: JoinHandle<()>,
+    diagnostic_task: Option<JoinHandle<()>>,
     config: StreamConfig,
     rate: RateControl,
     pub mode: Mode,
@@ -466,14 +596,32 @@ impl Stream {
     pub fn encoder(&self) -> &Encoder {
         &self.config.encoder
     }
+    pub fn preview_captures(&self) -> u64 {
+        self.preview_capture.gate.captures()
+    }
     pub async fn start(room: &Room, config: StreamConfig, stop: Arc<AtomicBool>) -> Result<Self> {
         Self::start_with_upload_cap(room, config, stop, None).await
     }
     pub async fn start_with_upload_cap(
         room: &Room,
+        mut config: StreamConfig,
+        stop: Arc<AtomicBool>,
+        upload_cap: Option<u64>,
+    ) -> Result<Self> {
+        let preferred = config.encoder.clone();
+        config.negotiate(room, &preferred, &crate::encoding::encoders())?;
+        let mut active =
+            Self::start_with_preview(room, config, stop, upload_cap, preview::Capture::new())
+                .await?;
+        active.preferred_encoder = preferred;
+        Ok(active)
+    }
+    async fn start_with_preview(
+        room: &Room,
         config: StreamConfig,
         stop: Arc<AtomicBool>,
         upload_cap: Option<u64>,
+        preview_capture: preview::Capture,
     ) -> Result<Self> {
         let mut lease = StopOnDrop::new(stop.clone());
         let mode = config.mode()?;
@@ -484,8 +632,16 @@ impl Stream {
         rate.set_upload_cap(upload_cap);
         rate.set_viewer_cap(crate::playback::requested_cap(room));
         let encoding_rate = rate.clone();
+        let capture = preview_capture.clone();
         let encoding = tokio::task::spawn_blocking(move || {
-            Encoding::start_controlled(&source, &encoder, mode, &cancelled, encoding_rate)
+            Encoding::start_with_preview(
+                &source,
+                &encoder,
+                mode,
+                &cancelled,
+                encoding_rate,
+                capture,
+            )
         })
         .await
         .context("Capture worker stopped.")??;
@@ -575,8 +731,12 @@ impl Stream {
             previews,
             preview_task: None,
             preview_uploads: Arc::new(AtomicU64::new(0)),
+            preferred_encoder: config.encoder.clone(),
+            available_encoders: crate::encoding::encoders(),
+            preview_capture,
             delivery,
             delivery_task,
+            diagnostic_task: None,
             config,
             rate,
             mode,
@@ -645,14 +805,24 @@ impl Stream {
         Ok(active)
     }
 
-    pub fn fallback_config(&self) -> Result<StreamConfig> {
+    pub fn compatible_config(&self, room: &Room) -> Result<Option<StreamConfig>> {
+        let Some(shared) = crate::playback::room_codecs(room) else {
+            // A missing announcement cannot authorize a codec change.
+            return Ok(None);
+        };
+        if shared.select(
+            self.preferred_encoder.codec,
+            Some(self.config.encoder.codec),
+            |_| true,
+        ) == Some(self.config.encoder.codec)
+        {
+            return Ok(None);
+        }
         let mut config = self.config.clone();
-        config.encoder = crate::encoding::encoders()
-            .into_iter()
-            .find(|e| e.codec == Codec::H264)
-            .context("No H.264 compatibility encoder is available.")?;
-        config.mode()?;
-        Ok(config)
+        // Use the same capability snapshot for the decision and replacement.
+        // A concurrently joining pending member must not turn this into an error.
+        config.negotiate_codecs(shared, &self.preferred_encoder, &self.available_encoders)?;
+        Ok((config.encoder.factory != self.config.encoder.factory).then_some(config))
     }
 
     pub async fn fallback(
@@ -663,14 +833,35 @@ impl Stream {
         config: StreamConfig,
     ) -> Result<Self> {
         let upload_cap = self.rate.upload_cap();
+        let preferred_encoder = self.preferred_encoder.clone();
+        let preview_capture = self.preview_capture.clone();
+        let cached_preview = self.previews.lock().ok().and_then(|latest| latest.clone());
+        let uploads = self.preview_uploads.clone();
         self.stop(room).await?;
+        if let Ok(mut latest) = preview_capture.latest.lock() {
+            *latest = cached_preview;
+        }
         let mut replacement =
-            Self::start_with_upload_cap(room, config, stop, Some(upload_cap)).await?;
+            Self::start_with_preview(room, config, stop, Some(upload_cap), preview_capture).await?;
+        replacement.preferred_encoder = preferred_encoder;
+        replacement.preview_uploads = uploads;
         replacement.start_previews(admission);
         Ok(replacement)
     }
 
     pub fn start_previews(&mut self, admission: Admission) {
+        if self.diagnostic_task.is_none() {
+            self.diagnostic_task = Some(tokio::spawn(crate::stream_diagnostics::sender(
+                admission.clone(),
+                self.video.clone(),
+                self.stop.flag.clone(),
+                self.metrics.clone(),
+                self.delivery.clone(),
+                self.rate.clone(),
+                self.config.clone(),
+                self.mode,
+            )));
+        }
         if self.preview_task.is_none() {
             self.preview_task = Some(tokio::spawn(preview::upload(
                 admission,
@@ -704,6 +895,9 @@ impl Stream {
 
     pub async fn stop(self, room: &Room) -> Result<Metrics> {
         self.stop.cancel();
+        if let Some(task) = self.diagnostic_task {
+            task.abort();
+        }
         self.delivery_task.abort();
         let _ = self.delivery_task.await;
         let captured = self
@@ -787,6 +981,17 @@ fn encoder_codec(encoding: &Encoding) -> VideoCodec {
     }
 }
 
+// Carries the same admission authority and cancellation generation through a full
+// protected media reconnect. A leave, room switch or shutdown invalidates it.
+struct JoinRequest {
+    invitation: String,
+    name: String,
+    account: Option<crate::account::Credential>,
+    voice: Option<crate::following::Target>,
+    route: connection::Route,
+    ticket: JoinTicket,
+}
+
 struct Session {
     admission: Admission,
     room: Arc<Room>,
@@ -796,19 +1001,22 @@ struct Session {
 
 impl Session {
     async fn join(
-        invitation: &str,
-        name: &str,
-        route: connection::Route,
+        request: &JoinRequest,
+        protected_reconnect: bool,
         snapshot: Arc<Mutex<Snapshot>>,
         cancellation: Cancellation,
         recovery: Arc<AtomicU64>,
-        ticket: JoinTicket,
     ) -> Result<Option<Self>> {
-        let invitation = invitation.to_owned();
-        let name = name.to_owned();
+        let ticket = &request.ticket;
+        let invitation = request.invitation.clone();
+        let requires_protection =
+            protected_reconnect || invitation.trim().starts_with(crate::protection::PREFIX);
+        let name = request.name.clone();
+        let account = request.account.clone();
+        let voice = request.voice.clone();
         let Some(admission) = ticket
             .run(
-                async move { Admission::join(&invitation, &name).await },
+                async move { Admission::join_target(&invitation, &name, account, voice).await },
                 |admission| async move {
                     admission.leave().await;
                 },
@@ -818,6 +1026,10 @@ impl Session {
             return Ok(None);
         };
         let mut pending_admission = PendingAdmission(Some(admission.clone()));
+        anyhow::ensure!(
+            !requires_protection || admission.protection.is_some(),
+            "Private room admission lost encryption."
+        );
         let client = admission.clone();
         let Some(access) = ticket
             .run(async move { client.media_access().await }, |_| async {})
@@ -825,7 +1037,7 @@ impl Session {
         else {
             return Ok(None);
         };
-        let options = admission.room_options(route);
+        let options = admission.room_options(request.route);
         let Some((room, mut events)) = ticket
             .run(
                 async move {
@@ -848,6 +1060,10 @@ impl Session {
         if let Err(error) = admission.announce_protection(&room).await {
             let _ = room.close().await;
             return Err(error);
+        }
+        if *ticket.receiver.borrow() != ticket.generation {
+            let _ = room.close().await;
+            return Ok(None);
         }
         let room = Arc::new(room);
         let media_room = room.clone();
@@ -941,7 +1157,7 @@ async fn worker(
     mut commands: mpsc::Receiver<QueuedCommand>,
     snapshot: Arc<Mutex<Snapshot>>,
     cancellation: Cancellation,
-    reconnect_cancellation: JoinCancellation,
+    shutdown: Arc<Shutdown>,
 ) {
     let mut sources = sources::enumerate();
     update(&snapshot, |state| {
@@ -955,45 +1171,67 @@ async fn worker(
             }
         }
     });
+    #[cfg(target_os = "macos")]
+    if sources.is_empty() {
+        update(&snapshot, |state| {
+            state.error = "Allow PodeTelar in macOS Settings → Privacy & Security → Screen & System Audio Recording, then refresh sources.".into()
+        });
+    }
     let mut session: Option<Session> = None;
     let mut stream: Option<Stream> = None;
     let mut playback = crate::playback::Playback::new();
     let mut download_budget = None;
     let mut probe: Option<ConnectionProbe> = None;
     let mut capacity = crate::network::Capacity::default();
-    let mut secure_rejoin: Option<(String, String, connection::Route)> = None;
+    let mut secure_rejoin: Option<JoinRequest> = None;
     let mut rejoin_attempts = 0_u8;
     let mut rejoin_after = std::time::Instant::now();
     let mut tick = tokio::time::interval(Duration::from_millis(500));
     loop {
         let queued = tokio::select! {
+            biased;
+            _ = shutdown.wake.notified() => QueuedCommand { command: Command::Shutdown, capture: None, join: None },
             command = commands.recv() => command.unwrap_or(QueuedCommand { command: Command::Shutdown, capture: None, join: None }),
             _ = tick.tick() => {
                 // A protected full RTC restart is closed by the patched SDK.
                 // Re-admit with fresh sender material, retaining explicit watch
                 // intent but never automatically restarting capture.
-                if secure_rejoin.is_some() && commands.is_empty() && rejoin_attempts < 3
+                if let Some(rejoin) = &secure_rejoin
+                    && commands.is_empty() && rejoin_attempts < 3
                     && std::time::Instant::now() >= rejoin_after
                     && session.as_ref().is_none_or(|joined| joined.room.connection_state() == ConnectionState::Disconnected) {
-                    let (invitation, name, route) = secure_rejoin.as_ref().unwrap().clone();
                     rejoin_attempts += 1;
                     if let Some(job) = probe.take() { job.abort(); }
                     if let (Some(active), Some(joined)) = (stream.take(), session.as_ref()) { let _ = active.stop(&joined.room).await; }
                     if let Some(joined) = session.take() { joined.close().await; }
                     playback.suspend();
-                    update(&snapshot, |state| { state.connection = "connecting"; state.busy = true; state.sharing = false; state.self_preview = Arc::default(); state.active_selection = None; state.tiles.clear(); });
-                    let ticket = reconnect_cancellation.ticket();
-                    match Session::join(&invitation, &name, route, snapshot.clone(), cancellation.clone(), playback.recovery_signal(), ticket).await {
+                    update(&snapshot, |state| { state.connection = "connecting"; state.profile_access = None; state.busy = true; state.sharing = false; state.self_preview = Arc::default(); state.active_selection = None; state.tiles.clear(); });
+                    match Session::join(rejoin, true, snapshot.clone(), cancellation.clone(), playback.recovery_signal()).await {
                         Ok(Some(joined)) => {
-                            update(&snapshot, |state| { state.connection = "connected"; state.busy = false; state.room_name = joined.admission.room_name.clone(); state.error = "Secure connection restored. Sharing is stopped; start it again when ready.".into(); });
+                            rejoin_attempts = 0;
+                            update(&snapshot, |state| { state.connection = "connected"; state.profile_access = Some(joined.admission.clone()); state.protected = true; state.busy = false; state.room_name = joined.admission.room_name.clone(); state.error = "Secure connection restored. Sharing is stopped; start it again when ready.".into(); });
                             session = Some(joined);
                         }
                         Ok(None) => { secure_rejoin = None; update(&snapshot, |state| {state.connection="disconnected";state.busy=false;}); }
                         Err(error) => {
-                            let denied = error.to_string().contains("access was denied");
+                            let mismatch = error.is::<crate::admission::PrivateRoomMismatch>();
+                            let denied = mismatch || error.to_string().contains("access was denied");
                             if denied { secure_rejoin = None; }
                             rejoin_after = std::time::Instant::now() + Duration::from_secs(3);
-                            update(&snapshot, |state| {state.connection="disconnected";state.busy=false;state.error=if denied {"Room access ended. Open a current private invitation."} else if rejoin_attempts>=3 {"Secure reconnection failed. Join again to retry."} else {"Secure connection interrupted. Retrying with fresh encryption keys…"}.into();});
+                            update(&snapshot, |state| {
+                                state.connection = "disconnected";
+                                state.busy = false;
+                                state.voice_private_mismatch = mismatch;
+                                state.error = if mismatch {
+                                    error.to_string()
+                                } else if denied {
+                                    "Room access ended. Open a current private invitation.".into()
+                                } else if rejoin_attempts >= 3 {
+                                    "Secure reconnection failed. Join again to retry.".into()
+                                } else {
+                                    "Secure connection interrupted. Retrying with fresh encryption keys…".into()
+                                };
+                            });
                         }
                     }
                     continue;
@@ -1007,34 +1245,40 @@ async fn worker(
                         update(&snapshot,|state|{state.capacity=capacity.clone();state.testing_connection=false;});
                 }
                 if let Some(joined) = &session {
-                    let mut participants: Vec<_> = joined.room.remote_participants().values().map(|p| {
-                        let name = p.name(); if name.is_empty() { "Participant".to_owned() } else { name }
+                    let mut ids:Vec<_>=joined.room.remote_participants().values().map(|p|{
+                        let name=p.name();(p.identity().to_string(),if name.is_empty(){"Participant".to_owned()}else{name})
                     }).collect();
-                    participants.sort_by_key(|name| name.to_lowercase());
-                    update(&snapshot, |state| state.participants = participants);
+                    ids.sort_by_key(|(id,name)|(name.to_lowercase(),id.clone()));
+                    update(&snapshot,|state|{state.participants=ids.iter().map(|(_,name)|name.clone()).collect();state.participant_ids=ids;});
                     if joined.room.connection_state() == ConnectionState::Connected {
                         match playback.reconcile(&joined.room, &joined.admission).await {
                             Ok(tiles) => update(&snapshot, |state| state.tiles = tiles),
                             Err(_) => update(&snapshot, |state| state.error = "Could not update native playback. Rejoin the room.".into()),
                         }
                     } else {
-                        if joined.room.connection_state() == ConnectionState::Reconnecting { playback.suspend(); }
+                        if secure_rejoin.is_some() || joined.room.connection_state() == ConnectionState::Reconnecting { playback.suspend(); }
                         else { playback = crate::playback::Playback::new(); }
                         update(&snapshot, |state| state.tiles.clear());
                     }
+                    // Register before observing the old token: a concurrent
+                    // Stop must either cancel this replacement or the old
+                    // token that prevents entering the replacement path.
                     let replacement_stop = cancellation.register();
                     if joined.room.connection_state() == ConnectionState::Connected
-                        && stream.as_ref().is_some_and(|s| s.config.encoder.codec != Codec::H264 && !s.cancelled())
-                        && crate::playback::needs_h264(&joined.room) {
-                        match stream.as_ref().unwrap().fallback_config() {
-                            Ok(config) => {
+                        && stream.as_ref().is_some_and(|s| !s.cancelled()) {
+                        match stream.as_ref().unwrap().compatible_config(&joined.room) {
+                            Ok(Some(config)) => {
                                 let active = stream.take().unwrap();
                                 match active.fallback(&joined.room, joined.admission.clone(), replacement_stop, config).await {
                                     Ok(active) => stream = Some(active),
-                                    Err(_) => update(&snapshot, |state| { state.sharing = false; state.self_preview = Arc::default(); state.mode = None; state.error = "Could not switch to H.264. Choose a supported mode and start again.".into(); }),
+                                    Err(_) => update(&snapshot, |state| { state.sharing = false; state.self_preview = Arc::default(); state.mode = None; state.active_selection = None; state.error = "Could not switch codecs. Choose a supported mode and start again.".into(); }),
                                 }
                             }
-                            Err(_) => update(&snapshot, |state| state.error = "A watcher needs H.264, but this mode is unavailable on its encoder.".into()),
+                            Ok(None) => {},
+                            Err(error) => {
+                                let _ = stream.take().unwrap().stop(&joined.room).await;
+                                update(&snapshot, |state| {state.sharing=false; state.self_preview=Arc::default(); state.mode=None; state.active_selection=None; state.error=error.to_string();});
+                            },
                         }
                     }
                 }
@@ -1055,6 +1299,13 @@ async fn worker(
             }
         };
         let command = queued.command;
+        if matches!(command, Command::RefreshSources) {
+            sources = sources::enumerate();
+            update(&snapshot, |state| {
+                state.sources = sources.iter().map(|source| source.info.clone()).collect()
+            });
+            continue;
+        }
         let shutdown = matches!(command, Command::Shutdown);
         let result: Result<()> = async {
             match command {
@@ -1062,6 +1313,8 @@ async fn worker(
                     invitation,
                     name,
                     route,
+                    account,
+                    voice,
                 } => {
                     secure_rejoin = None;
                     rejoin_attempts = 0;
@@ -1083,24 +1336,34 @@ async fn worker(
                     }
                     update(&snapshot, |state| {
                         state.connection = "connecting";
+                        state.voice_private_mismatch = false;
+                        state.protected = false;
+                        state.profile_access = None;
+                        state.tiles.clear();
                         state.sharing = false;
                         state.self_preview = Arc::default();
                         state.room_name.clear();
                         state.participants.clear();
                     });
-                    let joined = Session::join(
-                        &invitation,
-                        &name,
+                    let request = JoinRequest {
+                        invitation,
+                        name,
                         route,
+                        account,
+                        voice,
+                        ticket: queued.join.context("Room join was cancelled.")?,
+                    };
+                    let joined = Session::join(
+                        &request,
+                        false,
                         snapshot.clone(),
                         cancellation.clone(),
                         playback.recovery_signal(),
-                        queued.join.context("Room join was cancelled.")?,
                     )
                     .await?;
                     if let Some(joined) = joined {
                         if joined.admission.protection.is_some() {
-                            secure_rejoin = Some((invitation.clone(), name.clone(), route));
+                            secure_rejoin = Some(request);
                         }
                         let admission = joined.admission.clone();
                         probe = Some(ConnectionProbe(tokio::spawn(async move {
@@ -1108,6 +1371,7 @@ async fn worker(
                         })));
                         update(&snapshot, |state| {
                             state.connection = "connected";
+                            state.profile_access = Some(joined.admission.clone());
                             state.room_name = joined.admission.room_name.clone();
                             state.protected = joined.admission.protection.is_some();
                             state.testing_connection = true;
@@ -1142,32 +1406,33 @@ async fn worker(
                         .find(|source| source.info.id == source_id)
                         .context("Refresh and choose a capture source.")?
                         .clone();
-                    let mut encoder = crate::encoding::encoders()
+                    let encoder = crate::encoding::encoders()
                         .into_iter()
                         .find(|candidate| candidate.factory == encoder)
                         .context("Choose an available hardware encoder.")?;
-                    if encoder.codec != Codec::H264 && crate::playback::needs_h264(&joined.room) {
-                        encoder = crate::encoding::encoders()
-                            .into_iter()
-                            .find(|e| e.codec == Codec::H264)
-                            .context("A watcher requires an available H.264 encoder.")?;
-                    }
+                    let preferred_encoder = encoder.clone();
                     let audio = audio::for_source(&source)?;
                     let stop = queued.capture.context("Capture request was cancelled.")?;
                     anyhow::ensure!(
                         !stop.load(Ordering::Acquire),
                         "Capture request was cancelled."
                     );
-                    let config = StreamConfig {
+                    let mut config = StreamConfig {
                         source,
                         encoder,
                         quality,
                         audio: audio.clone(),
                         exclusions,
                     };
+                    config.negotiate(
+                        &joined.room,
+                        &preferred_encoder,
+                        &crate::encoding::encoders(),
+                    )?;
                     if let Some(active) = stream.as_mut()
                         && active.apply_live(&config)?
                     {
+                        active.preferred_encoder = preferred_encoder;
                         update(&snapshot, |state| {
                             state.mode = Some(active.mode);
                             state.active_selection = Some(selection);
@@ -1188,6 +1453,7 @@ async fn worker(
                         capacity.upload_video_cap(),
                     )
                     .await?;
+                    active.preferred_encoder = preferred_encoder;
                     active.rate.set_upload_cap(capacity.upload_video_cap());
                     active.start_previews(joined.admission.clone());
                     if stop.load(Ordering::Acquire) {
@@ -1232,6 +1498,8 @@ async fn worker(
                     playback.set_budget(download_budget);
                     update(&snapshot, |state| {
                         state.connection = "disconnected";
+                        state.protected = false;
+                        state.profile_access = None;
                         state.sharing = false;
                         state.self_preview = Arc::default();
                         state.room_name.clear();
@@ -1239,7 +1507,7 @@ async fn worker(
                         state.participants.clear();
                     });
                 }
-                Command::Refresh => {
+                Command::RefreshSources => {
                     sources = sources::enumerate();
                     update(&snapshot, |state| {
                         state.sources = sources.iter().map(|source| source.info.clone()).collect();
@@ -1288,6 +1556,9 @@ async fn worker(
                 state.self_preview = Arc::default();
             }
             if let Err(error) = result {
+                if error.is::<crate::admission::PrivateRoomMismatch>() {
+                    state.voice_private_mismatch = true;
+                }
                 state.error = error.to_string();
                 if state.connection == "connecting" {
                     state.connection = "disconnected";
@@ -1303,6 +1574,106 @@ async fn worker(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn room_switch_cancels_capture_before_the_worker_handles_the_join() {
+        let (sender, mut receiver) = mpsc::channel(8);
+        let controller = Controller {
+            commands: sender,
+            snapshot: Arc::default(),
+            cancellation: Arc::default(),
+            join_cancellation: JoinCancellation::new(),
+            shutdown: Arc::default(),
+            worker: None,
+        };
+        let capture = controller.cancellation.register();
+        controller.send(Command::Join {
+            invitation: String::new(),
+            name: "Friend".into(),
+            route: connection::Route::Auto,
+            account: None,
+            voice: None,
+        });
+        assert!(capture.load(Ordering::Acquire));
+        let queued = receiver.try_recv().unwrap();
+        assert!(matches!(queued.command, Command::Join { .. }));
+        assert!(queued.capture.is_none());
+    }
+
+    #[tokio::test]
+    async fn shutdown_bypasses_a_full_queue_and_rejects_new_work() {
+        gstreamer::init().unwrap();
+        let (sender, receiver) = mpsc::channel(8);
+        let controller = Controller {
+            commands: sender,
+            snapshot: Arc::default(),
+            cancellation: Arc::default(),
+            join_cancellation: JoinCancellation::new(),
+            shutdown: Arc::default(),
+            worker: None,
+        };
+        for _ in 0..8 {
+            controller.send(Command::DownloadBudget { bps: Some(0) });
+        }
+        assert_eq!(controller.commands.capacity(), 0);
+        let capture = controller.cancellation.register();
+        controller.begin_shutdown();
+        controller.begin_shutdown();
+        assert!(capture.load(Ordering::Acquire));
+        assert!(!controller.shutdown_finished());
+        controller.send(Command::DownloadBudget { bps: Some(0) });
+        let completion = WorkerCompletion(controller.shutdown.clone());
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            worker(
+                receiver,
+                controller.snapshot.clone(),
+                controller.cancellation.clone(),
+                controller.shutdown.clone(),
+            ),
+        )
+        .await
+        .expect("Shutdown must bypass queued actions");
+        drop(completion);
+        assert!(controller.shutdown_finished());
+        assert!(
+            !controller
+                .snapshot()
+                .error
+                .contains("Choose a watching budget")
+        );
+        assert!(!controller.snapshot().sharing);
+        assert_eq!(controller.snapshot().connection, "disconnected");
+    }
+
+    #[test]
+    fn source_catalog_refresh_is_quiet_and_has_no_capture_authority() {
+        let (sender, mut receiver) = mpsc::channel(8);
+        let snapshot = Arc::new(Mutex::new(Snapshot {
+            busy: true,
+            operation: "Applying stream settings…",
+            error: "Preserve operation feedback".into(),
+            capture_pending: true,
+            sharing: true,
+            ..Default::default()
+        }));
+        let controller = Controller {
+            commands: sender,
+            snapshot: snapshot.clone(),
+            cancellation: Arc::default(),
+            join_cancellation: JoinCancellation::new(),
+            shutdown: Arc::default(),
+            worker: None,
+        };
+        controller.send(Command::RefreshSources);
+        let command = receiver.try_recv().expect("Quiet source update");
+        assert!(matches!(command.command, Command::RefreshSources));
+        assert!(command.capture.is_none());
+        assert!(command.join.is_none());
+        let state = snapshot.lock().unwrap();
+        assert!(state.busy && state.sharing && state.capture_pending);
+        assert_eq!(state.operation, "Applying stream settings…");
+        assert_eq!(state.error, "Preserve operation feedback");
+    }
 
     #[tokio::test]
     async fn cancelling_join_returns_promptly_and_releases_late_results() -> Result<()> {

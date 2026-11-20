@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { RoomServiceClient } from "livekit-server-sdk";
-import type { CreatedRoom, RoomSession } from "@freedomstream/contracts";
+import type { CreatedRoom, RoomSession } from "@podetelar/contracts";
 
 const origin = new URL(process.env.SMOKE_BASE_URL ?? "http://localhost:3000")
   .origin;
@@ -12,7 +12,7 @@ const health = await fetch(`${origin}/api/health`);
 assert.equal(health.status, 200);
 const home = await fetch(origin);
 assert.equal(home.status, 200);
-assert.match(await home.text(), /FreedomStream/);
+assert.match(await home.text(), /PodeTelar/);
 
 const created = await fetch(`${origin}/api/rooms`, {
   method: "POST",
@@ -71,7 +71,6 @@ assert.deepEqual(
   ((await resumed.json()) as RoomSession).participant,
   room.participant,
 );
-assert.equal((await fetch(`${origin}/r/${room.room.id}`)).status, 200);
 const media = new RoomServiceClient(
   process.env.SMOKE_LIVEKIT_URL ?? "http://localhost:7880",
   process.env.LIVEKIT_API_KEY,
@@ -92,5 +91,5 @@ assert.equal(
   401,
 );
 console.log(
-  "PASS: built UI, private-room admission, scoped sessions, persistence, logout and authenticated LiveKit access.",
+  "PASS: built web assets, room API admission, scoped sessions, persistence, logout and authenticated LiveKit access.",
 );

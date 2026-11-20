@@ -8,7 +8,7 @@ replace its window/process identity; select the new window before sharing again.
 
 A monitor selects the approved desktop application mix, with a maximum of 16
 captured process trees. Discord, Discord PTB/Canary and their descendants are
-always excluded, as are FreedomStream's process tree, other official publisher
+always excluded, as are PodeTelar's process tree, other official publisher
 instances (including different portable versions), and processes using this
 instance's exact executable path. Native watched-stream audio stays out of the mix. No microphone device is acquired. Audio routed
 into another application's output, such as monitored microphone audio, is still

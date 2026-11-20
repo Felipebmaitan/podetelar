@@ -34,18 +34,33 @@ type Sent = {
   metrics: { encoded_bps: number };
 };
 type Received = {
-  samples: { second: number; streams: { frames: number }[] }[];
+  samples: {
+    measurementTimeMs: number;
+    receivedBytes: number;
+    streams: { frames: number; watching: boolean }[];
+  }[];
 };
 test("measure invitation encryption on/off targeting 35 Mbps with one and four watchers", async ({
   request,
   baseURL,
 }, testInfo) => {
   test.skip(
-    process.env.FREEDOMSTREAM_MEASURE_E2EE !== "1",
+    process.env.PODETELAR_MEASURE_E2EE !== "1",
     "Explicit opt-in hardware measurement.",
   );
-  test.setTimeout(600_000);
+  test.setTimeout(900_000);
   const samples: unknown[] = [];
+  const report = {
+    cpu: cpus()[0]?.model,
+    logicalProcessors: cpus().length,
+    requestedBps: 35_000_000,
+    geometry: "1920x1080@60",
+    source: "D3D11 snow fixture",
+    build: process.env.PODETELAR_MEASUREMENT_BUILD ?? "unspecified",
+    limitations:
+      "Two alternating-order rounds; separate native watcher processes, not a real game or four streams decoded in one app. The synthetic watcher requests decoded pictures without a UI renderer. A qualifying window requires measured sender and every receiver within 10% of target. No latency measurement.",
+    samples,
+  };
   const quality = {
     resolution: "p1080",
     fps: 60,
@@ -68,13 +83,13 @@ test("measure invitation encryption on/off targeting 35 Mbps with one and four w
           }).result) as { invitationUrl: string };
           invitationUrl = protectedResult.invitationUrl;
         }
-        const previousNoise = process.env.FREEDOMSTREAM_FIXTURE_NOISE;
-        process.env.FREEDOMSTREAM_FIXTURE_NOISE = "1";
+        const previousNoise = process.env.PODETELAR_FIXTURE_NOISE;
+        process.env.PODETELAR_FIXTURE_NOISE = "1";
         const sender = nativeRequest("--publish-fixture", {
           invitationUrl,
           displayName: "Measured publisher",
           codec: "h264",
-          seconds: 39,
+          seconds: 84,
           quality,
           sampleRates: true,
         });
@@ -110,8 +125,8 @@ test("measure invitation encryption on/off targeting 35 Mbps with one and four w
           }
         });
         if (previousNoise === undefined)
-          delete process.env.FREEDOMSTREAM_FIXTURE_NOISE;
-        else process.env.FREEDOMSTREAM_FIXTURE_NOISE = previousNoise;
+          delete process.env.PODETELAR_FIXTURE_NOISE;
+        else process.env.PODETELAR_FIXTURE_NOISE = previousNoise;
         const receivers: ReturnType<typeof nativeRequest>[] = [];
         try {
           await sender.reported;
@@ -119,27 +134,47 @@ test("measure invitation encryption on/off targeting 35 Mbps with one and four w
             receivers.push(
               nativeRequest("--watch-fixture", {
                 invitationUrl,
-                seconds: 35,
+                seconds: 80,
+                continuousWatch: true,
+                sampleRates: true,
+                sampleAudio: false,
                 consumePictures: true,
                 downloadLimitMbps: 200,
               }),
             );
-          // Exclude initial admission/decode and the fixture's Stop/rewatch phase.
-          await delay(20_000);
+          // WebRTC ramps its bandwidth estimate from startup. Keep subscriptions
+          // uninterrupted and wait for actual delivery before sampling process CPU.
+          const warmupStart = performance.now();
+          const minimumBps = quality.bitrate.bps * 0.9;
+          do {
+            await delay(1000);
+            const recent = rateSamples.slice(-4);
+            if (
+              recent.length === 4 &&
+              recent.every(
+                (sample) =>
+                  sample.deliveryBps >= minimumBps && sample.sentFps >= 55,
+              )
+            )
+              break;
+          } while (performance.now() - warmupStart < 60_000);
+          const warmupSeconds = (performance.now() - warmupStart) / 1000;
           const ids = [
             sender.child.pid!,
             ...receivers.map((r) => r.child.pid!),
           ];
           const first = await cpuSeconds(ids);
           const start = performance.now();
-          await delay(8000);
+          const wallStart = Date.now();
+          await delay(12_000);
           const last = await cpuSeconds(ids);
           const elapsed = (performance.now() - start) / 1000;
+          const wallEnd = Date.now();
           const window = rateSamples.filter(
             (sample) =>
               sample.at >= start && sample.at <= start + elapsed * 1000,
           );
-          expect(window.length).toBeGreaterThanOrEqual(5);
+          expect(window.length).toBeGreaterThanOrEqual(9);
           const mean = (values: number[]) =>
             values.reduce((sum, value) => sum + value, 0) / values.length;
           const processes = last.map((sample) => ({
@@ -153,16 +188,43 @@ test("measure invitation encryption on/off targeting 35 Mbps with one and four w
             sender.result as Promise<Sent>,
             ...receivers.map((r) => r.result as Promise<Received>),
           ]);
-          expect(
-            watched.every((r) =>
-              r.samples.some((s) => s.streams.some((t) => t.frames > 5)),
-            ),
-          ).toBe(true);
+          const received = watched.map((receiver) => {
+            const inside = receiver.samples.filter(
+              (s) =>
+                s.measurementTimeMs >= wallStart &&
+                s.measurementTimeMs <= wallEnd,
+            );
+            expect(inside.length).toBeGreaterThanOrEqual(9);
+            expect(
+              inside.every(
+                (s) => s.streams.length === 1 && s.streams[0]!.watching,
+              ),
+            ).toBe(true);
+            const first = inside[0]!;
+            const last = inside.at(-1)!;
+            const seconds =
+              (last.measurementTimeMs - first.measurementTimeMs) / 1000;
+            expect(seconds).toBeGreaterThanOrEqual(8);
+            expect(last.streams[0]!.frames).toBeGreaterThan(
+              first.streams[0]!.frames,
+            );
+            return {
+              bps: ((last.receivedBytes - first.receivedBytes) * 8) / seconds,
+              seconds,
+              decodedFrames: last.streams[0]!.frames - first.streams[0]!.frames,
+            };
+          });
+          const sentBps = mean(window.map((s) => s.deliveryBps));
+          const nearTarget = (bps: number) =>
+            bps >= minimumBps && bps <= quality.bitrate.bps * 1.1;
           samples.push({
             round,
             watchers,
             encrypted,
             seconds: elapsed,
+            warmupSeconds,
+            withinTenPercentOfTarget:
+              nearTarget(sentBps) && received.every((r) => nearTarget(r.bps)),
             processes,
             machinePercent:
               processes.reduce((sum, p) => sum + p.oneCorePercent, 0) /
@@ -171,11 +233,19 @@ test("measure invitation encryption on/off targeting 35 Mbps with one and four w
             encodedBps: sent.metrics.encoded_bps,
             measurementWindow: {
               samples: window.length,
-              deliveryBps: mean(window.map((s) => s.deliveryBps)),
+              deliveryBps: sentBps,
+              received,
               encodedBps: mean(window.map((s) => s.encodedBps)),
               sentFps: mean(window.map((s) => s.sentFps)),
             },
           });
+          writeFileSync(
+            testInfo.outputPath("e2ee-cpu.json"),
+            JSON.stringify(report, null, 2),
+          );
+          console.log(
+            `Round ${round + 1}, ${watchers} viewer(s), E2EE ${encrypted ? "on" : "off"}: ${(sentBps / 1_000_000).toFixed(2)} Mbps sent; ${received.map((r) => (r.bps / 1_000_000).toFixed(2)).join(", ")} Mbps received.`,
+          );
         } finally {
           sender.child.kill();
           for (const receiver of receivers) receiver.child.kill();
@@ -183,21 +253,6 @@ test("measure invitation encryption on/off targeting 35 Mbps with one and four w
       }
     }
   }
-  const report = {
-    cpu: cpus()[0]?.model,
-    logicalProcessors: cpus().length,
-    requestedBps: 35_000_000,
-    geometry: "1920x1080@60",
-    source: "D3D11 snow fixture",
-    build: "debug",
-    limitations:
-      "Two alternating-order rounds; separate native watcher processes, not a real game or four streams decoded in one app. No latency measurement. Inspect actual delivered bitrate; encoder target alone is not achieved throughput.",
-    samples,
-  };
-  writeFileSync(
-    testInfo.outputPath("e2ee-cpu.json"),
-    JSON.stringify(report, null, 2),
-  );
   await testInfo.attach("e2ee-cpu", {
     body: JSON.stringify(report),
     contentType: "application/json",

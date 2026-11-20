@@ -1,10 +1,26 @@
 # Native invitation encryption verification
 
-Date: 2026-11-10. Branch: `feat/native-room-e2ee`, based on
+## Discord integration on PodeTelar 0.1.4
+
+The integration is based on `56bfee081c9adab5cf185b513f75fb444668fa08`.
+It keeps the version 1 key schedule. A fixed test vector covers the existing
+descriptor authentication and sender key after caching HKDF extraction.
+Discord provides server admission, while the private capability comes from
+the native organizer or the user's OS credential store.
+
+The split-domain Docker HTTPS test submitted maximum-sized opaque envelopes
+through both listeners and reached the API's publication check. Both listeners
+rejected oversized envelopes and oversized legacy JPEGs. Synthetic Discord
+voice events against a real local SFU also removed the voice-controlled peer
+while the independent guest stayed connected.
+
+## Historical acceptance on the pre-Discord branch
+
+These results were recorded on 2026-11-10 for `feat/native-room-e2ee`, based on
 `0d16ce85a4408209a49975da1d36ddff6c652d14` (`origin/main`). This PR is explicitly
 not authorized for merge or deployment.
 
-## Scope and review gate
+### Scope and review gate
 
 The pre-implementation GPT-6.1-Sol high-reasoning review approved proceeding with
 conditions for invitation-holder confidentiality. The [design](../native-e2ee.md)
@@ -16,7 +32,7 @@ An organizer creates/replaces private invitation material in the native app.
 Guests keep paste-and-join. Legacy invitations remain unprotected. Only the
 admission credential enters API requests. Server-side preview storage is opaque.
 
-## Runtime changes requiring verification
+### Runtime changes requiring verification
 
 The pinned SDK setup adds strict checks that an SFU TrackInfo cannot downgrade the
 client's requested encryption before sender activation. Native audio/video pumps
@@ -31,7 +47,7 @@ from this branch's pins, so this worktree generated its own SDK from the verifie
 archives. Builds use a short target path to avoid Windows dependency-extraction
 path limits. The GStreamer runtime is the existing verified local runtime.
 
-## Automated checks
+### Automated checks
 
 - Node 24.11.1 `npm run check`: passed (42 server/API, 23 web and 4 configuration
   tests, plus formatting, types and builds). Includes
@@ -60,7 +76,7 @@ path limits. The GStreamer runtime is the existing verified local runtime.
   alternating-order rounds. Its achieved bitrate falls short of the requested
   35 Mbps; see the measurement below before interpreting the CPU results.
 
-## CPU measurement and its throughput limit
+### CPU measurement and its throughput limit
 
 The local debug build used a Ryzen 7 9800X3D (16 logical processors), RTX 5080,
 D3D11 snow fixture and H.264 1920x1080 at 60 fps. A publisher and one or four
@@ -102,7 +118,7 @@ set `FREEDOMSTREAM_NATIVE_EXE` to that executable, set
 `node --env-file=.env scripts/native-room-smoke.mjs e2ee-performance.spec.ts`.
 Sustained 35 Mbps performance remains an explicit qualification gate.
 
-## External and unverified gates
+### External and unverified gates
 
 Do not infer an AMD GPU result from this machine's RTX 5080. Physical game impact,
 multiple independent friends publishing into one receiving app, network/device
@@ -116,7 +132,7 @@ RTP bytes but zero decoded video, audio or pictures. Full
 packet-level key/nonce collision instrumentation and complete replay/liveness
 protection are not claimed. Record which reconnect paths were actually exercised.
 
-## Independent implementation review
+### Independent implementation review
 
 The first independent implementation review requested changes to `a77ddb0` for a
 plaintext receiver bypass: mutable None-to-GCM signaling could label a receiver

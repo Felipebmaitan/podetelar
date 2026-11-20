@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import { patchNativeOutput } from "./patch-native-output.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const base = join(root, ".local/native-sdk");
@@ -48,16 +49,47 @@ const treeHash = (directory) => {
   return digest.digest("hex");
 };
 const destination = join(base, "webrtc-sys");
+const outputGuard = join(root, "apps/publisher/decoder/native_output_guard.h");
+const outputMixer = join(root, "apps/publisher/decoder/native_output_mixer.h");
+if (
+  hash(readFileSync(outputMixer, "utf8").replaceAll("\r\n", "\n")) !==
+  pin.outputMixerSha256
+)
+  throw new Error("Native output mixer differs from its pin.");
+if (
+  hash(readFileSync(outputGuard, "utf8").replaceAll("\r\n", "\n")) !==
+  pin.outputGuardSha256
+)
+  throw new Error("Native output guard differs from its pin.");
 const patch = readFileSync(
-  join(root, "apps/publisher/decoder/freedomstream_decoder.h"),
+  join(root, "apps/publisher/decoder/podetelar_decoder.h"),
   "utf8",
 ).replaceAll("\r\n", "\n");
 if (hash(patch) !== pin.adapterSha256)
   throw new Error("Decoder adapter differs from its pin.");
+const macosPatch = readFileSync(
+  join(root, "apps/publisher/decoder/podetelar_macos_decoder.h"),
+  "utf8",
+).replaceAll("\r\n", "\n");
+if (hash(macosPatch) !== pin.macosAdapterSha256)
+  throw new Error("macOS decoder adapter differs from its pin.");
+const deferred = readFileSync(
+  join(root, "apps/publisher/decoder/deferred_i420.h"),
+  "utf8",
+).replaceAll("\r\n", "\n");
+if (hash(deferred) !== pin.deferredI420Sha256)
+  throw new Error("Deferred I420 buffer differs from its pin.");
+const readback = readFileSync(
+  join(root, "apps/publisher/decoder/bounded_readback.h"),
+  "utf8",
+).replaceAll("\r\n", "\n");
+if (hash(readback) !== pin.readbackSha256)
+  throw new Error("Bounded readback differs from its pin.");
+await import("./setup-native-audio.mjs");
 if (existsSync(destination)) {
   if (treeHash(destination) !== pin.treeSha256)
     throw new Error("Generated decoder SDK differs from its pin.");
-  console.log("Kept verified native Direct3D11 decoder SDK.");
+  console.log("Kept verified native hardware decoder SDK.");
 } else {
   const downloads = join(root, ".local/downloads");
   mkdirSync(downloads, { recursive: true });
@@ -113,12 +145,43 @@ if (existsSync(destination)) {
   modify(
     "src/video_decoder_factory.cpp",
     "namespace livekit_ffi {",
-    '#ifdef _WIN32\n#include "freedomstream_decoder.h"\n#endif\n\nnamespace livekit_ffi {',
+    '#ifdef _WIN32\n#include "podetelar_decoder.h"\n#endif\n#ifdef WEBRTC_MAC\n#include "podetelar_macos_decoder.h"\n#endif\n\nnamespace livekit_ffi {',
   );
   modify(
     "src/video_decoder_factory.cpp",
     "#ifdef __APPLE__",
-    "#ifdef _WIN32\n  factories_.push_back(std::make_unique<freedomstream::DecoderFactory>());\n#endif\n#ifdef __APPLE__",
+    "#if defined(_WIN32) || defined(WEBRTC_MAC)\n  factories_.push_back(std::make_unique<podetelar::DecoderFactory>());\n#endif\n#if defined(__APPLE__) && !defined(WEBRTC_MAC)",
+  );
+  modify(
+    "src/video_decoder_factory.cpp",
+    "  formats.push_back(webrtc::SdpVideoFormat(webrtc::kVp8CodecName));",
+    "#ifndef WEBRTC_MAC\n  formats.push_back(webrtc::SdpVideoFormat(webrtc::kVp8CodecName));",
+  );
+  modify(
+    "src/video_decoder_factory.cpp",
+    "  return formats;\n}",
+    "#endif\n  return formats;\n}",
+  );
+  modify(
+    "src/video_decoder_factory.cpp",
+    "  if (absl::EqualsIgnoreCase(format.name, webrtc::kVp8CodecName))",
+    "#ifndef WEBRTC_MAC\n  if (absl::EqualsIgnoreCase(format.name, webrtc::kVp8CodecName))",
+  );
+  modify(
+    "src/video_decoder_factory.cpp",
+    '  RTC_LOG(LS_ERROR) << "No VideoDecoder found for " << format.name;',
+    '#endif\n  RTC_LOG(LS_ERROR) << "No VideoDecoder found for " << format.name;',
+  );
+  modify(
+    "src/webrtc.cpp",
+    "  webrtc::MutexLock lock(&mutex_);\n  for (std::weak_ptr<MediaStreamTrack> weak_existing_track :",
+    `  webrtc::MutexLock lock(&mutex_);
+  // Keep live wrapper identity; expired weak entries own no usable track.
+  media_stream_tracks_.erase(
+      std::remove_if(media_stream_tracks_.begin(), media_stream_tracks_.end(),
+                     [](const auto& track) { return track.expired(); }),
+      media_stream_tracks_.end());
+  for (std::weak_ptr<MediaStreamTrack> weak_existing_track :`,
   );
   modify(
     "build.rs",
@@ -127,13 +190,17 @@ if (existsSync(destination)) {
             let gst = PathBuf::from(env::var("GSTREAMER_1_0_ROOT_MSVC_X86_64").expect("Bundled GStreamer development runtime is required"));
             builder.include(gst.join("include/gstreamer-1.0"))
                 .include(gst.join("include/glib-2.0"))
+                .include(gst.join("lib/gstreamer-1.0/include"))
+                .define("GST_USE_UNSTABLE_API", None)
                 .include(gst.join("lib/glib-2.0/include"));
             println!("cargo:rustc-link-search=native={}", gst.join("lib").display());
-            for lib in ["gstreamer-1.0", "gstapp-1.0", "gstvideo-1.0", "gobject-2.0", "glib-2.0"] {
+            for lib in ["gstreamer-1.0", "gstapp-1.0", "gstvideo-1.0", "gstd3d11-1.0", "gobject-2.0", "glib-2.0"] {
                 println!("cargo:rustc-link-lib=dylib={lib}");
             }
             println!("cargo:rerun-if-env-changed=GSTREAMER_1_0_ROOT_MSVC_X86_64");
-            println!("cargo:rerun-if-changed=src/freedomstream_decoder.h");`,
+            println!("cargo:rerun-if-changed=src/podetelar_decoder.h");
+            println!("cargo:rerun-if-changed=src/deferred_i420.h");
+            println!("cargo:rerun-if-changed=src/bounded_readback.h");`,
   );
   const frameCryptor = join(source, "src/frame_cryptor.cpp");
   if (
@@ -148,10 +215,24 @@ if (existsSync(destination)) {
     pin.frameCryptorPatchedSha256
   )
     throw new Error("Frame cryptor protected source mismatch.");
-  writeFileSync(join(source, "src/freedomstream_decoder.h"), patch);
+  modify(
+    "build.rs",
+    '        "macos" => {',
+    `        "macos" => {
+            for name in ["gstreamer-app-1.0", "gstreamer-video-1.0", "gstreamer-codecparsers-1.0"] {
+                let gst = pkg_config::Config::new().probe(name).expect("Pinned macOS GStreamer SDK required");
+                builder.includes(gst.include_paths);
+            }
+            println!("cargo:rerun-if-changed=src/podetelar_macos_decoder.h");`,
+  );
+  writeFileSync(join(source, "src/podetelar_macos_decoder.h"), macosPatch);
+  writeFileSync(join(source, "src/podetelar_decoder.h"), patch);
+  writeFileSync(join(source, "src/deferred_i420.h"), deferred);
+  writeFileSync(join(source, "src/bounded_readback.h"), readback);
+  patchNativeOutput(source, outputGuard);
   const actual = treeHash(source);
   if (actual !== pin.treeSha256)
     throw new Error(`Decoder patched tree mismatch: ${actual}`);
   renameSync(source, destination);
-  console.log("Prepared verified native Direct3D11 decoder SDK.");
+  console.log("Prepared verified native hardware decoder SDK.");
 }

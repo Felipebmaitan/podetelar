@@ -1,113 +1,48 @@
 # Windows distribution
 
-Download the **portable Windows app** from an admitted room and open the EXE.
-Paste the private room invitation, enter your name and join. No installation,
-PowerShell, elevation, shared runtime installation or first-launch dependency
-transfer is required. The executable contains the publisher, its curated media
-runtime, app-local Visual C++ DLLs, notices and corresponding library sources.
-Windows 11 and a current NVIDIA/AMD driver are recommended. Process-loopback audio
-requires Windows build 20348 or newer; publishing requires a hardware encoder.
-Sharing and watching use the native app. No browser is embedded or launched.
+Download **PodeTelar Setup** from [GitHub Releases](https://github.com/Felipebmaitan/podetelar/releases/latest).
+It installs per user with shortcuts, an uninstall entry and `podetelar://`
+room links. The installer includes the publisher, curated media runtime,
+app-local Visual C++ libraries, notices and corresponding library sources.
 
-## Saved room and launch behavior
+Room links use `podetelar://`. Installing or launching the updated Windows app
+removes the previous protocol registration when its ownership marker and launcher
+command match this app. Other applications' handlers are preserved. Older clients
+must be upgraded before using invitations from the renamed server.
 
-After a successful join, the app remembers the room invitation and display name
-in `%LOCALAPPDATA%\FreedomStream\settings.json`, encrypted using Windows DPAPI for
-the current user. The same user can reopen any portable release and automatically
-join that room. Session cookies and media tokens are never persisted. Sharing and
-watching require explicit actions after launch. Invalid/revoked invitations return
-to the join form. Room options → Forget saved room deletes the saved profile and leaves
-the room; ordinary Leave keeps it for the next launch. Remove this settings file
-as well as the runtime cache when removing all local app data.
+Windows 11 and current NVIDIA/AMD drivers are recommended. Process-loopback audio
+requires build 20348 or newer; publishing requires a supported hardware encoder.
+The Windows preview is unsigned. Verify published checksums and the installer
+manifest; hashes check integrity, not independent publisher authenticity.
 
-Both launcher and native app use the Windows GUI subsystem and launch without a
-terminal. Development helper subprocesses are hidden too. Windows Firewall can
-still request network permission when no applicable rule exists. Development
-executables and the local test SFU previously changed paths between tests; the
-test SFU now uses a stable versioned path. Reopening the same cached portable build
-should reuse an applicable rule, but updates extract to a new payload path and can
-prompt again, as can different network profiles or administrator policy. The app
-does not create firewall rules, request elevation or disable firewall protection.
-See [Microsoft's firewall rule behavior](https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/rules).
+## Invitations and launch behavior
 
-## Portable behavior
+Open an invitation from a friend or Discord `/stream` or `/telar`. Each link
+selects its backend. The first room asks for a nickname; later links can reuse
+that nickname while the process remains open and join when idle. Switching from
+an active room requires confirmation. Links never start sharing or watching.
 
-First launch extracts into `%LOCALAPPDATA%\FreedomStreamPortable\<payload-sha256>`.
-Concurrent first launches serialize extraction; a cache appears only after complete
-extraction. The launcher verifies the embedded ZIP's SHA-256, bounds its size and
-rejects unsafe/duplicate Windows paths and symbolic links. Runtime paths containing
-reparse points are refused. It isolates media/DLL search paths from development
-installations and inherited GStreamer settings. It prefers a complete installed
-Microsoft CRT trio at least as new as the bundled one, otherwise selects the private
-bundled CRT directory. This avoids shadowing newer Windows audio/COM components
-with older DLLs. The package remains usable without a shared CRT installation.
-An incomplete cache is retained
-for inspection instead of overwritten. Move that version folder aside to retry.
+The last successful guest nickname is saved locally; pictures are associated with
+the PC on each backend. See [guest profiles](guest-profiles.md). The Discord login
+backend is remembered as a nonsecret preference; its revocable login uses OS
+credential storage. Invitations, room session credentials and language choices
+remain in memory. Startup
+removes obsolete profile/preferences files left by previous versions. Installation
+data and runtime caches are separate.
+The installed launcher forwards later links to the existing app window.
 
-The publisher joins its cleanup job during Windows process creation, before it
-can run or create descendants. Closing or forcibly terminating the launcher
-therefore ends its publisher and owned child processes, including during startup.
+Both launcher and publisher use the Windows GUI subsystem. Helpers run hidden.
+Windows Firewall may request network permission, especially after updates change
+the payload path. The app does not request elevation or modify firewall rules.
+SmartScreen reputation warnings differ from named antivirus detections; record
+the exact message and release hash when reporting a problem.
 
-Completed caches are reused without overwriting user changes. In particular,
-compatible LGPL DLL replacements remain usable. Each release gets a separate
-cache. The app's **Licenses and library sources** button opens its notices folder.
-`FreedomStream.exe --licenses` does the same; `--extract C:\new\absolute-folder`
-extracts a separate copy to a previously nonexistent directory. Normal launch
-needs neither command. The extracted publisher remains dynamically linked.
-
-Keep the EXE wherever you prefer. To remove it, close the publisher and delete the
-EXE and its own `FreedomStreamPortable` cache. It creates no Start-menu shortcut,
-registry entry or system PATH change. The earlier script-based installation is
-separate: retain it for rollback or remove it with its original `Uninstall.ps1`.
-Do not remove shared Microsoft/GPU components to uninstall FreedomStream.
-
-The executable is currently unsigned. Verify its SHA-256 against the authenticated
-room's download details. This checks integrity against that trusted manifest,
-not an independent publisher signature. Code signing remains future work.
-
-## Windows security warnings and app icon
-
-The launcher and native publisher embed the same original MIT-licensed monitor/play
-icon, with 16–256 pixel Windows resources and FreedomStream product/version metadata.
-The native window also sets that icon explicitly for its title bar and taskbar.
-Regenerate the artwork with `python scripts/make-windows-icon.py` (Pillow required
-only for regeneration). Portable qualification checks both executables for an
-embedded icon and product metadata.
-
-An icon and version metadata do not establish publisher trust. The current release
-is unsigned. “Windows protected your PC” or “Unknown publisher” usually indicates
-SmartScreen reputation; a named threat in Defender Protection history is a separate
-antivirus detection. Record the exact message, detection name and affected release
-SHA-256 before diagnosing a friend's report. Do not require antivirus exclusions.
-
-For direct downloads, use a publicly trusted Authenticode signing identity, SHA-256
-and trusted timestamping, and keep a consistent publisher identity. This requires
-identity validation and access to a certificate or managed signing account; a
-self-signed certificate does not solve public distribution trust. Even valid OV/EV
-signatures do not guarantee immediate SmartScreen reputation. Microsoft recommends
-Artifact Signing for non-Store distribution; Microsoft Store distribution is another
-route if its packaging and eligibility requirements are met. See
-[Microsoft's reputation guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
-
-Signing integration must account for the portable format: the current reader expects
-its payload footer at EOF, whereas Authenticode adds a PE certificate table. Simply
-running SignTool on today's final bundle is not a supported release procedure.
-Before shipping signed releases, make payload discovery certificate-table aware,
-sign the internal publisher before hashing/archiving, sign the completed bundle,
-then verify signatures and run portable extraction/startup checks on the signed
-artifact. Generate the final download hash and size after signing. Qualify bundled
-executable libraries under Smart App Control as well. No signing credentials or
-verified signed-release result are included in this change.
-
-If Defender identifies a named threat and investigation establishes a false positive,
-submit the exact affected binary through
-[Microsoft's software developer submission portal](https://www.microsoft.com/en-us/wdsi/filesubmission).
-This is separate from building SmartScreen reputation. Firewall network-access
-prompts are also separate and follow the behavior described above.
+Built-in download/restart updates start with v0.1.2. Versions 0.1.0 and 0.1.1 need
+one manual Setup upgrade. See [Windows updates](windows-updates.md).
 
 ## Build and qualify
 
-Use Windows, Node 24, Rust 1.95, a licensed Visual Studio C++ toolchain, and `npm ci`:
+Use Windows, Node 24, Rust 1.95, Visual Studio C++ build tools and `npm ci`:
 
 ```powershell
 npm run native:setup
@@ -118,63 +53,70 @@ $release = Get-Content .local/distribution/publisher.json -Raw | ConvertFrom-Jso
 ./scripts/qualify-portable.ps1 -Executable (Join-Path .local/distribution $release.filename)
 ```
 
-Packaging requires a clean committed checkout. `--qualification` permits an
-explicitly local package from an uncommitted checkout; never distribute it.
-The builder uses the pinned SDK/runtime and allowlisted media DLL hashes, gathers
-Cargo/WebRTC license texts, downloads checksum-pinned corresponding sources,
-checks every shipped PE's imports and each selected plugin's license, then builds
-a launcher with a static CRT. All source downloads happen on the **build machine**.
-The release CRT comes unmodified from that machine's Visual Studio `VC/Redist`
-release directory; its version/hashes are recorded in the notices. Toolchain/CRT
-versions can differ between builders. Bit-for-bit reproducibility is not claimed.
+Release packaging requires a clean committed checkout. `--qualification` permits
+a local artifact from an uncommitted checkout; never distribute that artifact.
+Build the installer using the [installer instructions](windows-updates.md).
 
-The single EXE and `publisher.json` are the distribution artifacts. The intermediate
-payload ZIP and expanded tree are build evidence. Copy the EXE/manifest together
-into the server's read-only `PUBLISHER_DIRECTORY` and restart the app. The server
-verifies the executable at startup and serves it only to current room members.
-Deploy the new server and EXE together; this server expects an EXE manifest.
-A previous open tab's ZIP endpoint redirects admitted members to the EXE.
+The portable EXE and `publisher.json` are internal installer inputs and
+qualification tools. Public Windows releases include Setup, the full update
+package, feed, installer manifest and checksums; do not publish the standalone EXE
+or intermediate payload ZIP. Operators serving authenticated native downloads
+can stage the EXE/manifest together in the server's read-only `PUBLISHER_DIRECTORY`.
+The server checks size/hash at startup and permits only current room members.
 
-## Dependency licenses
+## Runtime extraction
 
-Original FreedomStream code is MIT. Bundled libraries retain their own terms.
-`deploy/portable-runtime.json` lists the exact media files and hashes, source URLs,
-source hashes and upstream revisions. The curated runtime omits GPL x264/x265/libav
-plugins and unrelated network/framework plugins. Each selected plugin's LGPL
-metadata and PE import closure are checked during packaging. GPU driver and Windows
-system DLLs remain supplied by their vendors, rather than copied from the host.
+The portable launcher extracts to
+`%LOCALAPPDATA%\PodeTelarPortable\<payload-sha256>`. It verifies the embedded
+archive, bounds extraction, rejects unsafe paths/reparse points and serializes
+concurrent first launches. Each release has a separate cache. Incomplete caches
+are retained for inspection; move the affected folder aside to retry.
 
-The EXE includes complete matching GStreamer/GLib/proxy-libintl sources, other
-library/header sources, Cerbero recipes/patches/configurations, license texts and
-copyright notices. See [runtime scope](../deploy/windows/portable-runtime.md) and
-[corresponding-source details](../deploy/windows/portable-sources.md). These materials
-accompany the binaries offline; source availability does not depend on the private
-GitHub repository. Cached shared libraries remain replaceable. Follow the original
-library license when redistributing modified copies.
+Media/DLL paths are isolated from development installations. A complete, compatible
+installed Microsoft CRT is preferred; otherwise the bundled private CRT is used.
+The publisher joins a cleanup job before it can create descendants, so terminating
+the launcher also ends its publisher processes.
 
-Unmodified app-local release CRT files are distributed under the installed Visual
-Studio toolchain's Distributable Code terms, separately from MIT/LGPL. Their
-provenance and links to Microsoft's terms are recorded in `Microsoft-CRT.json`.
-See [Microsoft redistribution](https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution#visual-c-runtime-files)
-and [local deployment](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files).
-The [GStreamer licensing advisory](https://gstreamer.freedesktop.org/documentation/application-development/appendix/licensing.html)
-explains its plugin license boundary. Hardware codec support is not a codec patent license.
+Completed caches are reused, preserving compatible LGPL library replacements.
+**Licenses and library sources** opens the packaged notices. The internal
+`PodeTelar.exe --licenses` command does the same; `--extract C:\new\absolute-folder`
+extracts to a previously nonexistent directory.
 
-Cargo notices include the pinned upstream license overrides in
-`deploy/license-overrides.json` and the Apache-licensed LiveKit stereo and strict
-encryption patches, including mandatory receiver cryptors. Their full modified source is included with the corresponding
-source bundle; `deploy/native-sdk.json` pins all five changed source files and the
-complete generated source tree. See [native encryption](native-e2ee.md) for the
-protection boundary and runtime acceptance requirements.
+Installed room-link registration is managed by install/update/uninstall hooks.
+Legacy standalone builds retain opt-in **Room options → Enable browser links** and
+a cached launcher under `PodeTelarPortable\browser-links`. Permanent invitations
+are never passed in activation arguments; one-use handoff tickets expire after a minute.
+
+## Dependency licenses and signing
+
+Application code is MIT; bundled libraries keep their own terms.
+`deploy/portable-runtime.json` pins media files, hashes, source archives and
+upstream revisions. Packaging checks plugin licenses and the PE import closure,
+omitting GPL x264/x265/libav plugins. Windows and GPU driver DLLs remain vendor supplied.
+
+Packages include matching library sources, Cerbero recipes/patches, license texts
+and Rust/WebRTC notices. See [runtime scope](../deploy/windows/portable-runtime.md)
+and [corresponding sources](../deploy/windows/portable-sources.md). Dynamic libraries
+remain replaceable. Visual C++ release files use the toolchain's Distributable Code
+terms; provenance is recorded in `Microsoft-CRT.json`. Toolchain differences mean
+bit-for-bit reproducibility is not claimed.
+
+The current portable reader expects a payload footer at EOF. Authenticode adds a
+certificate table, so signing the final bundle requires a signing-aware reader
+and renewed extraction/startup qualification. Sign inner executables before
+archiving and generate final hashes after signing. See
+[Microsoft's reputation guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
 
 ## Qualification limits
 
-The automated script checks empty-cache startup from a fresh directory with
-spaces and an isolated PATH, concurrent extraction, the actual runtime probe,
-extracted-file/source hashes, reuse, explicit extraction and damaged-payload
-rejection, reparse-point refusal and a forced bundled-CRT startup probe. It retains
-evidence under `.local/portable-qualification-*`.
-This host is not a fresh Windows PC or a disconnected network environment.
-Native hardware capture, audio and browser delivery need actual runtime checks;
-AMD, physical 4K120, real-game/fullscreen behavior, macOS/Linux and a full evening
-with four/five friends remain separate gates. See [Phase 8 qualification](phase8-qualification.md).
+Native private invitations use the modified LiveKit SDK and WebRTC frame
+cryptor. Their pinned sources and transformations accompany the native runtime.
+See [private invitations](native-e2ee.md) for the security boundary.
+
+Portable checks cover cache extraction/reuse, source hashes, runtime probes,
+concurrent launches and damaged-payload rejection on the development Windows PC.
+They do not establish fresh-PC/offline startup. Windows media checks use NVIDIA
+hardware; AMD, physical 4K120, real-game/group load and physical speaker/display
+synchronization require separate measurements. Installed media shutdown during
+updates also needs actual application acceptance; updater fixtures alone cannot
+establish it. See [testing](testing.md).

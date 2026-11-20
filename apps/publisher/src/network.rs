@@ -1,6 +1,6 @@
 //! A measured path capacity informs the allowance. Keep headroom, share it across actual
 //! subscriptions, reduce on receiver evidence and recover slowly within that cap.
-pub const DEFAULT_DOWNLOAD_BPS: u64 = 12_000_000;
+pub const DEFAULT_DOWNLOAD_BPS: u64 = 30_000_000;
 pub const PROBE_CAP_BPS: u64 = 200_000_000;
 pub const PROBE_BYTES: usize = 48 * 1024 * 1024;
 #[derive(Clone, Default)]
@@ -86,6 +86,27 @@ impl ReceiveBudget {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_download_probe_uses_thirty_mbps_with_existing_headroom() {
+        let failed = Capacity {
+            error: "Connection measurement unavailable.".into(),
+            ..Default::default()
+        };
+        let mut budget = ReceiveBudget::default();
+        budget.set(failed.watching_allowance());
+        assert_eq!(budget.allowance, 30_000_000);
+        assert_eq!(budget.payload, 22_500_000);
+        assert!(budget.per_stream(3) * 3 + 256_000 * 3 <= budget.payload);
+        budget.set(Some(5_000_000));
+        assert_eq!(budget.allowance, 5_000_000);
+        let measured = Capacity {
+            download_bps: Some(10_000_000),
+            ..Default::default()
+        };
+        budget.set(measured.watching_allowance());
+        assert_eq!(budget.allowance, 8_000_000);
+    }
 
     #[test]
     fn two_hundred_mbps_probe_leaves_room_for_a_hundred_mbps_video() {

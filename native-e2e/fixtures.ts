@@ -3,10 +3,31 @@ import { copyFileSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 
 export function nativeExecutable(): string {
-  const executable = process.env.FREEDOMSTREAM_NATIVE_EXE;
+  const executable = process.env.PODETELAR_NATIVE_EXE;
   if (!executable)
-    throw new Error("Set FREEDOMSTREAM_NATIVE_EXE to the built publisher.");
+    throw new Error("Set PODETELAR_NATIVE_EXE to the built publisher.");
   return resolve(executable);
+}
+
+/** Isolate the tone fixture without muting or changing other applications. */
+export async function backgroundAudioExclusions(): Promise<string[]> {
+  const applications = await nativeRequest("--audio-apps", {}).result;
+  if (!Array.isArray(applications))
+    throw new Error("Audio application inventory was unavailable.");
+  return applications.flatMap((application: unknown) => {
+    if (
+      typeof application !== "object" ||
+      application === null ||
+      !("id" in application) ||
+      typeof application.id !== "string"
+    )
+      return [];
+    // The game is our child; excluding this harness image would exclude it too.
+    return resolve(application.id).toLowerCase() ===
+      process.execPath.toLowerCase()
+      ? []
+      : [application.id];
+  });
 }
 
 export function toneFixtures(directory: string) {
@@ -15,7 +36,7 @@ export function toneFixtures(directory: string) {
   const discord = join(directory, "Discord.exe");
   // A portable launcher keeps its own name separate from the publisher process.
   // Tone fixtures need their real process names for application-audio policy.
-  const tone = process.env.FREEDOMSTREAM_NATIVE_TONE_EXE ?? nativeExecutable();
+  const tone = process.env.PODETELAR_NATIVE_TONE_EXE ?? nativeExecutable();
   copyFileSync(tone, game);
   copyFileSync(tone, discord);
   const children: ChildProcess[] = [];
@@ -29,7 +50,7 @@ export function toneFixtures(directory: string) {
   };
   return {
     application: game.toLowerCase(),
-    game: () => start(game, 440),
+    game: (frequency = 440) => start(game, frequency),
     discord: () => start(discord, 880),
     stop: () => {
       for (const child of children) if (child.exitCode === null) child.kill();
@@ -37,13 +58,18 @@ export function toneFixtures(directory: string) {
   };
 }
 
-export function nativeRequest(option: string, request: unknown) {
-  const child = spawn(nativeExecutable(), [option], {
+export function nativeRequest(
+  option: string,
+  request: unknown,
+  args: string[] = [],
+) {
+  const child = spawn(nativeExecutable(), [option, ...args], {
     windowsHide: true,
     stdio: ["pipe", "pipe", "pipe"],
   });
   let output = "";
   let stage = "unknown";
+  const failureTags = new Set<string>();
   let reportReady!: (value: unknown) => void;
   let reportFailed!: (error: Error) => void;
   const reported = new Promise<unknown>((resolve, reject) => {
@@ -51,7 +77,9 @@ export function nativeRequest(option: string, request: unknown) {
     reportFailed = reject;
   });
   child.stdout.on("data", (data: Buffer) => {
-    output = (output + data.toString()).slice(-64_000);
+    // Two-stream timing/gain qualification exceeds 64 KB. Retain one bounded
+    // numeric report without truncating its JSON during the real-media check.
+    output = (output + data.toString()).slice(-512_000);
     const line = output.trim().split("\n").at(-1);
     if (line?.startsWith("{")) {
       try {
@@ -64,6 +92,16 @@ export function nativeRequest(option: string, request: unknown) {
   // Never include raw native/SDK stderr in test reports.
   child.stderr.on("data", (data: Buffer) => {
     const message = data.toString();
+    for (const [hint, label] of [
+      ["panicked at", "rust-panic"],
+      ["cannot unwind", "unwind-abort"],
+      ["Check failed", "native-check"],
+      ["Assertion failed", "native-assertion"],
+      ["terminate", "native-terminate"],
+      ["deadlock", "deadlock"],
+    ]) {
+      if (message.includes(hint!)) failureTags.add(label!);
+    }
     for (const [hint, label] of [
       ["Audio transport stalled", "audio-transport"],
       ["Audio publication failed", "audio-publication"],
@@ -84,11 +122,11 @@ export function nativeRequest(option: string, request: unknown) {
     child.once("error", () =>
       reject(new Error("Native fixture could not start.")),
     );
-    child.once("close", (code) => {
+    child.once("close", (code, signal) => {
       if (code !== 0) {
         reject(
           new Error(
-            `Native fixture failed at ${stage}; run its bounded local diagnostic separately.`,
+            `Native fixture failed at ${stage} (exit ${code ?? signal ?? "unknown"}; tags ${[...failureTags].join(",") || "none"}); run its bounded local diagnostic separately.`,
           ),
         );
         return;

@@ -7,13 +7,15 @@ param(
 $ErrorActionPreference = 'Stop'
 $env:PSModulePath = "$PSHOME\Modules;$env:PSModulePath"
 $repository = Split-Path -Parent $PSScriptRoot
-$gstRoot = if ($env:FREEDOMSTREAM_GSTREAMER) { $env:FREEDOMSTREAM_GSTREAMER } else { Join-Path $repository '.local/gstreamer' }
+$gstRoot = if ($env:PODETELAR_GSTREAMER) { $env:PODETELAR_GSTREAMER } else { Join-Path $repository '.local/gstreamer' }
 if (-not (Test-Path -LiteralPath (Join-Path $gstRoot 'bin/gst-inspect-1.0.exe'))) {
     throw 'Native runtime is missing. Run npm run native:setup first.'
 }
 $env:PATH = "$(Join-Path $gstRoot 'bin');$env:PATH"
 $env:PKG_CONFIG_PATH = Join-Path $gstRoot 'lib/pkgconfig'
 $env:GSTREAMER_1_0_ROOT_MSVC_X86_64 = $gstRoot
+node (Join-Path $repository "scripts/setup-native-sdk.mjs")
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 node (Join-Path $repository "scripts/setup-native-decoder.mjs")
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Push-Location $repository
@@ -26,9 +28,9 @@ try {
         }
         'test' { cargo test --locked --workspace }
         'build' { cargo build --locked --release }
-        'run' { cargo run --locked --bin freedomstream-publisher -- @NativeArguments }
-        'probe' { cargo run --locked --bin freedomstream-publisher -- --probe }
-        'qualify' { cargo run --locked --bin freedomstream-publisher -- --qualify @NativeArguments }
+        'run' { cargo run --locked --bin podetelar-publisher -- @NativeArguments }
+        'probe' { cargo run --locked --bin podetelar-publisher -- --probe }
+        'qualify' { cargo run --locked --bin podetelar-publisher -- --qualify @NativeArguments }
     }
     exit $LASTEXITCODE
 } finally { Pop-Location }

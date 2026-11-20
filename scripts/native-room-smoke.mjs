@@ -2,8 +2,14 @@
 // It neither changes Docker/Windows settings nor deploys anything to the VPS.
 import { createHash, randomUUID } from "node:crypto";
 import { spawn, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { networkInterfaces } from "node:os";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
+import { networkInterfaces, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -14,17 +20,31 @@ if (
   throw new Error("Use Windows and Node 24 for the native room smoke test.");
 const root = resolve(import.meta.dirname, "..");
 process.chdir(root);
+const soak = process.argv.includes("--soak");
+const appPort = Number(
+  process.env.PODETELAR_SMOKE_APP_PORT ?? (soak ? 13010 : 3010),
+);
+const mediaPort = Number(
+  process.env.PODETELAR_SMOKE_SFU_PORT ?? (soak ? 18880 : 17880),
+);
+if (
+  ![appPort, mediaPort].every(
+    (port) => Number.isInteger(port) && port >= 1024 && port <= 65533,
+  ) ||
+  Math.abs(appPort - mediaPort) <= 2
+)
+  throw new Error("Choose distinct unprivileged native smoke port ranges.");
+const origin = `http://localhost:${appPort}`;
+const mediaOrigin = `http://127.0.0.1:${mediaPort}`;
 const occupied = await Promise.all(
-  ["http://localhost:3010/api/health", "http://127.0.0.1:17880"].map(
-    async (url) => {
-      try {
-        await fetch(url, { signal: AbortSignal.timeout(1000) });
-        return true;
-      } catch {
-        return false;
-      }
-    },
-  ),
+  [`${origin}/api/health`, mediaOrigin].map(async (url) => {
+    try {
+      await fetch(url, { signal: AbortSignal.timeout(1000) });
+      return true;
+    } catch {
+      return false;
+    }
+  }),
 );
 if (occupied.some(Boolean))
   throw new Error(
@@ -89,22 +109,24 @@ const candidates = Object.values(networkInterfaces())
       /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(ip.address),
   );
 const nodeIp =
-  process.env.FREEDOMSTREAM_TEST_NODE_IP ??
+  process.env.PODETELAR_TEST_NODE_IP ??
   candidates.find((ip) => ip.address.startsWith("192.168."))?.address ??
   candidates[0]?.address;
 if (!nodeIp || !/^\d{1,3}(\.\d{1,3}){3}$/.test(nodeIp))
   throw new Error(
-    "Set FREEDOMSTREAM_TEST_NODE_IP to a reachable local IPv4 address.",
+    "Set PODETELAR_TEST_NODE_IP to a reachable local IPv4 address.",
   );
 const config = join(run, "livekit.yaml");
 writeFileSync(
   config,
   JSON.stringify({
-    port: 17880,
+    port: mediaPort,
+    // Only this isolated acceptance SFU permits controlled mute/unmute tests.
+    room: { sync_streams: true, enable_remote_unmute: true },
     bind_addresses: ["127.0.0.1"],
     rtc: {
-      tcp_port: 17881,
-      udp_port: 17882,
+      tcp_port: mediaPort + 1,
+      udp_port: mediaPort + 2,
       node_ip: nodeIp,
       use_external_ip: false,
     },
@@ -135,35 +157,36 @@ const ready = async (url) => {
     await delay(250);
   }
   throw new Error(
-    "Isolated native smoke service did not start. Check that ports 3010 and 17880–17882 are free.",
+    `Isolated native smoke did not start on app ${appPort}, SFU ${mediaPort}–${mediaPort + 2}.`,
   );
 };
 try {
-  start(
+  const sfu = start(
     join(serverDirectory, "livekit-server.exe"),
     ["--config", config],
     process.env,
   );
-  await ready("http://127.0.0.1:17880");
-  const origin = "http://localhost:3010";
+  await ready(mediaOrigin);
   start(process.execPath, ["apps/server/dist/main.js"], {
     ...process.env,
     PUBLIC_URL: origin,
     HOST: "127.0.0.1",
-    PORT: "3010",
+    PORT: String(appPort),
     DATABASE_PATH: join(run, "rooms.db"),
-    LIVEKIT_INTERNAL_URL: "http://127.0.0.1:17880",
+    LIVEKIT_INTERNAL_URL: mediaOrigin,
   });
   await ready(`${origin}/api/health`);
-  const gst = resolve(
-    process.env.FREEDOMSTREAM_GSTREAMER ?? ".local/gstreamer",
-  );
+  const gst = resolve(process.env.PODETELAR_GSTREAMER ?? ".local/gstreamer");
   const args = [
     "node_modules/@playwright/test/cli.js",
     "test",
     "-c",
-    "playwright.native.config.ts",
-    ...process.argv.slice(2),
+    process.argv.includes("--soak")
+      ? "playwright.soak.config.ts"
+      : "playwright.native.config.ts",
+    ...process.argv.slice(2).filter((arg) => arg !== "--soak"),
+    "--output",
+    mkdtempSync(join(tmpdir(), "PodeTelar-native-")),
   ];
   const tests = spawn(process.execPath, args, {
     cwd: root,
@@ -172,9 +195,12 @@ try {
     env: {
       ...process.env,
       E2E_BASE_URL: origin,
-      FREEDOMSTREAM_NATIVE_EXE: resolve(
-        process.env.FREEDOMSTREAM_NATIVE_EXE ??
-          "target/debug/freedomstream-publisher.exe",
+      PODETELAR_TEST_SFU_URL: mediaOrigin,
+      PODETELAR_TEST_SFU_PID: String(sfu.pid),
+      PODETELAR_TEST_SFU_EXE: serverExecutable,
+      PODETELAR_NATIVE_EXE: resolve(
+        process.env.PODETELAR_NATIVE_EXE ??
+          "target/debug/podetelar-publisher.exe",
       ),
       PATH: `${join(gst, "bin")};${process.env.PATH}`,
     },

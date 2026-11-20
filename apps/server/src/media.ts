@@ -4,14 +4,20 @@ import {
   TrackType,
   TwirpError,
 } from "livekit-server-sdk";
-import type { PreviewKind } from "@freedomstream/contracts";
+import type { PreviewKind } from "@podetelar/contracts";
 import type { Config } from "./config.js";
 
-export const mediaRoomName = (roomId: string) => `freedomstream_${roomId}`;
+export const mediaRoomName = (roomId: string) => `podetelar_${roomId}`;
 export type MediaParticipant = {
+  attributes?: Record<string, string>;
   tracks: { sid: string; kind: PreviewKind; muted: boolean }[];
 };
 export interface MediaDirectory {
+  rename?(roomId: string, identity: string, displayName: string): Promise<void>;
+  diagnosticParticipants?(
+    roomId: string,
+  ): Promise<Map<string, MediaParticipant>>;
+  members(roomId: string): Promise<{ id: string; displayName: string }[]>;
   remove(roomId: string, identity: string): Promise<void>;
   participant(
     roomId: string,
@@ -41,6 +47,50 @@ export class LivekitDirectory implements MediaDirectory {
       { requestTimeout: 3, failover: false },
     );
   }
+  async diagnosticParticipants(
+    roomId: string,
+  ): Promise<Map<string, MediaParticipant>> {
+    try {
+      const participants = await this.client.listParticipants(
+        mediaRoomName(roomId),
+      );
+      return new Map(
+        participants
+          .slice(0, 100)
+          .map((p) => [p.identity, diagnosticParticipant(p)]),
+      );
+    } catch {
+      throw new MediaUnavailable();
+    }
+  }
+  async members(
+    roomId: string,
+  ): Promise<{ id: string; displayName: string }[]> {
+    try {
+      return (await this.client.listParticipants(mediaRoomName(roomId)))
+        .slice(0, 100)
+        .map((participant) => ({
+          id: participant.identity,
+          displayName: participant.name.slice(0, 60) || "Participant",
+        }));
+    } catch (error) {
+      if (error instanceof TwirpError && error.code === "not_found") return [];
+      throw new MediaUnavailable();
+    }
+  }
+  async rename(
+    roomId: string,
+    identity: string,
+    displayName: string,
+  ): Promise<void> {
+    try {
+      await this.client.updateParticipant(mediaRoomName(roomId), identity, {
+        name: displayName,
+      });
+    } catch {
+      throw new MediaUnavailable();
+    }
+  }
   async remove(roomId: string, identity: string): Promise<void> {
     try {
       await this.client.removeParticipant(mediaRoomName(roomId), identity);
@@ -58,27 +108,7 @@ export class LivekitDirectory implements MediaDirectory {
         mediaRoomName(roomId),
         identity,
       );
-      return {
-        tracks: participant.tracks.flatMap((track) => {
-          if (
-            track.type !== TrackType.VIDEO ||
-            ![TrackSource.CAMERA, TrackSource.SCREEN_SHARE].includes(
-              track.source,
-            )
-          )
-            return [];
-          return [
-            {
-              sid: track.sid,
-              kind:
-                track.source === TrackSource.CAMERA
-                  ? ("camera" as const)
-                  : ("screen" as const),
-              muted: track.muted,
-            },
-          ];
-        }),
-      };
+      return diagnosticParticipant(participant);
     } catch (error) {
       if (error instanceof TwirpError && error.code === "not_found")
         return null;
@@ -99,4 +129,35 @@ export class LivekitDirectory implements MediaDirectory {
       throw new MediaUnavailable();
     }
   }
+}
+
+function diagnosticParticipant(participant: {
+  attributes: Record<string, string>;
+  tracks: {
+    sid: string;
+    type: TrackType;
+    source: TrackSource;
+    muted: boolean;
+  }[];
+}): MediaParticipant {
+  return {
+    attributes: participant.attributes,
+    tracks: participant.tracks.flatMap((track) => {
+      if (
+        track.type !== TrackType.VIDEO ||
+        ![TrackSource.CAMERA, TrackSource.SCREEN_SHARE].includes(track.source)
+      )
+        return [];
+      return [
+        {
+          sid: track.sid,
+          kind:
+            track.source === TrackSource.CAMERA
+              ? ("camera" as const)
+              : ("screen" as const),
+          muted: track.muted,
+        },
+      ];
+    }),
+  };
 }

@@ -27,7 +27,7 @@ export const previewSchema = z
   .strict();
 export type Preview = z.infer<typeof previewSchema>;
 export const previewAttribute = (kind: PreviewKind) =>
-  `freedomstream.preview.${kind}`;
+  `podetelar.preview.${kind}`;
 export const roomIdSchema = z.string().regex(/^[A-Za-z0-9_-]{22}$/);
 export const invitationSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const nameSchema = z
@@ -37,12 +37,44 @@ const nameSchema = z
   .max(60)
   .refine((value) => !/[\p{Cc}\p{Cf}]/u.test(value));
 
+export const guestNameSchema = z.object({ displayName: nameSchema }).strict();
+export const AVATAR_MAX_BYTES = 3_000_000;
+export type GuestProfile = {
+  participantId: string;
+  displayName: string;
+  avatarRevision: string | null;
+  uploadsBlocked: boolean;
+};
+export type AdminGuestProfile = {
+  id: string;
+  deviceId: string;
+  displayName: string;
+  avatarRevision: string | null;
+  uploadsBlocked: boolean;
+  updatedAt: number;
+  bytes: number;
+  animated: boolean;
+};
+export type AdminGuestProfiles = {
+  profiles: AdminGuestProfile[];
+  nextOffset: number | null;
+};
+
 export const adminCreateRoomSchema = z.object({ name: nameSchema }).strict();
+export const deviceIdSchema = z.string().regex(/^pc1_[0-9a-f]{64}$/);
 export const createRoomSchema = z
-  .object({ name: nameSchema, displayName: nameSchema })
+  .object({
+    name: nameSchema,
+    displayName: nameSchema,
+    deviceId: deviceIdSchema.optional(),
+  })
   .strict();
 export const joinRoomSchema = z
-  .object({ invitation: invitationSchema, displayName: nameSchema })
+  .object({
+    invitation: invitationSchema,
+    displayName: nameSchema,
+    deviceId: deviceIdSchema.optional(),
+  })
   .strict();
 export const accessChangeSchema = z
   .object({
@@ -67,6 +99,14 @@ export type JoinRoomInput = z.infer<typeof joinRoomSchema>;
 export type Room = { id: string; name: string; createdAt: string };
 export type ManagedRoom = Room & { invitationEnabled: boolean };
 export type RoomDirectory = { rooms: ManagedRoom[]; nextOffset: number | null };
+export type AdminRoom = ManagedRoom & {
+  members: Participant[];
+  presence: "active" | "waiting" | "closing" | "unavailable";
+};
+export type AdminRoomDirectory = {
+  rooms: AdminRoom[];
+  nextOffset: number | null;
+};
 export type AdminCreatedRoom = { room: Room; invitationUrl: string };
 export type Participant = { id: string; displayName: string };
 export type RoomSession = {
@@ -80,6 +120,15 @@ export type MediaAccess = {
   token: string;
   expiresInSeconds: number;
 };
+export const HARDWARE_DECODERS_ATTRIBUTE = "podetelar.decode.hardware.v1";
+export const nativeMediaCapabilitiesSchema = z
+  .object({
+    hardwareDecoders: z
+      .array(z.enum(["av1", "hevc", "h264"]))
+      .max(3)
+      .refine((codecs) => new Set(codecs).size === codecs.length),
+  })
+  .strict();
 export type ApiErrorBody = { error: string };
 
 export type UsagePoint = {
@@ -102,8 +151,17 @@ export type UsageReport = {
   points: UsagePoint[];
   users: {
     id: string;
-    roomId: string;
+    identityKind: "device" | "session";
     displayName: string;
+    sessionCount: number;
+    sessions: {
+      id: string;
+      roomId: string;
+      displayName: string;
+      admittedAt: number;
+      uploadedBytes: number;
+      downloadedBytes: number;
+    }[];
     uploadedBytes: number;
     downloadedBytes: number;
     points: UsagePoint[];

@@ -6,7 +6,7 @@ $qualificationRoot = Join-Path $repository ('.local/portable-qualification-' + [
 $working = Join-Path $qualificationRoot 'A fresh directory with spaces'
 $localData = Join-Path $qualificationRoot 'LocalAppData'
 New-Item -ItemType Directory -Path $working, $localData | Out-Null
-$copy = Join-Path $working 'FreedomStream.exe'
+$copy = Join-Path $working 'PodeTelar.exe'
 Copy-Item -LiteralPath $executablePath -Destination $copy
 # Even a conflicting sibling Windows DLL must not be considered at startup.
 [IO.File]::WriteAllText((Join-Path $working 'version.dll'), 'Not a DLL: launcher imports must use System32.')
@@ -25,18 +25,18 @@ function Assert-GuiSubsystem([string]$Path) {
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
-public static class FreedomStreamIconCheck {
+public static class PodeTelarIconCheck {
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     public static extern uint ExtractIconExW(string file, int index, IntPtr large, IntPtr small, uint count);
 }
 '@
 function Assert-AppResources([string]$Path) {
-    $iconCount = [FreedomStreamIconCheck]::ExtractIconExW($Path, -1, [IntPtr]::Zero, [IntPtr]::Zero, 0)
+    $iconCount = [PodeTelarIconCheck]::ExtractIconExW($Path, -1, [IntPtr]::Zero, [IntPtr]::Zero, 0)
     if ($iconCount -lt 1 -or $iconCount -eq [uint32]::MaxValue) {
         throw 'A shipped executable has no embedded Windows icon.'
     }
-    if ([Diagnostics.FileVersionInfo]::GetVersionInfo($Path).ProductName -ne 'FreedomStream') {
-        throw 'A shipped executable has no FreedomStream product metadata.'
+    if ([Diagnostics.FileVersionInfo]::GetVersionInfo($Path).ProductName -ne 'PodeTelar') {
+        throw 'A shipped executable has no PodeTelar product metadata.'
     }
 }
 Assert-GuiSubsystem $copy
@@ -79,11 +79,11 @@ try {
     }
     $fallback = (Finish-Portable (Start-Portable '--bundled-probe')) | ConvertFrom-Json
     if ($fallback.runtime -notmatch '^GStreamer 1\.28\.8') { throw 'Bundled CRT fallback did not start.' }
-    $cache = @(Get-ChildItem -LiteralPath (Join-Path $localData 'FreedomStreamPortable') -Directory | Where-Object { $_.Name -match '^[a-f0-9]{64}$' })
+    $cache = @(Get-ChildItem -LiteralPath (Join-Path $localData 'PodeTelarPortable') -Directory | Where-Object { $_.Name -match '^[a-f0-9]{64}$' })
     if ($cache.Count -ne 1) { throw 'First launches did not converge on one cache.' }
     $runtime = $cache[0].FullName
-    Assert-GuiSubsystem (Join-Path $runtime 'bin/freedomstream-publisher.exe')
-    Assert-AppResources (Join-Path $runtime 'bin/freedomstream-publisher.exe')
+    Assert-GuiSubsystem (Join-Path $runtime 'bin/podetelar-publisher.exe')
+    Assert-AppResources (Join-Path $runtime 'bin/podetelar-publisher.exe')
     $manifest = Get-Content -LiteralPath (Join-Path $runtime 'release.json') -Raw | ConvertFrom-Json
     foreach ($file in $manifest.files.PSObject.Properties) {
         $path = Join-Path $runtime $file.Name
@@ -111,7 +111,7 @@ try {
     # Resource inspection and Windows image loading can retain a handle to the
     # original executable after its process exits. Damage an unused copy so
     # those handles cannot race the write, while preserving the rejection test.
-    $damageCopy = Join-Path $working 'DamagedFreedomStream.exe'
+    $damageCopy = Join-Path $working 'DamagedPodeTelar.exe'
     $stream = [IO.File]::Open($damageCopy, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     try {
         $source = [IO.File]::OpenRead($copy)

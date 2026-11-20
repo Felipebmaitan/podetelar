@@ -1,7 +1,10 @@
+#[cfg_attr(not(windows), allow(dead_code))]
 mod policy;
 pub use policy::Identity as ProcessIdentity;
 #[cfg(windows)]
 mod windows;
+#[cfg(all(windows, feature = "performance-experiments"))]
+pub(crate) use windows::inventory_benchmark;
 
 use anyhow::{Context, Result, bail, ensure};
 use gstreamer::{self as gst, prelude::*};
@@ -26,7 +29,7 @@ pub enum Choice {
     Window(ProcessIdentity),
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct Application {
     pub id: String,
     pub label: String,
@@ -61,13 +64,19 @@ pub fn applications() -> Result<Vec<Application>> {
         let owner = windows::identity(std::process::id())?;
         Ok(windows::inventory()?.applications(owner))
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     {
-        bail!("Application audio is currently available on Windows only.")
+        crate::macos::query("applications", serde_json::json!({"action":"applications"}))
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        bail!("Application audio is unavailable on this platform.")
     }
 }
 
 struct Pipeline {
+    #[cfg(target_os = "macos")]
+    _capture: crate::macos::Capture,
     pipeline: gst::Pipeline,
     sink: AppSink,
     #[cfg(windows)]
@@ -81,6 +90,7 @@ impl Drop for Pipeline {
 }
 
 impl Pipeline {
+    #[cfg(windows)]
     fn start(roots: &[policy::Identity], stop: &AtomicBool) -> Result<Self> {
         ensure!(
             !stop.load(Ordering::Acquire),
@@ -141,6 +151,57 @@ impl Pipeline {
         Ok(active)
     }
 
+    #[cfg(target_os = "macos")]
+    fn start(choice: &Choice, exclusions: &[String], stop: &AtomicBool) -> Result<Self> {
+        ensure!(
+            !stop.load(Ordering::Acquire),
+            "Audio capture was cancelled."
+        );
+        let mut request = serde_json::json!({"action":"audio","exclusions":exclusions});
+        match choice {
+            Choice::Off => bail!("Choose an application audio mode first."),
+            Choice::Desktop => {}
+            Choice::Application(id) => {
+                request["application"] = id.clone().into();
+            }
+            Choice::Window(identity) => {
+                request["pid"] = identity.pid.into();
+                request["created"] = identity.created.into();
+            }
+        }
+        let pipeline = gst::parse::launch(
+            "appsrc name=capture ! appsink name=pcm max-buffers=4 drop=true sync=false",
+        )?
+        .downcast::<gst::Pipeline>()
+        .map_err(|_| anyhow::anyhow!("Invalid macOS audio pipeline."))?;
+        let sink = pipeline
+            .by_name("pcm")
+            .context("Missing audio output.")?
+            .downcast::<AppSink>()
+            .map_err(|_| anyhow::anyhow!("Invalid audio output."))?;
+        let capture = crate::macos::Capture::attach(
+            &pipeline,
+            "capture",
+            "audio",
+            request,
+            gst::Caps::builder("audio/x-raw")
+                .field("format", "S16LE")
+                .field("rate", 48000_i32)
+                .field("channels", 2_i32)
+                .field("layout", "interleaved")
+                .build(),
+            192_000,
+            None,
+        )?;
+        let active = Self {
+            pipeline,
+            sink,
+            _capture: capture,
+        };
+        active.pipeline.set_state(gst::State::Playing)?;
+        Ok(active)
+    }
+
     fn check(&self) -> Result<()> {
         if let Some(bus) = self.pipeline.bus() {
             while let Some(message) = bus.pop() {
@@ -180,12 +241,12 @@ pub fn run(
     source: Option<NativeAudioSource>,
     duration: Option<Duration>,
 ) -> Result<Metrics> {
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = (choice, exclusions, stop, snapshot, source, duration);
         bail!("Application audio is currently available on Windows only.");
     }
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     {
         ensure!(
             choice != Choice::Off,
@@ -195,17 +256,25 @@ pub fn run(
             !stop.load(Ordering::Acquire),
             "Audio capture was cancelled."
         );
+        #[cfg(windows)]
         let owner = windows::identity(std::process::id())?;
+        #[cfg(windows)]
         let mut roots = windows::inventory()?.roots(&choice, &exclusions, owner);
+        #[cfg(windows)]
         ensure!(
             roots.len() <= 16,
             "Too many audio applications. Choose one application or exclude some from the desktop mix."
         );
+        #[cfg(windows)]
         let mut pipeline = Pipeline::start(&roots, &stop)?;
+        #[cfg(target_os = "macos")]
+        let pipeline = Pipeline::start(&choice, &exclusions, &stop)?;
         let started = Instant::now();
+        #[cfg(windows)]
         let mut refresh = Instant::now();
         let mut last_frame = Instant::now();
         let mut counters = Metrics {
+            #[cfg(windows)]
             applications: roots.len(),
             ..Default::default()
         };
@@ -215,6 +284,7 @@ pub fn run(
         while !stop.load(Ordering::Acquire)
             && duration.is_none_or(|limit| started.elapsed() < limit)
         {
+            #[cfg(windows)]
             if refresh.elapsed() >= Duration::from_millis(500) {
                 let next = windows::inventory()?.roots(&choice, &exclusions, owner);
                 ensure!(
@@ -376,7 +446,19 @@ pub fn for_source(source: &crate::sources::Source) -> Result<Choice> {
                 );
                 Ok(Choice::Window(process.identity))
             }
-            #[cfg(not(windows))]
+            #[cfg(target_os = "macos")]
+            {
+                let created = crate::macos::query(
+                    "identity",
+                    serde_json::json!({"action":"identity","id":pid}),
+                )?;
+                ensure!(
+                    created != 0,
+                    "Cannot safely identify this window audio process."
+                );
+                Ok(Choice::Window(ProcessIdentity { pid, created }))
+            }
+            #[cfg(not(any(windows, target_os = "macos")))]
             {
                 let _ = pid;
                 bail!("Application audio requires Windows.")

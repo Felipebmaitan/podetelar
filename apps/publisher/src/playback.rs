@@ -3,14 +3,12 @@ use anyhow::{Context, Result};
 use eframe::egui;
 use futures_util::StreamExt;
 use gstreamer::{self as gst, prelude::*};
-use gstreamer_app::AppSrc;
 use livekit::{
     prelude::*,
     webrtc::{
         MediaType,
         audio_stream::native::{NativeAudioStream, NativeAudioStreamOptions},
         peer_connection_factory::PeerConnectionFactory,
-        video_frame::VideoFormatType,
         video_stream::native::{NativeVideoStream, NativeVideoStreamOptions},
     },
 };
@@ -24,8 +22,130 @@ use std::{
 };
 use tokio::task::JoinHandle;
 
-pub const LIMIT_PREFIX: &str = "freedomstream.limit.";
-pub const WATCH_PREFIX: &str = "freedomstream.watch.";
+pub const LIMIT_PREFIX: &str = "podetelar.limit.";
+pub const WATCH_PREFIX: &str = "podetelar.watch.";
+use crate::codec_policy::{self, Codecs};
+pub type Picture = Arc<Mutex<Option<Arc<egui::ColorImage>>>>;
+
+#[derive(Default)]
+pub struct Presentation {
+    timing: Option<Arc<crate::av_qualification::Events>>,
+    pub diagnostics: Arc<crate::stream_diagnostics::Panel>,
+    pub overwritten: AtomicU64,
+    pub viewport: Mutex<Option<(f32, f32)>>,
+    pub width: AtomicU32,
+    pub height: AtomicU32,
+    requested: Mutex<Option<Instant>>,
+    pub converted: AtomicU64,
+    pub uploaded: AtomicU64,
+    #[cfg(feature = "performance-experiments")]
+    pub visible: AtomicBool,
+    #[cfg(feature = "performance-experiments")]
+    pub planar: Mutex<Option<Arc<crate::planar_experiment::Picture>>>,
+    #[cfg(feature = "performance-experiments")]
+    repaint: Mutex<Option<egui::Context>>,
+}
+impl Presentation {
+    pub fn request(&self) {
+        if let Ok(mut requested) = self.requested.lock() {
+            *requested = Some(Instant::now());
+        }
+    }
+    pub fn request_context(&self, ctx: &egui::Context) {
+        self.request();
+        #[cfg(feature = "performance-experiments")]
+        if frame_driven_repaint()
+            && let Ok(mut repaint) = self.repaint.lock()
+        {
+            *repaint = Some(ctx.clone());
+        }
+        #[cfg(not(feature = "performance-experiments"))]
+        let _ = ctx;
+    }
+    fn active(&self) -> bool {
+        self.requested.lock().is_ok_and(|requested| {
+            requested.is_some_and(|time| time.elapsed() < Duration::from_millis(250))
+        })
+    }
+    fn publish(&self, picture: &Picture, image: Arc<egui::ColorImage>) {
+        if let Some(timing) = &self.timing {
+            timing.video(&image);
+        }
+        self.converted.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut latest) = picture.lock() {
+            if latest.is_some() {
+                self.overwritten.fetch_add(1, Ordering::Relaxed);
+            }
+            *latest = Some(image);
+        }
+        #[cfg(feature = "performance-experiments")]
+        if frame_driven_repaint()
+            && let Ok(repaint) = self.repaint.lock()
+            && let Some(ctx) = repaint.as_ref()
+        {
+            let elapsed = self
+                .requested
+                .lock()
+                .ok()
+                .and_then(|request| request.map(|time| time.elapsed()))
+                .unwrap_or_default();
+            ctx.request_repaint_after(Duration::from_millis(16).saturating_sub(elapsed));
+        }
+    }
+}
+
+#[cfg(feature = "performance-experiments")]
+pub fn count_sdk_logs() -> Result<()> {
+    struct Counter;
+    impl log::Log for Counter {
+        fn enabled(&self, _: &log::Metadata<'_>) -> bool {
+            true
+        }
+        fn log(&self, record: &log::Record<'_>) {
+            if record.target() == "libwebrtc" {
+                SDK_MESSAGES.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        fn flush(&self) {}
+    }
+    static COUNTER: Counter = Counter;
+    log::set_logger(&COUNTER)
+        .map_err(|_| anyhow::anyhow!("Cannot enable local message counter."))?;
+    log::set_max_level(log::LevelFilter::Debug);
+    Ok(())
+}
+#[cfg(feature = "performance-experiments")]
+pub static SDK_MESSAGES: AtomicU64 = AtomicU64::new(0);
+#[cfg(feature = "performance-experiments")]
+pub static SUBSCRIPTION_SETTERS: AtomicU64 = AtomicU64::new(0);
+
+fn apply_subscription(publication: &RemoteTrackPublication, enabled: bool) {
+    if publication.is_desired() != enabled || (!enabled && publication.track().is_some()) {
+        #[cfg(feature = "performance-experiments")]
+        SUBSCRIPTION_SETTERS.fetch_add(1, Ordering::Relaxed);
+        publication.set_subscribed(enabled);
+    }
+}
+
+#[cfg(feature = "performance-experiments")]
+pub fn frame_driven_repaint() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED
+        .get_or_init(|| std::env::var("PODETELAR_FRAME_REPAINT").is_ok_and(|value| value == "1"))
+}
+#[cfg(feature = "performance-experiments")]
+fn conversion_jobs() -> Option<&'static Arc<tokio::sync::Semaphore>> {
+    static JOBS: std::sync::OnceLock<Option<Arc<tokio::sync::Semaphore>>> =
+        std::sync::OnceLock::new();
+    JOBS.get_or_init(|| {
+        std::env::var("PODETELAR_CONVERSION_WORKERS")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|workers| (1..=4).contains(workers))
+            .map(|workers| Arc::new(tokio::sync::Semaphore::new(workers)))
+    })
+    .as_ref()
+}
 
 fn accepts_encryption(
     protected: bool,
@@ -38,7 +158,6 @@ fn accepts_encryption(
     };
     tracks.into_iter().all(|actual| actual == expected)
 }
-pub type Picture = Arc<Mutex<Option<egui::ColorImage>>>;
 
 #[derive(Clone)]
 pub struct Tile {
@@ -47,6 +166,7 @@ pub struct Tile {
     pub codec: String,
     pub watching: bool,
     pub picture: Picture,
+    pub presentation: Arc<Presentation>,
     pub frames: Arc<AtomicU64>,
     pub received_bps: Arc<AtomicU64>,
     pub volume: Arc<AtomicU32>,
@@ -56,6 +176,7 @@ pub struct Tile {
 
 struct Watch {
     picture: Picture,
+    presentation: Arc<Presentation>,
     frames: Arc<AtomicU64>,
     received_bps: Arc<AtomicU64>,
     volume: Arc<AtomicU32>,
@@ -63,11 +184,49 @@ struct Watch {
     last_frame: Arc<Mutex<Instant>>,
     audio: Arc<Mutex<crate::audio::Metrics>>,
     error: Arc<Mutex<String>>,
-    h264: bool,
+    diagnostic_task: Option<Pump>,
+    admitted: bool,
     video_sid: String,
 }
 
-struct Pump(JoinHandle<()>);
+impl Watch {
+    fn admit(&mut self, admitted: bool) {
+        if admitted
+            && !self.admitted
+            && let Ok(mut last) = self.last_frame.lock()
+        {
+            *last = Instant::now();
+        }
+        self.admitted = admitted;
+    }
+    fn begin_video(
+        &mut self,
+        timing: Option<Arc<crate::av_qualification::Events>>,
+    ) -> (Picture, Arc<Presentation>) {
+        // Cancellation cannot interrupt a synchronous conversion already in
+        // progress. A replacement pump owns a new mailbox so a late old result
+        // cannot overwrite the current source/reconnect generation.
+        self.picture = Arc::default();
+        self.presentation = Arc::new(Presentation {
+            timing,
+            ..Default::default()
+        });
+        (self.picture.clone(), self.presentation.clone())
+    }
+}
+
+struct Pump(JoinHandle<()>, Instant);
+impl Pump {
+    fn new(task: JoinHandle<()>) -> Self {
+        Self(task, Instant::now() + Duration::from_secs(1))
+    }
+    fn should_wait(&self, now: Instant) -> bool {
+        !self.0.is_finished() || now < self.1
+    }
+}
+fn retain_subscribed_pumps(pumps: &mut HashMap<String, Pump>, subscribed: &HashSet<String>) {
+    pumps.retain(|sid, _| subscribed.contains(sid));
+}
 impl Drop for Pump {
     fn drop(&mut self) {
         self.0.abort();
@@ -102,6 +261,7 @@ fn received_rate(previous: &ReceivedCounters, current: &ReceivedCounters) -> Opt
 }
 
 pub struct Playback {
+    timing: Option<Arc<crate::av_qualification::Events>>,
     watches: HashMap<String, Watch>,
     pumps: HashMap<String, Pump>,
     announced: HashMap<String, String>,
@@ -120,11 +280,26 @@ pub struct Playback {
 }
 
 pub fn decoder_codecs() -> Vec<String> {
+    #[cfg(windows)]
+    let hardware = Codecs::new(
+        gst::ElementFactory::find("d3d11av1dec").is_some()
+            && std::env::var("PODETELAR_AV1_DECODER").as_deref() != Ok("software"),
+        gst::ElementFactory::find("d3d11h265dec").is_some(),
+        gst::ElementFactory::find("d3d11h264dec").is_some(),
+    );
+    // The macOS SDK factory already requires hardware VideoToolbox sessions.
+    #[cfg(target_os = "macos")]
+    let hardware = Codecs::new(true, true, true);
+    #[cfg(not(any(windows, target_os = "macos")))]
+    let hardware = Codecs::default();
     PeerConnectionFactory::default()
         .get_rtp_receiver_capabilities(MediaType::Video)
         .codecs
         .into_iter()
         .map(|codec| codec.mime_type.to_lowercase())
+        // RTP capabilities include software dav1d on Windows. Only codecs with
+        // an available platform hardware path may authorize a subscription.
+        .filter(|mime| codec_policy::from_mime(mime).is_some_and(|codec| hardware.supports(codec)))
         .collect()
 }
 
@@ -132,6 +307,7 @@ impl Playback {
     pub fn new() -> Self {
         let codecs = decoder_codecs();
         Self {
+            timing: None,
             watches: HashMap::new(),
             pumps: HashMap::new(),
             announced: HashMap::new(),
@@ -156,6 +332,12 @@ impl Playback {
         self.received.clear();
         self.announce_dirty = true;
         for watch in self.watches.values_mut() {
+            watch.diagnostic_task = None;
+            watch
+                .presentation
+                .diagnostics
+                .open
+                .store(false, Ordering::Relaxed);
             watch.since = Instant::now();
             if let Ok(mut last) = watch.last_frame.lock() {
                 *last = Instant::now();
@@ -177,11 +359,29 @@ impl Playback {
         self.measure_audio = true;
     }
 
+    pub fn set_volume(&mut self, id: &str, percent: u32) {
+        if let Some(watch) = self.watches.get(id) {
+            watch.volume.store(percent.min(100), Ordering::Relaxed);
+        }
+    }
+
+    pub fn measure_av(&mut self, timing: Arc<crate::av_qualification::Events>) {
+        self.timing = Some(timing);
+    }
+
     pub fn compatibility_only(&mut self, enabled: bool) {
         if enabled {
             self.hevc = false;
             self.av1 = false;
         }
+    }
+
+    pub fn disable_av1(&mut self) {
+        self.av1 = false;
+    }
+
+    pub fn decoders(&self) -> Codecs {
+        Codecs::new(self.av1, self.hevc, self.h264)
     }
 
     pub fn watch(&mut self, id: String, enabled: bool) -> Result<()> {
@@ -191,10 +391,11 @@ impl Playback {
             }
             anyhow::ensure!(
                 self.h264 || self.hevc || self.av1,
-                "No compatible native video decoder is available on this computer."
+                "No compatible hardware video decoder is available on this computer."
             );
             self.watches.entry(id).or_insert_with(|| Watch {
                 picture: Arc::default(),
+                presentation: Arc::default(),
                 frames: Arc::default(),
                 received_bps: Arc::default(),
                 volume: Arc::new(AtomicU32::new(100)),
@@ -202,7 +403,8 @@ impl Playback {
                 last_frame: Arc::new(Mutex::new(Instant::now())),
                 audio: Arc::default(),
                 error: Arc::default(),
-                h264: !self.hevc && !self.av1,
+                diagnostic_task: None,
+                admitted: false,
                 video_sid: String::new(),
             });
         } else {
@@ -325,8 +527,22 @@ impl Playback {
         let mut tiles = Vec::new();
         let mut pumps = HashSet::new();
         let mut announce = HashMap::new();
+        let decoders = self.decoders();
+        announce.insert(codec_policy::CAPABILITIES.to_owned(), decoders.encode());
+        announce.insert(
+            codec_policy::HARDWARE_CAPABILITIES.to_owned(),
+            decoders.encode(),
+        );
         for participant in participants.values() {
             let id = participant.identity().to_string();
+            // Preserve older publishers' capability protocol, but never derive
+            // support from missing frames or other transient playback health.
+            if self.watches.contains_key(&id) {
+                announce.insert(
+                    format!("{}{id}", codec_policy::DECODE_PREFIX),
+                    decoders.encode(),
+                );
+            }
             let publications = participant.track_publications();
             let protected_authorized =
                 accepts_encryption(
@@ -348,7 +564,7 @@ impl Playback {
                 });
             if !protected_authorized {
                 for publication in publications.values() {
-                    publication.set_subscribed(false);
+                    apply_subscription(publication, false);
                 }
                 self.previews.remove(&id);
                 // Pumps from a previously valid descriptor must stop on any downgrade.
@@ -364,11 +580,19 @@ impl Playback {
                 .values()
                 .find(|p| p.source() == TrackSource::Screenshare)
             else {
+                if let Some(watch) = self.watches.get_mut(&id) {
+                    watch.diagnostic_task = None;
+                    watch
+                        .presentation
+                        .diagnostics
+                        .open
+                        .store(false, Ordering::Relaxed);
+                }
                 for publication in publications
                     .values()
                     .filter(|p| p.source() == TrackSource::ScreenshareAudio)
                 {
-                    publication.set_subscribed(false);
+                    apply_subscription(publication, false);
                 }
                 // Retain watch intent while a codec/source replacement is in flight.
                 if self.watches.contains_key(&id) {
@@ -377,9 +601,8 @@ impl Playback {
                 continue;
             };
             live.insert(id.clone());
-            let hevc = video.mime_type().eq_ignore_ascii_case("video/h265");
-            let av1 = video.mime_type().eq_ignore_ascii_case("video/av1");
             if let Some(watch) = self.watches.get_mut(&id) {
+                watch.admit(allowed.contains(&id));
                 if watch.video_sid != video.sid().as_str() {
                     watch.video_sid = video.sid().to_string();
                     watch.since = Instant::now();
@@ -387,23 +610,15 @@ impl Playback {
                         *last = Instant::now();
                     }
                 }
-                if (hevc || av1)
-                    && watch
-                        .last_frame
-                        .lock()
-                        .is_ok_and(|last| last.elapsed() > Duration::from_secs(6))
-                {
-                    watch.h264 = true;
-                }
                 if allowed.contains(&id) {
                     announce.insert(
                         format!("{WATCH_PREFIX}{id}"),
-                        if watch.h264 || (av1 && !self.av1) || (hevc && !self.hevc) {
+                        if codec_policy::from_mime(&video.mime_type())
+                            .is_none_or(|codec| !decoders.supports(codec))
+                        {
                             "h264"
-                        } else if av1 {
-                            "av1"
                         } else {
-                            "hevc"
+                            codec_policy::name(codec_policy::from_mime(&video.mime_type()).unwrap())
                         }
                         .to_owned(),
                     );
@@ -413,7 +628,7 @@ impl Playback {
             if !self.watches.contains_key(&id) {
                 let descriptor = participant
                     .attributes()
-                    .get("freedomstream.preview.screen")
+                    .get("podetelar.preview.screen")
                     .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok());
                 if let Some(descriptor) = descriptor
                     && descriptor.get("trackSid").and_then(|v| v.as_str())
@@ -439,7 +654,7 @@ impl Playback {
                         if let Ok(image) = admission.get_preview(&owner, &requested, &sid).await
                             && let Ok(mut slot) = latest.lock()
                         {
-                            *slot = Some(image);
+                            *slot = Some(Arc::new(image));
                             complete.store(true, Ordering::Release);
                         }
                     });
@@ -448,7 +663,7 @@ impl Playback {
                         PreviewImage {
                             revision,
                             picture,
-                            job: Pump(job),
+                            job: Pump::new(job),
                             loaded,
                             attempted: Instant::now(),
                         },
@@ -456,9 +671,10 @@ impl Playback {
                 }
             }
             let watching = self.watches.contains_key(&id);
-            let compatible = self.watches.get(&id).is_some_and(|w| {
-                (!hevc && !av1) || (!w.h264 && (!av1 || self.av1) && (!hevc || self.hevc))
-            });
+            let compatible = self.watches.contains_key(&id) && {
+                codec_policy::from_mime(&video.mime_type())
+                    .is_some_and(|codec| decoders.supports(codec))
+            };
             let admitted = allowed.contains(&id);
             for publication in publications.values().filter(|p| {
                 matches!(
@@ -467,7 +683,7 @@ impl Playback {
                 )
             }) {
                 let enabled = watching && compatible && admitted;
-                publication.set_subscribed(enabled);
+                apply_subscription(publication, enabled);
                 let sid = publication.sid().to_string();
                 if !enabled {
                     continue;
@@ -481,30 +697,57 @@ impl Playback {
                 // Signaling metadata is mutable. Require the actual receiver
                 // transform before starting or retaining any protected pump.
                 if admission.protection.is_some() {
-                    let key = (participant.identity(), publication.sid());
                     if !room.e2ee_manager().enabled()
                         || !room
                             .e2ee_manager()
-                            .frame_cryptors()
-                            .get(&key)
-                            .is_some_and(|cryptor| cryptor.enabled())
+                            .frame_cryptor_enabled(participant.identity(), publication.sid())
                     {
-                        publication.set_subscribed(false);
+                        apply_subscription(publication, false);
                         self.pumps.remove(&sid);
                         continue;
                     }
                 }
                 pumps.insert(sid.clone());
-                if self.pumps.contains_key(&sid) {
+                if self
+                    .pumps
+                    .get(&sid)
+                    .is_some_and(|pump| pump.should_wait(Instant::now()))
+                {
                     continue;
                 }
-                let watch = &self.watches[&id];
+                let watch = self
+                    .watches
+                    .get_mut(&id)
+                    .context("Missing playback request.")?;
                 let task = match track {
                     RemoteTrack::Video(track) => {
-                        let picture = watch.picture.clone();
+                        let (picture, presentation) = watch.begin_video(self.timing.clone());
+                        watch.diagnostic_task =
+                            Some(Pump::new(tokio::spawn(crate::stream_diagnostics::viewer(
+                                admission.clone(),
+                                id.clone(),
+                                sid.clone(),
+                                presentation.clone(),
+                                watch.frames.clone(),
+                                watch.received_bps.clone(),
+                                track.clone(),
+                            ))));
                         let frames = watch.frames.clone();
                         let last_frame = watch.last_frame.clone();
+                        #[cfg(feature = "performance-experiments")]
+                        let lifetime = crate::resource_experiment::VideoTask::start();
                         tokio::spawn(async move {
+                            #[cfg(feature = "performance-experiments")]
+                            let _lifetime = lifetime;
+                            let mut image_pool = crate::video_image::ImagePool::default();
+                            #[cfg(feature = "performance-experiments")]
+                            let pooled = std::env::var("PODETELAR_IMAGE_POOL")
+                                .is_ok_and(|value| value == "1");
+                            #[cfg(not(feature = "performance-experiments"))]
+                            let pooled = true;
+                            #[cfg(feature = "performance-experiments")]
+                            let fallback = std::env::var("PODETELAR_IMAGE_FALLBACK")
+                                .is_ok_and(|value| value == "1");
                             let mut stream = NativeVideoStream::with_options(
                                 track.rtc_track(),
                                 NativeVideoStreamOptions {
@@ -512,6 +755,10 @@ impl Playback {
                                 },
                             );
                             while let Some(frame) = stream.next().await {
+                                // Bound each poll to one frame even when the
+                                // latest-frame queue stays ready under load.
+                                // Abort/control/audio work must get a turn.
+                                tokio::task::yield_now().await;
                                 let width = frame.buffer.width();
                                 let height = frame.buffer.height();
                                 if width > 3840
@@ -520,43 +767,120 @@ impl Playback {
                                 {
                                     break;
                                 }
-                                let mut rgba = vec![0; width as usize * height as usize * 4];
-                                frame.buffer.to_argb(
-                                    VideoFormatType::ABGR,
-                                    &mut rgba,
-                                    width * 4,
-                                    width as i32,
-                                    height as i32,
-                                );
-                                let image = egui::ColorImage::from_rgba_unmultiplied(
-                                    [width as usize, height as usize],
-                                    &rgba,
-                                );
-                                if let Ok(mut latest) = picture.lock() {
-                                    *latest = Some(image);
-                                }
+                                presentation.width.store(width, Ordering::Relaxed);
+                                presentation.height.store(height, Ordering::Relaxed);
                                 frames.fetch_add(1, Ordering::Relaxed);
                                 if let Ok(mut last) = last_frame.lock() {
                                     *last = Instant::now();
                                 }
+                                if !presentation.active() {
+                                    #[cfg(feature = "performance-experiments")]
+                                    if let Ok(mut latest) = presentation.planar.lock() {
+                                        *latest = None;
+                                    }
+                                    if let Ok(mut latest) = picture.lock() {
+                                        *latest = None;
+                                    }
+                                    image_pool.clear();
+                                    continue;
+                                }
+                                #[cfg(feature = "performance-experiments")]
+                                let frame = if crate::planar_experiment::enabled() {
+                                    match crate::planar_experiment::Picture::prepare(frame.buffer) {
+                                        Ok(planar) => {
+                                            image_pool.clear();
+                                            // Never let an older RGBA mailbox replace this newer planar frame.
+                                            if let Ok(mut latest) = picture.lock() {
+                                                *latest = None;
+                                            }
+                                            presentation.converted.fetch_add(1, Ordering::Relaxed);
+                                            if let Ok(mut latest) = presentation.planar.lock() {
+                                                *latest = Some(planar);
+                                            }
+                                            continue;
+                                        }
+                                        Err(buffer) => {
+                                            if let Ok(mut latest) = presentation.planar.lock() {
+                                                *latest = None;
+                                            }
+                                            livekit::webrtc::video_frame::VideoFrame {
+                                                buffer,
+                                                ..frame
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    frame
+                                };
+                                if pooled {
+                                    let mut image = image_pool.convert(frame.buffer.as_ref());
+                                    if image.is_none() {
+                                        // Release an overwritten mailbox image before retrying;
+                                        // an egui-owned image still prevents exclusive mutation.
+                                        if let Ok(mut latest) = picture.lock() {
+                                            *latest = None;
+                                        }
+                                        image = image_pool.convert(frame.buffer.as_ref());
+                                    }
+                                    #[cfg(feature = "performance-experiments")]
+                                    let image = image.or_else(|| {
+                                        if fallback {
+                                            image_pool.allocate_fallback(frame.buffer.as_ref())
+                                        } else {
+                                            None
+                                        }
+                                    });
+                                    if let Some(image) = image {
+                                        presentation.publish(&picture, image);
+                                    } else if let Ok(mut latest) = picture.lock() {
+                                        *latest = None;
+                                    }
+                                    continue;
+                                }
+                                #[cfg(feature = "performance-experiments")]
+                                let image = if let Some(jobs) = conversion_jobs() {
+                                    let Ok(permit) = jobs.clone().acquire_owned().await else {
+                                        break;
+                                    };
+                                    let Ok(image) = tokio::task::spawn_blocking(move || {
+                                        let _permit = permit;
+                                        crate::video_image::to_color_image(frame.buffer.as_ref())
+                                    })
+                                    .await
+                                    else {
+                                        break;
+                                    };
+                                    image
+                                } else {
+                                    crate::video_image::to_color_image(frame.buffer.as_ref())
+                                };
+                                #[cfg(not(feature = "performance-experiments"))]
+                                let image =
+                                    crate::video_image::to_color_image(frame.buffer.as_ref());
+                                presentation.publish(&picture, Arc::new(image));
                             }
                         })
                     }
                     RemoteTrack::Audio(track) => {
+                        let generation = track.native_playback_generation();
                         let volume = watch.volume.clone();
                         let metrics = watch.audio.clone();
+                        watch.error = Arc::default();
                         let error = watch.error.clone();
                         let measure = self.measure_audio;
                         tokio::spawn(async move {
-                            if audio(track, volume, metrics, measure).await.is_err()
+                            if audio(track, generation, volume, metrics, measure, error.clone())
+                                .await
+                                .is_err()
                                 && let Ok(mut message) = error.lock()
                             {
-                                *message = "Native audio playback failed. Check the output device and rejoin.".into();
+                                *message =
+                                    "Audio output is unavailable. Retrying automatically.".into();
                             }
                         })
                     }
                 };
-                self.pumps.insert(sid, Pump(task));
+                self.pumps.insert(sid, Pump::new(task));
             }
             let watch = self.watches.get(&id);
             tiles.push(Tile {
@@ -568,6 +892,7 @@ impl Playback {
                     .map(|w| w.picture.clone())
                     .or_else(|| self.previews.get(&id).map(|preview| preview.picture.clone()))
                     .unwrap_or_default(),
+                presentation: watch.map(|w| w.presentation.clone()).unwrap_or_default(),
                 frames: watch.map(|w| w.frames.clone()).unwrap_or_default(),
                 received_bps: watch.map(|w|w.received_bps.clone()).unwrap_or_default(),
                 audio: watch.map(|w| w.audio.clone()).unwrap_or_default(),
@@ -577,7 +902,7 @@ impl Playback {
                 status: if watching && !admitted {
                     "Paused by your watching budget. Stop another stream or adjust the connection limit.".into()
                 } else if watching && !compatible {
-                    "Switching to H.264 compatibility…".into()
+                    "Negotiating a compatible codec…".into()
                 } else if let Some(watch) = watch {
                     let error = watch.error.lock().map(|e| e.clone()).unwrap_or_default();
                     if !error.is_empty() { error } else if watch.last_frame.lock().is_ok_and(|last| last.elapsed() > Duration::from_secs(12)) {
@@ -588,8 +913,17 @@ impl Playback {
         }
         self.previews.retain(|id, _| live.contains(id));
         self.watches.retain(|id, _| live.contains(id));
-        self.pumps
-            .retain(|sid, pump| pumps.contains(sid) && !pump.0.is_finished());
+        retain_subscribed_pumps(&mut self.pumps, &pumps);
+        for watch in self.watches.values_mut() {
+            if !self.pumps.contains_key(&watch.video_sid) {
+                watch.diagnostic_task = None;
+                watch
+                    .presentation
+                    .diagnostics
+                    .open
+                    .store(false, Ordering::Relaxed);
+            }
+        }
         if announce != self.announced || self.announce_dirty {
             let mut changes = announce.clone();
             for key in self.announced.keys() {
@@ -614,7 +948,7 @@ impl Playback {
     }
 }
 
-pub(crate) struct AudioPipeline(gst::Pipeline);
+pub(crate) struct AudioPipeline(pub(crate) gst::Pipeline);
 impl Drop for AudioPipeline {
     fn drop(&mut self) {
         let _ = self.0.set_state(gst::State::Null);
@@ -623,100 +957,135 @@ impl Drop for AudioPipeline {
 
 async fn audio(
     track: RemoteAudioTrack,
+    generation: u64,
     volume: Arc<AtomicU32>,
     metrics: Arc<Mutex<crate::audio::Metrics>>,
     measure: bool,
+    status: Arc<Mutex<String>>,
 ) -> Result<()> {
-    let pipeline = gst::parse::launch("appsrc name=pcm is-live=true format=time do-timestamp=true block=false max-bytes=38400 ! audio/x-raw,format=S16LE,rate=48000,channels=2,layout=interleaved ! queue name=backlog max-size-time=100000000 max-size-bytes=38400 max-size-buffers=10 leaky=downstream ! audioconvert ! audioresample ! volume name=level ! wasapi2sink low-latency=true sync=false")?
-        .downcast::<gst::Pipeline>().map_err(|_| anyhow::anyhow!("Invalid native playback pipeline."))?;
-    let pipeline = AudioPipeline(pipeline);
-    let input = pipeline
-        .0
-        .by_name("pcm")
-        .context("Missing audio playback input.")?
-        .downcast::<AppSrc>()
-        .map_err(|_| anyhow::anyhow!("Invalid playback input."))?;
-    let level = pipeline
-        .0
-        .by_name("level")
-        .context("Missing playback volume.")?;
-    let backlog = pipeline
-        .0
-        .by_name("backlog")
-        .context("Missing playback queue.")?;
-    pipeline.0.set_state(gst::State::Playing)?;
-    let mut stream = NativeAudioStream::with_options(
-        track.rtc_track(),
-        48000,
-        2,
-        NativeAudioStreamOptions {
-            queue_size_frames: Some(5),
-        },
-    );
+    let Some(playing) = crate::native_output::PlayingTrack::new(
+        track.clone(),
+        generation,
+        volume.load(Ordering::Relaxed),
+    )?
+    else {
+        return Ok(());
+    };
+    // WebRTC already renders through the native mixer. Only diagnostics need a
+    // second PCM sink, which copies each frame into Rust and wakes the executor.
+    let mut stream = if measure || cfg!(feature = "performance-experiments") {
+        NativeAudioStream::with_options(
+            track.rtc_track(),
+            48000,
+            2,
+            NativeAudioStreamOptions {
+                queue_size_frames: Some(5),
+            },
+        )
+        .left_stream()
+    } else {
+        futures_util::stream::pending().right_stream()
+    };
+    let mut refresh = tokio::time::interval(Duration::from_millis(50));
     let mut meter = crate::audio::Meter::default();
-    while let Some(frame) = stream.next().await {
-        if let Some(message) = pipeline
-            .0
-            .bus()
-            .and_then(|bus| bus.pop_filtered(&[gst::MessageType::Error]))
-        {
-            let _ = message;
-            anyhow::bail!("Audio output failed.");
-        }
-        if let Ok(mut metrics) = metrics.lock() {
-            let queue_ns: u64 = backlog.property("current-level-time");
-            metrics.playback_queue_ms =
-                input.current_level_bytes() as f64 / 192.0 + queue_ns as f64 / 1_000_000.0;
-            metrics.playback_queue_max_ms =
-                metrics.playback_queue_max_ms.max(metrics.playback_queue_ms);
-            if input.current_level_bytes() > 38400 {
-                metrics.playback_dropped_frames += 1;
+    loop {
+        tokio::select! {
+            _ = refresh.tick() => {
+                match playing.refresh(volume.load(Ordering::Relaxed))? {
+                    crate::native_output::OutputState::Ended => break,
+                    state => if let Ok(mut message) = status.lock() {
+                        *message = if state == crate::native_output::OutputState::Playing { String::new() }
+                            else { "Audio output is unavailable. Retrying automatically.".into() };
+                    }
+                }
             }
-            metrics.frames += frame.samples_per_channel as u64;
-            for channels in frame.data.chunks_exact(2) {
-                metrics.peak = metrics
-                    .peak
-                    .max(channels[0].unsigned_abs() as f64 / 32768.0);
-                metrics.channel_difference_peak = metrics
-                    .channel_difference_peak
-                    .max((channels[0] as f64 - channels[1] as f64).abs() / 32768.0);
-            }
-            if measure {
-                meter.push(&frame.data, &mut metrics.tones);
+            frame = stream.next() => {
+                let Some(frame) = frame else { break };
+                if let Ok(mut metrics) = metrics.lock() {
+                    metrics.frames += frame.samples_per_channel as u64;
+                    for channels in frame.data.chunks_exact(2) {
+                        metrics.peak = metrics.peak.max(channels[0].unsigned_abs() as f64 / 32768.0);
+                        metrics.channel_difference_peak = metrics.channel_difference_peak.max(
+                            (channels[0] as f64 - channels[1] as f64).abs() / 32768.0,
+                        );
+                    }
+                    if measure { meter.push(&frame.data, &mut metrics.tones); }
+                }
             }
         }
-        level.set_property("volume", volume.load(Ordering::Relaxed) as f64 / 100.0);
-        if input.current_level_bytes() > 38400 {
-            continue;
-        }
-        let bytes: Vec<u8> = frame
-            .data
-            .iter()
-            .flat_map(|sample| sample.to_le_bytes())
-            .collect();
-        input.push_buffer(gst::Buffer::from_mut_slice(bytes))?;
     }
     Ok(())
 }
 
-/// Only a participant actively requesting this publication can trigger fallback.
-pub fn needs_h264(room: &Room) -> bool {
-    let key = format!("{WATCH_PREFIX}{}", room.local_participant().identity());
-    room.remote_participants()
-        .values()
-        .any(|p| p.attributes().get(&key).is_some_and(|v| v == "h264"))
+// Historical GStreamer comparison fixture; standard stream playback uses WebRTC.
+// low-latency optimizes the WASAPI device period, but does not bound the
+// GstAudioBaseSink ring buffer. Its 200 ms default is additional to NetEQ and
+// the appsrc/backlog queues and is invisible to playback_queue_ms. Keep a
+// small requested cushion without retaining that default-sized audio tail.
+// Actual device buffering may be rounded up by the driver. This is a latency
+// bound request, not a physical A/V synchronization guarantee.
+pub(crate) fn audio_pipeline() -> Result<AudioPipeline> {
+    let pipeline = gst::parse::launch("appsrc name=pcm is-live=true format=time do-timestamp=true block=false max-bytes=38400 ! audio/x-raw,format=S16LE,rate=48000,channels=2,layout=interleaved ! queue name=backlog max-size-time=100000000 max-size-bytes=38400 max-size-buffers=10 leaky=downstream ! audioconvert ! audioresample ! volume name=level ! wasapi2sink name=device low-latency=true buffer-time=40000 sync=false")?
+        .downcast::<gst::Pipeline>().map_err(|_| anyhow::anyhow!("Invalid native playback pipeline."))?;
+    Ok(AudioPipeline(pipeline))
+}
+
+pub(crate) fn audio_buffer(samples: Vec<i16>) -> gst::Buffer {
+    #[cfg(target_endian = "little")]
+    {
+        struct Samples(Vec<i16>);
+        impl AsMut<[u8]> for Samples {
+            fn as_mut(&mut self) -> &mut [u8] {
+                bytemuck::cast_slice_mut(&mut self.0)
+            }
+        }
+        gst::Buffer::from_mut_slice(Samples(samples))
+    }
+    #[cfg(not(target_endian = "little"))]
+    gst::Buffer::from_mut_slice(
+        samples
+            .into_iter()
+            .flat_map(i16::to_le_bytes)
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// Every connected member constrains hardware compatibility, including previews.
+/// None means pending/older capabilities, never an inferred H.264-only decoder.
+pub fn room_codecs(room: &Room) -> Option<Codecs> {
+    Codecs::common(room.remote_participants().values().map(|participant| {
+        participant
+            .attributes()
+            .get(codec_policy::HARDWARE_CAPABILITIES)
+            .and_then(|value| Codecs::parse(value))
+    }))
 }
 
 /// A bounded, quiet local fixture exercises exclusion of our native playback process.
 pub fn qualification_tone() -> Result<AudioPipeline> {
-    let pipeline = gst::parse::launch("audiotestsrc is-live=true freq=1320 volume=0.02 samplesperbuffer=480 ! audio/x-raw,rate=48000,channels=2 ! wasapi2sink low-latency=true")?
+    let sink = if cfg!(target_os = "macos") {
+        "osxaudiosink"
+    } else {
+        "wasapi2sink low-latency=true"
+    };
+    let pipeline = gst::parse::launch(&format!("audiotestsrc is-live=true freq=1320 volume=0.02 samplesperbuffer=480 ! audio/x-raw,rate=48000,channels=2 ! {sink}"))?
         .downcast::<gst::Pipeline>().map_err(|_| anyhow::anyhow!("Invalid playback fixture."))?;
     let pipeline = AudioPipeline(pipeline);
     pipeline.0.set_state(gst::State::Playing).map_err(|_| {
-        let kind = pipeline.0.bus().and_then(|bus| bus.pop_filtered(&[gst::MessageType::Error])).and_then(|message| {
-            if let gst::MessageView::Error(error) = message.view() { error.error().kind::<gst::ResourceError>() } else { None }
-        });
-        anyhow::anyhow!("Native audio output could not start ({kind:?}). Check the default Windows playback device.")
+        let kind = pipeline
+            .0
+            .bus()
+            .and_then(|bus| bus.pop_filtered(&[gst::MessageType::Error]))
+            .and_then(|message| {
+                if let gst::MessageView::Error(error) = message.view() {
+                    error.error().kind::<gst::ResourceError>()
+                } else {
+                    None
+                }
+            });
+        anyhow::anyhow!(
+            "Native audio output could not start ({kind:?}). Check the default playback device."
+        )
     })?;
     Ok(pipeline)
 }
@@ -761,6 +1130,71 @@ mod tests {
         }
         assert!(!accepts_encryption(false, [Gcm]));
         assert!(!accepts_encryption(true, [None]));
+    }
+
+    #[tokio::test]
+    async fn completed_subscribed_task_retains_backoff_until_replacement_is_due() {
+        let task = tokio::spawn(async {});
+        let mut tasks = HashMap::from([("audio".to_owned(), Pump::new(task))]);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !tasks["audio"].0.is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("fixture task completes");
+        let id = tasks["audio"].0.id();
+        let deadline = tasks["audio"].1;
+        retain_subscribed_pumps(&mut tasks, &HashSet::from(["audio".to_owned()]));
+        assert_eq!(tasks["audio"].0.id(), id);
+        assert!(tasks["audio"].should_wait(deadline - Duration::from_millis(1)));
+        assert!(!tasks["audio"].should_wait(deadline));
+        retain_subscribed_pumps(&mut tasks, &HashSet::new());
+        assert!(
+            tasks.is_empty(),
+            "unsubscription still discards the task immediately"
+        );
+    }
+    #[test]
+    fn replacement_video_keeps_late_old_results_out_of_the_current_mailbox() {
+        let mut watch = Watch {
+            picture: Arc::default(),
+            presentation: Arc::default(),
+            frames: Arc::new(AtomicU64::new(7)),
+            received_bps: Arc::default(),
+            volume: Arc::new(AtomicU32::new(80)),
+            since: Instant::now(),
+            last_frame: Arc::new(Mutex::new(Instant::now())),
+            audio: Arc::default(),
+            error: Arc::default(),
+            diagnostic_task: None,
+            admitted: false,
+            video_sid: "synthetic-track".into(),
+        };
+        let (old_picture, old_presentation) = watch.begin_video(None);
+        let (current_picture, current_presentation) = watch.begin_video(None);
+        current_presentation.publish(
+            &current_picture,
+            Arc::new(egui::ColorImage::filled([2, 2], egui::Color32::RED)),
+        );
+        old_presentation.publish(
+            &old_picture,
+            Arc::new(egui::ColorImage::filled([2, 2], egui::Color32::BLACK)),
+        );
+        assert!(Arc::ptr_eq(&watch.picture, &current_picture));
+        assert_eq!(
+            watch.picture.lock().unwrap().as_ref().unwrap().pixels[0],
+            egui::Color32::RED
+        );
+        assert_eq!(
+            old_picture.lock().unwrap().as_ref().unwrap().pixels[0],
+            egui::Color32::BLACK
+        );
+        assert_eq!(watch.frames.load(Ordering::Relaxed), 7);
+        assert_eq!(watch.volume.load(Ordering::Relaxed), 80);
+        *watch.last_frame.lock().unwrap() = Instant::now() - Duration::from_secs(20);
+        watch.admit(true);
+        assert!(watch.last_frame.lock().unwrap().elapsed() < Duration::from_secs(1));
     }
     #[test]
     fn received_bitrate_uses_actual_elapsed_time_and_handles_counter_reset() {

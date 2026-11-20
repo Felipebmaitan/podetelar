@@ -1,10 +1,13 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import type { UsagePoint, UsageReport } from "@freedomstream/contracts";
+import type { UsagePoint, UsageReport } from "@podetelar/contracts";
 import { ApiError, request } from "./api";
 import { dataSize, periodRange, speed, type Period } from "./usage";
 import "./admin.css";
 import { AdminRooms } from "./AdminRooms";
+import { AdminProfiles } from "./AdminProfiles";
+import { AdminDiscord } from "./AdminDiscord";
+import { BrandMark } from "./BrandMark";
 
 const periods: Period[] = [
   "Real time",
@@ -26,7 +29,9 @@ export function Admin() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [section, setSection] = useState<"usage" | "rooms">("usage");
+  const [section, setSection] = useState<
+    "usage" | "rooms" | "profiles" | "discord"
+  >("rooms");
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     const abort = new AbortController();
@@ -65,7 +70,7 @@ export function Admin() {
     try {
       await request("/api/admin/logout", { method: "POST" });
       setAuth("login");
-      setSection("usage");
+      setSection("rooms");
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -73,14 +78,17 @@ export function Admin() {
     }
   };
   return (
-    <div className="admin-shell">
+    <div
+      className={`admin-shell ${auth === "ready" ? "admin-authenticated" : ""}`}
+    >
       <header className="admin-header">
         <a href="/" className="admin-brand">
-          FreedomStream
+          <BrandMark className="admin-brand-mark" />
+          PodeTelar
         </a>
         {auth === "ready" && (
           <div>
-            <span>Administrator</span>
+            <span>Private administration</span>
             <button onClick={() => void logout()} disabled={busy}>
               Sign out
             </button>
@@ -98,19 +106,46 @@ export function Admin() {
           </div>
           <nav className="admin-nav" aria-label="Administration sections">
             <button
-              aria-pressed={section === "usage"}
-              onClick={() => setSection("usage")}
+              aria-pressed={section === "discord"}
+              onClick={() => setSection("discord")}
             >
-              Usage
+              Discord
             </button>
+            <p>Administration</p>
             <button
               aria-pressed={section === "rooms"}
               onClick={() => setSection("rooms")}
             >
               Rooms
             </button>
+            <button
+              aria-pressed={section === "profiles"}
+              onClick={() => setSection("profiles")}
+            >
+              Guest profiles
+            </button>
+            <button
+              aria-pressed={section === "usage"}
+              onClick={() => setSection("usage")}
+            >
+              Usage
+            </button>
           </nav>
-          {section === "usage" ? (
+          {section === "discord" ? (
+            <AdminDiscord
+              onExpired={() => {
+                setAuth("login");
+                setError("Your session expired. Sign in again.");
+              }}
+            />
+          ) : section === "profiles" ? (
+            <AdminProfiles
+              onExpired={() => {
+                setAuth("login");
+                setError("Your session expired. Sign in again.");
+              }}
+            />
+          ) : section === "usage" ? (
             <Dashboard
               onExpired={() => {
                 setAuth("login");
@@ -402,16 +437,16 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
           <section className="admin-users">
             <div className="admin-section-heading">
               <div>
-                <h2>Usage by user</h2>
-                <p>When each user was active and how much they transferred</p>
+                <h2>Usage by PC</h2>
+                <p>Combined traffic across rooms, sessions and app instances</p>
               </div>
               <span>
-                {data.userCount} {data.userCount === 1 ? "session" : "sessions"}
+                {data.userCount} {data.userCount === 1 ? "entry" : "entries"}
               </span>
             </div>
             {data.users.length === 0 ? (
               <div className="admin-panel admin-empty">
-                No measured user traffic in this period.
+                No measured PC traffic in this period.
               </div>
             ) : (
               <div className="admin-user-grid">
@@ -419,8 +454,10 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
                   <article key={user.id} className="admin-panel admin-user">
                     <div className="admin-user-heading">
                       <h3>{user.displayName}</h3>
-                      <span title={`Room ${user.roomId} · Session ${user.id}`}>
-                        Session {user.id.slice(0, 8)}
+                      <span title={user.id}>
+                        {user.identityKind === "device"
+                          ? `PC ${user.id.slice(4, 16)}`
+                          : `Unidentified session ${user.id.slice(0, 8)}`}
                       </span>
                     </div>
                     <div className="admin-user-totals">
@@ -438,6 +475,45 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
                       label={`${user.displayName} traffic`}
                       compact
                     />
+                    <details className="admin-session-details">
+                      <summary>
+                        {user.sessionCount}{" "}
+                        {user.sessionCount === 1 ? "session" : "sessions"} in
+                        this period
+                      </summary>
+                      <p className="admin-device-id">
+                        {user.identityKind === "device"
+                          ? "PC identifier"
+                          : "Session identifier"}
+                        : <code>{user.id}</code>
+                      </p>
+                      {user.sessions.length < user.sessionCount && (
+                        <p>
+                          Showing the latest {user.sessions.length} sessions.
+                          Totals include all {user.sessionCount}.
+                        </p>
+                      )}
+                      <ul>
+                        {user.sessions.map((session) => (
+                          <li key={session.id}>
+                            <strong>{session.displayName}</strong>
+                            <span>
+                              {session.admittedAt
+                                ? new Date(session.admittedAt).toLocaleString()
+                                : "Admission time unavailable"}
+                            </span>
+                            <span>
+                              Uploaded {dataSize(session.uploadedBytes)} ·
+                              Downloaded {dataSize(session.downloadedBytes)}
+                            </span>
+                            <span>
+                              Room <code>{session.roomId}</code> · Session{" "}
+                              <code>{session.id}</code>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
                   </article>
                 ))}
               </div>
@@ -463,10 +539,11 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
             <p>Upload = user → server · Download = server → user</p>
             <p>Speed in Mb/s · Data in MB or GB</p>
             <p>
-              Users are room sessions; returning with a new session creates a
-              separate entry. Media counters include retransmissions; HTTPS and
-              relay overhead are excluded. History is retained for{" "}
-              {data.retentionDays} days.
+              PCs are recognized by a persistent, server-scoped identifier, not
+              a verified person. Older clients and history without a PC
+              identifier remain separate unidentified sessions. Media counters
+              include retransmissions; HTTPS and relay overhead are excluded.
+              History is retained for {data.retentionDays} days.
             </p>
             {data.lastSampleAt && (
               <p>

@@ -15,7 +15,7 @@ const origin = "http://localhost:5173";
 const key = "test-server-access-key-not-for-production";
 const secret = "test-media-signing-secret-not-for-production";
 async function fixture(t: TestContext) {
-  const path = mkdtempSync(join(tmpdir(), "freedomstream-access-"));
+  const path = mkdtempSync(join(tmpdir(), "podetelar-access-"));
   const config = loadConfig({
     PUBLIC_URL: origin,
     ADMIN_TOKEN: key,
@@ -28,6 +28,9 @@ async function fixture(t: TestContext) {
   let unavailable = false;
   const removed: string[] = [];
   const mediaDirectory = {
+    async members() {
+      return [];
+    },
     async participant() {
       return null;
     },
@@ -45,7 +48,7 @@ async function fixture(t: TestContext) {
       dirname(resolved).toLowerCase(),
       realpathSync(tmpdir()).toLowerCase(),
     );
-    assert.ok(basename(resolved).startsWith("freedomstream-access-"));
+    assert.ok(basename(resolved).startsWith("podetelar-access-"));
     rmSync(resolved, { recursive: true });
   });
   const admin = { origin, authorization: `Bearer ${key}` };
@@ -178,7 +181,7 @@ test("revoked token replay and refreshed tokens are denied; an unrelated session
     identity: friend.identity,
     ttl: 3600,
   });
-  refreshed.addGrant({ roomJoin: true, room: `freedomstream_${f.room}` });
+  refreshed.addGrant({ roomJoin: true, room: `podetelar_${f.room}` });
   assert.equal((await validate(await refreshed.toJwt())).statusCode, 401);
   const remaining = await f.app.inject({
     method: "POST",
@@ -243,7 +246,7 @@ test("expired sessions queue media removal instead of silently pruning authority
 });
 
 test("persisted retry scheduling gives a newer removal a turn behind 128 repeated failures", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "freedomstream-fairness-"));
+  const directory = mkdtempSync(join(tmpdir(), "podetelar-fairness-"));
   const path = join(directory, "rooms.db");
   let rooms = new Rooms(path);
   const identities: string[] = [];
@@ -251,6 +254,9 @@ test("persisted retry scheduling gives a newer removal a turn behind 128 repeate
     peak = 0;
   const attempts: string[] = [];
   const media = {
+    async members() {
+      return [];
+    },
     async participant() {
       return null;
     },
@@ -299,7 +305,7 @@ test("persisted retry scheduling gives a newer removal a turn behind 128 repeate
       dirname(resolved).toLowerCase(),
       realpathSync(tmpdir()).toLowerCase(),
     );
-    assert.ok(basename(resolved).startsWith("freedomstream-fairness-"));
+    assert.ok(basename(resolved).startsWith("podetelar-fairness-"));
     rmSync(resolved, { recursive: true });
   }
 });

@@ -11,7 +11,7 @@ import { Rooms } from "../src/rooms.js";
 const password = "test-room-administrator-not-for-production";
 const origin = "https://admin.example";
 test("admin room directory and creation require current admin authority and persist private invitations", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "freedomstream-admin-rooms-"));
+  const dir = mkdtempSync(join(tmpdir(), "podetelar-admin-rooms-"));
   const config = loadConfig({
     PUBLIC_URL: origin,
     ADMIN_TOKEN: password,
@@ -139,14 +139,21 @@ test("admin room directory and creation require current admin authority and pers
     assert.equal(new Set(all.map((room) => room.id)).size, 51);
     assert.deepEqual(
       all.find((room) => room.id === body.room.id),
-      { ...body.room, invitationEnabled: true },
+      {
+        ...body.room,
+        invitationEnabled: true,
+        members: [],
+        presence: "unavailable",
+      },
     );
     assert.ok(!JSON.stringify(all).includes(secret));
     assert.deepEqual(Object.keys(all[0]).sort(), [
       "createdAt",
       "id",
       "invitationEnabled",
+      "members",
       "name",
+      "presence",
     ]);
     for (const offset of ["-1", "1.2", "abc", "9999999999"])
       assert.equal(
@@ -225,7 +232,7 @@ test("admin room directory and creation require current admin authority and pers
     await app.close();
     const resolved = realpathSync(dir);
     assert.equal(dirname(resolved), realpathSync(tmpdir()));
-    assert.ok(basename(resolved).startsWith("freedomstream-admin-rooms-"));
+    assert.ok(basename(resolved).startsWith("podetelar-admin-rooms-"));
     rmSync(resolved, { recursive: true });
   }
 });

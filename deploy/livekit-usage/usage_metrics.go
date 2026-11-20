@@ -1,4 +1,4 @@
-// Copyright FreedomStream contributors. MIT licensed.
+// Copyright PodeTelar contributors. MIT licensed.
 // This file extends the separately Apache-2.0-licensed LiveKit server.
 package telemetry
 
@@ -24,9 +24,9 @@ type usageCollector struct {
 var participantUsage = &usageCollector{
 	values:      make(map[usageKey]usageValue),
 	started:     float64(time.Now().UnixNano()) / 1e9,
-	bytesDesc:   prom.NewDesc("freedomstream_participant_bytes_total", "SFU media/data bytes by admitted participant, including retransmissions", []string{"room", "participant", "direction"}, nil),
-	enabledDesc: prom.NewDesc("freedomstream_usage_enabled", "FreedomStream collector version", nil, nil),
-	startedDesc: prom.NewDesc("freedomstream_usage_started_seconds", "Collector process start time", nil, nil),
+	bytesDesc:   prom.NewDesc("podetelar_participant_bytes_total", "SFU media/data bytes by admitted participant, including retransmissions", []string{"room", "participant", "direction"}, nil),
+	enabledDesc: prom.NewDesc("podetelar_usage_enabled", "PodeTelar collector version", nil, nil),
+	startedDesc: prom.NewDesc("podetelar_usage_started_seconds", "Collector process start time", nil, nil),
 }
 
 func init() { prom.MustRegister(participantUsage) }

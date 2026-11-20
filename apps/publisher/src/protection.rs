@@ -15,7 +15,7 @@ use ring::{
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Mutex};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 pub const PREFIX: &str = "FSPRIVATE1:";
 pub const ATTRIBUTE: &str = "freedomstream.e2ee.v1";
@@ -47,6 +47,11 @@ mod tests {
     fn secret(invite: &str) -> RoomSecret {
         unwrap_invitation(invite).unwrap().1.unwrap()
     }
+    fn root(invite: &str) -> String {
+        serde_json::from_slice::<InvitationEnvelope>(&B64.decode(&invite[PREFIX.len()..]).unwrap())
+            .unwrap()
+            .root
+    }
     fn descriptor(session: &Session) -> String {
         serde_json::to_string(&session.local).unwrap()
     }
@@ -62,9 +67,46 @@ mod tests {
         assert!(protect_invitation(&invite).is_err());
         assert!(unwrap_invitation("FSPRIVATE1:malformed").is_err());
         let replaced = replace_invitation(&invite).unwrap();
-        assert!(secret(&invite).root.as_ref() != secret(&replaced).root.as_ref());
+        assert!(root(&invite) != root(&replaced));
         assert_eq!(unwrap_invitation(&replaced).unwrap().0, legacy());
         assert!(replace_invitation(&legacy()).is_err());
+    }
+
+    #[test]
+    fn v1_keys_match_independent_hkdf_sha256_vectors() {
+        // Public synthetic vector, calculated independently with Python's hmac.digest.
+        let envelope = InvitationEnvelope {
+            version: 1,
+            invitation: legacy(),
+            root: B64.encode([0x11; 32]),
+            generation: B64.encode([0x22; 32]),
+        };
+        let invite = format!(
+            "{PREFIX}{}",
+            B64.encode(serde_json::to_vec(&envelope).unwrap())
+        );
+        let receiver = Session::new(secret(&invite), B.into()).unwrap();
+        let descriptor = Descriptor {
+            version: 1,
+            identity: A.into(),
+            session: B64.encode([0x33; 32]),
+            tag: "auLN2U58rWnk7K4jJ3wwPxkbOyD2YH9hJBXTat15N4g".into(),
+        };
+        assert!(receiver.authorize(A, Some(&serde_json::to_string(&descriptor).unwrap())));
+        assert_eq!(
+            B64.encode(receiver.secret.media_key(&descriptor).unwrap().as_ref()),
+            "VchIoursuUF_9-9qvHj_2wjUIwH0yO_HblJ0_7J3gdI"
+        );
+        assert_eq!(
+            B64.encode(
+                receiver
+                    .preview_key(&descriptor, "TR_fixture")
+                    .unwrap()
+                    .0
+                    .as_ref()
+            ),
+            "8_q1aYwg9Sk3MrOohMd5i463XtTvZ4tmZEADMjDCrKs"
+        );
     }
 
     #[test]
@@ -160,6 +202,20 @@ mod tests {
         let mut tampered = encrypted.clone();
         *tampered.last_mut().unwrap() ^= 1;
         assert!(receiver.open_preview(A, "TR_fixture", tampered).is_err());
+        assert!(receiver.authorize(A, Some(&raw)));
+        assert!(!receiver.authorize(A, None));
+        assert!(
+            receiver
+                .open_preview(A, "TR_fixture", encrypted.clone())
+                .is_err()
+        );
+        assert!(receiver.authorize(A, Some(&raw)));
+        assert!(!receiver.authorize(A, Some(&format!("{raw}junk"))));
+        assert!(
+            receiver
+                .open_preview(A, "TR_fixture", encrypted.clone())
+                .is_err()
+        );
         let again = publisher.seal_preview("TR_fixture", plain).unwrap();
         assert_ne!(&encrypted[4..16], &again[4..16]);
         assert!(
@@ -178,7 +234,7 @@ mod tests {
     fn descriptors_do_not_disclose_root_and_known_root_is_not_revocable_by_server() {
         let invite = protect_invitation(&legacy()).unwrap();
         let sender = Session::new(secret(&invite), A.into()).unwrap();
-        let root_text = B64.encode(sender.secret.root.as_ref());
+        let root_text = root(&invite);
         assert!(!descriptor(&sender).contains(&root_text));
         // The capability model deliberately does not bind to server admission state:
         // a holder of the root remains capable until independent root replacement.
@@ -188,7 +244,7 @@ mod tests {
 }
 
 pub struct RoomSecret {
-    root: Zeroizing<[u8; 32]>,
+    prk: hkdf::Prk,
     context: Vec<u8>,
 }
 
@@ -206,7 +262,15 @@ pub struct Session {
     secret: RoomSecret,
     local: Descriptor,
     keys: KeyProvider,
-    verified: Mutex<HashMap<String, Descriptor>>,
+    descriptor_auth: hmac::Key,
+    // Keep the same lifetime bound as the SDK's installed participant keys.
+    // An empty slot denies previews after a descriptor is withdrawn or rejected.
+    verified: Mutex<HashMap<String, Option<VerifiedSender>>>,
+}
+
+struct VerifiedSender {
+    wire: String,
+    descriptor: Descriptor,
 }
 
 fn random<const N: usize>() -> Result<[u8; N]> {
@@ -242,10 +306,7 @@ pub fn protect_invitation(legacy: &str) -> Result<String> {
         "This invitation is already protected."
     );
     // Validate before creating an opaque wrapper. Admission is never derived from root.
-    ensure!(
-        crate::admission::valid_invitation(legacy),
-        "Enter a valid room invitation."
-    );
+    crate::admission::invitation_context(legacy)?;
     let envelope = InvitationEnvelope {
         version: 1,
         invitation: legacy.trim().to_owned(),
@@ -279,10 +340,11 @@ pub fn unwrap_invitation(input: &str) -> Result<(String, Option<RoomSecret>)> {
         return Ok((input.to_owned(), None));
     }
     ensure!(input.len() <= 2048, "Protected invitation is too long.");
-    let bytes = B64
-        .decode(&input[PREFIX.len()..])
-        .map_err(|_| anyhow::anyhow!("Invalid protected invitation."))?;
-    let envelope: InvitationEnvelope = serde_json::from_slice(&bytes)
+    let bytes = Zeroizing::new(
+        B64.decode(&input[PREFIX.len()..])
+            .map_err(|_| anyhow::anyhow!("Invalid protected invitation."))?,
+    );
+    let mut envelope: InvitationEnvelope = serde_json::from_slice(&bytes)
         .map_err(|_| anyhow::anyhow!("Invalid protected invitation."))?;
     ensure!(
         envelope.version == 1 && !envelope.invitation.starts_with("FSPRIVATE"),
@@ -297,7 +359,9 @@ pub fn unwrap_invitation(input: &str) -> Result<(String, Option<RoomSecret>)> {
         room.as_bytes(),
         &generation,
     ]);
-    Ok((envelope.invitation, Some(RoomSecret { root, context })))
+    let prk = hkdf::Salt::new(hkdf::HKDF_SHA256, &context).extract(root.as_ref());
+    envelope.root.zeroize();
+    Ok((envelope.invitation, Some(RoomSecret { prk, context })))
 }
 
 impl RoomSecret {
@@ -308,11 +372,10 @@ impl RoomSecret {
                 32
             }
         }
-        let salt = hkdf::Salt::new(hkdf::HKDF_SHA256, &self.context);
-        let prk = salt.extract(self.root.as_ref());
         let info = framed(&[b"FreedomStream protected v1", label, extra]);
         let infos = [&info[..]];
-        let okm = prk
+        let okm = self
+            .prk
             .expand(&infos, Len)
             .map_err(|_| anyhow::anyhow!("Protected key derivation failed."))?;
         let mut key = Zeroizing::new([0; 32]);
@@ -373,6 +436,7 @@ impl Session {
             secret,
             local,
             keys,
+            descriptor_auth: auth,
             verified: Mutex::default(),
         })
     }
@@ -388,17 +452,15 @@ impl Session {
         room: &Room,
         publication: &livekit::prelude::LocalTrackPublication,
     ) -> Result<()> {
-        if room.e2ee_manager().enabled() {
+        if room.e2ee_manager().encryption_type() != EncryptionType::None {
             ensure!(
-                publication.encryption_type() == EncryptionType::Gcm,
+                room.e2ee_manager().enabled()
+                    && publication.encryption_type() == EncryptionType::Gcm,
                 "Protected media publication was downgraded."
             );
-            let key = (room.local_participant().identity(), publication.sid());
             ensure!(
                 room.e2ee_manager()
-                    .frame_cryptors()
-                    .get(&key)
-                    .is_some_and(|cryptor| cryptor.enabled()),
+                    .frame_cryptor_enabled(room.local_participant().identity(), publication.sid()),
                 "Protected media encryption was not attached."
             );
         }
@@ -410,7 +472,9 @@ impl Session {
         // sentinel that bypasses the receiver's cryptor.
         self.keys.set_sif_trailer(Vec::new());
         ensure!(
-            room.local_participant().identity().as_str() == self.local.identity,
+            room.e2ee_manager().enabled()
+                && room.e2ee_manager().encryption_type() == EncryptionType::Gcm
+                && room.local_participant().identity().as_str() == self.local.identity,
             "Protected room identity mismatch."
         );
         let descriptor = serde_json::to_string(&self.local)
@@ -431,45 +495,53 @@ impl Session {
         if identity == self.local.identity {
             return false;
         }
-        let result = (|| -> Result<()> {
-            let raw = raw.ok_or_else(|| anyhow::anyhow!("Missing protected sender."))?;
-            ensure!(raw.len() <= 1024, "Protected descriptor is too large.");
-            let descriptor: Descriptor = serde_json::from_str(raw)
-                .map_err(|_| anyhow::anyhow!("Invalid protected sender."))?;
-            ensure!(
-                descriptor.identity == identity,
-                "Protected sender identity mismatch."
-            );
-            let key = self.secret.derive(b"descriptor authentication", b"")?;
-            let auth = hmac::Key::new(hmac::HMAC_SHA256, key.as_ref());
-            hmac::verify(
-                &auth,
-                &self.secret.descriptor_input(&descriptor)?,
-                &decode::<32>(&descriptor.tag)?,
-            )
-            .map_err(|_| anyhow::anyhow!("Protected sender authentication failed."))?;
-            let mut verified = self
-                .verified
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Protected key state unavailable."))?;
-            if verified.get(identity) != Some(&descriptor) {
-                ensure!(
-                    verified.len() < 256 || verified.contains_key(identity),
-                    "Too many protected senders."
-                );
-                ensure!(
-                    self.keys.set_key(
-                        &identity.to_owned().into(),
-                        0,
-                        self.secret.media_key(&descriptor)?.to_vec()
-                    ),
-                    "Could not install protected receiver key."
-                );
-                verified.insert(identity.to_owned(), descriptor);
+        let Ok(mut verified) = self.verified.lock() else {
+            return false;
+        };
+        let current = verified.get(identity).and_then(Option::as_ref);
+        let raw = raw.filter(|raw| raw.len() <= 1024);
+        if let (Some(raw), Some(current)) = (raw, current)
+            && current.wire == *raw
+        {
+            return true;
+        }
+        let result = raw.and_then(|raw| {
+            let descriptor: Descriptor = serde_json::from_str(raw).ok()?;
+            if descriptor.identity != identity {
+                return None;
             }
-            Ok(())
-        })();
-        result.is_ok()
+            hmac::verify(
+                &self.descriptor_auth,
+                &self.secret.descriptor_input(&descriptor).ok()?,
+                &decode::<32>(&descriptor.tag).ok()?,
+            )
+            .ok()?;
+            if current.is_none_or(|sender| sender.descriptor != descriptor) {
+                if verified.len() >= 256 && !verified.contains_key(identity) {
+                    return None;
+                }
+                let key = self.secret.media_key(&descriptor).ok()?;
+                if !self
+                    .keys
+                    .set_key(&identity.to_owned().into(), 0, key.to_vec())
+                {
+                    return None;
+                }
+            }
+            Some(VerifiedSender {
+                wire: raw.clone(),
+                descriptor,
+            })
+        });
+        if let Some(sender) = result {
+            verified.insert(identity.to_owned(), Some(sender));
+            true
+        } else {
+            if let Some(previous) = verified.get_mut(identity) {
+                *previous = None;
+            }
+            false
+        }
     }
 
     fn preview_key(
@@ -493,20 +565,22 @@ impl Session {
                 .map_err(|_| anyhow::anyhow!("Preview encryption unavailable."))?,
         );
         let nonce = random::<12>()?;
-        let mut body = bytes;
-        key.seal_in_place_append_tag(
-            aead::Nonce::assume_unique_for_key(nonce),
-            aead::Aad::from(aad),
-            &mut body,
-        )
-        .map_err(|_| anyhow::anyhow!("Preview encryption failed."))?;
-        let mut result = b"FSP1".to_vec();
+        let mut result = Vec::with_capacity(16 + bytes.len() + aead::AES_256_GCM.tag_len());
+        result.extend_from_slice(b"FSP1");
         result.extend_from_slice(&nonce);
-        result.extend_from_slice(&body);
+        result.extend_from_slice(&bytes);
+        let tag = key
+            .seal_in_place_separate_tag(
+                aead::Nonce::assume_unique_for_key(nonce),
+                aead::Aad::from(aad),
+                &mut result[16..],
+            )
+            .map_err(|_| anyhow::anyhow!("Preview encryption failed."))?;
+        result.extend_from_slice(tag.as_ref());
         Ok(result)
     }
 
-    pub fn open_preview(&self, owner: &str, sid: &str, bytes: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn open_preview(&self, owner: &str, sid: &str, mut bytes: Vec<u8>) -> Result<Vec<u8>> {
         ensure!(
             (32..=MAX_PREVIEW).contains(&bytes.len()) && bytes.starts_with(b"FSP1"),
             "Invalid protected preview."
@@ -516,7 +590,8 @@ impl Session {
             .lock()
             .map_err(|_| anyhow::anyhow!("Protected key state unavailable."))?
             .get(owner)
-            .cloned()
+            .and_then(Option::as_ref)
+            .map(|sender| sender.descriptor.clone())
             .ok_or_else(|| anyhow::anyhow!("Unverified preview sender."))?;
         let (key, aad) = self.preview_key(&descriptor, sid)?;
         let key = aead::LessSafeKey::new(
@@ -524,15 +599,17 @@ impl Session {
                 .map_err(|_| anyhow::anyhow!("Preview decryption unavailable."))?,
         );
         let nonce: [u8; 12] = bytes[4..16].try_into().expect("checked nonce length");
-        let mut body = bytes[16..].to_vec();
         let plain = key
-            .open_in_place(
+            .open_within(
                 aead::Nonce::assume_unique_for_key(nonce),
                 aead::Aad::from(aad),
-                &mut body,
+                &mut bytes,
+                16..,
             )
             .map_err(|_| anyhow::anyhow!("Protected preview authentication failed."))?;
         ensure!(plain.len() <= 262_144, "Preview exceeds its size limit.");
-        Ok(plain.to_vec())
+        let len = plain.len();
+        bytes.truncate(len);
+        Ok(bytes)
     }
 }

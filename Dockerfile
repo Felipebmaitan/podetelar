@@ -7,6 +7,7 @@ COPY apps/web/package.json apps/web/package.json
 RUN npm ci
 COPY packages packages
 COPY apps apps
+COPY assets/PodeTelar.png assets/PodeTelar.png
 RUN npm run build && npm prune --omit=dev
 
 FROM node:24.15.0-bookworm-slim AS runtime

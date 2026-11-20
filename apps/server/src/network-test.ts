@@ -27,7 +27,7 @@ export async function networkTestRoutes(app: FastifyInstance, rooms: Rooms) {
   await app.register(async (scope) => {
     // Authentication runs before an upload body is read or buffered.
     scope.addHook<{ Params: Own }>("onRequest", async (request, reply) => {
-      if (!member(request.params.roomId, request.cookies.fs_session))
+      if (!member(request.params.roomId, request.cookies.podetelar_session))
         return reply.code(401).send({ error: "Room access required." });
       reply.header("Cache-Control", "no-store");
     });
@@ -45,8 +45,10 @@ export async function networkTestRoutes(app: FastifyInstance, rooms: Rooms) {
             .code(409)
             .header("Retry-After", "2")
             .send({ error: "Connection test busy." });
-        const owner = member(request.params.roomId, request.cookies.fs_session)!
-          .participant.id;
+        const owner = member(
+          request.params.roomId,
+          request.cookies.podetelar_session,
+        )!.participant.id;
         const ip = ips.get(request.ip);
         if (
           (sessions.get(owner) ?? 0) + 30_000 > now ||
@@ -69,7 +71,7 @@ export async function networkTestRoutes(app: FastifyInstance, rooms: Rooms) {
           room: request.params.roomId,
           phase: "download",
           until: now + 12_000,
-          cookie: request.cookies.fs_session!,
+          cookie: request.cookies.podetelar_session!,
           cap:
             request.headers["x-network-test-max-bps"] === String(PROBE_BPS)
               ? PROBE_BPS
@@ -105,7 +107,7 @@ export async function networkTestRoutes(app: FastifyInstance, rooms: Rooms) {
       async (request, reply) => {
         const current = valid(
           request.params.roomId,
-          request.cookies.fs_session,
+          request.cookies.podetelar_session,
           request.headers["x-network-probe"],
           "download",
         );
@@ -132,7 +134,10 @@ export async function networkTestRoutes(app: FastifyInstance, rooms: Rooms) {
             ) {
               if (
                 lease !== current ||
-                !member(request.params.roomId, request.cookies.fs_session)
+                !member(
+                  request.params.roomId,
+                  request.cookies.podetelar_session,
+                )
               )
                 return;
               await delay(
@@ -161,7 +166,7 @@ export async function networkTestRoutes(app: FastifyInstance, rooms: Rooms) {
       async (request, reply) => {
         const current = valid(
           request.params.roomId,
-          request.cookies.fs_session,
+          request.cookies.podetelar_session,
           request.headers["x-network-probe"],
           "upload",
         );
@@ -182,7 +187,7 @@ export async function networkTestRoutes(app: FastifyInstance, rooms: Rooms) {
                 .send({ error: "Connection test limit exceeded." });
             if (
               lease !== current ||
-              !member(request.params.roomId, request.cookies.fs_session)
+              !member(request.params.roomId, request.cookies.podetelar_session)
             )
               return reply.code(401).send({ error: "Room access ended." });
           }
@@ -207,8 +212,8 @@ export async function networkTestRoutes(app: FastifyInstance, rooms: Rooms) {
           lease &&
           lease.room === request.params.roomId &&
           lease.token === request.headers["x-network-probe"] &&
-          member(lease.room, request.cookies.fs_session)?.participant.id ===
-            lease.owner
+          member(lease.room, request.cookies.podetelar_session)?.participant
+            .id === lease.owner
         )
           lease = undefined;
         return reply.code(204).send();

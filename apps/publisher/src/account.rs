@@ -15,11 +15,11 @@ use std::{
 pub const DEFAULT_SERVER: &str = "https://stream.maitan.me";
 #[derive(Clone)]
 #[cfg_attr(
-    any(debug_assertions, feature = "media-qualification"),
+    any(test, debug_assertions, feature = "media-qualification"),
     derive(serde::Deserialize)
 )]
 #[cfg_attr(
-    any(debug_assertions, feature = "media-qualification"),
+    any(test, debug_assertions, feature = "media-qualification"),
     serde(deny_unknown_fields)
 )]
 pub struct Credential {

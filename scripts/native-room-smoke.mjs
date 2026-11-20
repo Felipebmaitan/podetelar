@@ -147,17 +147,26 @@ const start = (file, args, env) => {
   children.push(child);
   return child;
 };
-const ready = async (url) => {
-  for (let i = 0; i < 40; i++) {
+const ready = async (service, child, url) => {
+  const deadline = performance.now() + 60_000;
+  let lastStatus;
+  do {
+    if (child.exitCode !== null || child.signalCode || !child.pid)
+      throw new Error(
+        `Isolated ${service} exited during startup (code ${child.exitCode ?? "unavailable"}).`,
+      );
     try {
-      if ((await fetch(url, { signal: AbortSignal.timeout(1000) })).ok) return;
+      const response = await fetch(url, { signal: AbortSignal.timeout(1000) });
+      lastStatus = response.status;
+      await response.body?.cancel();
+      if (response.ok) return;
     } catch {
       /* Startup is bounded below. */
     }
-    await delay(250);
-  }
+    await delay(500);
+  } while (performance.now() < deadline);
   throw new Error(
-    `Isolated native smoke did not start on app ${appPort}, SFU ${mediaPort}–${mediaPort + 2}.`,
+    `Isolated ${service} was not ready after 60 seconds (HTTP ${lastStatus ?? "unavailable"}).`,
   );
 };
 try {
@@ -166,8 +175,8 @@ try {
     ["--config", config],
     process.env,
   );
-  await ready(mediaOrigin);
-  start(process.execPath, ["apps/server/dist/main.js"], {
+  await ready("SFU", sfu, mediaOrigin);
+  const api = start(process.execPath, ["apps/server/dist/main.js"], {
     ...process.env,
     PUBLIC_URL: origin,
     HOST: "127.0.0.1",
@@ -175,7 +184,7 @@ try {
     DATABASE_PATH: join(run, "rooms.db"),
     LIVEKIT_INTERNAL_URL: mediaOrigin,
   });
-  await ready(`${origin}/api/health`);
+  await ready("API", api, `http://127.0.0.1:${appPort}/api/health`);
   const gst = resolve(process.env.PODETELAR_GSTREAMER ?? ".local/gstreamer");
   const args = [
     "node_modules/@playwright/test/cli.js",

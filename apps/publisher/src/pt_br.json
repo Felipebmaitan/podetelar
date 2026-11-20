@@ -390,7 +390,6 @@
   "Create private invitation": "Criar convite privado",
   "Rejoin with a new encryption key. Share the new invitation with trusted friends.": "Reconecte com uma nova chave de criptografia e compartilhe o novo convite com amigos de confiança.",
   "Remember private invitation on this device": "Salvar convite privado neste dispositivo",
-  "Creating a private invitation requires an available guest invitation for this room.": "Para criar um convite privado, a sala precisa ter um convite de visitante disponível.",
   "Forget saved private invitation": "Esquecer convite privado salvo",
   "Use saved private invitation": "Usar convite privado salvo",
   "Automatic joining requires the room in your private invitation.": "A entrada automática exige a sala do seu convite privado.",
@@ -411,5 +410,13 @@
   "Use a private invitation for this room": "Usar um convite privado para esta sala",
   "Paste your private invitation": "Cole seu convite privado",
   "Join with encryption": "Entrar com criptografia",
-  "Use a private invitation for the current room and server.": "Use um convite privado da sala e do servidor atuais."
+  "Use a private invitation for the current room and server.": "Use um convite privado da sala e do servidor atuais.",
+  "Create private voice code": "Criar código privado de voz",
+  "Replace private voice code": "Substituir código privado de voz",
+  "This code requires Discord sign-in and presence in this voice channel.": "Este código exige login no Discord e presença neste canal de voz.",
+  "Sign in to the matching Discord backend and join the voice channel to use this code.": "Para usar este código, entre com o Discord no servidor correspondente e conecte-se ao canal de voz.",
+  "Invalid private Discord voice code.": "Código privado de voz do Discord inválido.",
+  "A private Discord voice code requires signed-in voice admission.": "Para usar este código de voz, entre pelo Discord no canal de voz.",
+  "Room media access was denied.": "O acesso à mídia da sala foi negado.",
+  "Voice code · Encrypted": "Código de voz · Criptografado"
 }

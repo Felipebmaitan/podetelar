@@ -13,8 +13,8 @@ private material locally. The organizer distributes the new native invitation to
 friends, who paste and join as before. Old server-issued invitations do not gain
 protection retroactively, and joiners never create independent roots silently.
 
-Protected invitations use the versioned opaque `FSPRIVATE1:` format, rather than
-an HTTPS link. Keep them in the native application and the trusted channel used
+Guest-capable private invitations use the versioned opaque `FSPRIVATE1:` format.
+Voice-only private codes use `PTVOICE1:`. Keep both in the native application and the trusted channel used
 to invite friends. Never paste one into the room website. Website JavaScript can
 read URL fragments; a fragment is not secret from the website operator.
 
@@ -36,9 +36,16 @@ A single Discord channel can host a succession of PodeTelar rooms. When guest
 access is enabled, a voice-admitted organizer can create a private invitation
 using the current room's revocable guest handoff. The permanent channel link
 continues to open whichever room the channel currently uses. A private invitation
-is valid only for the original public server origin and concrete room. When guest
-access is disabled the server withholds both guest links. Share the private code
-through a channel trusted to carry it. Anyone who can read it can use its keys.
+is valid only for the original public server origin and concrete room.
+
+When guest access is disabled the server withholds both guest links. An organizer
+already admitted by voice can still create a voice-only code. It contains an
+independent secret and binds the server origin, Discord guild and channel,
+concrete room and generation. It contains no guest credential. Each friend
+uses their own Discord login and voice membership for admission, then pastes the
+code into **Use a private invitation for this room**. An ordinary guest cannot
+use that code to join. Share either code through a channel trusted to carry it.
+Anyone who can read it can use its keys if they obtain the ciphertext.
 
 A saved private invitation lets a matching voice admission use encryption again.
 Automatic admission cannot supply, replace or reset the private root. Changing
@@ -76,6 +83,20 @@ Attachments for one publication are also serialized. Playback uses one captured
 track for readiness and pump creation. A stale map entry for another same-SID
 receiver cannot turn an untransformed receiver into protected content.
 
+A protected native peer must acknowledge that its WebRTC Call was created with
+the receive guard. At construction of every audio and video receive stream,
+including unsignaled streams, that guard installs a transform that drops all
+frames unless an enforcing receiver cryptor is already registered. This prevents
+plain media from entering NetEQ, the video frame buffer or a decoder while
+the SDK waits for track metadata. Once a verified cryptor replaces the initial
+guard, media takes the normal encrypted path. Frame header, IV and tag bounds
+are checked before the upstream decryptor parses the frame.
+
+For a full media reconnect, the client requests a fresh media grant with its
+existing room session and creates a fresh sender session and key provider.
+This preserves Discord voice control and the backend's ability to terminate
+that session. Reconnection restores watch intent and leaves sharing stopped.
+
 The native C++ wrapper enables cryptors before attaching them and keeps attached
 cryptors enabled even when SDK cleanup requests disablement. Encryption cannot be
 toggled off on an existing protected transport; leaving closes that connection.
@@ -94,6 +115,13 @@ HKDF extraction once per parsed secret and keeps the descriptor authentication
 key for the connection. Repeated valid descriptors use a bounded per-connection
 cache. Each new sender session has its own media key. Reconciliation looks up
 cryptor readiness for the selected track without copying the whole SDK map.
+
+Protected publishers use codec capabilities and bandwidth limits from peers with
+verified private sender descriptors. A lone publisher can start with its preferred
+hardware codec. When another private participant arrives, its advertised hardware
+capabilities join the existing codec selection policy. These signaling values
+are quality hints and can be altered by the server. Legacy rooms retain the
+all-participant policy.
 
 Previews use separate authenticated encryption. The native sender encrypts its
 bounded JPEG before uploading. The server stores only an opaque bounded `FSP1`

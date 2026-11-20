@@ -29,6 +29,10 @@ mod windows;
 pub fn enumerate() -> Vec<Source> {
     #[cfg(windows)]
     {
+        #[cfg(any(debug_assertions, feature = "media-qualification"))]
+        if crate::recovery_fixture::synthetic_only() {
+            return vec![fixture()];
+        }
         let sources = windows::enumerate();
         #[cfg(feature = "performance-experiments")]
         let sources = {

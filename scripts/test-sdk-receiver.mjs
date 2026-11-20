@@ -56,4 +56,18 @@ const result = spawnSync("cargo", ["test", "--lib", "podetelar_encryption_"], {
     GSTREAMER_1_0_ROOT_MSVC_X86_64: gst,
   },
 });
-process.exitCode = result.status ?? 1;
+if (result.status !== 0) process.exit(result.status ?? 1);
+const guard = spawnSync(
+  "powershell.exe",
+  [
+    "-NoProfile",
+    "-WindowStyle",
+    "Hidden",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    join(root, "scripts/test-receive-guard.ps1"),
+  ],
+  { cwd: root, windowsHide: true, stdio: "inherit" },
+);
+process.exitCode = guard.status ?? 1;

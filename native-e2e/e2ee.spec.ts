@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
 import { RoomServiceClient } from "livekit-server-sdk";
-import { setTimeout as delay } from "node:timers/promises";
 import { createTestRoom } from "../scripts/test-room.js";
 import {
   backgroundAudioExclusions,
@@ -15,6 +14,8 @@ type Watched = {
   samples: {
     second: number;
     phaseSecond: number | null;
+    measurementTimeMs?: number;
+    connected: boolean;
     receivedBytes: number;
     nativeAudio: { outputUsers: number; rendering: boolean };
     streams: {
@@ -49,6 +50,42 @@ async function protect(invitationUrl: string): Promise<string> {
 }
 function hasVideo(result: Watched) {
   return result.samples.some((s) => s.streams.some((t) => t.frames > 5));
+}
+async function attachPlayback(label: string, result: Watched) {
+  const trace = result.samples.map((s) => ({
+    second: s.second,
+    bytes: s.receivedBytes,
+    connected: s.connected,
+    outputUsers: s.nativeAudio.outputUsers,
+    tracks: s.streams.map((t) => ({
+      codec: ["video/av1", "video/h265", "video/h264"].includes(
+        t.codec.toLowerCase(),
+      )
+        ? t.codec.toLowerCase()
+        : "unknown",
+      frames: t.frames,
+      watching: t.watching,
+    })),
+  }));
+  await test
+    .info()
+    .attach(label, {
+      contentType: "application/json",
+      body: JSON.stringify(trace),
+    });
+}
+async function requireDecode(
+  client: ReturnType<typeof nativeRequest>,
+  label: string,
+) {
+  const first = (await client.reported) as
+    { decoded?: boolean; codec?: string } | Watched;
+  if ("samples" in first) {
+    await attachPlayback(label, first);
+    throw Error("Watcher finished without reporting decoded video.");
+  }
+  expect(first.decoded).toBe(true);
+  return first.codec;
 }
 function mediaAdmin() {
   return new RoomServiceClient(
@@ -90,7 +127,7 @@ test("only private invitation holders can request protected codec fallback", asy
     invitationUrl,
     displayName: "Protected publisher",
     codec: "av1",
-    seconds: 42,
+    seconds: 48,
     quality,
   });
   const children = [sender.child];
@@ -98,7 +135,8 @@ test("only private invitation holders can request protected codec fallback", asy
     await sender.reported;
     const observer = nativeRequest("--watch-fixture", {
       invitationUrl,
-      seconds: 36,
+      seconds: 43,
+      reportPlayback: true,
       continuousWatch: true,
     });
     children.push(observer.child);
@@ -109,6 +147,7 @@ test("only private invitation holders can request protected codec fallback", asy
       continuousWatch: true,
     });
     children.push(unrelated.child);
+    expect(await requireDecode(observer, "initial-av1")).toBe("video/av1");
     noContent((await unrelated.result) as Watched);
     const receiver = nativeRequest("--watch-fixture", {
       invitationUrl,
@@ -122,6 +161,8 @@ test("only private invitation holders can request protected codec fallback", asy
       observer.result as Promise<Watched>,
       receiver.result as Promise<Watched>,
     ]);
+    await attachPlayback("fallback-observer", watched);
+    await attachPlayback("fallback-member", compatible);
     const sawCodec = (
       result: Watched,
       codec: string,
@@ -137,8 +178,8 @@ test("only private invitation holders can request protected codec fallback", asy
         );
       return frames.length >= 2 && frames.at(-1)! - frames[0]! > 5;
     };
-    expect(sawCodec(watched, "video/av1", 3, 11)).toBe(true);
-    expect(sawCodec(watched, "video/h264", 14, 35)).toBe(true);
+    expect(sawCodec(watched, "video/av1", 0, 42)).toBe(true);
+    expect(sawCodec(watched, "video/h264", 0, 42)).toBe(true);
     expect(sawCodec(compatible, "video/h264", 3, 17)).toBe(true);
     expect(sent.codec).toBe("h264");
     expect(sent.finalSid).not.toBe(sent.initialSid);
@@ -163,16 +204,21 @@ test("removing an authenticated descriptor stops an existing protected subscript
     invitationUrl,
     displayName: "Protected publisher",
     codec: "h264",
-    seconds: 25,
+    seconds: 32,
     quality,
   });
   await sender.reported;
   const receiver = nativeRequest("--watch-fixture", {
     invitationUrl,
-    seconds: 21,
+    seconds: 28,
+    reportPlayback: true,
+    sampleRates: true,
+    continuousWatch: true,
   });
   try {
-    await delay(5000);
+    expect(await requireDecode(receiver, "descriptor-positive")).toBe(
+      "video/h264",
+    );
     const admin = mediaAdmin();
     const participants = await admin.listParticipants(
       `podetelar_${room.room.id}`,
@@ -187,9 +233,13 @@ test("removing an authenticated descriptor stops an existing protected subscript
       publisher!.identity,
       { attributes: { "freedomstream.e2ee.v1": "" } },
     );
+    const changedAt = Date.now();
     const watched = (await receiver.result) as Watched;
+    await attachPlayback("descriptor-retirement", watched);
     expect(hasVideo(watched)).toBe(true);
-    const settled = watched.samples.filter((s) => s.second >= 12);
+    const settled = watched.samples.filter(
+      (s) => (s.measurementTimeMs ?? 0) >= changedAt + 3000,
+    );
     expect(settled.length).toBeGreaterThan(3);
     expect(settled.every((s) => s.streams.length === 0)).toBe(true);
     expect(settled.at(-1)!.receivedBytes).toBe(settled[0]!.receivedBytes);

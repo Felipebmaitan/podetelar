@@ -111,7 +111,11 @@ impl PrivateStore {
 }
 
 pub fn valid_private(value: &str) -> bool {
-    value.starts_with(crate::protection::PREFIX) && crate::admission::valid_invitation(value)
+    if value.starts_with(crate::admission::voice_code::PREFIX) {
+        crate::admission::voice_code::parse(value).is_ok()
+    } else {
+        value.starts_with(crate::protection::PREFIX) && crate::admission::valid_invitation(value)
+    }
 }
 
 pub fn remove_legacy() {
@@ -151,6 +155,15 @@ mod tests {
             let changed = crate::protection::replace_invitation(&private)?;
             store.save(&changed)?;
             assert!(store.load()?.as_deref() == Some(&changed));
+            let voice =
+                crate::admission::voice_code::create(&crate::admission::voice_code::Scope {
+                    origin: "https://room.invalid".into(),
+                    guild_id: "1".repeat(17),
+                    channel_id: "2".repeat(17),
+                    room_id: "r".repeat(22),
+                })?;
+            store.save(&voice)?;
+            assert!(store.load()?.as_deref() == Some(&voice));
             store.0.set_secret(b"invalid")?;
             assert!(store.load().is_err());
             Ok(())

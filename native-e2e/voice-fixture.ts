@@ -56,13 +56,17 @@ export async function voiceFixture() {
     discordVoice: voice,
   });
   const accounts = new Accounts(path, origin);
-  const proof = randomBytes(32).toString("base64url"),
-    flow = accounts.start(createHash("sha256").update(proof).digest("hex"))!,
-    binding = accounts.authorize(flow.id)!;
-  accounts.consume(binding.state, binding.browser);
-  accounts.complete(flow.id, { id: user, username: "Voice fixture" });
-  const credential = accounts.poll(flow.id, proof);
-  if (credential.status !== "ready") throw Error("No fixture login");
+  const issueLogin = (id: string, username: string) => {
+    const proof = randomBytes(32).toString("base64url"),
+      flow = accounts.start(createHash("sha256").update(proof).digest("hex"))!,
+      binding = accounts.authorize(flow.id)!;
+    accounts.consume(binding.state, binding.browser);
+    accounts.complete(flow.id, { id, username });
+    const credential = accounts.poll(flow.id, proof);
+    if (credential.status !== "ready") throw Error("No fixture login");
+    return credential;
+  };
+  const credential = issueLogin(user, "Voice fixture");
   return {
     app,
     config,
@@ -72,6 +76,7 @@ export async function voiceFixture() {
     b,
     user,
     credential,
+    issueLogin,
     voice,
     listen: () => app.listen({ port, host: "127.0.0.1" }),
     close: async () => {

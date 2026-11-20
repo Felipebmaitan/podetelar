@@ -153,6 +153,7 @@ pub struct Snapshot {
     pub connection: &'static str,
     pub protected: bool,
     pub voice_private_mismatch: bool,
+    pub protected_access_ended: bool,
     pub room_name: String,
     pub error: String,
     pub busy: bool,
@@ -182,6 +183,7 @@ impl Default for Snapshot {
             connection: "disconnected",
             protected: false,
             voice_private_mismatch: false,
+            protected_access_ended: false,
             room_name: String::new(),
             error: String::new(),
             busy: false,
@@ -385,6 +387,7 @@ impl Controller {
                 state.operation = operation;
                 if is_join {
                     state.voice_private_mismatch = false;
+                    state.protected_access_ended = false;
                 }
                 state.capture_pending |= capture_pending;
                 state.error.clear();
@@ -1006,8 +1009,6 @@ fn encoder_codec(encoding: &Encoding) -> VideoCodec {
     }
 }
 
-// Carries the same admission authority and cancellation generation through a full
-// protected media reconnect. A leave, room switch or shutdown invalidates it.
 struct JoinRequest {
     invitation: String,
     name: String,
@@ -1020,22 +1021,25 @@ struct JoinRequest {
 struct Session {
     admission: Admission,
     room: Arc<Room>,
-    events: JoinHandle<()>,
+    events: Option<JoinHandle<()>>,
     expected_audio: Arc<AtomicBool>,
 }
 
 impl Session {
     async fn join(
         request: &JoinRequest,
-        protected_reconnect: bool,
         snapshot: Arc<Mutex<Snapshot>>,
         cancellation: Cancellation,
         recovery: Arc<AtomicU64>,
     ) -> Result<Option<Self>> {
         let ticket = &request.ticket;
         let invitation = request.invitation.clone();
-        let requires_protection =
-            protected_reconnect || invitation.trim().starts_with(crate::protection::PREFIX);
+        let requires_protection = [
+            crate::protection::PREFIX,
+            crate::admission::voice_code::PREFIX,
+        ]
+        .iter()
+        .any(|prefix| invitation.trim().starts_with(prefix));
         let name = request.name.clone();
         let account = request.account.clone();
         let voice = request.voice.clone();
@@ -1055,6 +1059,29 @@ impl Session {
             !requires_protection || admission.protection.is_some(),
             "Private room admission lost encryption."
         );
+        let joined = Self::connect_media(
+            admission,
+            request.route,
+            ticket,
+            snapshot,
+            cancellation,
+            recovery,
+        )
+        .await?;
+        if joined.is_some() {
+            let _ = pending_admission.0.take();
+        }
+        Ok(joined)
+    }
+
+    async fn connect_media(
+        admission: Admission,
+        route: connection::Route,
+        ticket: &JoinTicket,
+        snapshot: Arc<Mutex<Snapshot>>,
+        cancellation: Cancellation,
+        recovery: Arc<AtomicU64>,
+    ) -> Result<Option<Self>> {
         let client = admission.clone();
         let Some(access) = ticket
             .run(async move { client.media_access().await }, |_| async {})
@@ -1062,7 +1089,7 @@ impl Session {
         else {
             return Ok(None);
         };
-        let options = admission.room_options(request.route);
+        let options = admission.room_options(route);
         let Some((room, mut events)) = ticket
             .run(
                 async move {
@@ -1094,6 +1121,7 @@ impl Session {
         let media_room = room.clone();
         let expected_audio = Arc::new(AtomicBool::new(false));
         let audio_expected = expected_audio.clone();
+        let protected = admission.protection.is_some();
         let events = tokio::spawn(async move {
             while let Some(event) = events.recv().await {
                 match event {
@@ -1117,8 +1145,12 @@ impl Session {
                     RoomEvent::Disconnected { .. } => {
                         cancellation.cancel();
                         update(&snapshot, |state| {
-                            state.connection = "disconnected";
-                            state.error = "Media disconnected. Join again to retry.".into();
+                            if protected {
+                                state.connection = "reconnecting";
+                            } else {
+                                state.connection = "disconnected";
+                                state.error = "Media disconnected. Join again to retry.".into();
+                            }
                         });
                     }
                     RoomEvent::Reconnecting => {
@@ -1145,17 +1177,23 @@ impl Session {
             }
         });
         Ok(Some(Self {
-            admission: pending_admission.0.take().expect("Accepted room admission"),
+            admission,
             room,
-            events,
+            events: Some(events),
             expected_audio,
         }))
     }
 
-    async fn close(self) {
-        let _ = self.room.close().await;
-        self.events.abort();
-        let _ = self.events.await;
+    async fn close_media(&mut self) {
+        if let Some(events) = self.events.take() {
+            events.abort();
+            let _ = events.await;
+            let _ = self.room.close().await;
+        }
+    }
+
+    async fn close(mut self) {
+        self.close_media().await;
         self.admission.leave().await;
     }
 }
@@ -1208,7 +1246,7 @@ async fn worker(
     let mut download_budget = None;
     let mut probe: Option<ConnectionProbe> = None;
     let mut capacity = crate::network::Capacity::default();
-    let mut secure_rejoin: Option<JoinRequest> = None;
+    let mut secure_rejoin: Option<(connection::Route, JoinTicket)> = None;
     let mut rejoin_attempts = 0_u8;
     let mut rejoin_after = std::time::Instant::now();
     let mut tick = tokio::time::interval(Duration::from_millis(500));
@@ -1218,40 +1256,67 @@ async fn worker(
             _ = shutdown.wake.notified() => QueuedCommand { command: Command::Shutdown, capture: None, join: None },
             command = commands.recv() => command.unwrap_or(QueuedCommand { command: Command::Shutdown, capture: None, join: None }),
             _ = tick.tick() => {
-                // A protected full RTC restart is closed by the patched SDK.
-                // Re-admit with fresh sender material, retaining explicit watch
-                // intent but never automatically restarting capture.
-                if let Some(rejoin) = &secure_rejoin
-                    && commands.is_empty() && rejoin_attempts < 3
+                // A reconnect may renew the existing session's media grant, but
+                // must never use an invitation to regain revoked room access.
+                if let Some((route, ticket)) = &secure_rejoin
+                    && commands.is_empty()
                     && std::time::Instant::now() >= rejoin_after
-                    && session.as_ref().is_none_or(|joined| joined.room.connection_state() == ConnectionState::Disconnected) {
+                    && let Some(joined) = session.as_mut()
+                    && joined.room.connection_state() == ConnectionState::Disconnected
+                {
                     rejoin_attempts += 1;
                     if let Some(job) = probe.take() { job.abort(); }
-                    if let (Some(active), Some(joined)) = (stream.take(), session.as_ref()) { let _ = active.stop(&joined.room).await; }
-                    if let Some(joined) = session.take() { joined.close().await; }
+                    if let Some(active) = stream.take() { let _ = active.stop(&joined.room).await; }
+                    joined.close_media().await;
                     playback.suspend();
-                    update(&snapshot, |state| { state.connection = "connecting"; state.profile_access = None; state.busy = true; state.sharing = false; state.self_preview = Arc::default(); state.active_selection = None; state.tiles.clear(); });
-                    match Session::join(rejoin, true, snapshot.clone(), cancellation.clone(), playback.recovery_signal()).await {
+                    update(&snapshot, |state| {
+                        state.connection = "reconnecting";
+                        state.profile_access = None;
+                        state.busy = true;
+                        state.sharing = false;
+                        state.self_preview = Arc::default();
+                        state.active_selection = None;
+                        state.tiles.clear();
+                    });
+                    let result = async {
+                        let fresh = joined.admission.fresh_protected_media()?;
+                        Session::connect_media(fresh, *route, ticket, snapshot.clone(),
+                            cancellation.clone(), playback.recovery_signal()).await
+                    }.await;
+                    match result {
                         Ok(Some(joined)) => {
                             rejoin_attempts = 0;
-                            update(&snapshot, |state| { state.connection = "connected"; state.profile_access = Some(joined.admission.clone()); state.protected = true; state.busy = false; state.room_name = joined.admission.room_name.clone(); state.error = "Secure connection restored. Sharing is stopped; start it again when ready.".into(); });
+                            update(&snapshot, |state| {
+                                state.connection = "connected";
+                                state.profile_access = Some(joined.admission.clone());
+                                state.protected = true;
+                                state.busy = false;
+                                state.room_name = joined.admission.room_name.clone();
+                                state.error = "Secure connection restored. Sharing is stopped; start it again when ready.".into();
+                            });
                             session = Some(joined);
                         }
-                        Ok(None) => { secure_rejoin = None; update(&snapshot, |state| {state.connection="disconnected";state.busy=false;}); }
+                        Ok(None) => {
+                            secure_rejoin = None;
+                            if let Some(joined) = session.take() { joined.close().await; }
+                            update(&snapshot, |state| { state.connection = "disconnected"; state.busy = false; });
+                        }
                         Err(error) => {
-                            let mismatch = error.is::<crate::admission::PrivateRoomMismatch>();
-                            let denied = mismatch || error.to_string().contains("access was denied");
-                            if denied { secure_rejoin = None; }
-                            rejoin_after = std::time::Instant::now() + Duration::from_secs(3);
+                            let denied = error.is::<crate::admission::MediaAccessDenied>();
+                            let terminal = denied || rejoin_attempts >= 3;
+                            if terminal {
+                                secure_rejoin = None;
+                                if let Some(joined) = session.take() { joined.close().await; }
+                            } else {
+                                rejoin_after = std::time::Instant::now() + Duration::from_secs(3);
+                            }
                             update(&snapshot, |state| {
-                                state.connection = "disconnected";
+                                state.connection = if terminal { "disconnected" } else { "reconnecting" };
                                 state.busy = false;
-                                state.voice_private_mismatch = mismatch;
-                                state.error = if mismatch {
-                                    error.to_string()
-                                } else if denied {
+                                state.protected_access_ended = denied;
+                                state.error = if denied {
                                     "Room access ended. Open a current private invitation.".into()
-                                } else if rejoin_attempts >= 3 {
+                                } else if terminal {
                                     "Secure reconnection failed. Join again to retry.".into()
                                 } else {
                                     "Secure connection interrupted. Retrying with fresh encryption keys…".into()
@@ -1364,6 +1429,7 @@ async fn worker(
                     update(&snapshot, |state| {
                         state.connection = "connecting";
                         state.voice_private_mismatch = false;
+                        state.protected_access_ended = false;
                         state.protected = false;
                         state.profile_access = None;
                         state.tiles.clear();
@@ -1382,7 +1448,6 @@ async fn worker(
                     };
                     let joined = Session::join(
                         &request,
-                        false,
                         snapshot.clone(),
                         cancellation.clone(),
                         playback.recovery_signal(),
@@ -1390,7 +1455,7 @@ async fn worker(
                     .await?;
                     if let Some(joined) = joined {
                         if joined.admission.protection.is_some() {
-                            secure_rejoin = Some(request);
+                            secure_rejoin = Some((request.route, request.ticket));
                         }
                         let admission = joined.admission.clone();
                         probe = Some(ConnectionProbe(tokio::spawn(async move {
@@ -1524,6 +1589,7 @@ async fn worker(
                     update(&snapshot, |state| {
                         state.connection = "disconnected";
                         state.protected = false;
+                        state.protected_access_ended = false;
                         state.profile_access = None;
                         state.sharing = false;
                         state.self_preview = Arc::default();

@@ -58,8 +58,8 @@ impl PublisherUi {
             self.following_key = key;
         }
         let state = self.controller.snapshot();
-        let voice = self.following_client.state();
-        if state.voice_private_mismatch
+        let voice = self.automatic_voice_state();
+        if (state.voice_private_mismatch || state.protected_access_ended)
             && self.following.current.as_ref().is_some_and(|current| {
                 voice
                     .locations
@@ -257,7 +257,7 @@ impl PublisherUi {
                 .button(tr("Allow transport-only Discord rooms for this run"))
                 .clicked()
             {
-                self.private.required = None;
+                self.private.set_required(None);
                 self.private.store_locked = false;
                 self.following.resume();
                 self.next_follow_attempt = Instant::now();

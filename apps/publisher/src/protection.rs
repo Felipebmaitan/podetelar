@@ -155,7 +155,8 @@ mod tests {
     fn reconnects_have_independent_media_keys_and_preview_domains() {
         let invite = protect_invitation(&legacy()).unwrap();
         let first = Session::new(secret(&invite), A.into()).unwrap();
-        let next = Session::new(secret(&invite), A.into()).unwrap();
+        let next = first.fresh().unwrap();
+        assert_eq!(first.local.identity, next.local.identity);
         assert!(first.local.session != next.local.session);
         let first_key = first.secret.media_key(&first.local).unwrap();
         assert!(first_key.as_ref() != next.secret.media_key(&next.local).unwrap().as_ref());
@@ -243,6 +244,7 @@ mod tests {
     }
 }
 
+#[derive(Clone)]
 pub struct RoomSecret {
     prk: hkdf::Prk,
     context: Vec<u8>,
@@ -273,7 +275,7 @@ struct VerifiedSender {
     descriptor: Descriptor,
 }
 
-fn random<const N: usize>() -> Result<[u8; N]> {
+pub(crate) fn random<const N: usize>() -> Result<[u8; N]> {
     let mut bytes = [0; N];
     SystemRandom::new()
         .fill(&mut bytes)
@@ -281,7 +283,7 @@ fn random<const N: usize>() -> Result<[u8; N]> {
     Ok(bytes)
 }
 
-fn decode<const N: usize>(value: &str) -> Result<[u8; N]> {
+pub(crate) fn decode<const N: usize>(value: &str) -> Result<[u8; N]> {
     let bytes = B64
         .decode(value)
         .map_err(|_| anyhow::anyhow!("Invalid protected invitation or descriptor."))?;
@@ -353,18 +355,26 @@ pub fn unwrap_invitation(input: &str) -> Result<(String, Option<RoomSecret>)> {
     let root = Zeroizing::new(decode::<32>(&envelope.root)?);
     let generation = decode::<32>(&envelope.generation)?;
     let (origin, room) = crate::admission::invitation_context(&envelope.invitation)?;
-    let context = framed(&[
-        b"FreedomStream private room v1",
-        origin.as_bytes(),
-        room.as_bytes(),
-        &generation,
-    ]);
-    let prk = hkdf::Salt::new(hkdf::HKDF_SHA256, &context).extract(root.as_ref());
+    let secret = RoomSecret::from_parts(
+        &root,
+        &[
+            b"FreedomStream private room v1",
+            origin.as_bytes(),
+            room.as_bytes(),
+            &generation,
+        ],
+    );
     envelope.root.zeroize();
-    Ok((envelope.invitation, Some(RoomSecret { prk, context })))
+    Ok((envelope.invitation, Some(secret)))
 }
 
 impl RoomSecret {
+    pub(crate) fn from_parts(root: &[u8; 32], parts: &[&[u8]]) -> Self {
+        let context = framed(parts);
+        let prk = hkdf::Salt::new(hkdf::HKDF_SHA256, &context).extract(root);
+        Self { prk, context }
+    }
+
     fn derive(&self, label: &[u8], extra: &[u8]) -> Result<Zeroizing<[u8; 32]>> {
         struct Len;
         impl hkdf::KeyType for Len {
@@ -439,6 +449,10 @@ impl Session {
             descriptor_auth: auth,
             verified: Mutex::default(),
         })
+    }
+
+    pub(crate) fn fresh(&self) -> Result<Self> {
+        Self::new(self.secret.clone(), self.local.identity.clone())
     }
 
     pub fn configure(&self, options: &mut RoomOptions) {

@@ -21,10 +21,17 @@ export function copyEncryptionSourceNotices(root, notices) {
   ]) {
     copy(`.local/native-sdk/livekit/${file}`, `livekit/${file}`);
   }
-  copy(
-    ".local/native-sdk/webrtc-sys/src/frame_cryptor.cpp",
+  for (const file of [
     "webrtc-sys/src/frame_cryptor.cpp",
-  );
+    "webrtc-sys/src/peer_connection_factory.cpp",
+    "webrtc-sys/src/peer_connection.cpp",
+    "webrtc-sys/src/peer_connection.rs",
+    "webrtc-sys/include/livekit/peer_connection.h",
+    "libwebrtc/src/peer_connection.rs",
+    "libwebrtc/src/native/peer_connection.rs",
+    "libwebrtc/src/peer_connection_factory.rs",
+  ])
+    copy(`.local/native-sdk/${file}`, file);
   for (const file of [
     "scripts/setup-native-sdk.mjs",
     "scripts/setup-native-decoder.mjs",
@@ -34,10 +41,14 @@ export function copyEncryptionSourceNotices(root, notices) {
     "deploy/native-decoder.json",
     "deploy/native-audio.json",
     "apps/publisher/sdk/receiver-publication-tests.rs",
+    "apps/publisher/sdk/receive-guard-test.cpp",
+    "apps/publisher/decoder/protected_receive_guard.h",
+    "apps/publisher/decoder/protected_receive_call.h",
+    "apps/publisher/decoder/protected_frame_bounds.h",
   ])
     copy(file, file);
   writeFileSync(
     join(out, "README.txt"),
-    "PodeTelar modifies LiveKit 0.10.1 and webrtc-sys 0.3.53 (Apache-2.0) to enforce native frame encryption before media activation, authenticate the negotiated publication mode and close protected full reconnects before reusing a key. This directory includes the changed LiveKit sources, frame cryptor wrapper, deterministic patch scripts, tests and checksums. Upstream copyright and license notices are retained.\n",
+    "PodeTelar modifies LiveKit 0.10.1, libwebrtc 0.4.0 and webrtc-sys 0.3.53 (Apache-2.0) to enforce native frame encryption before media activation, authenticate the negotiated publication mode and close protected full reconnects before reusing a key. This directory includes the changed LiveKit sources, frame cryptor wrapper, deterministic patch scripts, tests and checksums. Upstream copyright and license notices are retained.\n",
   );
 }

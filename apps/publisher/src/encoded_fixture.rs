@@ -31,9 +31,7 @@ pub async fn publish(request: Request) -> Result<()> {
         "Invalid fixture duration."
     );
     ensure!(
-        crate::protection::unwrap_invitation(&request.invitation_url)?
-            .1
-            .is_none(),
+        crate::admission::valid_legacy_invitation(&request.invitation_url),
         "The standalone IVF fixture requires a transport-only invitation."
     );
     let mut data = Vec::new();

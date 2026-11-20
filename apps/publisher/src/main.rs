@@ -33,6 +33,8 @@ mod profile;
 mod protection;
 mod publisher;
 mod quality;
+#[cfg(all(windows, any(debug_assertions, feature = "media-qualification")))]
+mod recovery_fixture;
 #[cfg(feature = "performance-experiments")]
 #[allow(dead_code)]
 mod resource_experiment;
@@ -329,6 +331,8 @@ fn run() -> Result<()> {
                 );
             }
         }
+        #[cfg(all(windows, any(debug_assertions, feature = "media-qualification")))]
+        Some("--controller-recovery-fixture") => recovery_fixture::run()?,
         Some("--watch-fixture") => {
             let mut input = String::new();
             std::io::stdin().take(8193).read_to_string(&mut input)?;
@@ -459,7 +463,11 @@ struct AudioRequest {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct WatchRequest {
+    #[cfg(any(debug_assertions, feature = "media-qualification"))]
+    discord: Option<discord_protection_fixture::Voice>,
     sample_audio: Option<bool>,
+    #[serde(default)]
+    report_playback: bool,
     #[serde(default)]
     sample_rates: bool,
     #[serde(default)]
@@ -572,6 +580,18 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
             && (!request.soak || request.audiovisual_timing && request.continuous_watch),
         "Invalid watcher qualification duration."
     );
+    #[cfg(any(debug_assertions, feature = "media-qualification"))]
+    let admission = match request.discord {
+        Some(voice) => {
+            voice
+                .join(&request.invitation_url, "Native playback check")
+                .await?
+        }
+        None => {
+            admission::Admission::join(&request.invitation_url, "Native playback check").await?
+        }
+    };
+    #[cfg(not(any(debug_assertions, feature = "media-qualification")))]
     let admission =
         admission::Admission::join(&request.invitation_url, "Native playback check").await?;
     let mut playback = playback::Playback::new();
@@ -625,6 +645,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     );
     playback.set_budget(request.download_limit_mbps.map(|mbps| mbps * 1_000_000));
     let mut samples = Vec::new();
+    let mut playback_reported = false;
     let started = std::time::Instant::now();
     let mut next_sample = 0;
     let mut watch_after = if request.wait_for_preview {
@@ -720,6 +741,13 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                     }
                 }
                 samples.push(serde_json::json!({"second": elapsed, "nativeAudio":native_output::audit(),"syncGroups":fixture_sync_groups(&room), "mediaTiming":media_timing, "recoveries": recovery.load(Ordering::Acquire), "connected": room.connection_state() == ConnectionState::Connected, "phaseSecond": phase, "watching": watching,"receivedBytes":byte_totals.values().sum::<u64>(), "decoders":decoders, "streams": tiles.iter().map(|tile| serde_json::json!({"diagnosticRates":tile.presentation.diagnostics.rates.lock().ok().and_then(|v|*v),"diagnosticAttempts":tile.presentation.diagnostics.attempts.load(Ordering::Relaxed),"diagnosticSuccesses":tile.presentation.diagnostics.successes.load(Ordering::Relaxed),"diagnosticSender":tile.presentation.diagnostics.sender.lock().ok().and_then(|value|value.as_ref().map(|(_,value)|value.clone())),"status":tile.status,"codec":tile.codec,"frames":tile.frames.load(Ordering::Relaxed),"watching":tile.watching,"pictureSize":tile.picture.lock().ok().and_then(|p|p.as_ref().map(|image|image.size)),"audio":tile.audio.lock().map(|m|m.clone()).unwrap_or_default()})).collect::<Vec<_>>() }));
+                if request.report_playback && !playback_reported
+                    && let Some(tile) = tiles.iter().find(|tile| tile.watching && tile.frames.load(Ordering::Relaxed) > 5) {
+                        let codec = ["video/h264", "video/h265", "video/av1"].into_iter()
+                            .find(|known| tile.codec.eq_ignore_ascii_case(known)).unwrap_or("unknown");
+                        println!("{}", serde_json::json!({"decoded":true, "codec":codec, "second":elapsed}));
+                    playback_reported = true;
+                }
                 if request.sample_rates {
                     let sample = samples.last_mut().expect("just pushed sample");
                     let millis = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis();
@@ -931,7 +959,7 @@ async fn serve_fixture(
                 .unwrap_or_default();
             println!(
                 "{}",
-                serde_json::json!({"rateSample":true,"second":second,"encoderBps":metrics.encoder_bitrate,"encodedBps":metrics.encoded_bps,"deliveryBps":delivered.bitrate_bps,"sentFps":delivered.sent_fps,"fps":metrics.fps,"watcherCap":votes.watcher_cap})
+                serde_json::json!({"rateSample":true,"second":second,"encoderBps":metrics.encoder_bitrate,"encodedBps":metrics.encoded_bps,"deliveryBps":delivered.bitrate_bps,"retransmitBps":delivered.retransmit_bps,"lossFraction":delivered.loss_fraction,"sentFps":delivered.sent_fps,"fps":metrics.fps,"watcherCap":votes.watcher_cap})
             );
             next_sample = second + 1;
         }

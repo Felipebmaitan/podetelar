@@ -95,6 +95,7 @@ struct PrivateInvitations {
     // One user-selected capability. Discord can request an admission, but cannot
     // replace this value or supply a different encryption mode.
     required: Option<String>,
+    voice_scope: Option<crate::admission::voice_code::Scope>,
     saved: Option<String>,
     pasted: String,
     store_locked: bool,
@@ -103,15 +104,38 @@ struct PrivateInvitations {
 impl PrivateInvitations {
     fn load() -> Self {
         match crate::settings::PrivateStore::open().and_then(|store| store.load()) {
-            Ok(saved) => Self {
-                required: saved.clone(),
-                saved,
-                ..Self::default()
-            },
+            Ok(saved) => {
+                let mut private = Self::default();
+                private.set_required(saved.clone());
+                private.saved = saved;
+                private
+            }
             Err(_) => Self {
                 store_locked: true,
                 ..Self::default()
             },
+        }
+    }
+
+    fn set_required(&mut self, value: Option<String>) {
+        self.voice_scope = value
+            .as_deref()
+            .filter(|v| v.starts_with(crate::admission::voice_code::PREFIX))
+            .and_then(|v| {
+                crate::admission::voice_code::parse(v)
+                    .ok()
+                    .map(|(scope, _)| scope)
+            });
+        self.required = value;
+    }
+
+    fn restrict_voice(&self, server: &str, state: &mut crate::following::State) {
+        if let Some(scope) = &self.voice_scope {
+            state.locations.retain(|location| {
+                scope.origin == server
+                    && scope.guild_id == location.guild_id
+                    && scope.channel_id == location.channel_id
+            });
         }
     }
 
@@ -296,9 +320,40 @@ impl PublisherUi {
         }
     }
 
+    fn automatic_voice_state(&self) -> crate::following::State {
+        let mut state = self.following_client.state();
+        self.private
+            .restrict_voice(&self.account_state.server, &mut state);
+        state
+    }
+
     fn join(&mut self) {
-        if crate::settings::valid_private(self.invitation.trim()) {
-            self.private.required = Some(self.invitation.trim().to_owned());
+        let value = self.invitation.trim();
+        if value.starts_with(crate::admission::voice_code::PREFIX) {
+            let Ok((scope, _)) = crate::admission::voice_code::parse(value) else {
+                self.settings_error = "Invalid private Discord voice code.".into();
+                return;
+            };
+            let signed_in = self
+                .account_state
+                .credential
+                .as_ref()
+                .and_then(|c| c.for_server(&scope.origin))
+                .is_some();
+            self.private.required = Some(value.to_owned());
+            self.private.voice_scope = Some(scope);
+            self.following.resume();
+            self.next_follow_attempt = Instant::now();
+            self.settings_error.clear();
+            if !signed_in {
+                self.settings_error = "Sign in to the matching Discord backend and join the voice channel to use this code.".into();
+            }
+            // The regular voice poll supplies the actual authenticated location. Until then,
+            // keep this capability armed and never submit it through guest admission.
+            return;
+        }
+        if crate::settings::valid_private(value) {
+            self.private.set_required(Some(value.to_owned()));
         }
         self.following.invitation();
         self.session_name = Some(self.name.trim().to_owned());
@@ -315,13 +370,12 @@ impl PublisherUi {
         });
     }
 
-    fn protect_room(&mut self, current: &str, replace: bool) -> anyhow::Result<()> {
-        let invitation = if replace {
-            crate::protection::replace_invitation(current)?
-        } else {
-            crate::protection::protect_invitation(current)?
-        };
-        if replace && self.private.saved.as_deref() == Some(current) {
+    fn protect_room(&mut self, access: &crate::admission::Admission) -> anyhow::Result<()> {
+        let invitation = access.create_private_invitation()?;
+        if access.protection.is_some()
+            && self.private.saved.is_some()
+            && self.private.saved.as_deref() == access.invitation_url.as_deref()
+        {
             crate::settings::PrivateStore::open()?.save(&invitation)?;
             self.private.saved = Some(invitation.clone());
         }
@@ -330,7 +384,7 @@ impl PublisherUi {
     }
 
     fn join_private(&mut self, invitation: String) {
-        self.private.required = Some(invitation.clone());
+        self.private.set_required(Some(invitation.clone()));
         self.private.pasted.clear();
         self.invitation = invitation;
         self.textures.clear();
@@ -380,39 +434,39 @@ impl PublisherUi {
                         }
                     }
                 });
-            if let Some(current) = access.room_invitation_url.as_deref() {
-                let label = if state.protected {
-                    "Replace private invitation"
-                } else {
-                    "Create private invitation"
-                };
-                if ui.add_enabled(!state.busy, egui::Button::new(tr(label))).on_hover_text(tr("Rejoin with a new encryption key. Share the new invitation with trusted friends.")).clicked() {
-                    if let Err(error) = self.protect_room(current, state.protected) {
-                        self.settings_error = error.to_string();
+            let label = match (state.protected, access.voice_code_required()) {
+                (false, true) => "Create private voice code",
+                (true, true) => "Replace private voice code",
+                (false, false) => "Create private invitation",
+                (true, false) => "Replace private invitation",
+            };
+            if access.voice_code_required() {
+                ui.label(tr(
+                    "This code requires Discord sign-in and presence in this voice channel.",
+                ));
+            }
+            if ui.add_enabled(!state.busy, egui::Button::new(tr(label)))
+                .on_hover_text(tr("Rejoin with a new encryption key. Share the new invitation with trusted friends.")).clicked() {
+                if let Err(error) = self.protect_room(access) { self.settings_error = error.to_string(); }
+                ui.close();
+            }
+            if state.protected
+                && let Some(current) = access.invitation_url.as_deref()
+                && self.private.saved.as_deref() != Some(current)
+                && ui
+                    .button(tr("Remember private invitation on this device"))
+                    .clicked()
+            {
+                match crate::settings::PrivateStore::open().and_then(|store| store.save(current)) {
+                    Ok(()) => {
+                        self.private.saved = Some(current.to_owned());
+                        self.private.set_required(Some(current.to_owned()));
+                        self.private.store_locked = false;
+                        self.settings_error.clear();
                     }
-                    ui.close();
+                    Err(error) => self.settings_error = error.to_string(),
                 }
-                if state.protected
-                    && self.private.saved.as_deref() != Some(current)
-                    && ui
-                        .button(tr("Remember private invitation on this device"))
-                        .clicked()
-                {
-                    match crate::settings::PrivateStore::open()
-                        .and_then(|store| store.save(current))
-                    {
-                        Ok(()) => {
-                            self.private.saved = Some(current.to_owned());
-                            self.private.required = Some(current.to_owned());
-                            self.private.store_locked = false;
-                            self.settings_error.clear();
-                        }
-                        Err(error) => self.settings_error = error.to_string(),
-                    }
-                    ui.close();
-                }
-            } else if self.following.current.is_some() {
-                ui.label(tr("Creating a private invitation requires an available guest invitation for this room."));
+                ui.close();
             }
         }
         if (self.private.saved.is_some() || self.private.store_locked)
@@ -426,8 +480,8 @@ impl PublisherUi {
                         && saved.is_some()
                         && self.private.required == saved
                     {
-                        self.private.required = None;
-                        self.following.manual_leave(&self.following_client.state());
+                        self.private.set_required(None);
+                        self.following.manual_leave(&self.automatic_voice_state());
                         if saved.as_deref() == Some(&self.invitation) {
                             self.invitation.clear();
                         }
@@ -451,7 +505,7 @@ impl PublisherUi {
                 ui.separator();
                 let room_label = format!(
                     "{}  ·  {}  ·  {} {}",
-                    tr(if state.protected { "Invitation-encrypted" } else { "Transport encryption only" }),
+                    tr(if state.protected && state.profile_access.as_ref().is_some_and(|access| access.voice_code_required()) { "Voice code · Encrypted" } else if state.protected { "Invitation-encrypted" } else { "Transport encryption only" }),
                     if state.room_name.is_empty() {
                         tr("Your private room")
                     } else if state.room_name == "Friends" {
@@ -495,11 +549,11 @@ impl PublisherUi {
                 }
                 if state.connection == "connecting" {
                     if ui.button(tr("Cancel join")).clicked() {
-                        self.following.manual_leave(&self.following_client.state());
+                        self.following.manual_leave(&self.automatic_voice_state());
                         self.controller.send(Command::Leave);
                     }
                 } else if connected && ui.button(tr("Leave room")).clicked() {
-                    self.following.manual_leave(&self.following_client.state());
+                    self.following.manual_leave(&self.automatic_voice_state());
                     self.controller.send(Command::Leave);
                     self.textures.clear();
                 }
@@ -683,6 +737,15 @@ impl PublisherUi {
                     .hint_text(tr("Paste your private invitation link")),
             )
             .labelled_by(invitation_label.id);
+        let voice_code = self
+            .invitation
+            .trim()
+            .starts_with(crate::admission::voice_code::PREFIX);
+        if voice_code {
+            ui.small(tr(
+                "This code requires Discord sign-in and presence in this voice channel.",
+            ));
+        }
         let name_label = ui.label(tr("Your name"));
         let name = ui
             .add(
@@ -697,7 +760,7 @@ impl PublisherUi {
         let valid = ui.is_enabled()
             && !state.busy
             && !self.invitation.trim().is_empty()
-            && !self.name.trim().is_empty();
+            && (voice_code || !self.name.trim().is_empty());
         let enter = ui.input(|i| i.key_pressed(egui::Key::Enter))
             && (invitation.has_focus()
                 || invitation.lost_focus()
@@ -3357,7 +3420,9 @@ mod tests {
             channel_name: "".into(),
             enabled: true,
         });
-        app.protect_room(&room, false).unwrap();
+        let mut access = crate::admission::Admission::profile_test("https://example.test");
+        access.room_invitation_url = Some(room.clone().into());
+        app.protect_room(&access).unwrap();
         assert!(app.private.requires_private());
         assert!(app.private.saved.is_none());
         assert!(

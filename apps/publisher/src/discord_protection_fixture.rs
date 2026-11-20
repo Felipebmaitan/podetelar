@@ -3,7 +3,6 @@ use crate::{
     account::Credential,
     admission::Admission,
     following::{Location, Target},
-    protection,
 };
 use anyhow::{Result, ensure};
 use serde::Deserialize;
@@ -41,11 +40,7 @@ impl Voice {
 
 pub(super) async fn create(voice: Voice) -> Result<()> {
     let admitted = voice.join("", "Voice organizer").await?;
-    let result = admitted
-        .room_invitation_url
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("This voice room has no guest invitation."))
-        .and_then(protection::protect_invitation);
+    let result = admitted.create_private_invitation();
     admitted.leave().await;
     println!("{}", serde_json::json!({ "invitationUrl": result? }));
     Ok(())

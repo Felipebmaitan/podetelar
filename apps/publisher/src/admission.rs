@@ -1,3 +1,4 @@
+pub(crate) mod voice_code;
 use anyhow::{Context, Result, bail, ensure};
 use reqwest::{Client, Response, redirect::Policy};
 use serde::{Deserialize, de::DeserializeOwned};
@@ -31,6 +32,7 @@ pub struct Admission {
     pub public_origin: String,
     pub invitation_url: Option<Arc<str>>,
     pub room_invitation_url: Option<Arc<str>>,
+    voice_scope: Option<Arc<voice_code::Scope>>,
 }
 struct ProbeLease {
     client: Client,
@@ -69,6 +71,15 @@ impl std::fmt::Display for PrivateRoomMismatch {
     }
 }
 impl std::error::Error for PrivateRoomMismatch {}
+
+#[derive(Debug)]
+pub struct MediaAccessDenied;
+impl std::fmt::Display for MediaAccessDenied {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Room media access was denied.")
+    }
+}
+impl std::error::Error for MediaAccessDenied {}
 
 pub enum PreviewDelivery {
     Sent,
@@ -114,6 +125,10 @@ struct Invitation {
 
 impl Invitation {
     fn parse(input: &str) -> Result<Self> {
+        ensure!(
+            !input.trim().starts_with("PTVOICE"),
+            "A private Discord voice code requires signed-in voice admission."
+        );
         ensure!(input.len() <= 2048, "Invitation link is too long.");
         let (input, protection) = crate::protection::unwrap_invitation(input.trim())?;
         Self::parse_legacy(&input, protection)
@@ -225,7 +240,39 @@ pub fn media_diagnostic(error: impl std::fmt::Display) -> String {
 }
 
 impl Admission {
+    pub fn voice_code_required(&self) -> bool {
+        self.voice_scope.is_some()
+            && self
+                .room_invitation_url
+                .as_deref()
+                .is_none_or(|value| value.starts_with(voice_code::PREFIX))
+    }
+
+    pub fn create_private_invitation(&self) -> Result<String> {
+        if self.voice_code_required() {
+            return voice_code::create(
+                self.voice_scope
+                    .as_deref()
+                    .context("Join the Discord voice room first.")?,
+            );
+        }
+        let room = self
+            .room_invitation_url
+            .as_deref()
+            .context("Room invitation unavailable.")?;
+        if self.protection.is_some() {
+            crate::protection::replace_invitation(room)
+        } else {
+            crate::protection::protect_invitation(room)
+        }
+    }
+
     pub fn accepts_private_invitation(&self, input: &str) -> bool {
+        if input.starts_with(voice_code::PREFIX) {
+            return voice_code::parse(input)
+                .is_ok_and(|(scope, _)| self.voice_scope.as_deref() == Some(&scope));
+        }
+
         Invitation::parse(input).is_ok_and(|parsed| {
             parsed.protection.is_some()
                 && parsed.room_id == self.room_id
@@ -244,6 +291,7 @@ impl Admission {
             public_origin: origin.into(),
             invitation_url: None,
             room_invitation_url: None,
+            voice_scope: None,
             protection: None,
         }
     }
@@ -477,6 +525,15 @@ impl Admission {
                 target.location.channel_id.clone(),
             )
         });
+        if let Some(target) = &voice {
+            ensure!(
+                account
+                    .as_ref()
+                    .and_then(|c| c.for_server(&target.server))
+                    .is_some(),
+                "Sign in to this Discord backend first."
+            );
+        }
         let mut invitation = match &voice {
             Some(target) => {
                 ensure!(valid_server(&target.server), "Invalid Discord backend.");
@@ -487,6 +544,16 @@ impl Admission {
                         secret: String::new(),
                         channel: None,
                         protection: None,
+                    }
+                } else if original_invitation.starts_with(voice_code::PREFIX) {
+                    let (scope, secret) = voice_code::parse(&original_invitation)?;
+                    ensure!(scope.matches_target(target), PrivateRoomMismatch);
+                    Invitation {
+                        origin: Url::parse(&scope.origin)?,
+                        room_id: scope.room_id,
+                        secret: String::new(),
+                        channel: None,
+                        protection: Some(secret),
                     }
                 } else {
                     let local = Invitation::parse(&original_invitation)?;
@@ -578,15 +645,6 @@ impl Admission {
         } else {
             serde_json::json!({"invitation":invitation.secret,"displayName":display_name,"deviceId":device_id})
         };
-        if automatic {
-            ensure!(
-                account
-                    .as_ref()
-                    .and_then(|c| c.for_server(&scope))
-                    .is_some(),
-                "Sign in to this Discord backend first."
-            );
-        }
         let mut join_request = client
             .post(invitation.origin.join(&join_path)?)
             .header("Origin", invitation.origin.origin().ascii_serialization())
@@ -653,6 +711,14 @@ impl Admission {
                 .map(Arc::from)
                 .or_else(|| share_url.clone())
         };
+        let voice_scope = voice_channel.map(|(guild_id, channel_id)| {
+            Arc::new(voice_code::Scope {
+                origin: scope.clone(),
+                guild_id,
+                channel_id,
+                room_id: session.room.id.clone(),
+            })
+        });
         Ok(Self {
             client,
             origin: invitation.origin,
@@ -660,9 +726,22 @@ impl Admission {
             room_name: session.room.name,
             protection,
             room_invitation_url,
+            voice_scope,
             participant_id: session.participant.id,
             public_origin: scope,
             invitation_url: share_url,
+        })
+    }
+
+    pub(crate) fn fresh_protected_media(&self) -> Result<Self> {
+        let protection = self
+            .protection
+            .as_deref()
+            .context("Private media session required.")?
+            .fresh()?;
+        Ok(Self {
+            protection: Some(Arc::new(protection)),
+            ..self.clone()
         })
     }
 
@@ -686,6 +765,10 @@ impl Admission {
             .send()
             .await
             .map_err(|_| anyhow::anyhow!("Could not reach the room server."))?;
+        ensure!(
+            !matches!(response.status().as_u16(), 401 | 403),
+            MediaAccessDenied
+        );
         ensure!(
             response.status().as_u16() != 404,
             "This room server needs an update before native playback can be used."
@@ -1128,6 +1211,49 @@ mod tests {
 
     fn link(origin: &str) -> String {
         format!("{origin}/r/{}#invite={}", "r".repeat(22), "s".repeat(43))
+    }
+
+    #[tokio::test]
+    async fn voice_code_is_never_treated_as_guest_authority_and_requires_correct_voice_login() {
+        let mut admission = Admission::profile_test("https://room.invalid");
+        admission.room_id = "r".repeat(22);
+        let scope = voice_code::Scope {
+            origin: admission.public_origin.clone(),
+            guild_id: "1".repeat(17),
+            channel_id: "2".repeat(17),
+            room_id: admission.room_id.clone(),
+        };
+        admission.voice_scope = Some(Arc::new(scope.clone()));
+        let code = admission.create_private_invitation().unwrap();
+        assert!(admission.accepts_private_invitation(&code));
+        assert!(admission.invitation_url.is_none() && admission.room_invitation_url.is_none());
+        assert!(!valid_legacy_invitation(&code) && !valid_invitation(&code));
+        assert!(
+            matches!(Admission::join(&code,"Guest").await,Err(error) if error.to_string().contains("voice admission"))
+        );
+        let voice = crate::following::Target {
+            server: scope.origin.clone(),
+            location: crate::following::Location {
+                guild_id: scope.guild_id,
+                channel_id: scope.channel_id,
+                guild_name: String::new(),
+                channel_name: String::new(),
+                enabled: true,
+            },
+        };
+        assert!(
+            matches!(Admission::join_target(&code,"Guest",None,Some(voice.clone())).await,Err(error) if error.to_string().starts_with("Sign in"))
+        );
+        let credential =
+            serde_json::from_value(serde_json::json!({"server":voice.server, "token":"test"}))
+                .unwrap();
+        let mut other = voice;
+        other.location.channel_id = "3".repeat(17);
+        assert!(
+            matches!(Admission::join_target(&code,"Guest",Some(credential),Some(other)).await,Err(error) if error.is::<PrivateRoomMismatch>())
+        );
+        admission.voice_scope = None;
+        assert!(!admission.accepts_private_invitation(&code));
     }
 
     #[test]

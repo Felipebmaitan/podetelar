@@ -18,12 +18,20 @@ const pin = JSON.parse(readFileSync(join(root, "deploy/native-decoder.json")));
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const frameCryptorChanges = [
   [
+    '#include "livekit/frame_cryptor.h"',
+    '#include "livekit/frame_cryptor.h"\n#include "protected_receive_guard.h"\n#include "protected_frame_bounds.h"',
+  ],
+  [
+    "FrameCryptor::~FrameCryptor() {",
+    "FrameCryptor::~FrameCryptor() {\n  if (receiver_) podetelar::ReceiveCryptors::Instance().Remove(e2ee_transformer_.get());",
+  ],
+  [
     "  sender->SetEncoderToPacketizerFrameTransformer(e2ee_transformer_);\n  e2ee_transformer_->SetEnabled(false);\n",
     "  e2ee_transformer_->SetEnabled(true);\n  sender->SetEncoderToPacketizerFrameTransformer(e2ee_transformer_);\n",
   ],
   [
     "  receiver->SetDepacketizerToDecoderFrameTransformer(e2ee_transformer_);\n  e2ee_transformer_->SetEnabled(false);\n",
-    "  e2ee_transformer_->SetEnabled(true);\n  receiver->SetDepacketizerToDecoderFrameTransformer(e2ee_transformer_);\n",
+    "  e2ee_transformer_->SetEnabled(true);\n  podetelar::ReceiveCryptors::Instance().Add(e2ee_transformer_.get());\n  receiver->SetDepacketizerToDecoderFrameTransformer(e2ee_transformer_);\n",
   ],
   [
     "  e2ee_transformer_->SetEnabled(enabled);\n",
@@ -85,6 +93,19 @@ const readback = readFileSync(
 ).replaceAll("\r\n", "\n");
 if (hash(readback) !== pin.readbackSha256)
   throw new Error("Bounded readback differs from its pin.");
+const protectedHeaders = [
+  "protected_receive_guard.h",
+  "protected_receive_call.h",
+  "protected_frame_bounds.h",
+].map((file) => {
+  const contents = readFileSync(
+    join(root, "apps/publisher/decoder", file),
+    "utf8",
+  ).replaceAll("\r\n", "\n");
+  if (hash(contents) !== pin.protectedReceiveHeaders[file])
+    throw new Error("Native protected receive header differs from its pin.");
+  return [file, contents];
+});
 await import("./setup-native-audio.mjs");
 if (existsSync(destination)) {
   if (treeHash(destination) !== pin.treeSha256)
@@ -210,11 +231,23 @@ if (existsSync(destination)) {
     throw new Error("Frame cryptor original source mismatch.");
   for (const [marker, replacement] of frameCryptorChanges)
     modify("src/frame_cryptor.cpp", marker, replacement);
+  const receiverConstruction =
+    "new webrtc::FrameCryptorTransformer(rtc_runtime->signaling_thread(),\n                                          participant_id, mediaType, algorithm,\n                                          key_provider_));\n  e2ee_transformer_->SetEnabled(true);\n  podetelar::ReceiveCryptors::Instance().Add(";
+  modify(
+    "src/frame_cryptor.cpp",
+    receiverConstruction,
+    receiverConstruction.replace(
+      "new webrtc::FrameCryptorTransformer(",
+      "new podetelar::ProtectedReceiverCryptor(",
+    ),
+  );
   if (
     hash(readFileSync(frameCryptor, "utf8").replaceAll("\r\n", "\n")) !==
     pin.frameCryptorPatchedSha256
   )
-    throw new Error("Frame cryptor protected source mismatch.");
+    throw new Error(
+      `Frame cryptor protected source mismatch: ${hash(readFileSync(frameCryptor, "utf8").replaceAll("\r\n", "\n"))}`,
+    );
   modify(
     "build.rs",
     '        "macos" => {',
@@ -230,6 +263,45 @@ if (existsSync(destination)) {
   writeFileSync(join(source, "src/deferred_i420.h"), deferred);
   writeFileSync(join(source, "src/bounded_readback.h"), readback);
   patchNativeOutput(source, outputGuard);
+  for (const [file, contents] of protectedHeaders)
+    writeFileSync(join(source, "src", file), contents);
+  modify(
+    "src/peer_connection.rs",
+    "        pub enable_sctp_snap: bool,",
+    "        pub enable_sctp_snap: bool,\n        pub protect_receive_streams: bool,",
+  );
+  modify(
+    "include/livekit/peer_connection.h",
+    "bool Initialize(webrtc::PeerConnectionInterface::RTCConfiguration config);",
+    "bool Initialize(webrtc::PeerConnectionInterface::RTCConfiguration config, std::unique_ptr<webrtc::FieldTrialsView> trials);",
+  );
+  modify(
+    "src/peer_connection.cpp",
+    "    webrtc::PeerConnectionInterface::RTCConfiguration config) {\n  webrtc::PeerConnectionDependencies deps{this};",
+    "    webrtc::PeerConnectionInterface::RTCConfiguration config, std::unique_ptr<webrtc::FieldTrialsView> trials) {\n  webrtc::PeerConnectionDependencies deps{this};\n  deps.trials = std::move(trials);",
+  );
+  modify(
+    "src/peer_connection_factory.cpp",
+    '#include "native_output_mixer.h"',
+    '#include "native_output_mixer.h"\n#include "protected_receive_call.h"',
+  );
+  modify(
+    "src/peer_connection_factory.cpp",
+    "  webrtc::EnableMedia(dependencies);",
+    "  webrtc::EnableMedia(dependencies);\n  dependencies.media_factory = std::make_unique<podetelar::ProtectedMediaFactory>(std::move(dependencies.media_factory));",
+  );
+  modify(
+    "src/peer_connection_factory.cpp",
+    "  if (!pc->Initialize(to_native_rtc_configuration(config))) {",
+    `  std::unique_ptr<webrtc::FieldTrialsView> trials;
+  podetelar::ProtectedTrials::Receipt guard_receipt;
+  if (config.protect_receive_streams) {
+    guard_receipt = std::make_shared<std::atomic_bool>(false);
+    trials = std::make_unique<podetelar::ProtectedTrials>(env_.field_trials().CreateCopy(), guard_receipt);
+  }
+  if (!pc->Initialize(to_native_rtc_configuration(config), std::move(trials)) ||
+      (guard_receipt && !guard_receipt->load())) {`,
+  );
   const actual = treeHash(source);
   if (actual !== pin.treeSha256)
     throw new Error(`Decoder patched tree mismatch: ${actual}`);

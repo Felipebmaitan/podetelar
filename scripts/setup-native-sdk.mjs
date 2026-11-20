@@ -94,6 +94,12 @@ const protectedReceiverTrailerChanges = [
 ];
 const roomReceiverChanges = [
   [
+    "        let e2ee_manager = E2eeManager::new(encryption_options, with_dc_encryption);",
+    `        // Immutable local policy for every peer transport, before SDP or RTP.
+        options.rtc_config.protect_receive_streams = encryption_options.is_some();
+        let e2ee_manager = E2eeManager::new(encryption_options, with_dc_encryption);`,
+  ],
+  [
     "            key_provider.set_sif_trailer(join_response.sif_trailer);",
     "            // Protected rooms never authorize server-injected frames.\n            key_provider.set_sif_trailer(Vec::new());",
   ],
@@ -403,7 +409,9 @@ mod podetelar_sender_encryption_tests {
     throw new Error("Native SDK receiver regression test checksum mismatch.");
   publicationPatched += "\n" + publicationTests;
   if (hash(publicationPatched) !== pin.publicationPatchedSourceSha256)
-    throw new Error("Native SDK receiver publication patch checksum mismatch.");
+    throw new Error(
+      `Native SDK receiver publication patch checksum mismatch: ${hash(publicationPatched)}`,
+    );
   writeFileSync(publicationTarget, publicationPatched);
   // Read-only association used by opt-in local qualification. Never log IDs.
   for (const [file, kind] of [

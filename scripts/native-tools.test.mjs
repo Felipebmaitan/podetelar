@@ -79,6 +79,9 @@ const decoderHeaders = [
   "bounded_readback.h",
   "native_output_guard.h",
   "native_output_mixer.h",
+  "protected_receive_guard.h",
+  "protected_receive_call.h",
+  "protected_frame_bounds.h",
 ];
 
 for (const state of ["archive", "source"]) {
@@ -179,7 +182,9 @@ for (const tampered of decoderHeaders) {
                 ? /Bounded readback differs from its pin/
                 : tampered === "native_output_guard.h"
                   ? /Native output guard differs from its pin/
-                  : /Native output mixer differs from its pin/,
+                  : tampered === "native_output_mixer.h"
+                    ? /Native output mixer differs from its pin/
+                    : /Native protected receive header differs from its pin/,
       );
     } finally {
       removeFixture(root);

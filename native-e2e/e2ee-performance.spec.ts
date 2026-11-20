@@ -19,7 +19,7 @@ async function cpuSeconds(ids: number[]) {
       "-WindowStyle",
       "Hidden",
       "-Command",
-      `@(${ids.join(",")}) | ForEach-Object { $measurementProcess = Get-Process -Id $_ -ErrorAction Stop; [pscustomobject]@{ id = $_; cpu = $measurementProcess.CPU } } | ConvertTo-Json -Compress`,
+      `@(${ids.join(",")}) | ForEach-Object { $measurementProcess = Get-Process -Id $_ -ErrorAction Stop; [pscustomobject]@{ id = $_; cpu = $measurementProcess.CPU; privateBytes = $measurementProcess.PrivateMemorySize64; workingSetBytes = $measurementProcess.WorkingSet64; at = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() } } | ConvertTo-Json -Compress`,
     ],
     { windowsHide: true, timeout: 5000 },
   );
@@ -27,6 +27,9 @@ async function cpuSeconds(ids: number[]) {
   return (Array.isArray(parsed) ? parsed : [parsed]) as {
     id: number;
     cpu: number;
+    privateBytes: number;
+    workingSetBytes: number;
+    at: number;
   }[];
 }
 type Sent = {
@@ -50,7 +53,7 @@ test("measure invitation encryption on/off targeting 35 Mbps with one and four w
     !pilot && process.env.PODETELAR_MEASURE_E2EE !== "1",
     "Explicit opt-in hardware measurement.",
   );
-  test.setTimeout(900_000);
+  test.setTimeout(1_200_000);
   const samples: unknown[] = [];
   const report = {
     cpu: cpus()[0]?.model,
@@ -92,7 +95,7 @@ test("measure invitation encryption on/off targeting 35 Mbps with one and four w
           invitationUrl,
           displayName: "Measured publisher",
           codec: "h264",
-          seconds: 84,
+          seconds: 120,
           quality,
           sampleRates: true,
         });
@@ -100,6 +103,9 @@ test("measure invitation encryption on/off targeting 35 Mbps with one and four w
           at: number;
           deliveryBps: number;
           encodedBps: number;
+          encoderBps: number;
+          retransmitBps: number;
+          lossFraction: number | null;
           sentFps: number;
         }[] = [];
         let pendingRates = "";
@@ -113,13 +119,20 @@ test("measure invitation encryption on/off targeting 35 Mbps with one and four w
               if (
                 sample.rateSample === true &&
                 Number.isFinite(sample.deliveryBps) &&
+                Number.isFinite(sample.encoderBps) &&
+                Number.isFinite(sample.retransmitBps) &&
                 Number.isFinite(sample.encodedBps) &&
                 Number.isFinite(sample.sentFps)
               )
                 rateSamples.push({
-                  at: performance.now(),
+                  at: Date.now(),
                   deliveryBps: sample.deliveryBps,
                   encodedBps: sample.encodedBps,
+                  encoderBps: sample.encoderBps,
+                  retransmitBps: sample.retransmitBps,
+                  lossFraction: Number.isFinite(sample.lossFraction)
+                    ? sample.lossFraction
+                    : null,
                   sentFps: sample.sentFps,
                 });
             } catch {
@@ -137,7 +150,7 @@ test("measure invitation encryption on/off targeting 35 Mbps with one and four w
             receivers.push(
               nativeRequest("--watch-fixture", {
                 invitationUrl,
-                seconds: 80,
+                seconds: 117,
                 continuousWatch: true,
                 sampleRates: true,
                 sampleAudio: false,
@@ -160,33 +173,36 @@ test("measure invitation encryption on/off targeting 35 Mbps with one and four w
               )
             )
               break;
-          } while (performance.now() - warmupStart < 60_000);
+          } while (performance.now() - warmupStart < 95_000);
           const warmupSeconds = (performance.now() - warmupStart) / 1000;
           const ids = [
             sender.child.pid!,
             ...receivers.map((r) => r.child.pid!),
           ];
           const first = await cpuSeconds(ids);
-          const start = performance.now();
-          const wallStart = Date.now();
           await delay(12_000);
           const last = await cpuSeconds(ids);
-          const elapsed = (performance.now() - start) / 1000;
-          const wallEnd = Date.now();
+          // The OS timestamps each CPU counter read in the helper process.
+          // PowerShell startup and JSON transport fall outside the measurement.
+          const wallStart = Math.max(...first.map((p) => p.at));
+          const wallEnd = Math.min(...last.map((p) => p.at));
+          const elapsed = (wallEnd - wallStart) / 1000;
           const window = rateSamples.filter(
-            (sample) =>
-              sample.at >= start && sample.at <= start + elapsed * 1000,
+            (sample) => sample.at >= wallStart && sample.at <= wallEnd,
           );
           expect(window.length).toBeGreaterThanOrEqual(9);
           const mean = (values: number[]) =>
             values.reduce((sum, value) => sum + value, 0) / values.length;
-          const processes = last.map((sample) => ({
-            role: sample.id === sender.child.pid ? "publisher" : "watcher",
-            oneCorePercent:
-              (100 *
-                (sample.cpu - first.find((s) => s.id === sample.id)!.cpu)) /
-              elapsed,
-          }));
+          const processes = last.map((sample) => {
+            const initial = first.find((s) => s.id === sample.id)!;
+            const seconds = (sample.at - initial.at) / 1000;
+            return {
+              role: sample.id === sender.child.pid ? "publisher" : "watcher",
+              privateBytesAtWindowEnd: sample.privateBytes,
+              workingSetBytesAtWindowEnd: sample.workingSetBytes,
+              oneCorePercent: (100 * (sample.cpu - initial.cpu)) / seconds,
+            };
+          });
           const [sent, ...watched] = await Promise.all([
             sender.result as Promise<Sent>,
             ...receivers.map((r) => r.result as Promise<Received>),
@@ -251,6 +267,11 @@ test("measure invitation encryption on/off targeting 35 Mbps with one and four w
               received,
               encodedBps: mean(window.map((s) => s.encodedBps)),
               sentFps: mean(window.map((s) => s.sentFps)),
+              encoderTargetBps: mean(window.map((s) => s.encoderBps)),
+              retransmitBps: mean(window.map((s) => s.retransmitBps)),
+              peakLossFraction: window.some((s) => s.lossFraction !== null)
+                ? Math.max(...window.map((s) => s.lossFraction ?? 0))
+                : null,
             },
           });
           writeFileSync(

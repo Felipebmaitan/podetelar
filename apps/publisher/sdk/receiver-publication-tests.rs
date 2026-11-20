@@ -5,6 +5,20 @@ mod podetelar_encryption_receiver_tests {
     use libwebrtc::video_source::{RtcVideoSource, VideoResolution, native::NativeVideoSource};
     use std::{sync::mpsc, thread, time::Duration};
 
+    #[tokio::test]
+    async fn protected_peer_connection_requires_its_own_guarded_call() {
+        use libwebrtc::peer_connection_factory::{PeerConnectionFactory, RtcConfiguration};
+        let factory = PeerConnectionFactory::default();
+        let legacy = factory.create_peer_connection(RtcConfiguration::default()).unwrap();
+        let mut private = RtcConfiguration::default();
+        private.protect_receive_streams = true;
+        // The native factory returns an error unless this specific connection's
+        // underlying Call acknowledged the guarded receive-stream constructor.
+        let first = factory.create_peer_connection(private.clone()).unwrap();
+        let second = factory.create_peer_connection(private).unwrap();
+        drop((first, second, legacy));
+    }
+
     fn receiver(name: &str) -> RemoteTrack {
         let source = RtcVideoSource::Native(NativeVideoSource::new(
             VideoResolution {

@@ -3,12 +3,17 @@
   "url": "https://static.crates.io/crates/webrtc-sys/webrtc-sys-0.3.53.crate",
   "sha256": "dbfe2c11c98bfd4839242abf9a4b8ddb16a7ff3cbf87416f40928a06886eb5c7",
   "adapterSha256": "17324300e534cab7f4b33f4b83960ee8798348314fbe33cfec194e747ac6fc13",
-  "treeSha256": "adbe5ae79758b18325b5da926fbdd5555b5fce8bcc02e724372c95f4ab848db1",
+  "treeSha256": "48eceed60a67361daffdd8e777b88a31e1c39a48a5a6945a1b40fe72ea2c38e7",
   "deferredI420Sha256": "b99c2927dc4115b80a4831b7bad47c2845cdf6d5a4ccf874d1e32f16aabfc93c",
   "readbackSha256": "9bc985f501c1e1562d81bfb49746160ed1520c3ec32ed4eecf6a8fc2615ec0a0",
   "outputGuardSha256": "c1a91808c2e64f7bbf738d971e067a8fe307fdf4f677abbb0f911e5f73926c54",
   "outputMixerSha256": "182318620e348300b8083a1f1e9425a637f233ce2a13bb6b0a50f5d6f476d553",
   "macosAdapterSha256": "1098f9e2f389cf9b071edd8cd4f08b3a5ffba7944c4689a2c804bdc9401ae1f9",
   "frameCryptorOriginalSha256": "530d12a1b19b245db2aa08fd93cac5fd6fcc37ae7cff951a7861a81d93797f15",
-  "frameCryptorPatchedSha256": "3f095e1fb3fb7feab57b643dcf0a86e4b299710509df89f385d5aded0e9d3c3e"
+  "frameCryptorPatchedSha256": "2cb56bdaebfcd35f4eba709f68779993ab921cf12ae92e0aef78b0bb4984992e",
+  "protectedReceiveHeaders": {
+    "protected_receive_guard.h": "9af65a1e66b42f737f588a1012e435e11afbca1cc3e6dab4cb9f89857a95dc78",
+    "protected_receive_call.h": "2e9cd86b056ce5036f807e0721c57050f583a83591e37b1bf84e1654e91e7158",
+    "protected_frame_bounds.h": "0c0b6d716882e1abf4f2a2b0e3ea3b524b318dcd2a491a2e42fe1ec050724f5d"
+  }
 }

@@ -44,6 +44,20 @@ test("Discord administration shows configuration status without exposing credent
   await expect(
     page.getByRole("heading", { name: "Automatic joining", exact: true }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await page.goBack();
+  await expect(
+    page.getByRole("heading", { name: "Automatic joining", exact: true }),
+  ).toBeVisible();
+  await page.goForward();
+  await expect(
+    page.getByRole("heading", { name: "Usage", exact: true }),
+  ).toBeVisible();
+  await page.goBack();
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Automatic joining", exact: true }),
+  ).toBeVisible();
   await page
     .getByRole("button", {
       name: "Pause automatic joining everywhere",

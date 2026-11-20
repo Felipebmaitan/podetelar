@@ -265,10 +265,17 @@ pub fn icon_button(ui: &mut egui::Ui, symbol: Icon, label: &str) -> egui::Respon
 pub fn layout_button(
     ui: &mut egui::Ui,
     symbol: Icon,
+    caption: &str,
     label: &str,
     selected: bool,
 ) -> egui::Response {
-    let response = ui.add_sized([34.0, 32.0], egui::Button::new("").frame(false));
+    let text = ui
+        .painter()
+        .layout_no_wrap(caption.to_owned(), semibold(12.5), SECONDARY);
+    let response = ui.add_sized(
+        [text.size().x + 38.0, 32.0],
+        egui::Button::new("").frame(false),
+    );
     if selected {
         ui.painter()
             .rect_filled(response.rect, 8.0, AMBER.gamma_multiply(0.14));
@@ -281,18 +288,16 @@ pub fn layout_button(
     } else if response.hovered() || response.has_focus() {
         ui.painter().rect_filled(response.rect, 8.0, SURFACE_3);
     }
+    let ink = if selected { AMBER } else { SECONDARY };
+    let center = response.rect.left_center() + egui::vec2(15.0, 0.0);
     icon(
         ui.painter(),
-        egui::Rect::from_center_size(response.rect.center(), egui::vec2(16.0, 16.0)),
+        egui::Rect::from_center_size(center, egui::vec2(15.0, 15.0)),
         symbol,
-        if !ui.is_enabled() {
-            TERTIARY
-        } else if selected {
-            AMBER
-        } else {
-            SECONDARY
-        },
+        ink,
     );
+    ui.painter()
+        .galley(center + egui::vec2(13.0, -text.size().y / 2.0), text, ink);
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), selected, label)
     });

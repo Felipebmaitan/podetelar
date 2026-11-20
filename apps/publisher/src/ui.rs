@@ -1027,20 +1027,6 @@ impl PublisherUi {
                 );
             }
         });
-        ui.horizontal(|ui| {
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(15.0, 22.0), egui::Sense::hover());
-            skin::icon(ui.painter(), rect, Icon::Settings, MUTED);
-            if ui
-                .add(
-                    egui::Button::new(egui::RichText::new(tr("Advanced")).size(12.5).color(MUTED))
-                        .frame(false),
-                )
-                .clicked()
-            {
-                self.advanced_open = true;
-                self.setup_open = false;
-            }
-        });
         if state.sharing {
             egui::CollapsingHeader::new(tr("Source preview"))
                 .default_open(ui.available_height() > 460.0)
@@ -1164,7 +1150,7 @@ impl PublisherUi {
         ui.add_enabled_ui(!state.busy, |ui| {
             let label = skin::help_label(
                 ui,
-                tr("Watching allowance"),
+                tr("Download bandwidth limit"),
                 tr("Automatic uses measured download capacity with headroom, or 30 Mbps if unavailable. Shared across everything you watch."),
             );
             let before = self.download_budget;
@@ -1613,15 +1599,19 @@ impl PublisherUi {
         }
         skin::menu_separator(ui);
         if skin::menu_row(ui, tr("Stop watching"), Some(Icon::Stop), "", true).clicked() {
-            self.controller.send(Command::Watch {
-                id: tile.id.clone(),
-                enabled: false,
-            });
-            self.textures.remove(&tile.id);
-            if fullscreen {
-                self.set_fullscreen(ui.ctx(), None);
-            }
+            self.stop_watching(ui.ctx(), tile);
             ui.close();
+        }
+    }
+
+    fn stop_watching(&mut self, ctx: &egui::Context, tile: &Tile) {
+        self.controller.send(Command::Watch {
+            id: tile.id.clone(),
+            enabled: false,
+        });
+        self.textures.remove(&tile.id);
+        if self.fullscreen.as_ref() == Some(&tile.id) {
+            self.set_fullscreen(ctx, None);
         }
     }
 
@@ -1763,11 +1753,7 @@ impl PublisherUi {
                                         )
                                         .clicked()
                                     {
-                                        self.controller.send(Command::Watch {
-                                            id: tile.id.clone(),
-                                            enabled: false,
-                                        });
-                                        self.set_fullscreen(&ctx, None);
+                                        self.stop_watching(&ctx, tile);
                                     }
                                 });
                             });
@@ -1922,7 +1908,7 @@ impl PublisherUi {
             if tile.watching {
                 let controls = egui::Rect::from_min_size(
                     rect.left_bottom() + egui::vec2(12.0, -44.0),
-                    egui::vec2(124.0, 34.0),
+                    egui::vec2(width - 24.0, 34.0),
                 );
                 let mut hud = ui.new_child(
                     egui::UiBuilder::new()
@@ -1936,6 +1922,26 @@ impl PublisherUi {
                     .inner_margin(egui::Margin::symmetric(4, 2))
                     .show(&mut hud, |ui| {
                         ui.horizontal(|ui| {
+                            let stop_label = format!("{} · {}", tr("Stop watching"), tile.name);
+                            let stop = if width >= 270.0 {
+                                let response = ui.add(
+                                    egui::Button::new(skin::strong(tr("Stop watching"), 12.5))
+                                        .frame(false),
+                                );
+                                response.widget_info(|| {
+                                    egui::WidgetInfo::labeled(
+                                        egui::Role::Button,
+                                        ui.is_enabled(),
+                                        &stop_label,
+                                    )
+                                });
+                                response.on_hover_text(&stop_label)
+                            } else {
+                                skin::icon_button(ui, Icon::Stop, &stop_label)
+                            };
+                            if stop.clicked() {
+                                self.stop_watching(ui.ctx(), tile);
+                            }
                             if skin::icon_button(
                                 ui,
                                 Icon::Fullscreen,
@@ -2487,7 +2493,15 @@ impl PublisherUi {
         {
             self.focused = None;
         }
-        if self.browser_invitation_open {
+        let room_blocked = self.browser_invitation_open
+            || self.profile_open
+            || self.advanced_open
+            || self.update_open;
+        #[cfg(windows)]
+        if room_blocked {
+            ctx.accesskit_node_builder(root.unique_id(), |node| node.set_hidden());
+        }
+        if room_blocked {
             root.disable();
         }
         egui::Panel::top("room-header")
@@ -2902,6 +2916,8 @@ impl PublisherUi {
             .frame(egui::Frame::new().fill(CANVAS).inner_margin(dock_margin))
             .show(root, |ui| {
                 egui::Area::new(egui::Id::unique("studio-controls"))
+                    .accessibility_parent(ui.unique_id())
+                    .enabled(ui.is_enabled())
                     .constrain_to(ui.max_rect())
                     .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
                     .movable(false)
@@ -3009,9 +3025,9 @@ impl PublisherUi {
                                 if state.sharing || state.capture_pending {
                                     if ui
                                         .add_sized(
-                                            [92.0, 36.0],
+                                            [button_width(ui, tr("Stop sharing")).max(96.0), 36.0],
                                             egui::Button::new(
-                                                skin::strong(tr("Stop"), 13.5)
+                                                skin::strong(tr("Stop sharing"), 13.5)
                                                     .color(skin::DANGER_INK),
                                             )
                                             .corner_radius(10)
@@ -3064,6 +3080,7 @@ impl PublisherUi {
                                 if skin::layout_button(
                                     ui,
                                     Icon::Grid,
+                                    tr("Grid"),
                                     tr("Back to grid"),
                                     self.focused.is_none(),
                                 )
@@ -3076,6 +3093,7 @@ impl PublisherUi {
                                     if skin::layout_button(
                                         ui,
                                         Icon::Focus,
+                                        tr("Focus"),
                                         tr("Focus stream"),
                                         self.focused.is_some(),
                                     )
@@ -3240,6 +3258,17 @@ impl PublisherUi {
                                     if skin::icon_button(ui, Icon::Close, tr("Close")).clicked() {
                                         self.setup_open = false;
                                         self.clear_picker();
+                                    }
+                                    if ui
+                                        .add(
+                                            egui::Button::new(skin::strong(tr("Advanced"), 12.5))
+                                                .frame(false),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.setup_open = false;
+                                        self.clear_picker();
+                                        self.advanced_open = true;
                                     }
                                 },
                             );
@@ -3439,7 +3468,14 @@ fn quality_controls(
         .horizontal(|ui| {
             let label = ui.label(egui::RichText::new("FPS").size(12.0).color(MUTED));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(skin::strong(format!("{} FPS", settings.fps), 12.0));
+                let mut value = format!("{} FPS", settings.fps);
+                if compact
+                    && let Some((w, h)) =
+                        source.and_then(|s| settings.resolution.dimensions(s).ok())
+                {
+                    value = format!("{w}×{h} · {value}");
+                }
+                ui.label(skin::strong(value, 12.0));
             });
             label
         })
@@ -3462,7 +3498,9 @@ fn quality_controls(
     if let Some(source) = source {
         match settings.resolve(source, encoder.codec) {
             Ok(mode) if encoder.supports(mode) => {
-                ui.small(format!("{}×{} · {} FPS", mode.width, mode.height, mode.fps));
+                if !compact {
+                    ui.small(format!("{}×{} · {} FPS", mode.width, mode.height, mode.fps));
+                }
             }
             _ => {
                 ui.colored_label(
@@ -4540,8 +4578,7 @@ mod tests {
         activate(&second, &format!("{} · Second", tr("Unmute")));
         assert_eq!(second.volume.load(Ordering::Relaxed), 63);
         assert_eq!(first.volume.load(Ordering::Relaxed), 0);
-        activate(&second, &format!("{} · Second", tr("Stream options")));
-        activate(&second, tr("Stop watching"));
+        activate(&second, &format!("{} · Second", tr("Stop watching")));
         assert!(
             matches!(next_command(), Some(Command::Watch { id, enabled: false }) if id == second.id)
         );

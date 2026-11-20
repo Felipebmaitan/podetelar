@@ -6,7 +6,7 @@ import { dataSize, periodRange, speed, type Period } from "./usage";
 import "./admin.css";
 import { AdminRooms } from "./AdminRooms";
 import { AdminProfiles } from "./AdminProfiles";
-import { AdminDiscord } from "./AdminDiscord";
+import { AdminDiscord, discordViews, type DiscordView } from "./AdminDiscord";
 import { BrandMark } from "./BrandMark";
 
 const periods: Period[] = [
@@ -80,6 +80,22 @@ function NavIcon({
   }
 }
 
+type AdminSection = "rooms" | "discord" | "profiles" | "usage";
+function readNavigation(): { section: AdminSection; view: DiscordView } {
+  const query = new URLSearchParams(location.search);
+  const section = query.get("section");
+  const view = discordViews.find(
+    (item) => item.toLowerCase() === query.get("view"),
+  );
+  return {
+    section:
+      section === "discord" || section === "profiles" || section === "usage"
+        ? section
+        : "rooms",
+    view: section === "discord" && view ? view : "Overview",
+  };
+}
+
 export function Admin() {
   const [auth, setAuth] = useState<"loading" | "login" | "ready" | "error">(
     "loading",
@@ -88,9 +104,29 @@ export function Admin() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [section, setSection] = useState<
-    "usage" | "rooms" | "profiles" | "discord"
-  >("rooms");
+  const [{ section, view }, setNavigation] = useState(readNavigation);
+  useEffect(() => {
+    const restore = () => setNavigation(readNavigation());
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, []);
+  function navigate(
+    next: AdminSection,
+    tab: DiscordView = "Overview",
+    replace = false,
+  ) {
+    const url = new URL(location.href);
+    if (next === "rooms") url.searchParams.delete("section");
+    else url.searchParams.set("section", next);
+    if (next === "discord" && tab !== "Overview")
+      url.searchParams.set("view", tab.toLowerCase());
+    else url.searchParams.delete("view");
+    if (url.href !== location.href) {
+      if (replace) history.replaceState(null, "", url);
+      else history.pushState(null, "", url);
+    }
+    setNavigation({ section: next, view: tab });
+  }
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     const abort = new AbortController();
@@ -129,7 +165,7 @@ export function Admin() {
     try {
       await request("/api/admin/logout", { method: "POST" });
       setAuth("login");
-      setSection("rooms");
+      navigate("rooms", "Overview", true);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -170,28 +206,28 @@ export function Admin() {
           <nav className="admin-nav" aria-label="Administration sections">
             <button
               aria-pressed={section === "rooms"}
-              onClick={() => setSection("rooms")}
+              onClick={() => navigate("rooms")}
             >
               <NavIcon kind="rooms" />
               <span>Rooms</span>
             </button>
             <button
               aria-pressed={section === "discord"}
-              onClick={() => setSection("discord")}
+              onClick={() => navigate("discord", view)}
             >
               <NavIcon kind="discord" />
               <span>Discord</span>
             </button>
             <button
               aria-pressed={section === "profiles"}
-              onClick={() => setSection("profiles")}
+              onClick={() => navigate("profiles")}
             >
               <NavIcon kind="profiles" />
               <span>Guest profiles</span>
             </button>
             <button
               aria-pressed={section === "usage"}
-              onClick={() => setSection("usage")}
+              onClick={() => navigate("usage")}
             >
               <NavIcon kind="usage" />
               <span>Usage</span>
@@ -199,6 +235,8 @@ export function Admin() {
           </nav>
           {section === "discord" ? (
             <AdminDiscord
+              view={view}
+              onViewChange={(tab) => navigate("discord", tab)}
               onExpired={() => {
                 setAuth("login");
                 setError("Your session expired. Sign in again.");
@@ -476,17 +514,6 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
               Live collection is unavailable. Stored history remains visible.
             </p>
           )}
-          <div className="admin-summary">
-            <Metric label="Uploaded to server" bytes={data.uploadedBytes} />
-            <Metric
-              label="Downloaded from server"
-              bytes={data.downloadedBytes}
-            />
-            <Metric
-              label="Total transfer"
-              bytes={data.uploadedBytes + data.downloadedBytes}
-            />
-          </div>
           <section className="admin-panel admin-server-chart">
             <div className="admin-section-heading">
               <h2>Server traffic</h2>
@@ -498,6 +525,17 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
               label="Server traffic"
             />
           </section>
+          <div className="admin-summary">
+            <Metric label="Uploaded to server" bytes={data.uploadedBytes} />
+            <Metric
+              label="Downloaded from server"
+              bytes={data.downloadedBytes}
+            />
+            <Metric
+              label="Total transfer"
+              bytes={data.uploadedBytes + data.downloadedBytes}
+            />
+          </div>
           <section className="admin-users">
             <div className="admin-section-heading">
               <h2>Usage by PC</h2>

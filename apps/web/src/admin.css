@@ -821,7 +821,7 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
-  margin-bottom: 18px;
+  margin-block: 16px 18px;
 }
 
 .admin-summary > .admin-metric {
@@ -903,7 +903,9 @@
 }
 
 .admin-legend span + span i {
-  background: var(--ice);
+  background: transparent;
+  height: 0;
+  border-top: 3px dashed var(--ice);
 }
 
 .admin-chart svg {
@@ -944,6 +946,7 @@
 
 .admin-down {
   stroke: var(--ice);
+  stroke-dasharray: 6 4;
 }
 
 .admin-down-dot {
@@ -1368,7 +1371,20 @@
   }
   .admin-summary {
     grid-template-columns: 1fr;
-    gap: 10px;
+    gap: 0;
+    border-block: 1px solid var(--line);
+    padding-block: 4px;
+  }
+  .admin-summary > .admin-metric {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 5px 0;
+    border: 0;
+    background: transparent;
+  }
+  .admin-summary .admin-metric strong {
+    font-size: 1rem;
   }
   .admin-user-grid {
     grid-template-columns: 1fr;

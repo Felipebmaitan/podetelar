@@ -853,11 +853,21 @@ input::placeholder {
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+  }
+}
+
 .invitation-card .installer-link {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
   color: var(--ink-2);
   font-size: 0.875rem;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }

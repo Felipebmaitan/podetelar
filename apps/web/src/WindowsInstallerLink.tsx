@@ -1,11 +1,15 @@
-export function WindowsInstallerLink() {
+export function WindowsInstallerLink({
+  primary = false,
+}: {
+  primary?: boolean;
+}) {
   return (
     <a
-      className="installer-link"
+      className={primary ? "button" : "installer-link"}
       href="https://github.com/Felipebmaitan/podetelar/releases/latest"
       referrerPolicy="no-referrer"
     >
-      Get Windows Setup on GitHub
+      Get the Windows installer
     </a>
   );
 }

@@ -3,7 +3,13 @@ import { useEffect, useRef } from "react";
 import { CardBrand } from "./BrandMark";
 
 /** Redeem in a POST body on the direct host, without sharing website cookies. */
-export function DirectDownload({ ticket }: { ticket: string | null }) {
+export function DirectDownload({
+  ticket,
+  expired,
+}: {
+  ticket: string | null;
+  expired: boolean;
+}) {
   const form = useRef<HTMLFormElement>(null);
   const submitted = useRef(false);
   const valid = ticket !== null && /^[A-Za-z0-9_-]{43}$/.test(ticket);
@@ -20,7 +26,13 @@ export function DirectDownload({ ticket }: { ticket: string | null }) {
     <main className="invitation-page">
       <section className="panel invitation-card">
         <CardBrand />
-        <h1>Windows app download</h1>
+        <h1>
+          {valid
+            ? "Windows app download"
+            : expired
+              ? "Download link expired"
+              : "Portable download link missing"}
+        </h1>
         {valid ? (
           <>
             <p>Your download is starting.</p>
@@ -33,8 +45,11 @@ export function DirectDownload({ ticket }: { ticket: string | null }) {
           </>
         ) : (
           <>
-            <p>For a new portable download link, return to your room.</p>
-            <WindowsInstallerLink />
+            <p>
+              Reopen your room invitation for a fresh portable download, or use
+              the Windows installer.
+            </p>
+            <WindowsInstallerLink primary />
           </>
         )}
       </section>

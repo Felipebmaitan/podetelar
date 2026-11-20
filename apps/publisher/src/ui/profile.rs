@@ -296,7 +296,7 @@ impl PublisherUi {
                 }
             });
             if !self.account_state.error.is_empty() {
-                ui.colored_label(ERROR, tr(&self.account_state.error));
+                ui.colored_label(skin::DANGER_INK, tr(&self.account_state.error));
             }
         } else {
             self.discord_sign_in(ui);
@@ -366,7 +366,7 @@ impl PublisherUi {
             });
         }
         if !self.account_state.error.is_empty() {
-            ui.colored_label(ERROR, tr(&self.account_state.error));
+            ui.colored_label(skin::DANGER_INK, tr(&self.account_state.error));
         }
     }
 
@@ -394,7 +394,7 @@ impl PublisherUi {
         } else if !voice.known {
             joining_status(
                 ui,
-                "Discord voice status unavailable. You can join by invitation.",
+                "Checking Discord voice status. Retrying automatically.",
                 MUTED,
             );
         } else if !voice.enabled {
@@ -761,7 +761,7 @@ impl PublisherUi {
 
         if !self.profile_state.error.is_empty() {
             ui.add_space(6.0);
-            ui.colored_label(ERROR, tr(&self.profile_state.error));
+            ui.colored_label(skin::DANGER_INK, tr(&self.profile_state.error));
         }
     }
 

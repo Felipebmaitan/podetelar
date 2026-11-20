@@ -327,7 +327,7 @@
 .discord-admin .discord-danger:hover:not(:disabled) {
   background: var(--crimson);
   border-color: var(--crimson);
-  color: #fff;
+  color: var(--amber-ink);
 }
 
 .discord-actions button,
@@ -424,6 +424,26 @@
 }
 
 @media (max-width: 480px) {
+  .discord-view .discord-metrics {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .discord-metrics div {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 6px 0;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .discord-metrics dd {
+    font-size: 1rem;
+  }
+
   .discord-login-list li {
     align-items: flex-start;
     flex-direction: column;

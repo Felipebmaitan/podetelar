@@ -101,18 +101,26 @@ pub fn run() -> Result<()> {
         "Choose a new absolute output path."
     );
     let narrow = std::env::args().any(|arg| arg == "--narrow");
+    let zoom = if std::env::args().any(|arg| arg == "--zoom-150") {
+        1.5
+    } else if std::env::args().any(|arg| arg == "--zoom-125") {
+        1.25
+    } else {
+        1.0
+    };
     let english = std::env::args().any(|arg| arg == "--english");
     crate::locale::select(!english);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size(if narrow {
-            [960.0, 540.0]
+            [960.0 * zoom, 540.0 * zoom]
         } else {
-            [1280.0, 720.0]
+            [1280.0 * zoom, 720.0 * zoom]
         }),
         renderer: eframe::Renderer::Glow,
         ..Default::default()
     };
     eframe::run_native("PodeTelar · layout fixture", options, Box::new(move |cc| {
+        cc.egui_ctx.set_zoom_factor(zoom);
         configure_theme(&cc.egui_ctx);
         let account = std::env::args().any(|arg| arg == "--signed-in").then(|| crate::account::Account {
             session_id: "layout-fixture".into(),
@@ -132,6 +140,7 @@ pub fn run() -> Result<()> {
                     channel_id: format!("fixture-channel-{i}"), channel_name: name.to_string(), enabled: true,
                 }).collect(),
             });
+            inner.following.current = inner.following_client.state().locations.into_iter().next();
         }
         let source = crate::sources::fixture().info;
         let second_source = crate::sources::SourceInfo {
@@ -216,11 +225,15 @@ pub fn run() -> Result<()> {
                 ..Default::default()
             }
         };
+        if state.sharing {
+            state.metrics.fps = 59.9;
+            state.delivery.bitrate_bps = 13_800_000;
+        }
         if four_streams {
             state.participants.push("Sam".into());
             state.participant_ids.push(("p-sam".into(), "Sam".into()));
         }
-        if mode == "setup" && std::env::args().any(|arg| arg == "--feedback") { state.error = "Waiting for the selected source.".into(); }
+        if mode == "setup" && std::env::args().any(|arg| arg == "--feedback") { state.busy = true; state.operation = "Refreshing available sources…"; }
         let (controller, commands) = Controller::recording_for_test(state);
         inner.controller = controller;
         inner.advanced_open = mode == "settings";

@@ -28,7 +28,7 @@ for (const width of [1280, 390])
       exact: true,
     });
     const installer = page.getByRole("link", {
-      name: "Get Windows Setup on GitHub",
+      name: "Get the Windows installer",
     });
     await expect(installer).toHaveAttribute(
       "href",

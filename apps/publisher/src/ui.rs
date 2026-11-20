@@ -133,7 +133,6 @@ pub struct PublisherUi {
     download_budget: Option<u64>,
     textures: HashMap<String, egui::TextureHandle>,
     focused: Option<String>,
-    stream_menu: Option<String>,
     fullscreen: Option<String>,
     fullscreen_controls_until: Instant,
     settings_error: String,
@@ -254,7 +253,6 @@ impl PublisherUi {
             download_budget: None,
             textures: HashMap::new(),
             focused: None,
-            stream_menu: None,
             fullscreen: None,
             fullscreen_controls_until: Instant::now(),
             settings_error,
@@ -641,18 +639,22 @@ impl PublisherUi {
         if ui
             .add_enabled(
                 valid,
-                egui::Button::new(skin::strong(tr("Join room"), 13.5).color(TEXT))
-                    .fill(if valid { skin::SURFACE_3 } else { CARD })
-                    .stroke(egui::Stroke::new(
-                        1.0,
-                        if valid {
-                            ACCENT.gamma_multiply(0.55)
-                        } else {
-                            BORDER
-                        },
-                    ))
-                    .corner_radius(8)
-                    .min_size(egui::vec2(ui.available_width(), 38.0)),
+                egui::Button::new((
+                    egui::Atom::grow(),
+                    skin::strong(tr("Join room"), 13.5).color(TEXT),
+                    egui::Atom::grow(),
+                ))
+                .fill(if valid { skin::SURFACE_3 } else { CARD })
+                .stroke(egui::Stroke::new(
+                    1.0,
+                    if valid {
+                        ACCENT.gamma_multiply(0.55)
+                    } else {
+                        BORDER
+                    },
+                ))
+                .corner_radius(8)
+                .min_size(egui::vec2(ui.available_width(), 38.0)),
             )
             .clicked()
             || (valid && enter)
@@ -949,7 +951,12 @@ impl PublisherUi {
                     ui.horizontal(|ui| {
                         let (icon, _) =
                             ui.allocate_exact_size(egui::vec2(22.0, 34.0), egui::Sense::hover());
-                        skin::icon(ui.painter(), icon, Icon::Monitor, TEXT);
+                        let symbol = if source.id.starts_with("window:") {
+                            Icon::Window
+                        } else {
+                            Icon::Monitor
+                        };
+                        skin::icon(ui.painter(), icon, symbol, TEXT);
                         ui.vertical(|ui| {
                             ui.add(
                                 egui::Label::new(skin::strong(source_name(source), 14.0))
@@ -1065,14 +1072,17 @@ impl PublisherUi {
                 .as_ref()
                 .is_some_and(|active| active != &selection);
             let width = ui.available_width();
-            let apply = egui::Button::new(skin::strong(tr("Apply"), 13.5).color(if dirty {
-                AMBER_INK
+            let apply_label = if dirty {
+                tr("Apply")
             } else {
-                MUTED
-            }))
-            .corner_radius(8)
-            .fill(if dirty { ACCENT } else { CARD })
-            .min_size(egui::vec2(width, 36.0));
+                tr("No changes to apply")
+            };
+            let label =
+                skin::strong(apply_label, 13.5).color(if dirty { AMBER_INK } else { MUTED });
+            let apply = egui::Button::new((egui::Atom::grow(), label, egui::Atom::grow()))
+                .corner_radius(8)
+                .fill(if dirty { ACCENT } else { CARD })
+                .min_size(egui::vec2(width, 36.0));
             if ui
                 .add_enabled(state.sharing && !state.busy && valid && dirty, apply)
                 .clicked()
@@ -1597,6 +1607,7 @@ impl PublisherUi {
             false,
         )
         .clicked()
+            || ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::F11))
         {
             self.set_fullscreen(
                 ui.ctx(),
@@ -1934,15 +1945,10 @@ impl PublisherUi {
                             let options_label = format!("{} · {}", tr("Stream options"), tile.name);
                             self.volume_button(ui, tile);
                             let trigger = skin::icon_button(ui, Icon::More, &options_label);
-                            let menu = egui::Popup::menu(&trigger)
+                            egui::Popup::menu(&trigger)
                                 .frame(skin::menu_frame())
                                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                                 .show(|ui| self.watch_menu(ui, tile));
-                            if menu.is_some() {
-                                self.stream_menu = Some(tile.id.clone());
-                            } else if self.stream_menu.as_ref() == Some(&tile.id) {
-                                self.stream_menu = None;
-                            }
                         });
                     });
             }
@@ -2381,9 +2387,7 @@ impl PublisherUi {
                     .open
                     .store(false, Ordering::Relaxed);
             } else if self.fullscreen.is_some() {
-                if self.stream_menu.is_some() {
-                    self.stream_menu = None;
-                } else {
+                if !egui::Popup::is_any_open(&ctx) {
                     self.set_fullscreen(&ctx, None);
                 }
             } else if !egui::Popup::is_any_open(&ctx) {
@@ -2438,7 +2442,10 @@ impl PublisherUi {
         }));
         if !self.browser_invitation_open
             && !self.update_open
-            && ctx.input(|i| i.key_pressed(egui::Key::F11))
+            && !self.profile_open
+            && !self.advanced_open
+            && !egui::Popup::is_any_open(&ctx)
+            && ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::F11))
         {
             if self.fullscreen.is_some() {
                 self.set_fullscreen(&ctx, None);
@@ -2991,6 +2998,7 @@ impl PublisherUi {
                                     Icon::ChevronUp,
                                     if self.setup_open { ACCENT } else { MUTED },
                                 );
+                                skin::focus_ring(ui, &setup_btn);
                                 setup_btn.widget_info(|| {
                                     egui::WidgetInfo::selected(
                                         egui::Role::Button,
@@ -3130,6 +3138,7 @@ impl PublisherUi {
                                     skin::semibold(12.5),
                                     people_color,
                                 );
+                                skin::focus_ring(ui, &people_resp);
                                 people_resp.widget_info(|| {
                                     egui::WidgetInfo::selected(
                                         egui::Role::Button,
@@ -4315,7 +4324,6 @@ mod tests {
             download_budget: None,
             textures: HashMap::new(),
             focused: None,
-            stream_menu: None,
             fullscreen: None,
             fullscreen_controls_until: Instant::now(),
             settings_error: String::new(),
@@ -4355,6 +4363,84 @@ mod tests {
             }
             _ => {}
         }
+    }
+
+    #[test]
+    fn f11_from_the_second_watched_stream_menu_opens_that_stream() {
+        let mut app = app();
+        let watched = |id: &str| Tile {
+            id: id.into(),
+            name: id.into(),
+            codec: String::new(),
+            watching: true,
+            picture: Default::default(),
+            presentation: Default::default(),
+            frames: Default::default(),
+            received_bps: Default::default(),
+            volume: Default::default(),
+            audio: Default::default(),
+            status: String::new(),
+        };
+        app.controller = Controller::recording_for_test(Snapshot {
+            connection: "connected",
+            tiles: vec![watched("Felipe"), watched("Lucas")],
+            ..Default::default()
+        })
+        .0;
+        let ctx = egui::Context::default();
+        configure_theme(&ctx);
+        let mut frame = eframe::Frame::_new_kittest();
+        let mut draw = |app: &mut PublisherUi, events| {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(960.0, 540.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |root| app.render(root, &mut frame),
+            );
+            output.textures_delta.clear();
+            output.platform_output.events
+        };
+        let key = |key, pressed| egui::Event::Key {
+            key,
+            pressed,
+            physical_key: None,
+            repeat: false,
+            modifiers: Default::default(),
+        };
+        draw(&mut app, vec![]);
+        let label = format!("{} · Lucas", tr("Stream options"));
+        for _ in 0..64 {
+            let mut events = draw(&mut app, vec![key(egui::Key::Tab, true)]);
+            events.extend(draw(&mut app, vec![key(egui::Key::Tab, false)]));
+            if events.iter().any(|event| matches!(event,
+                egui::output::OutputEvent::FocusGained(info) if info.label.as_ref() == Some(&label)
+            )) {
+                draw(&mut app, vec![key(egui::Key::Enter, true)]);
+                draw(&mut app, vec![key(egui::Key::Enter, false)]);
+                break;
+            }
+        }
+        assert!(
+            egui::Popup::is_any_open(&ctx),
+            "The second stream's menu must be open"
+        );
+        draw(&mut app, vec![key(egui::Key::F11, true)]);
+        assert_eq!(app.fullscreen.as_deref(), Some("Lucas"));
+        draw(&mut app, vec![key(egui::Key::F11, false)]);
+        draw(&mut app, vec![key(egui::Key::F11, true)]);
+        assert!(app.fullscreen.is_none());
+        draw(&mut app, vec![key(egui::Key::F11, false)]);
+        draw(&mut app, vec![key(egui::Key::F11, true)]);
+        assert_eq!(
+            app.fullscreen.as_deref(),
+            Some("Felipe"),
+            "Grid shortcut still opens the first watched stream"
+        );
     }
 
     #[test]

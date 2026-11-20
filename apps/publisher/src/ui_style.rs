@@ -223,7 +223,7 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
     }
 }
 
-fn focus_ring(ui: &egui::Ui, response: &egui::Response) {
+pub(super) fn focus_ring(ui: &egui::Ui, response: &egui::Response) {
     if response.has_focus() {
         ui.painter().rect_stroke(
             response.rect.shrink(1.0),

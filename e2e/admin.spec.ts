@@ -72,6 +72,14 @@ test("administrator login, filters, charts, reload and logout", async ({
   await picker.selectOption("7 days");
   await expect(picker).toHaveValue("7 days");
   await expect(page.getByRole("img", { name: /Server traffic/ })).toBeVisible();
+  await page
+    .getByRole("button", { name: "Guest profiles", exact: true })
+    .click();
+  await page.goBack();
+  await expect(picker).toHaveValue("7 days");
+  await picker.selectOption("Month");
+  await page.reload();
+  await expect(picker).toHaveValue("Month");
   await picker.selectOption("Custom period");
   await expect(
     page.getByRole("button", { name: "Apply period" }),
@@ -81,6 +89,21 @@ test("administrator login, filters, charts, reload and logout", async ({
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+  const yesterday = await page.evaluate(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 1);
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, "0"),
+      String(date.getDate()).padStart(2, "0"),
+    ].join("-");
+  });
+  await page.getByLabel("From", { exact: true }).fill(yesterday);
+  await page.getByRole("button", { name: "Apply period" }).click();
+  await page.reload();
+  await expect(picker).toHaveValue("Custom period");
+  await expect(page.getByLabel("From", { exact: true })).toHaveValue(yesterday);
+  await expect(page.getByRole("img", { name: /Server traffic/ })).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "Usage", exact: true }).click();
   await expect(

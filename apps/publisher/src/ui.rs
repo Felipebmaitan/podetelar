@@ -1845,7 +1845,7 @@ impl PublisherUi {
                 ui.painter()
                     .rect_filled(rect, 12.0, egui::Color32::from_black_alpha(68));
             }
-            let overlay = egui::Color32::from_rgba_unmultiplied(14, 14, 16, 224);
+            let overlay = skin::STAGE;
             let name_width = ui
                 .painter()
                 .layout_no_wrap(tile.name.clone(), skin::semibold(13.5), TEXT)
@@ -2851,6 +2851,14 @@ impl PublisherUi {
             });
     }
 
+    fn sharing_panel_title(state: &Snapshot) -> &'static str {
+        tr(if state.sharing || state.capture_pending {
+            "Edit stream settings"
+        } else {
+            "Share your screen"
+        })
+    }
+
     fn studio_dock(&mut self, root: &mut egui::Ui, state: &Snapshot) {
         let valid = self.valid_selection(state);
         let selection = self.selection();
@@ -2888,7 +2896,7 @@ impl PublisherUi {
         let source_label = displayed_source
             .as_ref()
             .map(source_name)
-            .unwrap_or(tr("Share your screen"));
+            .unwrap_or(Self::sharing_panel_title(state));
         let setup_summary = if dirty {
             pending_note.to_owned()
         } else if let Some(mode) = state.mode.filter(|_| state.sharing) {
@@ -3014,10 +3022,13 @@ impl PublisherUi {
                                         egui::Role::Button,
                                         true,
                                         self.setup_open,
-                                        tr("Share your screen"),
+                                        Self::sharing_panel_title(state),
                                     )
                                 });
-                                if setup_btn.on_hover_text(tr("Share your screen")).clicked() {
+                                if setup_btn
+                                    .on_hover_text(Self::sharing_panel_title(state))
+                                    .clicked()
+                                {
                                     self.setup_open = !self.setup_open;
                                 }
 
@@ -3251,7 +3262,9 @@ impl PublisherUi {
                     .show(ui, |ui| {
                         ui.set_width(332.0);
                         ui.horizontal(|ui| {
-                            ui.label(skin::strong(tr("Share your screen"), 15.0).color(TEXT));
+                            ui.label(
+                                skin::strong(Self::sharing_panel_title(state), 15.0).color(TEXT),
+                            );
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {

@@ -121,10 +121,9 @@ export function Admin() {
     if (next === "discord" && tab !== "Overview")
       url.searchParams.set("view", tab.toLowerCase());
     else url.searchParams.delete("view");
-    if (url.href !== location.href) {
-      if (replace) history.replaceState(null, "", url);
-      else history.pushState(null, "", url);
-    }
+    if (replace) history.replaceState(null, "", url);
+    else if (url.href !== location.href)
+      history.pushState(history.state, "", url);
     setNavigation({ section: next, view: tab });
   }
   const [retry, setRetry] = useState(0);
@@ -347,11 +346,38 @@ export function Admin() {
   );
 }
 
+type UsageFilters = { period: Period; custom: [number, number] | null };
+
+function readUsageFilters(): UsageFilters {
+  const saved = history.state?.usageFilters;
+  const range = saved?.custom;
+  return {
+    period: periods.includes(saved?.period) ? saved.period : "Today",
+    custom:
+      Array.isArray(range) &&
+      range.length === 2 &&
+      range.every(Number.isSafeInteger) &&
+      range[1] > range[0] &&
+      range[1] - range[0] <= 366 * 86400000 &&
+      range[0] >= 0 &&
+      range[1] <= Date.now() + 86400000
+        ? [range[0], range[1]]
+        : null,
+  };
+}
+
 function Dashboard({ onExpired }: { onExpired: () => void }) {
-  const [period, setPeriod] = useState<Period>("Today");
-  const [custom, setCustom] = useState<[number, number] | null>(null);
-  const [from, setFrom] = useState(dateInput(new Date()));
-  const [to, setTo] = useState(dateInput(new Date()));
+  const [{ period, custom }, setFilters] = useState(readUsageFilters);
+  const [from, setFrom] = useState(() =>
+    dateInput(custom ? new Date(custom[0]) : new Date()),
+  );
+  const [to, setTo] = useState(() =>
+    dateInput(custom ? new Date(custom[1] - 1) : new Date()),
+  );
+  function rememberFilters(filters: UsageFilters) {
+    history.replaceState({ ...history.state, usageFilters: filters }, "");
+    setFilters(filters);
+  }
   const [data, setData] = useState<UsageReport | null>(null);
   const [error, setError] = useState("");
   const [validation, setValidation] = useState("");
@@ -421,10 +447,10 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
     }
     setValidation("");
     setPage(0);
-    setCustom([start.getTime(), end.getTime()]);
+    rememberFilters({ period, custom: [start.getTime(), end.getTime()] });
   };
   function selectPeriod(next: Period) {
-    setPeriod(next);
+    rememberFilters({ period: next, custom });
     setPage(0);
     setValidation("");
   }

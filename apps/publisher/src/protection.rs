@@ -462,14 +462,28 @@ impl Session {
         });
     }
 
+    pub fn verify_publish_mode(room: &Room, protected: bool) -> Result<()> {
+        let manager = room.e2ee_manager();
+        ensure!(
+            if protected {
+                manager.encryption_type() == EncryptionType::Gcm && manager.enabled()
+            } else {
+                manager.encryption_type() == EncryptionType::None
+            },
+            "Media connection does not match the selected room protection."
+        );
+        Ok(())
+    }
+
     pub fn verify_local_publication(
         room: &Room,
         publication: &livekit::prelude::LocalTrackPublication,
+        protected: bool,
     ) -> Result<()> {
-        if room.e2ee_manager().encryption_type() != EncryptionType::None {
+        Self::verify_publish_mode(room, protected)?;
+        if protected {
             ensure!(
-                room.e2ee_manager().enabled()
-                    && publication.encryption_type() == EncryptionType::Gcm,
+                publication.encryption_type() == EncryptionType::Gcm,
                 "Protected media publication was downgraded."
             );
             ensure!(

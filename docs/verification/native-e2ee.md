@@ -22,6 +22,24 @@ HTTP session then ended access even though the invitation was still valid.
 The test used a manual guest invitation and synthetic video. The real Discord
 OAuth and Gateway flow on a deployed system remains a separate qualification.
 
+On Windows with an RTX 5080, two synthetic Discord accounts exchanged protected
+media in a guest-disabled room. The test also checked that the private code and
+its root were absent from the observed admission requests. Stereo playback
+reached the correct-root viewer and the native speaker output. The wrong-root
+viewer received no decoded media. Withdrawing an authenticated descriptor
+stopped an active subscription after a positive decode control.
+
+The protected codec matrix checks the sender's selected encoder and advancing
+receiver frames with the matching MIME type on both sides of Stop. Native HEVC
+and an AV1 preference resolved to HEVC both passed those checks, including flat
+receive bytes after unsubscribe. A matching private H.264-only viewer triggered
+a working HEVC-to-H.264 change. These tests used executable SHA-256
+`07c341d912686dbf087d1a4a3a59fe1000ca7c33be3bcd6b0c665185bbce0cea`.
+Before the codec policy change, the protected AV1 positive control delivered
+zero RTP payload bytes over 25 seconds. Transport-only AV1 decoded on the same
+hardware. The historical AV1 result below accepted a decoded fallback and
+does not qualify protected AV1.
+
 ## Historical acceptance on the pre-Discord branch
 
 These results were recorded on 2026-11-10 for `feat/native-room-e2ee`, based on

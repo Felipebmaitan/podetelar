@@ -872,7 +872,7 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     };
     let result = async {
         let audio = if request.source_audio { audio::for_source(&source)? } else {request.audio};
-        let config=publisher::StreamConfig { source,encoder:encoder.clone(),quality:request.quality,audio,exclusions:request.exclusions };
+        let config=publisher::StreamConfig { protected: admission.protection.is_some(), source,encoder:encoder.clone(),quality:request.quality,audio,exclusions:request.exclusions };
         ensure!(request.upload_limit_bps.is_none_or(|v|(64_000..=100_000_000).contains(&v)),"Invalid fixture upload ceiling.");
         let votes = playback::RoomVotes::read(&room, &admission);
         let mut active = if request.upload_limit_bps.is_some() {

@@ -462,6 +462,7 @@ impl Drop for Controller {
 
 #[derive(Clone)]
 pub struct StreamConfig {
+    pub protected: bool,
     pub source: Source,
     pub encoder: Encoder,
     pub quality: Settings,
@@ -504,7 +505,8 @@ impl StreamConfig {
         Ok(())
     }
     fn live_mode(&self, current: &Self, mode: Mode) -> Result<Option<Mode>> {
-        if current.source.info.id != self.source.info.id
+        if current.protected != self.protected
+            || current.source.info.id != self.source.info.id
             || current.encoder.factory != self.encoder.factory
             || current.encoder.codec != self.encoder.codec
             || current.audio != self.audio
@@ -645,6 +647,8 @@ impl Stream {
         preview_capture: preview::Capture,
     ) -> Result<Self> {
         let mut lease = StopOnDrop::new(stop.clone());
+        let protected = config.protected;
+        crate::protection::Session::verify_publish_mode(room, protected)?;
         let mode = config.mode()?;
         let source = config.source.clone();
         let encoder = config.encoder.clone();
@@ -717,8 +721,12 @@ impl Stream {
         .await;
         let publication = match publication {
             Ok(Ok(publication))
-                if crate::protection::Session::verify_local_publication(room, &publication)
-                    .is_ok() =>
+                if crate::protection::Session::verify_local_publication(
+                    room,
+                    &publication,
+                    protected,
+                )
+                .is_ok() =>
             {
                 publication
             }
@@ -808,8 +816,12 @@ impl Stream {
             .await;
             match publication {
                 Ok(Ok(publication))
-                    if crate::protection::Session::verify_local_publication(room, &publication)
-                        .is_ok() =>
+                    if crate::protection::Session::verify_local_publication(
+                        room,
+                        &publication,
+                        protected,
+                    )
+                    .is_ok() =>
                 {
                     ready.store(true, Ordering::Release);
                     active.audio = Some((task, track));
@@ -1510,6 +1522,7 @@ async fn worker(
                         "Capture request was cancelled."
                     );
                     let mut config = StreamConfig {
+                        protected: joined.admission.protection.is_some(),
                         source,
                         encoder,
                         quality,
@@ -1832,6 +1845,7 @@ mod tests {
     #[test]
     fn bitrate_edit_keeps_active_geometry_after_source_aspect_changes_and_rejects_invalid_edits() {
         let current = StreamConfig {
+            protected: false,
             source: sources::fixture(),
             encoder: Encoder {
                 factory: "fixture".into(),

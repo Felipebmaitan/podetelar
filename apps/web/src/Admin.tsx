@@ -735,11 +735,18 @@ function TrafficChart({
     return () => observer.disconnect();
   }, [compact]);
   const narrow = compact || width < 600;
-  const height = narrow ? 180 : 225,
+  const crossesMidnight =
+    points.length > 0 &&
+    new Date(points[0]!.at).toDateString() !==
+      new Date(points[points.length - 1]!.at).toDateString();
+  const stackedDates = narrow && crossesMidnight && bucketMs < 86400000;
+  const labelLineHeight = 16;
+  const extraLine = stackedDates ? labelLineHeight : 0;
+  const height = (narrow ? 180 : 225) + extraLine,
     left = 42,
     right = 12,
     top = 25,
-    bottom = 30;
+    bottom = 30 + extraLine;
   const usable = width - left - right,
     plotHeight = height - top - bottom;
   const rates = points.map((p) => ({
@@ -800,23 +807,25 @@ function TrafficChart({
     }
     return segments.join(" ");
   };
-  const crossesMidnight =
-    points.length > 0 &&
-    new Date(points[0]!.at).toDateString() !==
-      new Date(points[points.length - 1]!.at).toDateString();
-  const time = (at: number) =>
-    new Intl.DateTimeFormat(undefined, {
-      ...(crossesMidnight || bucketMs >= 86400000
-        ? { month: "short", day: "numeric" }
-        : {}),
-      ...(bucketMs < 86400000
-        ? {
-            hour: "2-digit",
-            minute: "2-digit",
-            ...(bucketMs < 60000 ? { second: "2-digit" } : {}),
-          }
-        : {}),
-    }).format(at);
+  const dateOptions: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+  };
+  const timeOptions: Intl.DateTimeFormatOptions = {
+    hour: "2-digit",
+    minute: "2-digit",
+    ...(bucketMs < 60000 ? { second: "2-digit" } : {}),
+  };
+  const timestamp = new Intl.DateTimeFormat(undefined, {
+    ...(crossesMidnight || bucketMs >= 86400000 ? dateOptions : {}),
+    ...(bucketMs < 86400000 ? timeOptions : {}),
+  });
+  const tickDate = stackedDates
+    ? new Intl.DateTimeFormat(undefined, dateOptions)
+    : null;
+  const tickTime = stackedDates
+    ? new Intl.DateTimeFormat(undefined, timeOptions)
+    : null;
   const ticks = [0, 0.25, 0.5, 0.75, 1];
   const labels = points.length
     ? [
@@ -912,16 +921,27 @@ function TrafficChart({
           <text
             key={index}
             x={x(index)}
-            y={height - 8}
+            y={height - 8 - extraLine}
             textAnchor={
-              index === 0
-                ? "start"
-                : index === points.length - 1
-                  ? "end"
-                  : "middle"
+              points.length === 1
+                ? "middle"
+                : index === 0
+                  ? "start"
+                  : index === points.length - 1
+                    ? "end"
+                    : "middle"
             }
           >
-            {time(points[index]!.at)}
+            {tickDate && tickTime ? (
+              <>
+                <tspan>{tickDate.format(points[index]!.at)}</tspan>{" "}
+                <tspan x={x(index)} dy={labelLineHeight}>
+                  {tickTime.format(points[index]!.at)}
+                </tspan>
+              </>
+            ) : (
+              timestamp.format(points[index]!.at)
+            )}
           </text>
         ))}
         <path d={area("down")} fill={`url(#${downGradId})`} />
@@ -955,8 +975,8 @@ function TrafficChart({
       <p id={`${id}-detail`} className="admin-chart-detail">
         {active && hover !== null
           ? active.durationMs
-            ? `${time(active.at)} · To server ${rates[hover]!.up.toFixed(2)} Mb/s (${dataSize(active.uploadedBytes)}) · From server ${rates[hover]!.down.toFixed(2)} Mb/s (${dataSize(active.downloadedBytes)})`
-            : `${time(active.at)} · No measurement`
+            ? `${timestamp.format(active.at)} · To server ${rates[hover]!.up.toFixed(2)} Mb/s (${dataSize(active.uploadedBytes)}) · From server ${rates[hover]!.down.toFixed(2)} Mb/s (${dataSize(active.downloadedBytes)})`
+            : `${timestamp.format(active.at)} · No measurement`
           : ""}
       </p>
     </div>

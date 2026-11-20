@@ -69,9 +69,24 @@ test("administrator login, filters, charts, reload and logout", async ({
   ).toBe(true);
   await page.setViewportSize({ width: 320, height: 740 });
   const picker = page.getByRole("combobox", { name: "Period", exact: true });
+  const assertTickSpacing = async () => {
+    const ticks = page.locator(".admin-server-chart svg > text[text-anchor]");
+    await expect
+      .poll(async () => {
+        const boxes = await ticks.evaluateAll((nodes) =>
+          nodes.map((node) => node.getBoundingClientRect().toJSON()),
+        );
+        if (boxes.length < 2) return 0;
+        return Math.min(
+          ...boxes.slice(1).map((box, index) => box.left - boxes[index]!.right),
+        );
+      })
+      .toBeGreaterThanOrEqual(4);
+  };
   await picker.selectOption("7 days");
   await expect(picker).toHaveValue("7 days");
   await expect(page.getByRole("img", { name: /Server traffic/ })).toBeVisible();
+  await assertTickSpacing();
   await page
     .getByRole("button", { name: "Guest profiles", exact: true })
     .click();
@@ -80,6 +95,7 @@ test("administrator login, filters, charts, reload and logout", async ({
   await picker.selectOption("Month");
   await page.reload();
   await expect(picker).toHaveValue("Month");
+  await assertTickSpacing();
   await picker.selectOption("Custom period");
   await expect(
     page.getByRole("button", { name: "Apply period" }),

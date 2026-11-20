@@ -6,8 +6,13 @@ import { AdminFollowing } from "./AdminFollowing";
 import { EmptyState, SectionHeader, StatusLabel } from "./discord-admin-ui";
 import "./discord-admin.css";
 
-const views = ["Overview", "Channels", "Accounts", "Auto-join"] as const;
-type View = (typeof views)[number];
+export const discordViews = [
+  "Overview",
+  "Channels",
+  "Accounts",
+  "Auto-join",
+] as const;
+export type DiscordView = (typeof discordViews)[number];
 type Status = {
   configured: boolean;
   online: boolean;
@@ -20,8 +25,15 @@ type Status = {
     channels: { id: string; name: string; members: number }[];
   }[];
 };
-export function AdminDiscord({ onExpired }: { onExpired: () => void }) {
-  const [view, setView] = useState<View>("Overview");
+export function AdminDiscord({
+  onExpired,
+  view,
+  onViewChange,
+}: {
+  onExpired: () => void;
+  view: DiscordView;
+  onViewChange: (view: DiscordView) => void;
+}) {
   const [data, setData] = useState<Status | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -88,11 +100,11 @@ export function AdminDiscord({ onExpired }: { onExpired: () => void }) {
     <main className="admin-main discord-admin">
       <h1>Discord</h1>
       <nav className="discord-nav" aria-label="Discord administration">
-        {views.map((item) => (
+        {discordViews.map((item) => (
           <button
             key={item}
             aria-pressed={view === item}
-            onClick={() => setView(item)}
+            onClick={() => onViewChange(item)}
           >
             {item}
           </button>
@@ -101,32 +113,33 @@ export function AdminDiscord({ onExpired }: { onExpired: () => void }) {
       {view === "Overview" && (
         <section className="discord-view">
           <article className="discord-surface discord-connection">
-            <SectionHeader title="Bot connection">
+            <SectionHeader title="Bot connection" />
+            <div className="discord-connection-actions">
+              <div role="status">
+                <StatusLabel
+                  tone={
+                    data?.online
+                      ? "good"
+                      : data?.configured
+                        ? "attention"
+                        : "neutral"
+                  }
+                >
+                  {!data
+                    ? "Checking connection"
+                    : !data.configured
+                      ? "Bot connection not configured"
+                      : data.online
+                        ? "Connected to Discord"
+                        : "Discord voice state unavailable"}
+                </StatusLabel>
+              </div>
               <button
                 disabled={!data?.configured || busy}
                 onClick={() => void reconnect()}
               >
                 {busy ? "Reconnecting…" : "Reconnect and resynchronize"}
               </button>
-            </SectionHeader>
-            <div role="status">
-              <StatusLabel
-                tone={
-                  data?.online
-                    ? "good"
-                    : data?.configured
-                      ? "attention"
-                      : "neutral"
-                }
-              >
-                {!data
-                  ? "Checking connection"
-                  : !data.configured
-                    ? "Bot connection not configured"
-                    : data.online
-                      ? "Connected to Discord"
-                      : "Discord voice state unavailable"}
-              </StatusLabel>
             </div>
             {error && (
               <p className="discord-feedback" role="alert">

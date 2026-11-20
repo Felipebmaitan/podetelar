@@ -79,9 +79,7 @@ test("administrator can inspect an animated guest picture, delete it, and block 
   await page
     .getByRole("button", { name: "Guest profiles", exact: true })
     .click();
-  await expect(
-    card.getByText("No stored picture", { exact: true }),
-  ).toBeVisible();
+  await expect(card.getByText("No picture", { exact: true })).toBeVisible();
   await card
     .getByRole("button", { name: "Allow uploads", exact: true })
     .click();

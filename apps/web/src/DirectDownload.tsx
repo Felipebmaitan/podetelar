@@ -1,8 +1,15 @@
+import { WindowsInstallerLink } from "./WindowsInstallerLink";
 import { useEffect, useRef } from "react";
 import { CardBrand } from "./BrandMark";
 
 /** Redeem in a POST body on the direct host, without sharing website cookies. */
-export function DirectDownload({ ticket }: { ticket: string | null }) {
+export function DirectDownload({
+  ticket,
+  expired,
+}: {
+  ticket: string | null;
+  expired: boolean;
+}) {
   const form = useRef<HTMLFormElement>(null);
   const submitted = useRef(false);
   const valid = ticket !== null && /^[A-Za-z0-9_-]{43}$/.test(ticket);
@@ -19,13 +26,16 @@ export function DirectDownload({ ticket }: { ticket: string | null }) {
     <main className="invitation-page">
       <section className="panel invitation-card">
         <CardBrand />
-        <h1>Windows app download</h1>
+        <h1>
+          {valid
+            ? "Windows app download"
+            : expired
+              ? "Download link expired"
+              : "Portable download link missing"}
+        </h1>
         {valid ? (
           <>
-            <p>
-              Your download is starting. If it expires, return to the room and
-              request a new download.
-            </p>
+            <p>Your download is starting.</p>
             <form ref={form} method="post" action="/api/publisher/download">
               <input type="hidden" name="ticket" value={ticket} />
               <button className="button" type="submit">
@@ -34,7 +44,13 @@ export function DirectDownload({ ticket }: { ticket: string | null }) {
             </form>
           </>
         ) : (
-          <p>Open a new download from your room.</p>
+          <>
+            <p>
+              Reopen your room invitation for a portable download, or choose the
+              file ending in <strong>Setup.exe</strong> on the release page.
+            </p>
+            <WindowsInstallerLink primary />
+          </>
         )}
       </section>
     </main>

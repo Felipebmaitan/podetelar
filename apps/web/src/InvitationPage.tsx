@@ -61,24 +61,27 @@ export function InvitationPage({
     <main className="invitation-page">
       <section className="panel invitation-card" aria-label="Room invitation">
         <CardBrand />
+        <h1>Room invitation</h1>
         {invitation && !denied ? (
           <>
             <OpenInApp roomId={roomId} invitation={invitation} />
-            <h1>People in this room</h1>
-            {members === null ? (
-              !error && <p role="status">Loading people...</p>
-            ) : members.length ? (
-              <ul>
-                {members.map((member) => (
-                  <li key={member.id}>{member.displayName}</li>
-                ))}
-              </ul>
-            ) : (
-              <p>No one is in the room yet.</p>
-            )}
+            <div className="invitation-roster">
+              <h2>In this room</h2>
+              {members === null ? (
+                !error && <p role="status">Loading…</p>
+              ) : members.length ? (
+                <ul>
+                  {members.map((member) => (
+                    <li key={member.id}>{member.displayName}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No one here yet.</p>
+              )}
+            </div>
           </>
         ) : (
-          <p>Open a complete, current room invitation to join.</p>
+          <p>Open a valid room invitation link to join.</p>
         )}
         {error && <p role="alert">{error}</p>}
       </section>

@@ -1,3 +1,4 @@
+import { ConfirmInvitationChange } from "./ConfirmInvitationChange";
 import { useEffect, useRef, useState } from "react";
 import { ApiError, request } from "./api";
 import {
@@ -37,6 +38,10 @@ export function AdminChannels({
     [open, setOpen] = useState<string | null>(null),
     [feedback, setFeedback] = useState(""),
     [invitation, setInvitation] = useState("");
+  const [pending, setPending] = useState<{
+    channel: Channel;
+    action: "rotate" | "disable";
+  } | null>(null);
   const mutation = useRef<AbortController | null>(null);
   useEffect(() => () => mutation.current?.abort(), []);
   useEffect(() => {
@@ -155,10 +160,7 @@ export function AdminChannels({
   }
   return (
     <section className="discord-view">
-      <SectionHeader
-        title="Channel rooms"
-        description="Manage invitations and automatic joining for each voice channel."
-      >
+      <SectionHeader title="Channel rooms">
         {channels.size > 0 && (
           <input
             className="discord-search"
@@ -220,9 +222,7 @@ export function AdminChannels({
                           <ActionGroup
                             title="Guest invitation"
                             description={
-                              c.guestEnabled
-                                ? "Anyone with the link can use it to join independently."
-                                : "Guest invitation disabled."
+                              c.guestEnabled ? undefined : "Disabled"
                             }
                           >
                             <button
@@ -234,19 +234,23 @@ export function AdminChannels({
                             </button>
                             <button
                               disabled={busy}
-                              onClick={() => void act(c, "rotate")}
+                              onClick={() =>
+                                setPending({ channel: c, action: "rotate" })
+                              }
                             >
                               {c.guestEnabled
-                                ? "Replace link"
+                                ? "Replace invitation"
                                 : "Replace and enable link"}
                             </button>
                             <button
                               disabled={busy}
                               onClick={() =>
-                                void act(
-                                  c,
-                                  c.guestEnabled ? "disable" : "enable",
-                                )
+                                c.guestEnabled
+                                  ? setPending({
+                                      channel: c,
+                                      action: "disable",
+                                    })
+                                  : void act(c, "enable")
                               }
                             >
                               {c.guestEnabled ? "Disable link" : "Enable link"}
@@ -264,11 +268,7 @@ export function AdminChannels({
                           )}
                           <ActionGroup
                             title="Automatic joining"
-                            description={
-                              c.autoEnabled
-                                ? "Signed-in members can follow this channel."
-                                : "Automatic joining paused for this channel."
-                            }
+                            description={c.autoEnabled ? undefined : "Paused"}
                           >
                             <button
                               disabled={busy}
@@ -285,7 +285,7 @@ export function AdminChannels({
                             title="Discord announcement"
                             description={
                               c.announcementError
-                                ? "Announcement unavailable. Check the bot’s message permissions."
+                                ? "Announcement unavailable. Check bot permissions."
                                 : undefined
                             }
                           >
@@ -309,6 +309,22 @@ export function AdminChannels({
             </div>
           </section>
         ))}
+      {pending && (
+        <ConfirmInvitationChange
+          danger={pending.action === "disable"}
+          action={
+            pending.action === "rotate"
+              ? "Replace channel invitation"
+              : "Disable channel invitation"
+          }
+          description={`The current link to ${pending.channel.name} will stop working.`}
+          onCancel={() => setPending(null)}
+          onConfirm={() => {
+            setPending(null);
+            void act(pending.channel, pending.action);
+          }}
+        />
+      )}
     </section>
   );
 }

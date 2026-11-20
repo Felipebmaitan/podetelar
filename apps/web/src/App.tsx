@@ -25,6 +25,7 @@ const invitation = new URLSearchParams(window.location.hash.slice(1)).get(
 const entryInvitation = invitationSchema.safeParse(invitation).success
   ? invitation!
   : undefined;
+const downloadExpired = window.location.hash === "#expired";
 const downloadTicket = new URLSearchParams(window.location.hash.slice(1)).get(
   "ticket",
 );
@@ -62,7 +63,13 @@ export function App() {
       />
     );
   if (window.location.pathname === "/download")
-    return <DirectDownload ticket={downloadTicket} />;
+    return <DirectDownload ticket={downloadTicket} expired={downloadExpired} />;
+  if (managedRoomId)
+    return (
+      <main className="invitation-page">
+        <RoomAccess roomId={managedRoomId} />
+      </main>
+    );
   if (entryRoomId)
     return <InvitationPage roomId={entryRoomId} invitation={entryInvitation} />;
   return window.location.pathname === "/" ? <Admin /> : <RoomApp />;

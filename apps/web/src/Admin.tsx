@@ -6,7 +6,7 @@ import { dataSize, periodRange, speed, type Period } from "./usage";
 import "./admin.css";
 import { AdminRooms } from "./AdminRooms";
 import { AdminProfiles } from "./AdminProfiles";
-import { AdminDiscord } from "./AdminDiscord";
+import { AdminDiscord, discordViews, type DiscordView } from "./AdminDiscord";
 import { BrandMark } from "./BrandMark";
 
 const periods: Period[] = [
@@ -21,6 +21,81 @@ const dateInput = (date: Date) =>
 const errorText = (e: unknown) =>
   e instanceof Error ? e.message : "Could not connect. Please try again.";
 
+function NavIcon({
+  kind,
+}: {
+  kind: "rooms" | "discord" | "profiles" | "usage" | "signout";
+}) {
+  const props = {
+    width: 16,
+    height: 16,
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.5,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  };
+  switch (kind) {
+    case "rooms":
+      return (
+        <svg {...props}>
+          <rect x="2" y="2.5" width="5" height="5" rx="1.2" />
+          <rect x="9" y="2.5" width="5" height="5" rx="1.2" />
+          <rect x="2" y="9" width="5" height="4.5" rx="1.2" />
+          <rect x="9" y="9" width="5" height="4.5" rx="1.2" />
+        </svg>
+      );
+    case "discord":
+      return (
+        <svg {...props}>
+          <path d="M3 10V8a5 5 0 0 1 10 0v2" />
+          <rect x="2" y="9.5" width="2.6" height="4" rx="1" />
+          <rect x="11.4" y="9.5" width="2.6" height="4" rx="1" />
+        </svg>
+      );
+    case "profiles":
+      return (
+        <svg {...props}>
+          <circle cx="8" cy="5.5" r="2.75" />
+          <path d="M2.75 13.5c.8-2.4 2.75-3.5 5.25-3.5s4.45 1.1 5.25 3.5" />
+        </svg>
+      );
+    case "usage":
+      return (
+        <svg {...props}>
+          <path d="M2.25 11.5 5.5 7.5 8.5 9.5 13.75 4" />
+          <path d="M10.75 4h3v3" />
+        </svg>
+      );
+    case "signout":
+      return (
+        <svg {...props}>
+          <path d="M6.5 2.5H3.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h3" />
+          <path d="M10 11 13.25 8 10 5" />
+          <path d="M13 8H6" />
+        </svg>
+      );
+  }
+}
+
+type AdminSection = "rooms" | "discord" | "profiles" | "usage";
+function readNavigation(): { section: AdminSection; view: DiscordView } {
+  const query = new URLSearchParams(location.search);
+  const section = query.get("section");
+  const view = discordViews.find(
+    (item) => item.toLowerCase() === query.get("view"),
+  );
+  return {
+    section:
+      section === "discord" || section === "profiles" || section === "usage"
+        ? section
+        : "rooms",
+    view: section === "discord" && view ? view : "Overview",
+  };
+}
+
 export function Admin() {
   const [auth, setAuth] = useState<"loading" | "login" | "ready" | "error">(
     "loading",
@@ -29,9 +104,28 @@ export function Admin() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [section, setSection] = useState<
-    "usage" | "rooms" | "profiles" | "discord"
-  >("rooms");
+  const [{ section, view }, setNavigation] = useState(readNavigation);
+  useEffect(() => {
+    const restore = () => setNavigation(readNavigation());
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, []);
+  function navigate(
+    next: AdminSection,
+    tab: DiscordView = "Overview",
+    replace = false,
+  ) {
+    const url = new URL(location.href);
+    if (next === "rooms") url.searchParams.delete("section");
+    else url.searchParams.set("section", next);
+    if (next === "discord" && tab !== "Overview")
+      url.searchParams.set("view", tab.toLowerCase());
+    else url.searchParams.delete("view");
+    if (replace) history.replaceState(null, "", url);
+    else if (url.href !== location.href)
+      history.pushState(history.state, "", url);
+    setNavigation({ section: next, view: tab });
+  }
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     const abort = new AbortController();
@@ -70,7 +164,7 @@ export function Admin() {
     try {
       await request("/api/admin/logout", { method: "POST" });
       setAuth("login");
-      setSection("rooms");
+      navigate("rooms", "Overview", true);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -81,24 +175,28 @@ export function Admin() {
     <div
       className={`admin-shell ${auth === "ready" ? "admin-authenticated" : ""}`}
     >
-      <header className="admin-header">
-        <a href="/" className="admin-brand">
-          <BrandMark className="admin-brand-mark" />
-          PodeTelar
-        </a>
-        {auth === "ready" && (
-          <div>
-            <span>Private administration</span>
-            <button onClick={() => void logout()} disabled={busy}>
-              Sign out
+      {auth === "ready" && (
+        <header className="admin-header">
+          <a href="/" className="admin-brand">
+            <BrandMark className="admin-brand-mark" />
+            <span>PodeTelar</span>
+          </a>
+          <div className="admin-rail-footer">
+            <button
+              className="admin-signout"
+              onClick={() => void logout()}
+              disabled={busy}
+            >
+              <NavIcon kind="signout" />
+              <span>Sign out</span>
             </button>
           </div>
-        )}
-      </header>
+        </header>
+      )}
       {auth === "loading" ? (
-        <div className="admin-center" role="status">
-          Checking administrator access…
-        </div>
+        <main className="admin-center">
+          <span role="status">Checking administrator access…</span>
+        </main>
       ) : auth === "ready" ? (
         <>
           <div className="admin-top-error">
@@ -106,33 +204,38 @@ export function Admin() {
           </div>
           <nav className="admin-nav" aria-label="Administration sections">
             <button
-              aria-pressed={section === "discord"}
-              onClick={() => setSection("discord")}
-            >
-              Discord
-            </button>
-            <p>Administration</p>
-            <button
               aria-pressed={section === "rooms"}
-              onClick={() => setSection("rooms")}
+              onClick={() => navigate("rooms")}
             >
-              Rooms
+              <NavIcon kind="rooms" />
+              <span>Rooms</span>
+            </button>
+            <button
+              aria-pressed={section === "discord"}
+              onClick={() => navigate("discord", view)}
+            >
+              <NavIcon kind="discord" />
+              <span>Discord</span>
             </button>
             <button
               aria-pressed={section === "profiles"}
-              onClick={() => setSection("profiles")}
+              onClick={() => navigate("profiles")}
             >
-              Guest profiles
+              <NavIcon kind="profiles" />
+              <span>Guest profiles</span>
             </button>
             <button
               aria-pressed={section === "usage"}
-              onClick={() => setSection("usage")}
+              onClick={() => navigate("usage")}
             >
-              Usage
+              <NavIcon kind="usage" />
+              <span>Usage</span>
             </button>
           </nav>
           {section === "discord" ? (
             <AdminDiscord
+              view={view}
+              onViewChange={(tab) => navigate("discord", tab)}
               onExpired={() => {
                 setAuth("login");
                 setError("Your session expired. Sign in again.");
@@ -162,10 +265,14 @@ export function Admin() {
           )}
         </>
       ) : (
-        <div className="admin-center">
+        <main className="admin-center">
           <div className="admin-login-wrap">
             {auth === "error" ? (
-              <section className="admin-panel">
+              <section className="admin-panel admin-login">
+                <div className="admin-login-brand">
+                  <BrandMark className="admin-brand-mark" />
+                  <span>PodeTelar</span>
+                </div>
                 <h1>Could not connect</h1>
                 <p role="alert">{error}</p>
                 <button
@@ -184,51 +291,43 @@ export function Admin() {
                 className="admin-panel admin-login"
                 onSubmit={(event) => void login(event)}
               >
-                <svg
-                  className="admin-lock"
-                  width="40"
-                  height="44"
-                  viewBox="0 0 40 44"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
+                <div className="admin-login-brand">
+                  <BrandMark className="admin-brand-mark" />
+                  <span>PodeTelar</span>
+                </div>
+                <h1>Administrator</h1>
+                <input
+                  className="sr-only"
+                  value="Administrator"
+                  readOnly
+                  tabIndex={-1}
                   aria-hidden="true"
-                >
-                  <rect x="5" y="19" width="30" height="22" rx="4" />
-                  <path d="M11 19V12a9 9 0 0 1 18 0v7M20 28v6" />
-                </svg>
-                <h1>Administrator login</h1>
-                <p>Sign in to manage rooms and view service usage.</p>
-                <label className="admin-account">
-                  Account
-                  <input
-                    value="Administrator"
-                    readOnly
-                    autoComplete="username"
-                    name="username"
-                  />
-                </label>
-                <label htmlFor="admin-password">Password</label>
-                <div className="admin-password">
-                  <input
-                    id="admin-password"
-                    name="password"
-                    type={showPassword ? "text" : "password"}
-                    autoComplete="current-password"
-                    required
-                    maxLength={256}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    aria-label={
-                      showPassword ? "Hide password" : "Show password"
-                    }
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? "Hide" : "Show"}
-                  </button>
+                  autoComplete="username"
+                  name="username"
+                />
+                <div className="admin-field">
+                  <label htmlFor="admin-password">Password</label>
+                  <div className="admin-password">
+                    <input
+                      id="admin-password"
+                      name="password"
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="current-password"
+                      required
+                      maxLength={256}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      aria-label={
+                        showPassword ? "Hide password" : "Show password"
+                      }
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
+                      {showPassword ? "Hide" : "Show"}
+                    </button>
+                  </div>
                 </div>
                 {error && (
                   <p className="admin-error" role="alert">
@@ -240,19 +339,45 @@ export function Admin() {
                 </button>
               </form>
             )}
-            <p className="admin-private">Private administrator access</p>
           </div>
-        </div>
+        </main>
       )}
     </div>
   );
 }
 
+type UsageFilters = { period: Period; custom: [number, number] | null };
+
+function readUsageFilters(): UsageFilters {
+  const saved = history.state?.usageFilters;
+  const range = saved?.custom;
+  return {
+    period: periods.includes(saved?.period) ? saved.period : "Today",
+    custom:
+      Array.isArray(range) &&
+      range.length === 2 &&
+      range.every(Number.isSafeInteger) &&
+      range[1] > range[0] &&
+      range[1] - range[0] <= 366 * 86400000 &&
+      range[0] >= 0 &&
+      range[1] <= Date.now() + 86400000
+        ? [range[0], range[1]]
+        : null,
+  };
+}
+
 function Dashboard({ onExpired }: { onExpired: () => void }) {
-  const [period, setPeriod] = useState<Period>("Today");
-  const [custom, setCustom] = useState<[number, number] | null>(null);
-  const [from, setFrom] = useState(dateInput(new Date()));
-  const [to, setTo] = useState(dateInput(new Date()));
+  const [{ period, custom }, setFilters] = useState(readUsageFilters);
+  const [from, setFrom] = useState(() =>
+    dateInput(custom ? new Date(custom[0]) : new Date()),
+  );
+  const [to, setTo] = useState(() =>
+    dateInput(custom ? new Date(custom[1] - 1) : new Date()),
+  );
+  function rememberFilters(filters: UsageFilters) {
+    history.replaceState({ ...history.state, usageFilters: filters }, "");
+    setFilters(filters);
+  }
   const [data, setData] = useState<UsageReport | null>(null);
   const [error, setError] = useState("");
   const [validation, setValidation] = useState("");
@@ -322,15 +447,18 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
     }
     setValidation("");
     setPage(0);
-    setCustom([start.getTime(), end.getTime()]);
+    rememberFilters({ period, custom: [start.getTime(), end.getTime()] });
   };
+  function selectPeriod(next: Period) {
+    rememberFilters({ period: next, custom });
+    setPage(0);
+    setValidation("");
+  }
+
   return (
     <main className="admin-main">
       <div className="admin-heading">
-        <div>
-          <h1>Usage</h1>
-          <p>Service media traffic overview</p>
-        </div>
+        <h1>Usage</h1>
         {data && (
           <span className={`admin-status ${data.available ? "is-live" : ""}`}>
             {data.available ? "Collecting live" : "Collection unavailable"}
@@ -343,16 +471,23 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
             <button
               key={p}
               aria-pressed={p === period}
-              onClick={() => {
-                setPeriod(p);
-                setPage(0);
-                setValidation("");
-              }}
+              onClick={() => selectPeriod(p)}
             >
               {p}
             </button>
           ))}
         </div>
+        <label className="admin-period-select">
+          Period
+          <select
+            value={period}
+            onChange={(e) => selectPeriod(e.target.value as Period)}
+          >
+            {periods.map((p) => (
+              <option key={p}>{p}</option>
+            ))}
+          </select>
+        </label>
         <span className="admin-timezone">
           {Intl.DateTimeFormat().resolvedOptions().timeZone}
         </span>
@@ -402,30 +537,12 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
         <>
           {!data.available && (
             <p className="admin-notice">
-              Live collection is unavailable. Stored history remains visible;
-              missing measurements are gaps, not zero traffic.
+              Live collection is unavailable. Stored history remains visible.
             </p>
           )}
-          <div className="admin-summary">
-            <Metric
-              label="Uploaded to server"
-              bytes={data.uploadedBytes}
-              hint="Server inbound"
-            />
-            <Metric
-              label="Downloaded from server"
-              bytes={data.downloadedBytes}
-              hint="Server outbound"
-            />
-            <Metric
-              label="Total transfer"
-              bytes={data.uploadedBytes + data.downloadedBytes}
-              hint="Selected period"
-            />
-          </div>
           <section className="admin-panel admin-server-chart">
             <div className="admin-section-heading">
-              <h2>Server traffic over time</h2>
+              <h2>Server traffic</h2>
               <Legend />
             </div>
             <TrafficChart
@@ -434,12 +551,20 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
               label="Server traffic"
             />
           </section>
+          <div className="admin-summary">
+            <Metric label="Uploaded to server" bytes={data.uploadedBytes} />
+            <Metric
+              label="Downloaded from server"
+              bytes={data.downloadedBytes}
+            />
+            <Metric
+              label="Total transfer"
+              bytes={data.uploadedBytes + data.downloadedBytes}
+            />
+          </div>
           <section className="admin-users">
             <div className="admin-section-heading">
-              <div>
-                <h2>Usage by PC</h2>
-                <p>Combined traffic across rooms, sessions and app instances</p>
-              </div>
+              <h2>Usage by PC</h2>
               <span>
                 {data.userCount} {data.userCount === 1 ? "entry" : "entries"}
               </span>
@@ -457,7 +582,7 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
                       <span title={user.id}>
                         {user.identityKind === "device"
                           ? `PC ${user.id.slice(4, 16)}`
-                          : `Unidentified session ${user.id.slice(0, 8)}`}
+                          : `Session ${user.id.slice(0, 8)}`}
                       </span>
                     </div>
                     <div className="admin-user-totals">
@@ -478,19 +603,13 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
                     <details className="admin-session-details">
                       <summary>
                         {user.sessionCount}{" "}
-                        {user.sessionCount === 1 ? "session" : "sessions"} in
-                        this period
+                        {user.sessionCount === 1 ? "session" : "sessions"}
                       </summary>
-                      <p className="admin-device-id">
-                        {user.identityKind === "device"
-                          ? "PC identifier"
-                          : "Session identifier"}
-                        : <code>{user.id}</code>
-                      </p>
+
                       {user.sessions.length < user.sessionCount && (
                         <p>
-                          Showing the latest {user.sessions.length} sessions.
-                          Totals include all {user.sessionCount}.
+                          Latest {user.sessions.length} of {user.sessionCount}{" "}
+                          sessions.
                         </p>
                       )}
                       <ul>
@@ -503,16 +622,34 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
                                 : "Admission time unavailable"}
                             </span>
                             <span>
-                              Uploaded {dataSize(session.uploadedBytes)} ·
-                              Downloaded {dataSize(session.downloadedBytes)}
-                            </span>
-                            <span>
-                              Room <code>{session.roomId}</code> · Session{" "}
-                              <code>{session.id}</code>
+                              ↑ {dataSize(session.uploadedBytes)} · ↓{" "}
+                              {dataSize(session.downloadedBytes)}
                             </span>
                           </li>
                         ))}
                       </ul>
+                      <details className="admin-usage-identifiers">
+                        <summary>Technical identifiers</summary>
+                        <p className="admin-device-id">
+                          {user.identityKind === "device"
+                            ? "PC ID"
+                            : "Session ID"}
+                          : <code>{user.id}</code>
+                        </p>
+                        <ul>
+                          {user.sessions.map((session) => (
+                            <li key={session.id}>
+                              <strong>{session.displayName}</strong>
+                              <span>
+                                Room ID: <code>{session.roomId}</code>
+                              </span>
+                              <span>
+                                Session ID: <code>{session.id}</code>
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
                     </details>
                   </article>
                 ))}
@@ -536,18 +673,10 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
             )}
           </section>
           <footer className="admin-footer">
-            <p>Upload = user → server · Download = server → user</p>
-            <p>Speed in Mb/s · Data in MB or GB</p>
-            <p>
-              PCs are recognized by a persistent, server-scoped identifier, not
-              a verified person. Older clients and history without a PC
-              identifier remain separate unidentified sessions. Media counters
-              include retransmissions; HTTPS and relay overhead are excluded.
-              History is retained for {data.retentionDays} days.
-            </p>
+            <p>Usage history is kept for {data.retentionDays} days.</p>
             {data.lastSampleAt && (
               <p>
-                Last measurement: {new Date(data.lastSampleAt).toLocaleString()}
+                Last sample {new Date(data.lastSampleAt).toLocaleTimeString()}
               </p>
             )}
           </footer>
@@ -556,23 +685,16 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
     </main>
   );
 }
-function Metric({
-  label,
-  bytes,
-  hint,
-}: {
-  label: string;
-  bytes: number;
-  hint?: string;
-}) {
+
+function Metric({ label, bytes }: { label: string; bytes: number }) {
   return (
     <div className="admin-metric">
       <span>{label}</span>
       <strong>{dataSize(bytes)}</strong>
-      {hint && <small>{hint}</small>}
     </div>
   );
 }
+
 function Legend() {
   return (
     <div className="admin-legend">
@@ -587,6 +709,7 @@ function Legend() {
     </div>
   );
 }
+
 function TrafficChart({
   points,
   bucketMs,
@@ -601,22 +724,29 @@ function TrafficChart({
   const id = useId();
   const [hover, setHover] = useState<number | null>(null);
   const svg = useRef<SVGSVGElement>(null);
-  const [narrow, setNarrow] = useState(compact);
+  const [width, setWidth] = useState(compact ? 400 : 1000);
   useEffect(() => {
     const element = svg.current;
     if (!element) return;
     const observer = new ResizeObserver(([entry]) =>
-      setNarrow(compact || entry!.contentRect.width < 600),
+      setWidth(Math.max(1, Math.round(entry!.contentRect.width))),
     );
     observer.observe(element);
     return () => observer.disconnect();
   }, [compact]);
-  const width = narrow ? 400 : 1000,
-    height = narrow ? 180 : 225,
+  const narrow = compact || width < 600;
+  const crossesMidnight =
+    points.length > 0 &&
+    new Date(points[0]!.at).toDateString() !==
+      new Date(points[points.length - 1]!.at).toDateString();
+  const stackedDates = narrow && crossesMidnight && bucketMs < 86400000;
+  const labelLineHeight = 16;
+  const extraLine = stackedDates ? labelLineHeight : 0;
+  const height = (narrow ? 180 : 225) + extraLine,
     left = 42,
     right = 12,
     top = 25,
-    bottom = 30;
+    bottom = 30 + extraLine;
   const usable = width - left - right,
     plotHeight = height - top - bottom;
   const rates = points.map((p) => ({
@@ -645,16 +775,84 @@ function TrafficChart({
       })
       .join(" ");
   };
-  const time = (at: number) =>
-    new Intl.DateTimeFormat(undefined, {
-      ...((points.at(-1)?.at ?? 0) - (points[0]?.at ?? 0) >= 86400000
-        ? { month: "short", day: "numeric" }
-        : {}),
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(at);
-  const selected = hover === null ? undefined : points[hover];
+  const area = (key: "up" | "down") => {
+    const baseline = top + plotHeight;
+    let start: number | null = null;
+    let last = 0;
+    const segments: string[] = [];
+    let current = "";
+    points.forEach((p, i) => {
+      if (!p.durationMs) {
+        if (start !== null) {
+          segments.push(
+            `${current} L${x(last).toFixed(2)},${baseline.toFixed(2)} L${x(start).toFixed(2)},${baseline.toFixed(2)} Z`,
+          );
+          start = null;
+          current = "";
+        }
+        return;
+      }
+      if (start === null) {
+        start = i;
+        current = `M${x(i).toFixed(2)},${y(rates[i]![key]).toFixed(2)}`;
+      } else {
+        current += ` L${x(i).toFixed(2)},${y(rates[i]![key]).toFixed(2)}`;
+      }
+      last = i;
+    });
+    if (start !== null) {
+      segments.push(
+        `${current} L${x(last).toFixed(2)},${baseline.toFixed(2)} L${x(start).toFixed(2)},${baseline.toFixed(2)} Z`,
+      );
+    }
+    return segments.join(" ");
+  };
+  const dateOptions: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+  };
+  const timeOptions: Intl.DateTimeFormatOptions = {
+    hour: "2-digit",
+    minute: "2-digit",
+    ...(bucketMs < 60000 ? { second: "2-digit" } : {}),
+  };
+  const timestamp = new Intl.DateTimeFormat(undefined, {
+    ...(crossesMidnight || bucketMs >= 86400000 ? dateOptions : {}),
+    ...(bucketMs < 86400000 ? timeOptions : {}),
+  });
+  const tickDate = stackedDates
+    ? new Intl.DateTimeFormat(undefined, dateOptions)
+    : null;
+  const tickTime = stackedDates
+    ? new Intl.DateTimeFormat(undefined, timeOptions)
+    : null;
+  const ticks = [0, 0.25, 0.5, 0.75, 1];
+  const labels = points.length
+    ? [
+        0,
+        ...(narrow
+          ? usable >= 195 && !crossesMidnight && bucketMs >= 60000
+            ? [Math.floor((points.length - 1) / 2)]
+            : []
+          : [
+              Math.floor((points.length - 1) / 3),
+              Math.floor(((points.length - 1) * 2) / 3),
+            ]),
+        points.length - 1,
+      ].filter((v, i, a) => a.indexOf(v) === i)
+    : [];
+  const active = hover === null ? null : points[hover];
+  const select = (clientX: number) => {
+    const rect = svg.current?.getBoundingClientRect();
+    if (!rect || !points.length) return;
+    const ratio = (clientX - rect.left) / rect.width;
+    const index = Math.round(
+      ((ratio * width - left) / usable) * (points.length - 1),
+    );
+    setHover(Math.max(0, Math.min(points.length - 1, index)));
+  };
+  const upGradId = `${id}-up`;
+  const downGradId = `${id}-down`;
   return (
     <div className="admin-chart">
       <svg
@@ -662,108 +860,125 @@ function TrafficChart({
         viewBox={`0 0 ${width} ${height}`}
         role="img"
         aria-labelledby={id}
-        onPointerLeave={() => setHover(null)}
-        onPointerMove={(event) => {
-          const rect = event.currentTarget.getBoundingClientRect();
-          setHover(
-            Math.max(
-              0,
-              Math.min(
-                points.length - 1,
-                Math.round(
-                  ((((event.clientX - rect.left) / rect.width) * width - left) /
-                    usable) *
-                    (points.length - 1),
-                ),
-              ),
-            ),
-          );
+        aria-describedby={`${id}-detail`}
+        tabIndex={points.length ? 0 : undefined}
+        onFocus={() => setHover(0)}
+        onBlur={() => setHover(null)}
+        onKeyDown={(event) => {
+          if (!points.length) return;
+          const index = hover ?? 0;
+          const last = points.length - 1;
+          const next = {
+            ArrowLeft: Math.max(0, index - 1),
+            ArrowRight: Math.min(last, index + 1),
+            Home: 0,
+            End: last,
+          }[event.key];
+          if (next === undefined) return;
+          event.preventDefault();
+          setHover(next);
         }}
+        onMouseMove={(e) => select(e.clientX)}
+        onMouseLeave={() => setHover(null)}
+        onTouchStart={(e) => e.touches[0] && select(e.touches[0].clientX)}
+        onTouchMove={(e) => e.touches[0] && select(e.touches[0].clientX)}
       >
-        <title id={id}>
-          {label}. Upload and download speeds in megabits per second. Missing
-          measurements appear as gaps.
-        </title>
-        <text x="8" y="13" className="admin-axis-unit">
+        <title id={id}>{label} in megabits per second</title>
+        <defs>
+          <linearGradient id={upGradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#E5A93C" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="#E5A93C" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id={downGradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#7AA7D9" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#7AA7D9" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <text className="admin-axis-unit" x={left} y={13}>
           Mb/s
         </text>
-        {[0, 0.5, 1].map((f) => (
-          <g key={f}>
-            <line
-              x1={left}
-              x2={width - right}
-              y1={y(max * f)}
-              y2={y(max * f)}
-              className="admin-gridline"
-            />
-            <text x={left - 8} y={y(max * f) + 4} textAnchor="end">
-              {(max * f).toLocaleString(undefined, {
-                maximumFractionDigits: 2,
-              })}
-            </text>
-          </g>
+        {ticks.map((tick) => {
+          const value = max * tick;
+          const pos = y(value);
+          return (
+            <g key={tick}>
+              <line
+                className="admin-gridline"
+                x1={left}
+                x2={width - right}
+                y1={pos}
+                y2={pos}
+              />
+              <text x={left - 8} y={pos + 4} textAnchor="end">
+                {value >= 10
+                  ? Math.round(value)
+                  : value.toFixed(1).replace(/\.0$/, "")}
+              </text>
+            </g>
+          );
+        })}
+        {labels.map((index) => (
+          <text
+            key={index}
+            x={x(index)}
+            y={height - 8 - extraLine}
+            textAnchor={
+              points.length === 1
+                ? "middle"
+                : index === 0
+                  ? "start"
+                  : index === points.length - 1
+                    ? "end"
+                    : "middle"
+            }
+          >
+            {tickDate && tickTime ? (
+              <>
+                <tspan>{tickDate.format(points[index]!.at)}</tspan>{" "}
+                <tspan x={x(index)} dy={labelLineHeight}>
+                  {tickTime.format(points[index]!.at)}
+                </tspan>
+              </>
+            ) : (
+              timestamp.format(points[index]!.at)
+            )}
+          </text>
         ))}
-        <path d={path("up")} className="admin-line admin-up" />
-        <path d={path("down")} className="admin-line admin-down" />
-        {points.flatMap((point, i) =>
-          point.durationMs &&
-          (!points[i - 1]?.durationMs || !points[i + 1]?.durationMs)
-            ? [
-                <circle
-                  key={`up-${i}`}
-                  cx={x(i)}
-                  cy={y(rates[i]!.up)}
-                  r={3}
-                  className="admin-up-dot"
-                />,
-                <circle
-                  key={`down-${i}`}
-                  cx={x(i)}
-                  cy={y(rates[i]!.down)}
-                  r={3}
-                  className="admin-down-dot"
-                />,
-              ]
-            : [],
-        )}
-        {[0, Math.floor((points.length - 1) / 2), points.length - 1]
-          .filter((n, i, a) => a.indexOf(n) === i)
-          .map(
-            (i) =>
-              points[i] && (
-                <text
-                  key={i}
-                  x={x(i)}
-                  y={height - 7}
-                  textAnchor={
-                    i === 0
-                      ? "start"
-                      : i === points.length - 1
-                        ? "end"
-                        : "middle"
-                  }
-                >
-                  {time(points[i]!.at)}
-                </text>
-              ),
-          )}
-        {hover !== null && selected && (
-          <line
-            x1={x(hover)}
-            x2={x(hover)}
-            y1={top}
-            y2={top + plotHeight}
-            className="admin-crosshair"
-          />
+        <path d={area("down")} fill={`url(#${downGradId})`} />
+        <path d={area("up")} fill={`url(#${upGradId})`} />
+        <path className="admin-line admin-down" d={path("down")} />
+        <path className="admin-line admin-up" d={path("up")} />
+        {active && active.durationMs > 0 && hover !== null && (
+          <>
+            <line
+              className="admin-crosshair"
+              x1={x(hover)}
+              x2={x(hover)}
+              y1={top}
+              y2={top + plotHeight}
+            />
+            <circle
+              className="admin-down-dot"
+              cx={x(hover)}
+              cy={y(rates[hover]!.down)}
+              r="3.5"
+            />
+            <circle
+              className="admin-up-dot"
+              cx={x(hover)}
+              cy={y(rates[hover]!.up)}
+              r="3.5"
+            />
+          </>
         )}
       </svg>
-      <div className="admin-chart-detail" aria-live="off">
-        {selected
-          ? `${time(selected.at)} · ${selected.durationMs ? `↑ ${speed(selected.uploadedBytes, selected.durationMs).toFixed(2)} Mb/s · ↓ ${speed(selected.downloadedBytes, selected.durationMs).toFixed(2)} Mb/s · ${dataSize(selected.uploadedBytes + selected.downloadedBytes)}` : "No measurement"}`
-          : points.some((p) => p.durationMs)
-            ? "Hover over the graph to inspect usage"
-            : "No measurements recorded for this period"}
-      </div>
+      <p id={`${id}-detail`} className="admin-chart-detail">
+        {active && hover !== null
+          ? active.durationMs
+            ? `${timestamp.format(active.at)} · To server ${rates[hover]!.up.toFixed(2)} Mb/s (${dataSize(active.uploadedBytes)}) · From server ${rates[hover]!.down.toFixed(2)} Mb/s (${dataSize(active.downloadedBytes)})`
+            : `${timestamp.format(active.at)} · No measurement`
+          : ""}
+      </p>
     </div>
   );
 }

@@ -1,10 +1,23 @@
-//! Shared native visual language. Icons are drawn locally; no font glyph dependency.
+//! Shared native visual language ("Private Screening Room"). Icons are drawn locally; no font glyph dependency.
 use eframe::egui::{self, Color32, FontFamily, FontId, RichText};
 
-pub const MINT: Color32 = Color32::from_rgb(64, 220, 184);
-pub const INK: Color32 = Color32::from_rgb(238, 241, 245);
-pub const SECONDARY: Color32 = Color32::from_rgb(163, 172, 184);
-pub const DANGER: Color32 = Color32::from_rgb(248, 115, 120);
+// Private Screening Room tokens
+pub const STAGE: Color32 = Color32::from_rgb(14, 14, 16); // #0E0E10 matte cinema obsidian
+pub const SURFACE: Color32 = Color32::from_rgb(22, 22, 25); // #161619 architectural rail / dock
+pub const SURFACE_2: Color32 = Color32::from_rgb(30, 30, 35); // #1E1E23 elevated cards & controls
+pub const SURFACE_3: Color32 = Color32::from_rgb(40, 40, 47); // #28282F hovered controls
+pub const BORDER: Color32 = Color32::from_rgb(43, 43, 51); // #2B2B33 crisp hairline border
+pub const DIVIDER: Color32 = Color32::from_rgb(35, 35, 42); // #23232A subtle divider
+
+pub const AMBER: Color32 = Color32::from_rgb(229, 169, 60); // #E5A93C signature Tungsten Amber
+pub const AMBER_INK: Color32 = Color32::from_rgb(18, 16, 11); // #12100B ink on amber
+pub const INK: Color32 = Color32::from_rgb(242, 240, 235); // #F2F0EB warm linen ink
+pub const SECONDARY: Color32 = Color32::from_rgb(166, 163, 155); // #A6A39B warm stone secondary
+pub const TERTIARY: Color32 = Color32::from_rgb(154, 151, 143); // muted caption
+pub const DANGER: Color32 = Color32::from_rgb(229, 72, 77); // #E5484D tally crimson
+pub const DANGER_INK: Color32 = Color32::from_rgb(255, 154, 158);
+pub const SAGE: Color32 = Color32::from_rgb(92, 184, 122); // #5CB87A quiet connected sage
+pub const WARN: Color32 = Color32::from_rgb(242, 201, 125); // #F2C97D warm amber warning
 
 pub fn semibold(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name("Inter SemiBold".into()))
@@ -41,6 +54,7 @@ pub fn install_fonts(ctx: &egui::Context) {
 #[derive(Clone, Copy)]
 pub enum Icon {
     Volume,
+    Muted,
     Close,
     Info,
     Window,
@@ -53,12 +67,14 @@ pub enum Icon {
     More,
     Grid,
     Monitor,
+    People,
+    ChevronUp,
 }
 
 pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
     let c = rect.center();
     let point = |x: f32, y: f32| c + egui::vec2(x, y) * (rect.width() / 20.0);
-    let stroke = egui::Stroke::new(1.45, color);
+    let stroke = egui::Stroke::new(1.5, color);
     let line = |a: (f32, f32), b: (f32, f32)| {
         p.line_segment([point(a.0, a.1), point(b.0, b.1)], stroke);
     };
@@ -83,7 +99,13 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
                 egui::Stroke::NONE,
             ));
         }
-        Icon::Stop => box_at(-6.0, -6.0, 12.0, 12.0),
+        Icon::Stop => {
+            p.rect_filled(
+                egui::Rect::from_min_max(point(-5.5, -5.5), point(5.5, 5.5)),
+                2.0,
+                color,
+            );
+        }
         Icon::Grid => {
             for (x, y) in [(-7.0, -7.0), (1.0, -7.0), (-7.0, 1.0), (1.0, 1.0)] {
                 box_at(x, y, 6.0, 6.0);
@@ -103,7 +125,7 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
                 p.circle_filled(c, 2.0, color);
             }
         }
-        Icon::Volume => {
+        Icon::Volume | Icon::Muted => {
             p.add(egui::Shape::line(
                 vec![
                     point(-8.0, -3.0),
@@ -116,6 +138,11 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
                 ],
                 stroke,
             ));
+            if matches!(icon, Icon::Muted) {
+                line((4.0, -3.0), (10.0, 3.0));
+                line((4.0, 3.0), (10.0, -3.0));
+                return;
+            }
             p.add(egui::Shape::line(
                 vec![point(4.0, -4.0), point(6.0, 0.0), point(4.0, 4.0)],
                 stroke,
@@ -131,7 +158,7 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
         }
         Icon::Info => {
             p.circle_stroke(c, 8.0, stroke);
-            p.circle_filled(point(0.0, -4.0), 1.0, color);
+            p.circle_filled(point(0.0, -4.0), 1.1, color);
             line((0.0, -1.0), (0.0, 4.0));
         }
         Icon::Window => {
@@ -158,8 +185,31 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
             line((6.0, -2.0), (6.0, 4.0));
             line((3.0, 1.0), (9.0, 1.0));
         }
+        Icon::People => {
+            p.circle_stroke(point(-3.0, -4.0), 2.8, stroke);
+            p.add(egui::Shape::line(
+                vec![
+                    point(-8.5, 7.0),
+                    point(-8.5, 4.2),
+                    point(-3.0, 1.5),
+                    point(2.5, 4.2),
+                    point(2.5, 7.0),
+                ],
+                stroke,
+            ));
+            p.circle_stroke(point(4.5, -3.2), 2.2, stroke);
+            p.add(egui::Shape::line(
+                vec![point(4.5, 1.5), point(8.5, 3.8), point(8.5, 6.5)],
+                stroke,
+            ));
+        }
+        Icon::ChevronUp => {
+            p.add(egui::Shape::line(
+                vec![point(-5.0, 2.0), point(0.0, -3.0), point(5.0, 2.0)],
+                stroke,
+            ));
+        }
         Icon::Settings => {
-            // One connected gear outline, scaled with the icon rectangle.
             let points = (0..48)
                 .map(|i| {
                     let a = i as f32 * std::f32::consts::TAU / 48.0;
@@ -173,13 +223,40 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
     }
 }
 
+pub(super) fn paint_keyboard_focus(ctx: &egui::Context) {
+    let Some(id) = ctx.memory(|memory| memory.focused()) else {
+        return;
+    };
+    let Some(response) = ctx.read_response(id) else {
+        return;
+    };
+    if !response.enabled() || !response.interact_rect.is_positive() {
+        return;
+    }
+    let painter = ctx
+        .layer_painter(response.layer_id)
+        .with_clip_rect(response.interact_rect);
+    // The dark and light borders keep the indicator visible on both accent and neutral fills.
+    for (inset, color) in [(0.0, AMBER), (2.0, AMBER_INK)] {
+        painter.rect_stroke(
+            response.rect.shrink(inset),
+            6.0 - inset,
+            egui::Stroke::new(2.0, color),
+            egui::StrokeKind::Inside,
+        );
+    }
+}
+
 pub fn icon_button(ui: &mut egui::Ui, symbol: Icon, label: &str) -> egui::Response {
     let response = ui.add_sized([32.0, 32.0], egui::Button::new("").frame(false));
+    if response.hovered() || response.has_focus() {
+        ui.painter().rect_filled(response.rect, 8.0, SURFACE_3);
+    }
     icon(
         ui.painter(),
         egui::Rect::from_center_size(response.rect.center(), egui::vec2(17.0, 17.0)),
         symbol,
-        if ui.is_enabled() { INK } else { SECONDARY },
+        if ui.is_enabled() { INK } else { TERTIARY },
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     response.on_hover_text(label)
@@ -188,81 +265,116 @@ pub fn icon_button(ui: &mut egui::Ui, symbol: Icon, label: &str) -> egui::Respon
 pub fn layout_button(
     ui: &mut egui::Ui,
     symbol: Icon,
+    caption: &str,
     label: &str,
     selected: bool,
 ) -> egui::Response {
-    let response = icon_button(ui, symbol, label);
+    let text = ui
+        .painter()
+        .layout_no_wrap(caption.to_owned(), semibold(12.5), SECONDARY);
+    let response = ui.add_sized(
+        [text.size().x + 38.0, 32.0],
+        egui::Button::new("").frame(false),
+    );
     if selected {
         ui.painter()
-            .rect_filled(response.rect, 6.0, MINT.gamma_multiply(0.10));
+            .rect_filled(response.rect, 8.0, AMBER.gamma_multiply(0.14));
         ui.painter().rect_stroke(
             response.rect,
-            6.0,
-            egui::Stroke::new(1.0, MINT),
+            8.0,
+            egui::Stroke::new(1.0, AMBER.gamma_multiply(0.65)),
             egui::StrokeKind::Inside,
         );
-        icon(
-            ui.painter(),
-            egui::Rect::from_center_size(response.rect.center(), egui::vec2(17.0, 17.0)),
-            symbol,
-            MINT,
-        );
+    } else if response.hovered() || response.has_focus() {
+        ui.painter().rect_filled(response.rect, 8.0, SURFACE_3);
     }
+    let ink = if selected { AMBER } else { SECONDARY };
+    let center = response.rect.left_center() + egui::vec2(15.0, 0.0);
+    icon(
+        ui.painter(),
+        egui::Rect::from_center_size(center, egui::vec2(15.0, 15.0)),
+        symbol,
+        ink,
+    );
+    ui.painter()
+        .galley(center + egui::vec2(13.0, -text.size().y / 2.0), text, ink);
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), selected, label)
     });
-    response
+    response.on_hover_text(label)
 }
 
 pub fn menu_frame() -> egui::Frame {
     egui::Frame::new()
-        .fill(Color32::from_rgb(34, 39, 46))
-        .stroke(egui::Stroke::new(1.0, Color32::from_rgb(65, 73, 82)))
-        .corner_radius(10)
+        .fill(SURFACE_2)
+        .stroke(egui::Stroke::new(1.0, BORDER))
+        .corner_radius(12)
         .inner_margin(egui::Margin::same(8))
         .shadow(egui::epaint::Shadow {
-            offset: [0, 6],
-            blur: 24,
+            offset: [0, 10],
+            blur: 28,
             spread: 2,
-            color: Color32::from_black_alpha(105),
+            color: Color32::from_black_alpha(145),
+        })
+}
+
+pub fn dock_frame() -> egui::Frame {
+    egui::Frame::new()
+        .fill(SURFACE)
+        .stroke(egui::Stroke::new(1.0, BORDER))
+        .corner_radius(14)
+        .inner_margin(egui::Margin::symmetric(10, 7))
+        .shadow(egui::epaint::Shadow {
+            offset: [0, 8],
+            blur: 26,
+            spread: 0,
+            color: Color32::from_black_alpha(150),
         })
 }
 
 pub fn outline_button(ui: &mut egui::Ui, label: &str, symbol: Icon) -> egui::Response {
     let response = ui.add(
-        egui::Button::new(strong(format!("    {label}"), 13.0).color(MINT))
-            .min_size(egui::vec2(106.0, 32.0))
-            .stroke(egui::Stroke::new(1.0, MINT))
-            .fill(Color32::TRANSPARENT),
+        egui::Button::new(strong(format!("    {label}"), 13.0).color(AMBER))
+            .min_size(egui::vec2(102.0, 32.0))
+            .corner_radius(8)
+            .stroke(egui::Stroke::new(1.0, AMBER.gamma_multiply(0.55)))
+            .fill(AMBER.gamma_multiply(0.08)),
     );
     icon(
         ui.painter(),
         egui::Rect::from_center_size(
             response.rect.left_center() + egui::vec2(16.0, 0.0),
-            egui::vec2(17.0, 17.0),
+            egui::vec2(16.0, 16.0),
         ),
         symbol,
-        MINT,
+        AMBER,
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     response
 }
 
-pub fn field_label(ui: &mut egui::Ui, label: &str, symbol: Icon) -> egui::Response {
-    ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(13.0, 16.0), egui::Sense::hover());
-        icon(ui.painter(), rect, symbol, SECONDARY);
-        ui.label(RichText::new(label).size(11.0).color(SECONDARY))
-    })
-    .inner
-}
-
 pub fn help_label(ui: &mut egui::Ui, label: &str, help: &str) -> egui::Response {
     ui.horizontal(|ui| {
-        let response = ui.label(strong(label, 13.0));
-        let (rect, hover) = ui.allocate_exact_size(egui::vec2(15.0, 18.0), egui::Sense::hover());
-        icon(ui.painter(), rect, Icon::Info, SECONDARY);
-        hover.on_hover_text(help);
+        let response = ui.label(strong(label, 13.0).color(INK));
+        let (rect, info) = ui.allocate_exact_size(egui::vec2(18.0, 20.0), egui::Sense::click());
+        icon(
+            ui.painter(),
+            rect,
+            Icon::Info,
+            if info.has_focus() { AMBER } else { SECONDARY },
+        );
+        info.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::Role::Button,
+                ui.is_enabled(),
+                format!("{label} · {help}"),
+            )
+        });
+        if info.has_focus() || info.clicked() {
+            egui::Tooltip::for_widget(&info).show(|ui| ui.label(help));
+        } else {
+            info.on_hover_text(help);
+        }
         response
     })
     .inner
@@ -272,8 +384,9 @@ pub fn disclosure(ui: &mut egui::Ui, label: &str, expanded: &mut bool) -> egui::
     let mut response = ui.add_sized(
         [ui.available_width(), 42.0],
         egui::Button::new("")
-            .fill(Color32::from_rgb(41, 46, 54))
-            .corner_radius(8),
+            .fill(SURFACE_2)
+            .stroke(egui::Stroke::new(1.0, BORDER))
+            .corner_radius(10),
     );
     if response.clicked()
         || (ui.is_enabled()
@@ -289,16 +402,16 @@ pub fn disclosure(ui: &mut egui::Ui, label: &str, expanded: &mut bool) -> egui::
         ui.painter(),
         egui::Rect::from_center_size(
             rect.left_center() + egui::vec2(22.0, 0.0),
-            egui::vec2(19.0, 19.0),
+            egui::vec2(18.0, 18.0),
         ),
         Icon::Settings,
-        SECONDARY,
+        if *expanded { AMBER } else { SECONDARY },
     );
     ui.painter().text(
         rect.left_center() + egui::vec2(44.0, 0.0),
         egui::Align2::LEFT_CENTER,
         label,
-        semibold(15.0),
+        semibold(14.5),
         INK,
     );
     let c = rect.right_center() - egui::vec2(20.0, 0.0);
@@ -316,7 +429,7 @@ pub fn disclosure(ui: &mut egui::Ui, label: &str, expanded: &mut bool) -> egui::
         ]
     };
     ui.painter()
-        .add(egui::Shape::line(points, egui::Stroke::new(1.8, SECONDARY)));
+        .add(egui::Shape::line(points, egui::Stroke::new(1.7, SECONDARY)));
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), *expanded, label)
     });
@@ -332,11 +445,11 @@ pub fn source_row(ui: &mut egui::Ui, label: &str, selected: bool, window: bool) 
     if response.hovered() || response.has_focus() || selected {
         ui.painter().rect_filled(
             rect,
-            6.0,
+            8.0,
             if response.hovered() || response.has_focus() {
-                Color32::from_rgb(57, 65, 76)
+                SURFACE_3
             } else {
-                Color32::from_rgb(32, 57, 54)
+                AMBER.gamma_multiply(0.12)
             },
         );
     }
@@ -344,10 +457,10 @@ pub fn source_row(ui: &mut egui::Ui, label: &str, selected: bool, window: bool) 
         ui.painter(),
         egui::Rect::from_center_size(
             rect.left_center() + egui::vec2(20.0, 0.0),
-            egui::vec2(20.0, 20.0),
+            egui::vec2(18.0, 18.0),
         ),
         if window { Icon::Window } else { Icon::Monitor },
-        INK,
+        if selected { AMBER } else { INK },
     );
     let mut job = egui::text::LayoutJob::simple(
         label.to_owned(),
@@ -357,7 +470,7 @@ pub fn source_row(ui: &mut egui::Ui, label: &str, selected: bool, window: bool) 
     );
     job.wrap.max_rows = 1;
     job.wrap.break_anywhere = true;
-    job.wrap.overflow_character = Some('…');
+    job.wrap.overflow_character = Some('\u{2026}');
     let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
     ui.painter().galley(
         rect.left_center() + egui::vec2(42.0, -galley.size().y / 2.0),
@@ -372,7 +485,7 @@ pub fn source_row(ui: &mut egui::Ui, label: &str, selected: bool, window: bool) 
                 c + egui::vec2(-1.0, 3.0),
                 c + egui::vec2(5.0, -4.0),
             ],
-            egui::Stroke::new(1.7, MINT),
+            egui::Stroke::new(1.8, AMBER),
         ));
     }
     response.widget_info(|| {
@@ -394,21 +507,21 @@ pub fn menu_row(
     if response.hovered() || response.has_focus() {
         ui.painter().rect_filled(
             rect,
-            5.0,
+            7.0,
             if danger {
-                Color32::from_rgb(73, 39, 45)
+                DANGER.gamma_multiply(0.16)
             } else {
-                Color32::from_rgb(49, 58, 66)
+                SURFACE_3
             },
         );
     }
-    let color = if danger { DANGER } else { INK };
+    let color = if danger { DANGER_INK } else { INK };
     if let Some(symbol) = symbol {
         icon(
             ui.painter(),
             egui::Rect::from_center_size(
                 rect.left_center() + egui::vec2(16.0, 0.0),
-                egui::vec2(17.0, 17.0),
+                egui::vec2(16.0, 16.0),
             ),
             symbol,
             color,
@@ -425,7 +538,7 @@ pub fn menu_row(
         rect.right_center() - egui::vec2(10.0, 0.0),
         egui::Align2::RIGHT_CENTER,
         shortcut,
-        FontId::proportional(12.0),
+        FontId::proportional(11.5),
         SECONDARY,
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
@@ -451,9 +564,9 @@ pub fn mute_switch(ui: &mut egui::Ui, label: &str, muted: &mut bool) -> egui::Re
         track,
         9.0,
         if *muted {
-            MINT
+            AMBER
         } else {
-            Color32::from_rgb(82, 89, 99)
+            Color32::from_rgb(60, 60, 68)
         },
     );
     ui.painter().circle_filled(
@@ -466,11 +579,7 @@ pub fn mute_switch(ui: &mut egui::Ui, label: &str, muted: &mut bool) -> egui::Re
             track.center().y,
         ),
         6.0,
-        if *muted {
-            Color32::from_rgb(23, 42, 37)
-        } else {
-            INK
-        },
+        if *muted { AMBER_INK } else { INK },
     );
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::Switch, ui.is_enabled(), *muted, label)
@@ -487,7 +596,7 @@ pub fn menu_separator(ui: &mut egui::Ui) {
             rect.left_center() + egui::vec2(6.0, 0.0),
             rect.right_center() - egui::vec2(6.0, 0.0),
         ],
-        egui::Stroke::new(1.0, Color32::from_rgb(64, 72, 81)),
+        egui::Stroke::new(1.0, BORDER),
     );
     ui.add_space(4.0);
 }
@@ -523,7 +632,7 @@ pub fn mint_slider<N: egui::emath::Numeric>(
     ui.painter().circle_stroke(
         egui::pos2(x, response.rect.center().y),
         radius,
-        egui::Stroke::new(1.0, MINT),
+        egui::Stroke::new(1.2, AMBER),
     );
     response
 }
@@ -589,5 +698,46 @@ mod tests {
             );
         }
         assert!(!muted, "Space on the focused switch should unmute");
+    }
+}
+#[cfg(test)]
+mod focus_tests {
+    use super::*;
+
+    #[test]
+    fn keyboard_outline_follows_focus_across_button_styles() {
+        let ctx = egui::Context::default();
+        for target in 0..3 {
+            let mut rects = Vec::new();
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                rects.clear();
+                for (index, button) in [
+                    egui::Button::new("Sign in").fill(AMBER),
+                    egui::Button::new("Show").frame(false),
+                    egui::Button::new("Disconnect").stroke(egui::Stroke::new(1.0, DANGER)),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let response = ui.add(button);
+                    if index == target {
+                        response.request_focus();
+                    }
+                    rects.push(response.rect);
+                }
+                paint_keyboard_focus(ui.ctx());
+            });
+            output.textures_delta.clear();
+            for (index, rect) in rects.iter().enumerate() {
+                for (inset, color) in [(0.0, AMBER), (2.0, AMBER_INK)] {
+                    let outlined = output.shapes.iter().any(|shape| {
+                        matches!(&shape.shape,
+                        egui::Shape::Rect(painted) if painted.rect == rect.shrink(inset)
+                            && painted.stroke == egui::Stroke::new(2.0, color))
+                    });
+                    assert_eq!(outlined, index == target);
+                }
+            }
+        }
     }
 }

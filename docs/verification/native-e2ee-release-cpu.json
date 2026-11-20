@@ -1,0 +1,572 @@
+{
+  "cpu": "AMD Ryzen 7 9800X3D 8-Core Processor           ",
+  "logicalProcessors": 16,
+  "requestedBps": 35000000,
+  "pilot": false,
+  "geometry": "1920x1080@60",
+  "source": "D3D11 snow fixture",
+  "build": "release",
+  "limitations": "The full run uses two alternating-order rounds; the optional pilot uses one publisher and one watcher for a single pair. Separate native watcher processes, not a real game or four streams decoded in one app. The synthetic watcher requests decoded pictures without a UI renderer. A qualifying window requires measured sender and every receiver within 10% of target. No latency measurement.",
+  "samples": [
+    {
+      "round": 0,
+      "watchers": 1,
+      "encrypted": false,
+      "seconds": 12.281,
+      "warmupSeconds": 44.193237200000006,
+      "withinTenPercentOfTarget": true,
+      "processes": [
+        {
+          "role": "publisher",
+          "privateBytesAtWindowEnd": 275025920,
+          "workingSetBytesAtWindowEnd": 190033920,
+          "oneCorePercent": 14.999593231369998
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 282701824,
+          "workingSetBytesAtWindowEnd": 201015296,
+          "oneCorePercent": 24.793514525185124
+        }
+      ],
+      "machinePercent": 2.487069234784695,
+      "delivery": {
+        "available": true,
+        "bitrate_bps": 35574613,
+        "loss_fraction": 0,
+        "retransmit_bps": 0,
+        "route": "UDP",
+        "rtt_ms": 1,
+        "sent_fps": 59.87469423989475
+      },
+      "encodedBps": 40286427,
+      "measurementWindow": {
+        "samples": 12,
+        "deliveryBps": 35965450.75,
+        "slowestSenderSampleBps": 35148945,
+        "fastestSenderSampleBps": 36838505,
+        "received": [
+          {
+            "bps": 35984023.891402714,
+            "seconds": 11.05,
+            "rtcDecodedFps": 59.99999999999999,
+            "pictureFrames": 662
+          }
+        ],
+        "encodedBps": 39747466.833333336,
+        "sentFps": 59.97145352438551,
+        "encoderTargetBps": 35000000,
+        "retransmitBps": 0,
+        "peakLossFraction": 0
+      }
+    },
+    {
+      "round": 0,
+      "watchers": 1,
+      "encrypted": true,
+      "seconds": 12.254,
+      "warmupSeconds": 47.233460399999984,
+      "withinTenPercentOfTarget": true,
+      "processes": [
+        {
+          "role": "publisher",
+          "privateBytesAtWindowEnd": 272842752,
+          "workingSetBytesAtWindowEnd": 172204032,
+          "oneCorePercent": 15.288649706457926
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 289779712,
+          "workingSetBytesAtWindowEnd": 195416064,
+          "oneCorePercent": 24.33641849465873
+        }
+      ],
+      "machinePercent": 2.476566762569791,
+      "delivery": {
+        "available": true,
+        "bitrate_bps": 36173092,
+        "loss_fraction": 0,
+        "retransmit_bps": 0,
+        "route": "UDP",
+        "rtt_ms": 1,
+        "sent_fps": 59.87964191974132
+      },
+      "encodedBps": 39757553,
+      "measurementWindow": {
+        "samples": 12,
+        "deliveryBps": 36004518.666666664,
+        "slowestSenderSampleBps": 35238736,
+        "fastestSenderSampleBps": 36825800,
+        "received": [
+          {
+            "bps": 35864074.60389317,
+            "seconds": 11.045,
+            "rtcDecodedFps": 59.93662290629244,
+            "pictureFrames": 662
+          }
+        ],
+        "encodedBps": 39291023,
+        "sentFps": 59.973980715505185,
+        "encoderTargetBps": 35000000,
+        "retransmitBps": 0,
+        "peakLossFraction": 0
+      }
+    },
+    {
+      "round": 0,
+      "watchers": 4,
+      "encrypted": false,
+      "seconds": 12.288,
+      "warmupSeconds": 48.220933700000025,
+      "withinTenPercentOfTarget": true,
+      "processes": [
+        {
+          "role": "publisher",
+          "privateBytesAtWindowEnd": 273584128,
+          "workingSetBytesAtWindowEnd": 174063616,
+          "oneCorePercent": 14.723801787164906
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 251797504,
+          "workingSetBytesAtWindowEnd": 159735808,
+          "oneCorePercent": 34.152311692532706
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 250294272,
+          "workingSetBytesAtWindowEnd": 163524608,
+          "oneCorePercent": 32.364348956218016
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 256233472,
+          "workingSetBytesAtWindowEnd": 170487808,
+          "oneCorePercent": 30.71440175452847
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 249978880,
+          "workingSetBytesAtWindowEnd": 163360768,
+          "oneCorePercent": 32.74510600276176
+        }
+      ],
+      "machinePercent": 9.043748137075365,
+      "delivery": {
+        "available": true,
+        "bitrate_bps": 36543715,
+        "loss_fraction": 0,
+        "retransmit_bps": 0,
+        "route": "UDP",
+        "rtt_ms": 1,
+        "sent_fps": 59.84389719416901
+      },
+      "encodedBps": 38035078,
+      "measurementWindow": {
+        "samples": 12,
+        "deliveryBps": 35892822.833333336,
+        "slowestSenderSampleBps": 35418313,
+        "fastestSenderSampleBps": 36273384,
+        "received": [
+          {
+            "bps": 35907944.47488584,
+            "seconds": 10.95,
+            "rtcDecodedFps": 59.908675799086765,
+            "pictureFrames": 656
+          },
+          {
+            "bps": 35918190.605484664,
+            "seconds": 11.049,
+            "rtcDecodedFps": 60.0054303556883,
+            "pictureFrames": 661
+          },
+          {
+            "bps": 35889641.34404675,
+            "seconds": 10.952,
+            "rtcDecodedFps": 59.9890430971512,
+            "pictureFrames": 657
+          },
+          {
+            "bps": 35922024.98642042,
+            "seconds": 11.046,
+            "rtcDecodedFps": 60.02172732210755,
+            "pictureFrames": 662
+          }
+        ],
+        "encodedBps": 38400095.916666664,
+        "sentFps": 60.03318312972252,
+        "encoderTargetBps": 35000000,
+        "retransmitBps": 0,
+        "peakLossFraction": 0
+      }
+    },
+    {
+      "round": 0,
+      "watchers": 4,
+      "encrypted": true,
+      "seconds": 12.328,
+      "warmupSeconds": 45.23626689999999,
+      "withinTenPercentOfTarget": true,
+      "processes": [
+        {
+          "role": "publisher",
+          "privateBytesAtWindowEnd": 277344256,
+          "workingSetBytesAtWindowEnd": 174592000,
+          "oneCorePercent": 17.695356738391848
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 308826112,
+          "workingSetBytesAtWindowEnd": 194433024,
+          "oneCorePercent": 32.47573797007683
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 281993216,
+          "workingSetBytesAtWindowEnd": 171585536,
+          "oneCorePercent": 31.462275594371665
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 301072384,
+          "workingSetBytesAtWindowEnd": 188981248,
+          "oneCorePercent": 28.56767251840466
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 240918528,
+          "workingSetBytesAtWindowEnd": 157102080,
+          "oneCorePercent": 31.851642129105322
+        }
+      ],
+      "machinePercent": 8.878292809396894,
+      "delivery": {
+        "available": true,
+        "bitrate_bps": 35635045,
+        "loss_fraction": 0,
+        "retransmit_bps": 0,
+        "route": "UDP",
+        "rtt_ms": 1,
+        "sent_fps": 59.89716854104872
+      },
+      "encodedBps": 40464914,
+      "measurementWindow": {
+        "samples": 13,
+        "deliveryBps": 35966959.07692308,
+        "slowestSenderSampleBps": 34925460,
+        "fastestSenderSampleBps": 36766576,
+        "received": [
+          {
+            "bps": 35939563.91526662,
+            "seconds": 10.952,
+            "rtcDecodedFps": 59.9890430971512,
+            "pictureFrames": 656
+          },
+          {
+            "bps": 35937608.32268662,
+            "seconds": 10.958,
+            "rtcDecodedFps": 59.95619638620186,
+            "pictureFrames": 657
+          },
+          {
+            "bps": 35939720.08039466,
+            "seconds": 10.946,
+            "rtcDecodedFps": 60.021925817650285,
+            "pictureFrames": 657
+          },
+          {
+            "bps": 35948781.600869246,
+            "seconds": 11.044,
+            "rtcDecodedFps": 60.03259688518652,
+            "pictureFrames": 662
+          }
+        ],
+        "encodedBps": 35140968.384615384,
+        "sentFps": 59.95156863395392,
+        "encoderTargetBps": 35000000,
+        "retransmitBps": 0,
+        "peakLossFraction": 0
+      }
+    },
+    {
+      "round": 1,
+      "watchers": 1,
+      "encrypted": true,
+      "seconds": 12.239,
+      "warmupSeconds": 45.22507199999998,
+      "withinTenPercentOfTarget": true,
+      "processes": [
+        {
+          "role": "publisher",
+          "privateBytesAtWindowEnd": 279101440,
+          "workingSetBytesAtWindowEnd": 175726592,
+          "oneCorePercent": 15.690056331129071
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 275410944,
+          "workingSetBytesAtWindowEnd": 181731328,
+          "oneCorePercent": 23.21997223809913
+        }
+      ],
+      "machinePercent": 2.4318767855767627,
+      "delivery": {
+        "available": true,
+        "bitrate_bps": 35798169,
+        "loss_fraction": 0,
+        "retransmit_bps": 0,
+        "route": "UDP",
+        "rtt_ms": 1,
+        "sent_fps": 59.88834417112734
+      },
+      "encodedBps": 38980724,
+      "measurementWindow": {
+        "samples": 12,
+        "deliveryBps": 35872657.5,
+        "slowestSenderSampleBps": 35061943,
+        "fastestSenderSampleBps": 36551813,
+        "received": [
+          {
+            "bps": 35887118.41504611,
+            "seconds": 10.953,
+            "rtcDecodedFps": 60.07486533369853,
+            "pictureFrames": 657
+          }
+        ],
+        "encodedBps": 39290787.583333336,
+        "sentFps": 60.03785475597346,
+        "encoderTargetBps": 35000000,
+        "retransmitBps": 0,
+        "peakLossFraction": 0
+      }
+    },
+    {
+      "round": 1,
+      "watchers": 1,
+      "encrypted": false,
+      "seconds": 12.243,
+      "warmupSeconds": 49.26457369999995,
+      "withinTenPercentOfTarget": true,
+      "processes": [
+        {
+          "role": "publisher",
+          "privateBytesAtWindowEnd": 273997824,
+          "workingSetBytesAtWindowEnd": 174346240,
+          "oneCorePercent": 14.409736391087897
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 285937664,
+          "workingSetBytesAtWindowEnd": 198504448,
+          "oneCorePercent": 23.084850216308872
+        }
+      ],
+      "machinePercent": 2.343411662962298,
+      "delivery": {
+        "available": true,
+        "bitrate_bps": 35641180,
+        "loss_fraction": 0,
+        "retransmit_bps": 0,
+        "route": "UDP",
+        "rtt_ms": 1,
+        "sent_fps": 59.856517940844
+      },
+      "encodedBps": 40733652,
+      "measurementWindow": {
+        "samples": 12,
+        "deliveryBps": 35810289.583333336,
+        "slowestSenderSampleBps": 34877699,
+        "fastestSenderSampleBps": 37127424,
+        "received": [
+          {
+            "bps": 35896427.932450935,
+            "seconds": 10.955,
+            "rtcDecodedFps": 59.97261524418074,
+            "pictureFrames": 654
+          }
+        ],
+        "encodedBps": 39242499.166666664,
+        "sentFps": 59.97473524746084,
+        "encoderTargetBps": 35000000,
+        "retransmitBps": 0,
+        "peakLossFraction": 0
+      }
+    },
+    {
+      "round": 1,
+      "watchers": 4,
+      "encrypted": true,
+      "seconds": 12.273,
+      "warmupSeconds": 47.23531079999998,
+      "withinTenPercentOfTarget": true,
+      "processes": [
+        {
+          "role": "publisher",
+          "privateBytesAtWindowEnd": 275841024,
+          "workingSetBytesAtWindowEnd": 174211072,
+          "oneCorePercent": 15.889399609502115
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 242618368,
+          "workingSetBytesAtWindowEnd": 156463104,
+          "oneCorePercent": 32.040849540239236
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 242831360,
+          "workingSetBytesAtWindowEnd": 157696000,
+          "oneCorePercent": 29.74979658258747
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 248565760,
+          "workingSetBytesAtWindowEnd": 163024896,
+          "oneCorePercent": 28.984622894801074
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 241262592,
+          "workingSetBytesAtWindowEnd": 155262976,
+          "oneCorePercent": 31.01610803774813
+        }
+      ],
+      "machinePercent": 8.605048541554877,
+      "delivery": {
+        "available": true,
+        "bitrate_bps": 36188900,
+        "loss_fraction": 0,
+        "retransmit_bps": 0,
+        "route": "UDP",
+        "rtt_ms": 1,
+        "sent_fps": 59.878136017577035
+      },
+      "encodedBps": 30025981,
+      "measurementWindow": {
+        "samples": 13,
+        "deliveryBps": 35860587.692307696,
+        "slowestSenderSampleBps": 34973067,
+        "fastestSenderSampleBps": 36963262,
+        "received": [
+          {
+            "bps": 35898678.49063433,
+            "seconds": 11.051,
+            "rtcDecodedFps": 59.99457062709257,
+            "pictureFrames": 663
+          },
+          {
+            "bps": 35881136.48821487,
+            "seconds": 10.946,
+            "rtcDecodedFps": 60.021925817650285,
+            "pictureFrames": 656
+          },
+          {
+            "bps": 35915735.65091436,
+            "seconds": 11.046,
+            "rtcDecodedFps": 60.02172732210755,
+            "pictureFrames": 662
+          },
+          {
+            "bps": 35909453.031674206,
+            "seconds": 11.05,
+            "rtcDecodedFps": 59.99999999999999,
+            "pictureFrames": 661
+          }
+        ],
+        "encodedBps": 38037082.07692308,
+        "sentFps": 60.0257852714591,
+        "encoderTargetBps": 35000000,
+        "retransmitBps": 0,
+        "peakLossFraction": 0
+      }
+    },
+    {
+      "round": 1,
+      "watchers": 4,
+      "encrypted": false,
+      "seconds": 12.406,
+      "warmupSeconds": 47.276613699999984,
+      "withinTenPercentOfTarget": true,
+      "processes": [
+        {
+          "role": "publisher",
+          "privateBytesAtWindowEnd": 275017728,
+          "workingSetBytesAtWindowEnd": 173867008,
+          "oneCorePercent": 17.22282564969024
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 281554944,
+          "workingSetBytesAtWindowEnd": 187424768,
+          "oneCorePercent": 34.30889568084935
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 254697472,
+          "workingSetBytesAtWindowEnd": 159301632,
+          "oneCorePercent": 36.433625472380804
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 256356352,
+          "workingSetBytesAtWindowEnd": 158101504,
+          "oneCorePercent": 36.045133027891644
+        },
+        {
+          "role": "watcher",
+          "privateBytesAtWindowEnd": 253386752,
+          "workingSetBytesAtWindowEnd": 162291712,
+          "oneCorePercent": 34.02744294439087
+        }
+      ],
+      "machinePercent": 9.877370173450181,
+      "delivery": {
+        "available": true,
+        "bitrate_bps": 36197610,
+        "loss_fraction": 0,
+        "retransmit_bps": 0,
+        "route": "UDP",
+        "rtt_ms": 1.1900000000000002,
+        "sent_fps": 59.88109411142294
+      },
+      "encodedBps": 38046861,
+      "measurementWindow": {
+        "samples": 13,
+        "deliveryBps": 35929530.307692304,
+        "slowestSenderSampleBps": 35118409,
+        "fastestSenderSampleBps": 36586650,
+        "received": [
+          {
+            "bps": 35843155.03239347,
+            "seconds": 10.959,
+            "rtcDecodedFps": 59.95072543115248,
+            "pictureFrames": 658
+          },
+          {
+            "bps": 35898236.96339811,
+            "seconds": 11.065,
+            "rtcDecodedFps": 59.91866244916403,
+            "pictureFrames": 664
+          },
+          {
+            "bps": 35877211.726384364,
+            "seconds": 11.052,
+            "rtcDecodedFps": 59.989142236699244,
+            "pictureFrames": 664
+          },
+          {
+            "bps": 35860548.87762491,
+            "seconds": 11.048,
+            "rtcDecodedFps": 60.01086169442433,
+            "pictureFrames": 664
+          }
+        ],
+        "encodedBps": 36904088.615384616,
+        "sentFps": 60.0268122871374,
+        "encoderTargetBps": 35000000,
+        "retransmitBps": 0,
+        "peakLossFraction": 0
+      }
+    }
+  ]
+}

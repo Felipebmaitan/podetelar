@@ -48,8 +48,10 @@ receive guard, H.264/HEVC payload authentication including escaped legacy IVs,
 and concurrent nonce allocation with exhaustion and random-source failure.
 Nineteen setup/integrity tests passed, including rejection of changed native
 engine build inputs. The macOS archive has a matching crypto ABI header and a
-single stock cryptor object. Archive inspection does not exercise the macOS
-linker, capture device, speaker or Keychain.
+single stock cryptor object. On GitHub's Apple Silicon runner, setup, native
+formatting/Clippy and the linked native test suite passed against `0134044`.
+Physical Mac capture, protected playback, speaker output and private invitation
+restore in Keychain remain separate checks. [Apple Silicon CI run](https://github.com/Felipebmaitan/podetelar/actions/runs/44787614556)
 
 The Node 24 check passed formatting, type checks, 87 server tests, two web
 tests, 13 configuration tests and builds. Windows native formatting, Clippy,
@@ -69,6 +71,36 @@ synthetic. Two independent receive-path reviews requested fixes to early media
 handling and same-SID replacement. Their regression tests passed, and the final
 independent reviewer approved the combined implementation at `0134044` and
 test-only follow-up `a5454e1` for the documented threat model.
+
+### Release CPU measurement at 35 Mbps
+
+All eight release-build trials met the 35 Mbps qualification on both the sender
+and every viewer. Across 20 viewer observations, delivery was 35.84–35.98 Mbps
+at 59.91–60.08 decoded fps. The test used synthetic H.264 at 1920×1080/60,
+a Ryzen 7 9800X3D with 16 logical processors, an RTX 5080, and local UDP on
+Windows 11. Each trial sampled process CPU for roughly 12 seconds after warm-up.
+Two rounds reversed the order of encryption on and off. The release executable
+SHA-256 was `cc69d03f8adc99056eb53723ba1258c5e9d508d19d90ade3ecf58290be80f7ab`.
+
+The figures below are means across the two rounds. CPU is expressed as a
+percentage of one logical processor. Each viewer was a separate native process
+decoding the same stream.
+
+| Viewers | Publisher off | Publisher on | Per viewer off | Per viewer on |
+| ------: | ------------: | -----------: | -------------: | ------------: |
+|       1 |        14.71% |       15.49% |         23.94% |        23.78% |
+|       4 |        15.97% |       16.79% |         33.85% |        30.77% |
+
+In each group the publisher difference was about 0.05 percentage points of
+whole-machine CPU. Viewer CPU varied between runs. These samples establish
+neither a decryption speedup nor the impact on game frame times or less capable
+hardware. The measured throughput was approximately 4.5 MB/s. A stream at
+35 **MB/s** would be 280 Mbps and was not measured. [Per-trial measurements, throughput, memory and frame counts](native-e2ee-release-cpu.json)
+
+To reproduce on a configured Windows development machine, set
+`PODETELAR_NATIVE_EXE` to the release publisher, `PODETELAR_MEASURE_E2EE=1`
+and `PODETELAR_MEASUREMENT_BUILD=release`. Run
+`node --env-file=.env scripts/native-room-smoke.mjs e2ee-performance.spec.ts`.
 
 ## Historical acceptance on the pre-Discord branch
 

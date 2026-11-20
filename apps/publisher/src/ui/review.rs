@@ -143,7 +143,7 @@ pub fn run() -> Result<()> {
         let encoder = crate::encoding::Encoder { factory: "nvd3d11av1enc".into(), label: "NVIDIA NVENC AV1".into(), codec: crate::encoding::Codec::Av1 };
         inner.source_id = source.id.clone();
         inner.encoder = encoder.factory.clone();
-        inner.name = "Felipão".into();
+        inner.remember_guest_name("Felipão".into());
         let active_selection = inner.selection();
         let tile = Tile {
             id: "layout-fixture".into(),
@@ -267,7 +267,8 @@ struct Capture {
 }
 impl eframe::App for Capture {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if (self.finished.load(Ordering::Acquire) && !self.inspect) || self.started.elapsed() > Duration::from_secs(if self.inspect { 90 } else { 15 })
+        if (self.finished.load(Ordering::Acquire) && !self.inspect)
+            || self.started.elapsed() > Duration::from_secs(if self.inspect { 90 } else { 15 })
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
@@ -275,7 +276,9 @@ impl eframe::App for Capture {
     }
     fn ui(&mut self, root: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.inner.render(root, frame);
-        if !self.requested && self.started.elapsed() > Duration::from_millis(if self.inspect { 4000 } else { 800 }) {
+        if !self.requested
+            && self.started.elapsed() > Duration::from_millis(if self.inspect { 4000 } else { 800 })
+        {
             self.requested = true;
             let output = self.output.clone();
             let finished = self.finished.clone();

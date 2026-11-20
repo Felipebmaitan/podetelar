@@ -158,7 +158,7 @@ export function RoomAccess({ roomId }: { roomId: string }) {
               disabled={busy}
               onClick={() => setPending("rotate")}
             >
-              Rotate invitation
+              Replace invitation
             </button>
             <button
               className="button secondary"
@@ -221,8 +221,9 @@ export function RoomAccess({ roomId }: { roomId: string }) {
       )}
       {pending && (
         <ConfirmInvitationChange
+          danger={pending === "disable" || revokeSessions}
           action={
-            pending === "rotate" ? "Rotate invitation" : "Disable invitation"
+            pending === "rotate" ? "Replace invitation" : "Disable invitation"
           }
           description={
             revokeSessions

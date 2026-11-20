@@ -86,16 +86,18 @@
   border-color: var(--amber-hover);
 }
 
-.admin-shell .admin-danger {
+.admin-shell .admin-danger,
+.admin-room-dialog .admin-danger {
   background: var(--crimson-soft);
   border-color: var(--crimson-border);
   color: var(--crimson-ink);
 }
 
-.admin-shell .admin-danger:hover:not(:disabled) {
+.admin-shell .admin-danger:hover:not(:disabled),
+.admin-room-dialog .admin-danger:hover:not(:disabled) {
   background: var(--crimson);
   border-color: var(--crimson);
-  color: #fff;
+  color: var(--amber-ink);
 }
 
 /* Auth / Centered Login */
@@ -1350,6 +1352,9 @@
     grid-column: 1 / -1;
     gap: 10px;
   }
+  .admin-room-title .admin-chevron {
+    flex: 0 0 14px;
+  }
   .admin-room-members {
     padding-left: 24px;
   }
@@ -1389,5 +1394,39 @@
 
   .admin-server-chart .admin-section-heading h2 {
     flex-shrink: 0;
+  }
+}
+
+.admin-period-select {
+  display: none;
+}
+.admin-usage-identifiers {
+  margin-top: 12px;
+}
+@media (max-width: 480px) {
+  .admin-periods {
+    display: none;
+  }
+  .admin-filter-row {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .admin-period-select {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--ink-2);
+    font-size: 0.875rem;
+  }
+  .admin-period-select select {
+    min-height: 44px;
+    color-scheme: dark;
+    color: var(--ink);
+    background: var(--surface-2);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+    padding: 0 10px;
+    font: inherit;
   }
 }

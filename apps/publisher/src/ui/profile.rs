@@ -13,7 +13,7 @@ fn surface_card(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
         .fill(PANEL)
         .stroke(egui::Stroke::new(1.0, BORDER))
         .corner_radius(14)
-        .inner_margin(egui::Margin::symmetric(20, if compact { 10 } else { 20 }))
+        .inner_margin(egui::Margin::symmetric(20, if compact { 12 } else { 20 }))
         .show(ui, |ui| {
             ui.set_width((width - 42.0).max(0.0));
             ui.spacing_mut().item_spacing.y = if compact { 6.0 } else { 10.0 };
@@ -285,8 +285,15 @@ impl PublisherUi {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_millis() as u64;
-                let days = expires_at.saturating_sub(now) / 86_400_000;
-                detail_row(ui, tr("Remembered login days remaining"), &days.to_string());
+                if expires_at > 0 {
+                    let days = expires_at.saturating_sub(now).div_ceil(86_400_000);
+                    let remaining = match days {
+                        0 => tr("Expired").to_owned(),
+                        1 => tr("Expires within a day").to_owned(),
+                        _ => format!("{} {}", days, tr("days remaining")),
+                    };
+                    detail_row(ui, tr("Remembered login"), &remaining);
+                }
             });
             if !self.account_state.error.is_empty() {
                 ui.colored_label(ERROR, tr(&self.account_state.error));
@@ -363,6 +370,13 @@ impl PublisherUi {
         }
     }
 
+    fn automatic_joining_card(&mut self, ui: &mut egui::Ui) {
+        surface_card(ui, |ui| {
+            ui.label(skin::strong(tr("Automatic joining"), 14.5).color(TEXT));
+            self.discord_following(ui);
+        });
+    }
+
     fn discord_following(&mut self, ui: &mut egui::Ui) {
         let voice = self.following_client.state();
         if self.following.paused || self.following.independent {
@@ -378,11 +392,15 @@ impl PublisherUi {
                 });
             });
         } else if !voice.known {
-            joining_status(ui, "Waiting for Discord voice information…", MUTED);
+            joining_status(
+                ui,
+                "Discord voice status unavailable. You can join by invitation.",
+                MUTED,
+            );
         } else if !voice.enabled {
             joining_status(ui, "Automatic joining disabled", WARNING);
         } else if voice.locations.is_empty() {
-            joining_status(ui, "Waiting for your Discord voice channel…", MUTED);
+            joining_status(ui, "Join a Discord voice channel to continue.", MUTED);
         } else {
             for channel in &voice.locations {
                 let current = self
@@ -422,8 +440,9 @@ impl PublisherUi {
                                         badge(ui, tr("Following"), ACCENT);
                                     } else if voice.locations.len() > 1
                                         && ui
-                                            .button(format!(
-                                                "{} {}",
+                                            .button(tr("Follow channel"))
+                                            .accessible_name(format!(
+                                                "{} · {}",
                                                 tr("Follow channel"),
                                                 channel.channel_name
                                             ))
@@ -592,7 +611,11 @@ impl PublisherUi {
                 .color(MUTED),
         );
         let busy = self.profile_state.busy;
-        let valid = !busy && crate::settings::valid_name(&self.profile_name);
+        let saved = if self.profile_client.is_some() {
+            self.session_name.as_deref().unwrap_or(&self.name)
+        } else {
+            &self.saved_guest_name
+        };
         let save_label = tr("Save nickname");
         let save_w = (button_width(ui, save_label) + 8.0).max(96.0);
         let mut submit = false;
@@ -607,6 +630,9 @@ impl PublisherUi {
                         .margin(egui::Margin::symmetric(10, 7)),
                 )
                 .labelled_by(label.id);
+            let valid = !busy
+                && crate::settings::valid_name(&self.profile_name)
+                && self.profile_name.trim() != saved.trim();
             if valid && field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 submit = true;
             }
@@ -743,7 +769,15 @@ impl PublisherUi {
         if !self.profile_open {
             return;
         }
-        let width = (ctx.content_rect().width() - 64.0).clamp(320.0, 472.0);
+        let compact_discord = self.profile_page == SettingsPage::Discord
+            && self.account_state.account.is_some()
+            && ctx.content_rect().height() <= 600.0
+            && ctx.content_rect().width() >= 900.0;
+        let width = if compact_discord {
+            836.0
+        } else {
+            (ctx.content_rect().width() - 64.0).clamp(320.0, 472.0)
+        };
         let max_body_height = (ctx.content_rect().height() - 255.0).clamp(96.0, 460.0);
         let mut close = false;
         let modal = egui::Modal::new(egui::Id::unique("user-settings"))
@@ -818,16 +852,17 @@ impl PublisherUi {
                     .max_height(max_body_height)
                     .show(ui, |ui| match self.profile_page {
                         SettingsPage::Profile => self.profile_cards(ui, connected),
+                        SettingsPage::Discord if compact_discord => {
+                            ui.columns(2, |cols| {
+                                surface_card(&mut cols[0], |ui| self.discord_account(ui));
+                                self.automatic_joining_card(&mut cols[1]);
+                            });
+                        }
                         SettingsPage::Discord => {
                             surface_card(ui, |ui| self.discord_account(ui));
                             if self.account_state.account.is_some() {
                                 ui.add_space(10.0);
-                                surface_card(ui, |ui| {
-                                    ui.label(
-                                        skin::strong(tr("Automatic joining"), 14.5).color(TEXT),
-                                    );
-                                    self.discord_following(ui);
-                                });
+                                self.automatic_joining_card(ui);
                             }
                         }
                     });
@@ -845,7 +880,10 @@ impl PublisherUi {
                         close = true;
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(primary(tr("Done"), 88.0)).clicked() {
+                        if ui
+                            .add_sized([88.0, 36.0], egui::Button::new(tr("Done")).corner_radius(8))
+                            .clicked()
+                        {
                             close = true;
                         }
                     });

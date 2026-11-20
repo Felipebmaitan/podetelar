@@ -3,11 +3,13 @@ import { useEffect, useId, useRef } from "react";
 export function ConfirmInvitationChange({
   action,
   description,
+  danger,
   onCancel,
   onConfirm,
 }: {
   action: string;
   description: string;
+  danger: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -43,7 +45,11 @@ export function ConfirmInvitationChange({
           >
             Cancel
           </button>
-          <button className="button admin-primary">{action}</button>
+          <button
+            className={danger ? "button admin-danger" : "button admin-primary"}
+          >
+            {action}
+          </button>
         </div>
       </form>
     </dialog>

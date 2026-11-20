@@ -67,6 +67,20 @@ test("administrator login, filters, charts, reload and logout", async ({
       () => document.documentElement.scrollWidth <= innerWidth + 1,
     ),
   ).toBe(true);
+  await page.setViewportSize({ width: 320, height: 740 });
+  const picker = page.getByRole("combobox", { name: "Period", exact: true });
+  await picker.selectOption("7 days");
+  await expect(picker).toHaveValue("7 days");
+  await expect(page.getByRole("img", { name: /Server traffic/ })).toBeVisible();
+  await picker.selectOption("Custom period");
+  await expect(
+    page.getByRole("button", { name: "Apply period" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
   await page.reload();
   await page.getByRole("button", { name: "Usage", exact: true }).click();
   await expect(

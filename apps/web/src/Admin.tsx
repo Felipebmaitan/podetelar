@@ -385,6 +385,12 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
     setPage(0);
     setCustom([start.getTime(), end.getTime()]);
   };
+  function selectPeriod(next: Period) {
+    setPeriod(next);
+    setPage(0);
+    setValidation("");
+  }
+
   return (
     <main className="admin-main">
       <div className="admin-heading">
@@ -401,16 +407,23 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
             <button
               key={p}
               aria-pressed={p === period}
-              onClick={() => {
-                setPeriod(p);
-                setPage(0);
-                setValidation("");
-              }}
+              onClick={() => selectPeriod(p)}
             >
               {p}
             </button>
           ))}
         </div>
+        <label className="admin-period-select">
+          Period
+          <select
+            value={period}
+            onChange={(e) => selectPeriod(e.target.value as Period)}
+          >
+            {periods.map((p) => (
+              <option key={p}>{p}</option>
+            ))}
+          </select>
+        </label>
         <span className="admin-timezone">
           {Intl.DateTimeFormat().resolvedOptions().timeZone}
         </span>
@@ -528,12 +541,7 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
                         {user.sessionCount}{" "}
                         {user.sessionCount === 1 ? "session" : "sessions"}
                       </summary>
-                      <p className="admin-device-id">
-                        {user.identityKind === "device"
-                          ? "PC ID"
-                          : "Session ID"}
-                        : <code>{user.id}</code>
-                      </p>
+
                       {user.sessions.length < user.sessionCount && (
                         <p>
                           Latest {user.sessions.length} of {user.sessionCount}{" "}
@@ -553,13 +561,31 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
                               ↑ {dataSize(session.uploadedBytes)} · ↓{" "}
                               {dataSize(session.downloadedBytes)}
                             </span>
-                            <span>
-                              Room <code>{session.roomId}</code> ·{" "}
-                              <code>{session.id}</code>
-                            </span>
                           </li>
                         ))}
                       </ul>
+                      <details className="admin-usage-identifiers">
+                        <summary>Technical identifiers</summary>
+                        <p className="admin-device-id">
+                          {user.identityKind === "device"
+                            ? "PC ID"
+                            : "Session ID"}
+                          : <code>{user.id}</code>
+                        </p>
+                        <ul>
+                          {user.sessions.map((session) => (
+                            <li key={session.id}>
+                              <strong>{session.displayName}</strong>
+                              <span>
+                                Room ID: <code>{session.roomId}</code>
+                              </span>
+                              <span>
+                                Session ID: <code>{session.id}</code>
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
                     </details>
                   </article>
                 ))}
@@ -583,7 +609,7 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
             )}
           </section>
           <footer className="admin-footer">
-            <p>Retained {data.retentionDays} days · Mb/s</p>
+            <p>Usage history is kept for {data.retentionDays} days.</p>
             {data.lastSampleAt && (
               <p>
                 Last sample {new Date(data.lastSampleAt).toLocaleTimeString()}
@@ -710,9 +736,13 @@ function TrafficChart({
     }
     return segments.join(" ");
   };
+  const crossesMidnight =
+    points.length > 0 &&
+    new Date(points[0]!.at).toDateString() !==
+      new Date(points[points.length - 1]!.at).toDateString();
   const time = (at: number) =>
     new Intl.DateTimeFormat(undefined, {
-      ...((points.at(-1)?.at ?? 0) - (points[0]?.at ?? 0) >= 86400000
+      ...(crossesMidnight || bucketMs >= 86400000
         ? { month: "short", day: "numeric" }
         : {}),
       ...(bucketMs < 86400000
@@ -728,7 +758,9 @@ function TrafficChart({
     ? [
         0,
         ...(narrow
-          ? []
+          ? usable >= 195 && !crossesMidnight && bucketMs >= 60000
+            ? [Math.floor((points.length - 1) / 2)]
+            : []
           : [
               Math.floor((points.length - 1) / 3),
               Math.floor(((points.length - 1) * 2) / 3),

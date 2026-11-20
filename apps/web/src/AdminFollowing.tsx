@@ -8,6 +8,7 @@ type Data = {
     roomId: string;
     participantId: string;
     userId: string;
+    displayName?: string | null;
     loginId: string;
     guildId: string;
     channelId: string;
@@ -182,12 +183,19 @@ export function AdminFollowing({
                             {guild?.name ?? `Server ${session.guildId}`}
                           </small>
                           <small>
-                            Discord user <code>{session.userId}</code>
+                            {session.displayName ||
+                              `Discord user ${session.userId}`}
                           </small>
                         </span>
                       </summary>
                       <div className="discord-record-body">
                         <dl className="discord-session-details">
+                          <div>
+                            <dt>Discord user ID</dt>
+                            <dd>
+                              <code>{session.userId}</code>
+                            </dd>
+                          </div>
                           <div>
                             <dt>Room ID</dt>
                             <dd>

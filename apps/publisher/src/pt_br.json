@@ -113,6 +113,7 @@
   "you": "você",
   "watching": "assistindo",
   "sent": "enviados",
+  "Language": "Idioma",
   "Language preference could not be saved.": "Não foi possível salvar o idioma.",
   "Connection measurement": "Teste de conexão",
   "Wait 30 seconds before testing again.": "Aguarde 30 segundos antes de testar novamente.",
@@ -184,7 +185,7 @@
   "Automatic follows resolution, FPS and content, up to 35 Mbps. Manual: 1–100 Mbps. Connection limits still apply.": "O modo automático considera resolução, FPS e conteúdo, até 35 Mbps. Manual: 1–100 Mbps. Os limites da conexão continuam valendo.",
   "Live video and audio subscription": "Recebendo vídeo e áudio ao vivo",
   "Still preview, updated at most once per minute. Watch starts live video and audio.": "Prévia estática, atualizada no máximo uma vez por minuto. Assistir inicia o vídeo e o áudio ao vivo.",
-  "Capacity to this VPS · payload capped at 200 Mbps": "Capacidade até este VPS · dados limitados a 200 Mbps",
+  "Capacity to this server · payload capped at 200 Mbps": "Capacidade até este servidor · dados limitados a 200 Mbps",
   "Choose a watching budget from 1 to 200 Mbps.": "Escolha um limite para assistir de 1 a 200 Mbps.",
   "Full screen": "Tela cheia",
   "Encoder bitrate changes": "Alterações de bitrate no codificador",
@@ -393,5 +394,12 @@
   "Guest": "Visitante",
   "Disabled": "Desativado",
   "No active streams": "Nenhuma transmissão ativa",
-  "No one is sharing yet": "Ninguém está transmitindo ainda"
+  "No one is sharing yet": "Ninguém está transmitindo ainda",
+  "Discord voice status unavailable. You can join by invitation.": "Status de voz indisponível. Você pode entrar por convite.",
+  "Join a Discord voice channel to continue.": "Entre em um canal de voz do Discord para continuar.",
+  "Expired": "Expirado",
+  "Expires within a day": "Expira em até um dia",
+  "days remaining": "dias restantes",
+  "Remembered login": "Login lembrado",
+  "Connected to room": "Conectado à sala"
 }

@@ -223,6 +223,17 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
     }
 }
 
+fn focus_ring(ui: &egui::Ui, response: &egui::Response) {
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            response.rect.shrink(1.0),
+            7.0,
+            egui::Stroke::new(2.0, AMBER),
+            egui::StrokeKind::Inside,
+        );
+    }
+}
+
 pub fn icon_button(ui: &mut egui::Ui, symbol: Icon, label: &str) -> egui::Response {
     let response = ui.add_sized([32.0, 32.0], egui::Button::new("").frame(false));
     if response.hovered() || response.has_focus() {
@@ -234,6 +245,7 @@ pub fn icon_button(ui: &mut egui::Ui, symbol: Icon, label: &str) -> egui::Respon
         symbol,
         if ui.is_enabled() { INK } else { TERTIARY },
     );
+    focus_ring(ui, &response);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     response.on_hover_text(label)
 }
@@ -269,6 +281,7 @@ pub fn layout_button(
             SECONDARY
         },
     );
+    focus_ring(ui, &response);
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), selected, label)
     });
@@ -468,6 +481,7 @@ pub fn source_row(ui: &mut egui::Ui, label: &str, selected: bool, window: bool) 
             egui::Stroke::new(1.8, AMBER),
         ));
     }
+    focus_ring(ui, &response);
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), selected, label)
     });
@@ -495,7 +509,7 @@ pub fn menu_row(
             },
         );
     }
-    let color = if danger { DANGER } else { INK };
+    let color = if danger { DANGER_INK } else { INK };
     if let Some(symbol) = symbol {
         icon(
             ui.painter(),
@@ -521,6 +535,7 @@ pub fn menu_row(
         FontId::proportional(11.5),
         SECONDARY,
     );
+    focus_ring(ui, &response);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     response
 }

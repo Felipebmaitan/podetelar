@@ -339,6 +339,7 @@ export function AdminAccounts({ onExpired }: { onExpired: () => void }) {
         ref={dialog}
         className="admin-room-dialog"
         aria-labelledby="discord-account-action"
+        aria-describedby="discord-account-description"
         onCancel={(event) => {
           if (busy) event.preventDefault();
           else setSelected(null);
@@ -348,7 +349,7 @@ export function AdminAccounts({ onExpired }: { onExpired: () => void }) {
         <p>
           <strong>{selected?.account.displayName}</strong>
         </p>
-        <p>{confirmation?.description}</p>
+        <p id="discord-account-description">{confirmation?.description}</p>
         {error && (
           <p className="discord-feedback" role="alert">
             {error}

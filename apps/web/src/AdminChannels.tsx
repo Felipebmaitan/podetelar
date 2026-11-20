@@ -239,7 +239,7 @@ export function AdminChannels({
                               }
                             >
                               {c.guestEnabled
-                                ? "Replace link"
+                                ? "Replace invitation"
                                 : "Replace and enable link"}
                             </button>
                             <button
@@ -311,6 +311,7 @@ export function AdminChannels({
         ))}
       {pending && (
         <ConfirmInvitationChange
+          danger={pending.action === "disable"}
           action={
             pending.action === "rotate"
               ? "Replace channel invitation"

@@ -1,3 +1,4 @@
+import { WindowsInstallerLink } from "./WindowsInstallerLink";
 import { useEffect, useRef } from "react";
 import { CardBrand } from "./BrandMark";
 
@@ -31,7 +32,10 @@ export function DirectDownload({ ticket }: { ticket: string | null }) {
             </form>
           </>
         ) : (
-          <p>Open a new download from your room.</p>
+          <>
+            <p>For a new portable download link, return to your room.</p>
+            <WindowsInstallerLink />
+          </>
         )}
       </section>
     </main>

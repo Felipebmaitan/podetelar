@@ -204,14 +204,16 @@ export function AdminProfiles({ onExpired }: { onExpired: () => void }) {
         ref={dialog}
         className="admin-room-dialog"
         aria-labelledby="delete-profile-title"
-        onCancel={() => {
-          if (!busy) setSelected(null);
+        aria-describedby="delete-profile-description"
+        onCancel={(event) => {
+          if (busy) event.preventDefault();
+          else setSelected(null);
         }}
       >
         <h2 id="delete-profile-title">
           Delete {selected?.displayName}'s picture?
         </h2>
-        <p>
+        <p id="delete-profile-description">
           The stored picture will be removed from this PC's guest profile.
           Upload permission is managed separately.
         </p>
@@ -221,6 +223,7 @@ export function AdminProfiles({ onExpired }: { onExpired: () => void }) {
           </button>
           <button
             disabled={busy}
+            className="admin-danger"
             onClick={() => selected && void act(selected, "delete")}
           >
             Confirm deletion

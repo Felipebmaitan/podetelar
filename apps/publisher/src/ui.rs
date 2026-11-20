@@ -362,7 +362,14 @@ impl PublisherUi {
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut pt, true, "Português (Brasil)");
                         ui.selectable_value(&mut pt, false, "English");
-                    });
+                    })
+                    .response
+                    .accessible_name(format!(
+                        "{} · {}",
+                        tr("Language"),
+                        if pt { "Português (Brasil)" } else { "English" }
+                    ))
+                    .on_hover_text(tr("Language"));
                 if pt != crate::locale::portuguese() {
                     crate::locale::select(pt);
                 }
@@ -511,7 +518,7 @@ impl PublisherUi {
                     self.join_form(ui, state);
                 }
                 if !self.settings_error.is_empty() {
-                    ui.colored_label(ERROR, tr(&self.settings_error));
+                    ui.colored_label(skin::DANGER_INK, tr(&self.settings_error));
                 }
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -634,22 +641,18 @@ impl PublisherUi {
         if ui
             .add_enabled(
                 valid,
-                egui::Button::new(skin::strong(tr("Join room"), 13.5).color(if valid {
-                    TEXT
-                } else {
-                    MUTED
-                }))
-                .fill(if valid { skin::SURFACE_3 } else { CARD })
-                .stroke(egui::Stroke::new(
-                    1.0,
-                    if valid {
-                        ACCENT.gamma_multiply(0.55)
-                    } else {
-                        BORDER
-                    },
-                ))
-                .corner_radius(8)
-                .min_size(egui::vec2(ui.available_width(), 38.0)),
+                egui::Button::new(skin::strong(tr("Join room"), 13.5).color(TEXT))
+                    .fill(if valid { skin::SURFACE_3 } else { CARD })
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        if valid {
+                            ACCENT.gamma_multiply(0.55)
+                        } else {
+                            BORDER
+                        },
+                    ))
+                    .corner_radius(8)
+                    .min_size(egui::vec2(ui.available_width(), 38.0)),
             )
             .clicked()
             || (valid && enter)
@@ -877,7 +880,17 @@ impl PublisherUi {
                     self.clear_picker();
                 }
             });
-        let response = list.response.on_hover_text(tr("Screen or window"));
+        let response = list
+            .response
+            .accessible_name(format!(
+                "{} · {}",
+                tr("Screen or window"),
+                selected
+                    .as_ref()
+                    .map(source_name)
+                    .unwrap_or(tr("Choose a source"))
+            ))
+            .on_hover_text(tr("Screen or window"));
         if list.inner.is_none() {
             self.clear_picker();
             self.picker_refreshed = None;
@@ -1043,72 +1056,29 @@ impl PublisherUi {
 
     fn sharing_actions(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
         let valid = self.valid_selection(state);
-        ui.add_space(6.0);
+        ui.add_space(3.0);
         ui.separator();
         if state.sharing || state.capture_pending {
-            if let Some(mode) = state.mode {
-                ui.horizontal(|ui| {
-                    let (dot, _) =
-                        ui.allocate_exact_size(egui::vec2(8.0, 16.0), egui::Sense::hover());
-                    ui.painter().circle_filled(dot.center(), 3.5, ERROR);
-                    ui.label(
-                        skin::strong(
-                            format!("{}×{} · {} FPS", mode.width, mode.height, mode.fps),
-                            12.5,
-                        )
-                        .color(TEXT),
-                    )
-                    .on_hover_text(tr("Sharing"));
-                });
-                ui.label(
-                    egui::RichText::new(format!(
-                        "{}: {:.0} FPS · {:.1} Mbps {}",
-                        tr("Live"),
-                        state.metrics.fps,
-                        state.delivery.bitrate_bps as f64 / 1_000_000.0,
-                        tr("sent")
-                    ))
-                    .size(12.0)
-                    .color(MUTED),
-                );
-            } else {
-                ui.colored_label(WARNING, tr("Starting your stream…"));
-            }
             let selection = self.selection();
             let dirty = state
                 .active_selection
                 .as_ref()
                 .is_some_and(|active| active != &selection);
-            ui.horizontal(|ui| {
-                let width = (ui.available_width() - 8.0) / 2.0;
-                if ui
-                    .add_sized(
-                        [width, 36.0],
-                        egui::Button::new(skin::strong(tr("Stop"), 13.5).color(skin::DANGER_INK))
-                            .corner_radius(8)
-                            .fill(ERROR.gamma_multiply(0.14))
-                            .stroke(egui::Stroke::new(1.0, ERROR.gamma_multiply(0.45))),
-                    )
-                    .on_hover_text(tr("Stop sharing"))
-                    .clicked()
-                {
-                    self.controller.send(Command::Stop);
-                }
-                let apply = egui::Button::new(skin::strong(tr("Apply"), 13.5).color(if dirty {
-                    AMBER_INK
-                } else {
-                    MUTED
-                }))
-                .corner_radius(8)
-                .fill(if dirty { ACCENT } else { CARD })
-                .min_size(egui::vec2(width, 36.0));
-                if ui
-                    .add_enabled(state.sharing && !state.busy && valid && dirty, apply)
-                    .clicked()
-                {
-                    self.send_settings(true);
-                }
-            });
+            let width = ui.available_width();
+            let apply = egui::Button::new(skin::strong(tr("Apply"), 13.5).color(if dirty {
+                AMBER_INK
+            } else {
+                MUTED
+            }))
+            .corner_radius(8)
+            .fill(if dirty { ACCENT } else { CARD })
+            .min_size(egui::vec2(width, 36.0));
+            if ui
+                .add_enabled(state.sharing && !state.busy && valid && dirty, apply)
+                .clicked()
+            {
+                self.send_settings(true);
+            }
             if dirty {
                 let live = state.active_selection.as_ref().is_some_and(|a| {
                     a.source_id == selection.source_id
@@ -1138,7 +1108,11 @@ impl PublisherUi {
     }
 
     fn advanced(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
-        ui.spacing_mut().item_spacing.y = 10.0;
+        ui.spacing_mut().item_spacing.y = if ui.ctx().content_rect().height() <= 600.0 {
+            6.0
+        } else {
+            10.0
+        };
         ui.label(skin::strong(tr("Video"), 17.5).color(ACCENT));
         ui.add_space(2.0);
         ui.add_enabled_ui(!state.busy, |ui| {
@@ -1285,6 +1259,7 @@ impl PublisherUi {
         if self.advanced_open && !self.browser_invitation_open {
             self.clear_picker();
             let mut done = false;
+            let compact = ctx.content_rect().height() <= 600.0;
             let width = (ctx.viewport_rect().width() - 72.0).clamp(420.0, 620.0);
             let modal = egui::Modal::new(egui::Id::unique("advanced-settings"))
                 .backdrop_color(egui::Color32::from_black_alpha(170))
@@ -1293,12 +1268,12 @@ impl PublisherUi {
                         .fill(PANEL)
                         .stroke(egui::Stroke::new(1.0, BORDER))
                         .corner_radius(16)
-                        .inner_margin(24)
+                        .inner_margin(if compact { 16 } else { 24 })
                         .shadow(skin::menu_frame().shadow),
                 )
                 .show(ctx, |ui| {
                     ui.set_width(width);
-                    ui.spacing_mut().item_spacing.y = 12.0;
+                    ui.spacing_mut().item_spacing.y = if compact { 6.0 } else { 12.0 };
                     ui.horizontal(|ui| {
                         ui.label(skin::strong(tr("Advanced settings"), 22.0).color(TEXT));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1310,7 +1285,10 @@ impl PublisherUi {
                     ui.add_space(6.0);
                     egui::ScrollArea::vertical()
                         .id_salt("advanced-scroll")
-                        .max_height((ctx.viewport_rect().height() - 230.0).clamp(180.0, 560.0))
+                        .max_height(
+                            (ctx.viewport_rect().height() - if compact { 190.0 } else { 230.0 })
+                                .clamp(180.0, 560.0),
+                        )
                         .show(ui, |ui| self.advanced(ui, state));
                     settings_divider(ui);
                     ui.horizontal(|ui| {
@@ -1363,7 +1341,7 @@ impl PublisherUi {
             ui.label(format!("{}: {}", tr("Encoder"), encoder.codec.label()));
         }
         ui.label(
-            egui::RichText::new(tr("Capacity to this VPS · payload capped at 200 Mbps"))
+            egui::RichText::new(tr("Capacity to this server · payload capped at 200 Mbps"))
                 .size(12.0)
                 .color(MUTED),
         );
@@ -1541,7 +1519,10 @@ impl PublisherUi {
         });
         ui.add_space(5.0);
         if !tile.watching {
-            if skin::menu_row(ui, tr("Watch"), Some(Icon::Play), "", false).clicked() {
+            if skin::menu_row(ui, tr("Watch"), Some(Icon::Play), "", false)
+                .accessible_name(format!("{} · {}", tr("Watch"), tile.name))
+                .clicked()
+            {
                 self.controller.send(Command::Watch {
                     id: tile.id.clone(),
                     enabled: true,
@@ -1910,7 +1891,11 @@ impl PublisherUi {
                 });
             if !tile.watching {
                 let target = egui::Rect::from_center_size(rect.center(), egui::vec2(132.0, 40.0));
-                if ui.put(target, primary(tr("Watch"), 132.0)).clicked() {
+                if ui
+                    .put(target, primary(tr("Watch"), 132.0))
+                    .accessible_name(format!("{} · {}", tr("Watch"), tile.name))
+                    .clicked()
+                {
                     self.controller.send(Command::Watch {
                         id: tile.id.clone(),
                         enabled: true,
@@ -2206,7 +2191,7 @@ impl PublisherUi {
         }
         let mut restart = false;
         let mut later = false;
-        egui::Modal::new(egui::Id::unique("restart-update"))
+        let modal = egui::Modal::new(egui::Id::unique("restart-update"))
             .backdrop_color(egui::Color32::from_black_alpha(175))
             .frame(
                 egui::Frame::new()
@@ -2242,7 +2227,7 @@ impl PublisherUi {
                         .clicked();
                 });
             });
-        if later {
+        if later || modal.should_close() {
             self.update_restart_prompt = false;
             self.update_open = false;
         }
@@ -2526,10 +2511,10 @@ impl PublisherUi {
                 )
                 .show(root, |ui| {
                     if !state.error.is_empty() {
-                        ui.colored_label(ERROR, tr(&state.error));
+                        ui.colored_label(skin::DANGER_INK, tr(&state.error));
                     }
                     if !self.settings_error.is_empty() {
-                        ui.colored_label(ERROR, tr(&self.settings_error));
+                        ui.colored_label(skin::DANGER_INK, tr(&self.settings_error));
                     }
                     if state.busy {
                         ui.horizontal(|ui| {
@@ -2823,7 +2808,7 @@ impl PublisherUi {
                                     ui.label(
                                         egui::RichText::new(tr(
                                             if state.connection == "connected" {
-                                                "Connected"
+                                                "Connected to room"
                                             } else {
                                                 "Reconnecting"
                                             },
@@ -2914,288 +2899,304 @@ impl PublisherUi {
             .exact_size(70.0)
             .frame(egui::Frame::new().fill(CANVAS).inner_margin(dock_margin))
             .show(root, |ui| {
-                ui.vertical_centered(|ui| {
-                    skin::dock_frame().show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 8.0;
-                            // 1. Broadcast setup popover trigger pill
-                            let setup_btn = ui.add(
-                                egui::Button::new("")
-                                    .min_size(egui::vec2(228.0, 36.0))
-                                    .corner_radius(10)
-                                    .fill(if self.setup_open {
-                                        ACCENT.gamma_multiply(0.14)
-                                    } else {
-                                        CARD
-                                    })
-                                    .stroke(egui::Stroke::new(
-                                        1.0,
-                                        if self.setup_open || dirty {
-                                            ACCENT.gamma_multiply(0.65)
+                egui::Area::new(egui::Id::unique("studio-controls"))
+                    .constrain_to(ui.max_rect())
+                    .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                    .movable(false)
+                    .order(egui::Order::Middle)
+                    .show(ui.ctx(), |ui| {
+                        skin::dock_frame().show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 8.0;
+                                // 1. Broadcast setup popover trigger pill
+                                let setup_btn = ui.add(
+                                    egui::Button::new("")
+                                        .min_size(egui::vec2(228.0, 36.0))
+                                        .corner_radius(10)
+                                        .fill(if self.setup_open {
+                                            ACCENT.gamma_multiply(0.14)
                                         } else {
-                                            BORDER
-                                        },
-                                    )),
-                            );
-                            let sr = setup_btn.rect;
-                            let is_window = displayed_source
-                                .as_ref()
-                                .is_some_and(|s| s.id.starts_with("window:"));
-                            if state.sharing {
-                                ui.painter().circle_filled(
-                                    sr.left_center() + egui::vec2(14.0, 0.0),
-                                    4.0,
-                                    ERROR,
+                                            CARD
+                                        })
+                                        .stroke(egui::Stroke::new(
+                                            1.0,
+                                            if self.setup_open || dirty {
+                                                ACCENT.gamma_multiply(0.65)
+                                            } else {
+                                                BORDER
+                                            },
+                                        )),
                                 );
-                            } else {
+                                let sr = setup_btn.rect;
+                                let is_window = displayed_source
+                                    .as_ref()
+                                    .is_some_and(|s| s.id.starts_with("window:"));
+                                if state.sharing {
+                                    ui.painter().circle_filled(
+                                        sr.left_center() + egui::vec2(14.0, 0.0),
+                                        4.0,
+                                        ERROR,
+                                    );
+                                } else {
+                                    skin::icon(
+                                        ui.painter(),
+                                        egui::Rect::from_center_size(
+                                            sr.left_center() + egui::vec2(16.0, 0.0),
+                                            egui::vec2(16.0, 16.0),
+                                        ),
+                                        if is_window {
+                                            Icon::Window
+                                        } else {
+                                            Icon::Monitor
+                                        },
+                                        if self.setup_open { ACCENT } else { TEXT },
+                                    );
+                                }
+                                let mut title_job = egui::text::LayoutJob::simple(
+                                    source_label.to_owned(),
+                                    skin::semibold(12.5),
+                                    TEXT,
+                                    (sr.width() - 58.0).max(40.0),
+                                );
+                                title_job.wrap.max_rows = 1;
+                                title_job.wrap.break_anywhere = true;
+                                title_job.wrap.overflow_character = Some('\u{2026}');
+                                let title_galley = ui.fonts_mut(|f| f.layout_job(title_job));
+                                ui.painter().galley(
+                                    egui::pos2(sr.left() + 30.0, sr.top() + 4.0),
+                                    title_galley,
+                                    TEXT,
+                                );
+                                let mut sub_job = egui::text::LayoutJob::simple(
+                                    setup_summary,
+                                    egui::FontId::proportional(12.0),
+                                    if dirty { WARNING } else { MUTED },
+                                    (sr.width() - 58.0).max(40.0),
+                                );
+                                sub_job.wrap.max_rows = 1;
+                                sub_job.wrap.break_anywhere = true;
+                                sub_job.wrap.overflow_character = Some('\u{2026}');
+                                let sub_galley = ui.fonts_mut(|f| f.layout_job(sub_job));
+                                ui.painter().galley(
+                                    egui::pos2(sr.left() + 30.0, sr.top() + 19.5),
+                                    sub_galley,
+                                    if dirty { WARNING } else { MUTED },
+                                );
                                 skin::icon(
                                     ui.painter(),
                                     egui::Rect::from_center_size(
-                                        sr.left_center() + egui::vec2(16.0, 0.0),
-                                        egui::vec2(16.0, 16.0),
+                                        sr.right_center() - egui::vec2(14.0, 0.0),
+                                        egui::vec2(13.0, 13.0),
                                     ),
-                                    if is_window {
-                                        Icon::Window
-                                    } else {
-                                        Icon::Monitor
-                                    },
-                                    if self.setup_open { ACCENT } else { TEXT },
+                                    Icon::ChevronUp,
+                                    if self.setup_open { ACCENT } else { MUTED },
                                 );
-                            }
-                            let mut title_job = egui::text::LayoutJob::simple(
-                                source_label.to_owned(),
-                                skin::semibold(12.5),
-                                TEXT,
-                                (sr.width() - 58.0).max(40.0),
-                            );
-                            title_job.wrap.max_rows = 1;
-                            title_job.wrap.break_anywhere = true;
-                            title_job.wrap.overflow_character = Some('\u{2026}');
-                            let title_galley = ui.fonts_mut(|f| f.layout_job(title_job));
-                            ui.painter().galley(
-                                egui::pos2(sr.left() + 30.0, sr.top() + 4.0),
-                                title_galley,
-                                TEXT,
-                            );
-                            let mut sub_job = egui::text::LayoutJob::simple(
-                                setup_summary,
-                                egui::FontId::proportional(12.0),
-                                if dirty { WARNING } else { MUTED },
-                                (sr.width() - 58.0).max(40.0),
-                            );
-                            sub_job.wrap.max_rows = 1;
-                            sub_job.wrap.break_anywhere = true;
-                            sub_job.wrap.overflow_character = Some('\u{2026}');
-                            let sub_galley = ui.fonts_mut(|f| f.layout_job(sub_job));
-                            ui.painter().galley(
-                                egui::pos2(sr.left() + 30.0, sr.top() + 19.5),
-                                sub_galley,
-                                if dirty { WARNING } else { MUTED },
-                            );
-                            skin::icon(
-                                ui.painter(),
-                                egui::Rect::from_center_size(
-                                    sr.right_center() - egui::vec2(14.0, 0.0),
-                                    egui::vec2(13.0, 13.0),
-                                ),
-                                Icon::ChevronUp,
-                                if self.setup_open { ACCENT } else { MUTED },
-                            );
-                            setup_btn.widget_info(|| {
-                                egui::WidgetInfo::selected(
-                                    egui::Role::Button,
-                                    true,
-                                    self.setup_open,
-                                    tr("Share your screen"),
-                                )
-                            });
-                            if setup_btn.on_hover_text(tr("Share your screen")).clicked() {
-                                self.setup_open = !self.setup_open;
-                            }
-
-                            // 2. Primary broadcast action (Start / Stop + Apply)
-                            if state.sharing || state.capture_pending {
-                                if ui
-                                    .add_sized(
-                                        [92.0, 36.0],
-                                        egui::Button::new(
-                                            skin::strong(tr("Stop"), 13.5).color(skin::DANGER_INK),
-                                        )
-                                        .corner_radius(10)
-                                        .fill(ERROR.gamma_multiply(0.14))
-                                        .stroke(egui::Stroke::new(1.0, ERROR.gamma_multiply(0.45))),
+                                setup_btn.widget_info(|| {
+                                    egui::WidgetInfo::selected(
+                                        egui::Role::Button,
+                                        true,
+                                        self.setup_open,
+                                        tr("Share your screen"),
                                     )
-                                    .on_hover_text(tr("Stop sharing"))
+                                });
+                                if setup_btn.on_hover_text(tr("Share your screen")).clicked() {
+                                    self.setup_open = !self.setup_open;
+                                }
+
+                                // 2. Primary broadcast action (Start / Stop + Apply)
+                                if state.sharing || state.capture_pending {
+                                    if ui
+                                        .add_sized(
+                                            [92.0, 36.0],
+                                            egui::Button::new(
+                                                skin::strong(tr("Stop"), 13.5)
+                                                    .color(skin::DANGER_INK),
+                                            )
+                                            .corner_radius(10)
+                                            .fill(ERROR.gamma_multiply(0.14))
+                                            .stroke(
+                                                egui::Stroke::new(1.0, ERROR.gamma_multiply(0.45)),
+                                            ),
+                                        )
+                                        .on_hover_text(tr("Stop sharing"))
+                                        .clicked()
+                                    {
+                                        self.controller.send(Command::Stop);
+                                    }
+                                    if dirty
+                                        && !self.setup_open
+                                        && ui
+                                            .add_enabled(
+                                                state.sharing && !state.busy && valid,
+                                                primary(tr("Apply"), 82.0)
+                                                    .min_size(egui::vec2(82.0, 36.0)),
+                                            )
+                                            .on_hover_text(pending_note)
+                                            .clicked()
+                                    {
+                                        self.send_settings(true);
+                                    }
+                                } else if ui
+                                    .add_enabled(
+                                        state.connection == "connected" && !state.busy && valid,
+                                        primary(tr("Start sharing"), 148.0)
+                                            .min_size(egui::vec2(148.0, 36.0)),
+                                    )
                                     .clicked()
                                 {
-                                    self.controller.send(Command::Stop);
+                                    self.send_settings(false);
+                                    self.setup_open = false;
                                 }
-                                if dirty
-                                    && ui
-                                        .add_enabled(
-                                            state.sharing && !state.busy && valid,
-                                            primary(tr("Apply"), 82.0)
-                                                .min_size(egui::vec2(82.0, 36.0)),
-                                        )
-                                        .on_hover_text(pending_note)
-                                        .clicked()
-                                {
-                                    self.send_settings(true);
-                                }
-                            } else if ui
-                                .add_enabled(
-                                    state.connection == "connected" && !state.busy && valid,
-                                    primary(tr("Start sharing"), 148.0)
-                                        .min_size(egui::vec2(148.0, 36.0)),
-                                )
-                                .clicked()
-                            {
-                                self.send_settings(false);
-                                self.setup_open = false;
-                            }
 
-                            // Subtle vertical divider
-                            let (sep, _) =
-                                ui.allocate_exact_size(egui::vec2(1.0, 22.0), egui::Sense::hover());
-                            ui.painter().line_segment(
-                                [sep.center_top(), sep.center_bottom()],
-                                (1.0, BORDER),
-                            );
+                                // Subtle vertical divider
+                                let (sep, _) = ui.allocate_exact_size(
+                                    egui::vec2(1.0, 22.0),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().line_segment(
+                                    [sep.center_top(), sep.center_bottom()],
+                                    (1.0, BORDER),
+                                );
 
-                            // 3. Layout switcher (Grid / Focus)
-                            if skin::layout_button(
-                                ui,
-                                Icon::Grid,
-                                tr("Back to grid"),
-                                self.focused.is_none(),
-                            )
-                            .clicked()
-                            {
-                                self.focused = None;
-                            }
-                            let watched = state.tiles.iter().find(|tile| tile.watching);
-                            ui.add_enabled_ui(watched.is_some(), |ui| {
+                                // 3. Layout switcher (Grid / Focus)
                                 if skin::layout_button(
                                     ui,
-                                    Icon::Focus,
-                                    tr("Focus stream"),
-                                    self.focused.is_some(),
+                                    Icon::Grid,
+                                    tr("Back to grid"),
+                                    self.focused.is_none(),
                                 )
                                 .clicked()
                                 {
-                                    self.focused = watched.map(|tile| tile.id.clone());
+                                    self.focused = None;
+                                }
+                                let watched = state.tiles.iter().find(|tile| tile.watching);
+                                ui.add_enabled_ui(watched.is_some(), |ui| {
+                                    if skin::layout_button(
+                                        ui,
+                                        Icon::Focus,
+                                        tr("Focus stream"),
+                                        self.focused.is_some(),
+                                    )
+                                    .clicked()
+                                    {
+                                        self.focused = watched.map(|tile| tile.id.clone());
+                                    }
+                                });
+
+                                // 4. Collapsible Room Roster toggle
+                                let count = state.participants.len() + 1;
+                                let people_resp = ui.add(
+                                    egui::Button::new("")
+                                        .min_size(egui::vec2(54.0, 32.0))
+                                        .corner_radius(8)
+                                        .fill(if self.roster_open {
+                                            ACCENT.gamma_multiply(0.14)
+                                        } else {
+                                            egui::Color32::TRANSPARENT
+                                        })
+                                        .stroke(if self.roster_open {
+                                            egui::Stroke::new(1.0, ACCENT.gamma_multiply(0.65))
+                                        } else {
+                                            egui::Stroke::NONE
+                                        }),
+                                );
+                                if !self.roster_open
+                                    && (people_resp.hovered() || people_resp.has_focus())
+                                {
+                                    ui.painter().rect_filled(
+                                        people_resp.rect,
+                                        8.0,
+                                        skin::SURFACE_3,
+                                    );
+                                }
+                                let people_color = if self.roster_open {
+                                    ACCENT
+                                } else {
+                                    secondary_or_ink(people_resp.hovered())
+                                };
+                                skin::icon(
+                                    ui.painter(),
+                                    egui::Rect::from_center_size(
+                                        people_resp.rect.left_center() + egui::vec2(17.0, 0.0),
+                                        egui::vec2(16.0, 16.0),
+                                    ),
+                                    Icon::People,
+                                    people_color,
+                                );
+                                ui.painter().text(
+                                    people_resp.rect.right_center() - egui::vec2(12.0, 0.0),
+                                    egui::Align2::RIGHT_CENTER,
+                                    count.to_string(),
+                                    skin::semibold(12.5),
+                                    people_color,
+                                );
+                                people_resp.widget_info(|| {
+                                    egui::WidgetInfo::selected(
+                                        egui::Role::Button,
+                                        true,
+                                        self.roster_open,
+                                        tr("People in this room"),
+                                    )
+                                });
+                                if people_resp
+                                    .on_hover_text(tr("People in this room"))
+                                    .clicked()
+                                {
+                                    self.roster_open = !self.roster_open;
+                                }
+
+                                // 5. Quick profile avatar button
+                                let own_id = self
+                                    .profile_client
+                                    .as_ref()
+                                    .map(|c| c.participant_id.clone())
+                                    .unwrap_or_default();
+                                let texture = self.profile_texture(ui.ctx(), &own_id);
+                                let (av_rect, av_resp) = ui.allocate_exact_size(
+                                    egui::vec2(30.0, 30.0),
+                                    egui::Sense::click(),
+                                );
+                                if let Some(tex) = texture {
+                                    egui::Image::new((tex, egui::vec2(30.0, 30.0)))
+                                        .corner_radius(egui::CornerRadius::same(15))
+                                        .paint_at(ui, av_rect);
+                                } else {
+                                    paint_avatar_circle(ui.painter(), av_rect, &self.name);
+                                }
+                                ui.painter().circle_filled(
+                                    av_rect.right_bottom() - egui::vec2(4.0, 4.0),
+                                    4.0,
+                                    if state.connection == "connected" {
+                                        SAGE
+                                    } else {
+                                        WARNING
+                                    },
+                                );
+                                ui.painter().circle_stroke(
+                                    av_rect.right_bottom() - egui::vec2(4.0, 4.0),
+                                    4.0,
+                                    egui::Stroke::new(1.5, PANEL),
+                                );
+                                if av_resp.has_focus() || av_resp.hovered() {
+                                    ui.painter().circle_stroke(
+                                        av_rect.center(),
+                                        16.0,
+                                        egui::Stroke::new(1.5, ACCENT),
+                                    );
+                                }
+                                av_resp.widget_info(|| {
+                                    egui::WidgetInfo::labeled(
+                                        egui::Role::Button,
+                                        true,
+                                        tr("User settings"),
+                                    )
+                                });
+                                if av_resp.on_hover_text(tr("User settings")).clicked() {
+                                    self.open_profile();
                                 }
                             });
-
-                            // 4. Collapsible Room Roster toggle
-                            let count = state.participants.len() + 1;
-                            let people_resp = ui.add(
-                                egui::Button::new("")
-                                    .min_size(egui::vec2(54.0, 32.0))
-                                    .corner_radius(8)
-                                    .fill(if self.roster_open {
-                                        ACCENT.gamma_multiply(0.14)
-                                    } else {
-                                        egui::Color32::TRANSPARENT
-                                    })
-                                    .stroke(if self.roster_open {
-                                        egui::Stroke::new(1.0, ACCENT.gamma_multiply(0.65))
-                                    } else {
-                                        egui::Stroke::NONE
-                                    }),
-                            );
-                            if !self.roster_open
-                                && (people_resp.hovered() || people_resp.has_focus())
-                            {
-                                ui.painter()
-                                    .rect_filled(people_resp.rect, 8.0, skin::SURFACE_3);
-                            }
-                            let people_color = if self.roster_open {
-                                ACCENT
-                            } else {
-                                secondary_or_ink(people_resp.hovered())
-                            };
-                            skin::icon(
-                                ui.painter(),
-                                egui::Rect::from_center_size(
-                                    people_resp.rect.left_center() + egui::vec2(17.0, 0.0),
-                                    egui::vec2(16.0, 16.0),
-                                ),
-                                Icon::People,
-                                people_color,
-                            );
-                            ui.painter().text(
-                                people_resp.rect.right_center() - egui::vec2(12.0, 0.0),
-                                egui::Align2::RIGHT_CENTER,
-                                count.to_string(),
-                                skin::semibold(12.5),
-                                people_color,
-                            );
-                            people_resp.widget_info(|| {
-                                egui::WidgetInfo::selected(
-                                    egui::Role::Button,
-                                    true,
-                                    self.roster_open,
-                                    tr("People in this room"),
-                                )
-                            });
-                            if people_resp
-                                .on_hover_text(tr("People in this room"))
-                                .clicked()
-                            {
-                                self.roster_open = !self.roster_open;
-                            }
-
-                            // 5. Quick profile avatar button
-                            let own_id = self
-                                .profile_client
-                                .as_ref()
-                                .map(|c| c.participant_id.clone())
-                                .unwrap_or_default();
-                            let texture = self.profile_texture(ui.ctx(), &own_id);
-                            let (av_rect, av_resp) = ui
-                                .allocate_exact_size(egui::vec2(30.0, 30.0), egui::Sense::click());
-                            if let Some(tex) = texture {
-                                egui::Image::new((tex, egui::vec2(30.0, 30.0)))
-                                    .corner_radius(egui::CornerRadius::same(15))
-                                    .paint_at(ui, av_rect);
-                            } else {
-                                paint_avatar_circle(ui.painter(), av_rect, &self.name);
-                            }
-                            ui.painter().circle_filled(
-                                av_rect.right_bottom() - egui::vec2(4.0, 4.0),
-                                4.0,
-                                if state.connection == "connected" {
-                                    SAGE
-                                } else {
-                                    WARNING
-                                },
-                            );
-                            ui.painter().circle_stroke(
-                                av_rect.right_bottom() - egui::vec2(4.0, 4.0),
-                                4.0,
-                                egui::Stroke::new(1.5, PANEL),
-                            );
-                            if av_resp.has_focus() || av_resp.hovered() {
-                                ui.painter().circle_stroke(
-                                    av_rect.center(),
-                                    16.0,
-                                    egui::Stroke::new(1.5, ACCENT),
-                                );
-                            }
-                            av_resp.widget_info(|| {
-                                egui::WidgetInfo::labeled(
-                                    egui::Role::Button,
-                                    true,
-                                    tr("User settings"),
-                                )
-                            });
-                            if av_resp.on_hover_text(tr("User settings")).clicked() {
-                                self.open_profile();
-                            }
                         });
                     });
-                });
             });
     }
 
@@ -3205,15 +3206,21 @@ impl PublisherUi {
         state: &Snapshot,
         stage: egui::Rect,
     ) {
-        let footer_height = if state.sharing || state.capture_pending {
-            136.0
-        } else {
-            50.0
-        };
+        let pending = state
+            .active_selection
+            .as_ref()
+            .is_some_and(|s| s != &self.selection());
+        let footer_height = if pending { 80.0 } else { 50.0 };
         let max_height = (stage.height() - 112.0 - footer_height).clamp(48.0, 480.0);
+        let dock_left = ctx
+            .memory(|memory| memory.area_rect(egui::Id::unique("studio-controls")))
+            .map_or(stage.left() + 16.0, |rect| rect.left());
         let panel = egui::Area::new(egui::Id::unique("broadcast-setup"))
             .constrain_to(stage.shrink2(egui::vec2(0.0, 6.0)))
-            .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(26.0, 0.0))
+            .anchor(
+                egui::Align2::LEFT_BOTTOM,
+                egui::vec2((dock_left + 10.0 - stage.left()).max(0.0), 0.0),
+            )
             .order(egui::Order::Foreground)
             .interactable(true)
             .show(ctx, |ui| {
@@ -3627,11 +3634,9 @@ fn participant(
                     if sharing {
                         badge(ui, tr("Live"), ACCENT);
                     }
-                    ui.label(
-                        egui::RichText::new(if discord { "Discord" } else { tr("Guest") })
-                            .size(12.0)
-                            .color(MUTED),
-                    );
+                    if discord {
+                        ui.label(egui::RichText::new("Discord").size(12.0).color(MUTED));
+                    }
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         ui.add(egui::Label::new(egui::RichText::new(label).size(12.0)).truncate())
                             .on_hover_text(name);
@@ -3766,6 +3771,22 @@ mod tests {
         click(&mut app, &ctx, tr("Restart to update"));
         assert!(app.update_restart_prompt);
         assert!(actions.try_recv().is_err());
+        draw(&mut app, &ctx, vec![]);
+        draw(
+            &mut app,
+            &ctx,
+            vec![egui::Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Default::default(),
+            }],
+        );
+        assert!(!app.update_open && !app.update_restart_prompt);
+        assert!(actions.try_recv().is_err());
+        click(&mut app, &ctx, "↻");
+        click(&mut app, &ctx, tr("Restart to update"));
         click(&mut app, &ctx, tr("Later"));
         assert!(!app.update_restart_prompt);
         assert!(app.closing_since.is_none());

@@ -101,32 +101,33 @@ export function AdminDiscord({ onExpired }: { onExpired: () => void }) {
       {view === "Overview" && (
         <section className="discord-view">
           <article className="discord-surface discord-connection">
-            <SectionHeader title="Bot connection">
+            <SectionHeader title="Bot connection" />
+            <div className="discord-connection-actions">
+              <div role="status">
+                <StatusLabel
+                  tone={
+                    data?.online
+                      ? "good"
+                      : data?.configured
+                        ? "attention"
+                        : "neutral"
+                  }
+                >
+                  {!data
+                    ? "Checking connection"
+                    : !data.configured
+                      ? "Bot connection not configured"
+                      : data.online
+                        ? "Connected to Discord"
+                        : "Discord voice state unavailable"}
+                </StatusLabel>
+              </div>
               <button
                 disabled={!data?.configured || busy}
                 onClick={() => void reconnect()}
               >
                 {busy ? "Reconnecting…" : "Reconnect and resynchronize"}
               </button>
-            </SectionHeader>
-            <div role="status">
-              <StatusLabel
-                tone={
-                  data?.online
-                    ? "good"
-                    : data?.configured
-                      ? "attention"
-                      : "neutral"
-                }
-              >
-                {!data
-                  ? "Checking connection"
-                  : !data.configured
-                    ? "Bot connection not configured"
-                    : data.online
-                      ? "Connected to Discord"
-                      : "Discord voice state unavailable"}
-              </StatusLabel>
             </div>
             {error && (
               <p className="discord-feedback" role="alert">

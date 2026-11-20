@@ -27,6 +27,14 @@ for (const width of [1280, 390])
       name: "Join room in PodeTelar",
       exact: true,
     });
+    const installer = page.getByRole("link", {
+      name: "Get Windows Setup on GitHub",
+    });
+    await expect(installer).toHaveAttribute(
+      "href",
+      "https://github.com/Felipebmaitan/podetelar/releases/latest",
+    );
+    await expect(installer).toHaveAttribute("referrerpolicy", "no-referrer");
     await expect(open).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "In this room" }),

@@ -25,6 +25,7 @@ const env = app
     }
   : macosEnvironment();
 const origin = process.env.MACOS_TEST_ORIGIN ?? "http://localhost:3000";
+const protectedRoom = process.env.MACOS_TEST_PRIVATE_ROOM === "1";
 function native(option, request) {
   const child = spawn(executable, [option], {
     env: { ...env, PODETELAR_DIAGNOSTICS: "1" },
@@ -135,13 +136,23 @@ for (const codec of process.env.MACOS_TEST_CODEC
   });
   assert.equal(response.status, 201, "Could not create an isolated test room.");
   const room = await response.json();
-  const invitationUrl = room.invitationUrl;
+  let invitationUrl = room.invitationUrl;
   assert.equal(typeof invitationUrl, "string");
+  if (protectedRoom) {
+    const [created] = await native("--protect-invitation", { invitationUrl })
+      .done;
+    assert.ok(
+      created?.invitationUrl?.startsWith("FSPRIVATE1:"),
+      "Private invitation unavailable.",
+    );
+    invitationUrl = created.invitationUrl;
+  }
   const watcher = native("--watch-fixture", {
     invitationUrl,
     seconds: 18,
     h264Only: codec === "h264",
     hevcOnly: codec === "h265",
+    waitForPreview: protectedRoom,
     consumePictures: true,
     diagnostics: true,
   });
@@ -182,6 +193,38 @@ for (const codec of process.env.MACOS_TEST_CODEC
     "Hardware publication did not deliver frames.",
   );
   const watch = viewed.find((value) => value.closed);
+  if (protectedRoom) {
+    assert.equal(
+      final.codec,
+      codec,
+      "Private publisher used an unexpected codec.",
+    );
+    assert.ok(
+      watch?.previewBeforeWatching,
+      "Encrypted preview was not recovered.",
+    );
+    for (const rewatch of [false, true]) {
+      const frames = watch.samples
+        .filter(
+          (sample) =>
+            sample.phaseSecond !== null &&
+            (rewatch ? sample.phaseSecond >= 8 : sample.phaseSecond < 5),
+        )
+        .flatMap((sample) =>
+          sample.streams
+            .filter(
+              (stream) =>
+                stream.watching &&
+                stream.codec.toLowerCase() === `video/${codec}`,
+            )
+            .map((stream) => stream.frames),
+        );
+      assert.ok(
+        frames.length >= 2 && frames.at(-1) > frames[0],
+        "Expected private codec did not advance.",
+      );
+    }
+  }
   assert.ok(
     watch?.samples.some((sample) =>
       sample.decoders.some((decoder) => decoder.hardware),
@@ -271,7 +314,16 @@ for (const codec of process.env.MACOS_TEST_CODEC
 }
 writeFileSync(
   join(root, ".local/macos/media-results.json"),
-  JSON.stringify({ sourceKind: source.id.split(":")[0], results }, null, 2) +
-    "\n",
+  JSON.stringify(
+    { sourceKind: source.id.split(":")[0], protectedRoom, results },
+    null,
+    2,
+  ) + "\n",
 );
-console.log(JSON.stringify({ sourceKind: source.id.split(":")[0], results }));
+console.log(
+  JSON.stringify({
+    sourceKind: source.id.split(":")[0],
+    protectedRoom,
+    results,
+  }),
+);

@@ -223,12 +223,25 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
     }
 }
 
-pub(super) fn focus_ring(ui: &egui::Ui, response: &egui::Response) {
-    if response.has_focus() {
-        ui.painter().rect_stroke(
-            response.rect.shrink(1.0),
-            7.0,
-            egui::Stroke::new(2.0, AMBER),
+pub(super) fn paint_keyboard_focus(ctx: &egui::Context) {
+    let Some(id) = ctx.memory(|memory| memory.focused()) else {
+        return;
+    };
+    let Some(response) = ctx.read_response(id) else {
+        return;
+    };
+    if !response.enabled() || !response.interact_rect.is_positive() {
+        return;
+    }
+    let painter = ctx
+        .layer_painter(response.layer_id)
+        .with_clip_rect(response.interact_rect);
+    // The dark and light borders keep the indicator visible on both accent and neutral fills.
+    for (inset, color) in [(0.0, AMBER), (2.0, AMBER_INK)] {
+        painter.rect_stroke(
+            response.rect.shrink(inset),
+            6.0 - inset,
+            egui::Stroke::new(2.0, color),
             egui::StrokeKind::Inside,
         );
     }
@@ -245,7 +258,6 @@ pub fn icon_button(ui: &mut egui::Ui, symbol: Icon, label: &str) -> egui::Respon
         symbol,
         if ui.is_enabled() { INK } else { TERTIARY },
     );
-    focus_ring(ui, &response);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     response.on_hover_text(label)
 }
@@ -281,7 +293,6 @@ pub fn layout_button(
             SECONDARY
         },
     );
-    focus_ring(ui, &response);
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), selected, label)
     });
@@ -335,15 +346,6 @@ pub fn outline_button(ui: &mut egui::Ui, label: &str, symbol: Icon) -> egui::Res
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     response
-}
-
-pub fn field_label(ui: &mut egui::Ui, label: &str, symbol: Icon) -> egui::Response {
-    ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(13.0, 16.0), egui::Sense::hover());
-        icon(ui.painter(), rect, symbol, SECONDARY);
-        ui.label(RichText::new(label).size(11.5).color(SECONDARY))
-    })
-    .inner
 }
 
 pub fn help_label(ui: &mut egui::Ui, label: &str, help: &str) -> egui::Response {
@@ -481,7 +483,6 @@ pub fn source_row(ui: &mut egui::Ui, label: &str, selected: bool, window: bool) 
             egui::Stroke::new(1.8, AMBER),
         ));
     }
-    focus_ring(ui, &response);
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), selected, label)
     });
@@ -535,7 +536,6 @@ pub fn menu_row(
         FontId::proportional(11.5),
         SECONDARY,
     );
-    focus_ring(ui, &response);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     response
 }
@@ -693,5 +693,46 @@ mod tests {
             );
         }
         assert!(!muted, "Space on the focused switch should unmute");
+    }
+}
+#[cfg(test)]
+mod focus_tests {
+    use super::*;
+
+    #[test]
+    fn keyboard_outline_follows_focus_across_button_styles() {
+        let ctx = egui::Context::default();
+        for target in 0..3 {
+            let mut rects = Vec::new();
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                rects.clear();
+                for (index, button) in [
+                    egui::Button::new("Sign in").fill(AMBER),
+                    egui::Button::new("Show").frame(false),
+                    egui::Button::new("Disconnect").stroke(egui::Stroke::new(1.0, DANGER)),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let response = ui.add(button);
+                    if index == target {
+                        response.request_focus();
+                    }
+                    rects.push(response.rect);
+                }
+                paint_keyboard_focus(ui.ctx());
+            });
+            output.textures_delta.clear();
+            for (index, rect) in rects.iter().enumerate() {
+                for (inset, color) in [(0.0, AMBER), (2.0, AMBER_INK)] {
+                    let outlined = output.shapes.iter().any(|shape| {
+                        matches!(&shape.shape,
+                        egui::Shape::Rect(painted) if painted.rect == rect.shrink(inset)
+                            && painted.stroke == egui::Stroke::new(2.0, color))
+                    });
+                    assert_eq!(outlined, index == target);
+                }
+            }
+        }
     }
 }

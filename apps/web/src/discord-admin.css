@@ -354,6 +354,11 @@
   font: inherit;
 }
 
+.discord-pause-form label {
+  flex: 0 1 180px;
+  min-width: 0;
+}
+
 .discord-pause-form :is(input, button) {
   min-height: 44px;
 }
@@ -376,6 +381,10 @@
   list-style: none;
   margin: 0;
   padding: 0 14px;
+}
+
+.discord-surface > .discord-list {
+  padding-inline: 0;
 }
 
 .discord-list li {

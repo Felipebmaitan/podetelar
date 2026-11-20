@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { request } from "./api";
+import { WindowsInstallerLink } from "./WindowsInstallerLink";
 import { OpenInApp } from "./OpenInApp";
 import { CardBrand } from "./BrandMark";
 export function ChannelInvitation({
@@ -55,6 +56,7 @@ export function ChannelInvitation({
           </button>
         )}
         {!invitation && <p>Open a complete invitation link to join.</p>}
+        {!room && invitation && <WindowsInstallerLink />}
         {error && <p role="alert">{error}</p>}
       </section>
     </main>

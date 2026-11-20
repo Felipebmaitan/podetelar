@@ -1204,52 +1204,37 @@ impl PublisherUi {
                 });
             }
         });
-        ui.label(
-            egui::RichText::new(tr("Shared across the streams you watch."))
-                .size(12.0)
-                .color(MUTED),
-        );
         settings_divider(ui);
-        ui.label(skin::strong(tr("Connection"), 17.5).color(ACCENT));
-        ui.add_space(2.0);
         ui.horizontal(|ui| {
             let failed = !state.capacity.error.is_empty();
-            if state.testing_connection {
-                ui.spinner();
-            } else {
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(24.0, 42.0), egui::Sense::hover());
-                skin::icon(
-                    ui.painter(),
-                    rect,
-                    Icon::Info,
-                    if failed { WARNING } else { MUTED },
-                );
-            }
             ui.vertical(|ui| {
-                ui.label(skin::strong(
-                    tr(if state.testing_connection {
-                        "Measuring connection…"
+                ui.label(skin::strong(tr("Connection"), 17.5).color(ACCENT));
+                ui.horizontal(|ui| {
+                    if state.testing_connection {
+                        ui.spinner();
+                    }
+                    let status = if state.testing_connection {
+                        tr("Measuring connection…")
                     } else if failed {
-                        "Test unavailable"
+                        tr("Test unavailable")
                     } else if state.capacity.download_bps.is_some() {
-                        "Connection measured"
+                        tr("Connection measured")
                     } else {
-                        "Not measured"
-                    }),
-                    14.0,
-                ));
-                ui.label(
-                    egui::RichText::new(tr("To this server"))
-                        .size(12.0)
-                        .color(MUTED),
-                );
+                        tr("Not measured")
+                    };
+                    ui.colored_label(if failed { WARNING } else { MUTED }, status);
+                });
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
                     .add_enabled(
                         state.connection == "connected" && !state.testing_connection && !state.busy,
-                        egui::Button::new(tr("Test again")).min_size(egui::vec2(146.0, 34.0)),
+                        egui::Button::new(tr(if state.capacity.download_bps.is_some() || failed {
+                            "Test again"
+                        } else {
+                            "Test connection"
+                        }))
+                        .min_size(egui::vec2(146.0, 34.0)),
                     )
                     .clicked()
                 {
@@ -1257,7 +1242,7 @@ impl PublisherUi {
                 }
             });
         });
-        ui.add_space(8.0);
+        ui.add_space(2.0);
         skin::disclosure(ui, tr("Diagnostics"), &mut self.diagnostics_open);
         if self.diagnostics_open {
             ui.add_space(8.0);
@@ -1296,7 +1281,7 @@ impl PublisherUi {
                     egui::ScrollArea::vertical()
                         .id_salt("advanced-scroll")
                         .max_height(
-                            (ctx.viewport_rect().height() - if compact { 190.0 } else { 230.0 })
+                            (ctx.viewport_rect().height() - if compact { 170.0 } else { 230.0 })
                                 .clamp(180.0, 560.0),
                         )
                         .show(ui, |ui| self.advanced(ui, state));
@@ -1663,6 +1648,16 @@ impl PublisherUi {
         }
     }
 
+    fn stream_options(&mut self, ui: &mut egui::Ui, tile: &Tile) -> bool {
+        let label = format!("{} · {}", tr("Stream options"), tile.name);
+        let trigger = skin::icon_button(ui, Icon::More, &label);
+        egui::Popup::menu(&trigger)
+            .frame(skin::menu_frame())
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| self.watch_menu(ui, tile))
+            .is_some()
+    }
+
     fn fullscreen_view(&mut self, root: &mut egui::Ui, tile: &Tile) {
         let ctx = root.ctx().clone();
         self.clear_picker();
@@ -1674,7 +1669,14 @@ impl PublisherUi {
         }) {
             self.fullscreen_controls_until = Instant::now() + Duration::from_secs(3);
         }
-        let controls_visible = Instant::now() < self.fullscreen_controls_until;
+        let hud = egui::Id::unique("fullscreen-controls");
+        let hud_focused = ctx
+            .memory(|memory| memory.focused())
+            .and_then(|id| ctx.read_response(id))
+            .is_some_and(|control| control.layer_id.id == hud && control.has_focus());
+        let controls_visible = Instant::now() < self.fullscreen_controls_until
+            || hud_focused
+            || egui::Popup::is_any_open(&ctx);
         let mut menu_open = false;
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(egui::Color32::BLACK))
@@ -1719,7 +1721,7 @@ impl PublisherUi {
                     if ui.input(|i| i.pointer.hover_pos().is_some_and(|pos| rect.contains(pos))) {
                         Self::stream_metrics(ui, rect, tile);
                     }
-                    egui::Area::new(egui::Id::unique("fullscreen-controls"))
+                    egui::Area::new(hud)
                         .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -20.0))
                         .order(egui::Order::Foreground)
                         .show(&ctx, |ui| {
@@ -1744,6 +1746,7 @@ impl PublisherUi {
                                         tile.volume.store(volume, Ordering::Relaxed);
                                     }
                                     ui.add_space(4.0);
+                                    menu_open |= self.stream_options(ui, tile);
                                     if ui.button(tr("Exit full screen")).clicked() {
                                         self.set_fullscreen(&ctx, None);
                                     }
@@ -1942,13 +1945,8 @@ impl PublisherUi {
                             {
                                 self.set_fullscreen(ui.ctx(), Some(tile.id.clone()));
                             }
-                            let options_label = format!("{} · {}", tr("Stream options"), tile.name);
                             self.volume_button(ui, tile);
-                            let trigger = skin::icon_button(ui, Icon::More, &options_label);
-                            egui::Popup::menu(&trigger)
-                                .frame(skin::menu_frame())
-                                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                                .show(|ui| self.watch_menu(ui, tile));
+                            self.stream_options(ui, tile);
                         });
                     });
             }
@@ -1996,14 +1994,6 @@ impl PublisherUi {
             Phase::Disabled => unreachable!(),
         };
         let attention = matches!(status.phase, Phase::Available | Phase::Ready);
-        // A slow, low-contrast Tungsten Amber pulse keeps the update discoverable after Later.
-        let glow = if attention {
-            let time = ui.input(|input| input.time);
-            ui.ctx().request_repaint_after(Duration::from_millis(80));
-            (0.5 + 0.5 * (time * std::f64::consts::TAU / 3.0).sin()) as f32
-        } else {
-            0.0
-        };
         let response = ui.add_sized(
             [32.0, 32.0],
             egui::Button::new(egui::RichText::new("↻").color(if attention {
@@ -2013,14 +2003,14 @@ impl PublisherUi {
             }))
             .corner_radius(8)
             .fill(if attention {
-                ACCENT.gamma_multiply(0.10 + glow * 0.09)
+                ACCENT.gamma_multiply(0.15)
             } else {
                 CARD
             })
             .stroke(egui::Stroke::new(
                 1.0,
                 if attention {
-                    ACCENT.gamma_multiply(0.45 + glow * 0.30)
+                    ACCENT.gamma_multiply(0.60)
                 } else {
                     BORDER
                 },
@@ -2114,7 +2104,7 @@ impl PublisherUi {
                     .show(ui, |ui| {
                         egui::ScrollArea::vertical()
                             .id_salt("update-notes")
-                            .max_height((ctx.content_rect().height() - 290.0).clamp(80.0, 380.0))
+                            .max_height((ctx.content_rect().height() - 272.0).clamp(80.0, 380.0))
                             .show(ui, |ui| {
                                 ui.set_width((width - 46.0).max(120.0));
                                 if status.notes.trim().is_empty() {
@@ -2343,7 +2333,12 @@ impl PublisherUi {
         }
     }
 
-    fn render(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn render(&mut self, root: &mut egui::Ui, frame: &mut eframe::Frame) {
+        self.render_contents(root, frame);
+        skin::paint_keyboard_focus(root.ctx());
+    }
+
+    fn render_contents(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
         self.account_state = self.account_client.state();
         if let Some(url) = self.account_client.take_browser_url() {
@@ -2998,7 +2993,6 @@ impl PublisherUi {
                                     Icon::ChevronUp,
                                     if self.setup_open { ACCENT } else { MUTED },
                                 );
-                                skin::focus_ring(ui, &setup_btn);
                                 setup_btn.widget_info(|| {
                                     egui::WidgetInfo::selected(
                                         egui::Role::Button,
@@ -3138,7 +3132,6 @@ impl PublisherUi {
                                     skin::semibold(12.5),
                                     people_color,
                                 );
-                                skin::focus_ring(ui, &people_resp);
                                 people_resp.widget_info(|| {
                                     egui::WidgetInfo::selected(
                                         egui::Role::Button,
@@ -3389,27 +3382,59 @@ fn quality_controls(
     source: Option<&crate::sources::SourceInfo>,
     encoder: &crate::encoding::Encoder,
 ) {
-    let label = skin::field_label(ui, tr("Resolution"), Icon::Monitor);
-    egui::ComboBox::from_id_salt("resolution")
-        .width(ui.available_width())
-        .selected_text(tr(settings.resolution.label()))
-        .show_ui(ui, |ui| {
-            for resolution in quality::Resolution::ALL {
-                let candidate = Settings {
-                    resolution,
-                    ..*settings
-                };
-                let mode = source.and_then(|s| candidate.resolve(s, encoder.codec).ok());
-                let text = mode
-                    .map(|m| format!("{} · {}×{}", tr(resolution.label()), m.width, m.height))
-                    .unwrap_or_else(|| resolution.label().into());
-                ui.add_enabled_ui(mode.is_some_and(|m| encoder.supports(m)), |ui| {
-                    ui.selectable_value(&mut settings.resolution, resolution, text);
-                });
-            }
-        })
-        .response
-        .labelled_by(label.id);
+    let resolution = |ui: &mut egui::Ui, settings: &mut Settings| {
+        let label = ui.label(
+            egui::RichText::new(tr("Resolution"))
+                .size(12.0)
+                .color(MUTED),
+        );
+        egui::ComboBox::from_id_salt("resolution")
+            .width(ui.available_width())
+            .selected_text(tr(settings.resolution.label()))
+            .show_ui(ui, |ui| {
+                for resolution in quality::Resolution::ALL {
+                    let candidate = Settings {
+                        resolution,
+                        ..*settings
+                    };
+                    let mode = source.and_then(|s| candidate.resolve(s, encoder.codec).ok());
+                    let text = mode
+                        .map(|m| format!("{} · {}×{}", tr(resolution.label()), m.width, m.height))
+                        .unwrap_or_else(|| resolution.label().into());
+                    ui.add_enabled_ui(mode.is_some_and(|m| encoder.supports(m)), |ui| {
+                        ui.selectable_value(&mut settings.resolution, resolution, text);
+                    });
+                }
+            })
+            .response
+            .labelled_by(label.id);
+    };
+    let preset = |ui: &mut egui::Ui, settings: &mut Settings| {
+        let label = ui.label(
+            egui::RichText::new(tr("Quality preset"))
+                .size(12.0)
+                .color(MUTED),
+        );
+        egui::ComboBox::from_id_salt("quality-preset")
+            .width(ui.available_width())
+            .selected_text(tr(settings.profile.label()))
+            .show_ui(ui, |ui| {
+                for profile in [Profile::Motion, Profile::Detail, Profile::Saver] {
+                    ui.selectable_value(&mut settings.profile, profile, tr(profile.label()));
+                }
+            })
+            .response
+            .labelled_by(label.id);
+    };
+    let compact = ui.ctx().content_rect().height() <= 600.0;
+    if compact {
+        ui.columns(2, |columns| {
+            resolution(&mut columns[0], settings);
+            preset(&mut columns[1], settings);
+        });
+    } else {
+        resolution(ui, settings);
+    }
     let label = ui
         .horizontal(|ui| {
             let label = ui.label(egui::RichText::new("FPS").size(12.0).color(MUTED));
@@ -3431,21 +3456,9 @@ fn quality_controls(
     {
         settings.fps = quality::FRAME_RATES[index];
     }
-    let label = ui.label(
-        egui::RichText::new(tr("Quality preset"))
-            .size(12.0)
-            .color(MUTED),
-    );
-    egui::ComboBox::from_id_salt("quality-preset")
-        .width(ui.available_width())
-        .selected_text(tr(settings.profile.label()))
-        .show_ui(ui, |ui| {
-            for profile in [Profile::Motion, Profile::Detail, Profile::Saver] {
-                ui.selectable_value(&mut settings.profile, profile, tr(profile.label()));
-            }
-        })
-        .response
-        .labelled_by(label.id);
+    if !compact {
+        preset(ui, settings);
+    }
     if let Some(source) = source {
         match settings.resolve(source, encoder.codec) {
             Ok(mode) if encoder.supports(mode) => {
@@ -3641,7 +3654,7 @@ fn participant(
                 };
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if sharing {
-                        badge(ui, tr("Live"), ACCENT);
+                        badge(ui, tr(if own { "Sharing" } else { "Live" }), ACCENT);
                     }
                     if discord {
                         ui.label(egui::RichText::new("Discord").size(12.0).color(MUTED));
@@ -3676,9 +3689,14 @@ fn participant(
 }
 
 fn settings_divider(ui: &mut egui::Ui) {
-    ui.add_space(10.0);
+    let padding = if ui.ctx().content_rect().height() <= 600.0 {
+        4.0
+    } else {
+        10.0
+    };
+    ui.add_space(padding);
     ui.separator();
-    ui.add_space(10.0);
+    ui.add_space(padding);
 }
 
 fn source_name(source: &crate::sources::SourceInfo) -> &str {

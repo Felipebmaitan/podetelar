@@ -46,8 +46,8 @@ export function DirectDownload({
         ) : (
           <>
             <p>
-              Reopen your room invitation for a fresh portable download, or use
-              the Windows installer.
+              Reopen your room invitation for a portable download, or choose the
+              file ending in <strong>Setup.exe</strong> on the release page.
             </p>
             <WindowsInstallerLink primary />
           </>

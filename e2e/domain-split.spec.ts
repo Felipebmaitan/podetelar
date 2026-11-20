@@ -120,14 +120,18 @@ test("a browser downloads authorized bytes directly without sharing cookies or s
       page.getByRole("heading", { name: "Download link expired" }),
     ).toBeVisible();
     await expect(
-      page.getByRole("link", { name: "Get the Windows installer" }),
+      page.getByRole("link", { name: "View Windows release on GitHub" }),
     ).toBeVisible();
     await page.goto(config.directUrl + "/download");
     await expect(
       page.getByRole("heading", { name: "Portable download link missing" }),
     ).toBeVisible();
   } finally {
-    await app.close();
+    await page.close();
+    // Chromium can leave speculative connections open on the temporary host.
+    const closing = app.close();
+    app.server.closeAllConnections();
+    await closing;
     rmSync(dir, { recursive: true });
   }
 });

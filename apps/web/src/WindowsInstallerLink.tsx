@@ -9,7 +9,7 @@ export function WindowsInstallerLink({
       href="https://github.com/Felipebmaitan/podetelar/releases/latest"
       referrerPolicy="no-referrer"
     >
-      Get the Windows installer
+      View Windows release on GitHub
     </a>
   );
 }

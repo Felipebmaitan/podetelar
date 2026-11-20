@@ -527,7 +527,9 @@ impl Playback {
         let mut tiles = Vec::new();
         let mut pumps = HashSet::new();
         let mut announce = HashMap::new();
-        let decoders = self.decoders();
+        let decoders = self
+            .decoders()
+            .intersect(Codecs::for_room(admission.protection.is_some()));
         announce.insert(codec_policy::CAPABILITIES.to_owned(), decoders.encode());
         announce.insert(
             codec_policy::HARDWARE_CAPABILITIES.to_owned(),
@@ -1075,7 +1077,7 @@ impl RoomVotes {
         let watch = format!("{WATCH_PREFIX}{publisher}");
         let limit = format!("{LIMIT_PREFIX}{publisher}");
         let mut votes = Self {
-            codecs: Some(Codecs::new(true, true, true)),
+            codecs: Some(Codecs::for_room(protection.is_some())),
             watcher_cap: None,
         };
         for (identity, attributes) in members {
@@ -1195,7 +1197,11 @@ mod tests {
             preferences(Some(wrong.descriptor().unwrap()), Some("h264"), 128_000),
         );
         let alone = collect(true, vec![unprotected_guest.clone(), invalid.clone()]);
-        assert_eq!(alone.codecs, Some(Codecs::new(true, true, true)));
+        assert_eq!(alone.codecs, Some(Codecs::new(false, true, true)));
+        assert_eq!(
+            collect(false, vec![]).codecs,
+            Some(Codecs::new(true, true, true))
+        );
         assert_eq!(alone.watcher_cap, None);
         let mixed = collect(
             true,

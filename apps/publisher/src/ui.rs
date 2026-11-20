@@ -1,3 +1,6 @@
+#[cfg(any(test, feature = "ui-review", feature = "performance-experiments"))]
+#[path = "ui/fixture.rs"]
+mod fixture;
 #[path = "ui/profile.rs"]
 mod profile;
 #[cfg(feature = "ui-review")]
@@ -1263,7 +1266,11 @@ impl PublisherUi {
                 let label = skin::help_label(
                     ui,
                     tr("Encoder"),
-                    tr("AV1 → HEVC → H.264, using hardware support from everyone in the room. Interruptions do not change codecs."),
+                    tr(if state.protected {
+                        "Private streams use hardware HEVC or H.264. AV1 is available in transport-only rooms."
+                    } else {
+                        "AV1 → HEVC → H.264, using hardware support from everyone in the room. Interruptions do not change codecs."
+                    }),
                 );
                 egui::ComboBox::from_id_salt("hardware-encoder")
                     .width(ui.available_width())
@@ -1277,7 +1284,7 @@ impl PublisherUi {
                             .unwrap_or(tr("No supported encoder")),
                     )
                     .show_ui(ui, |ui| {
-                        for encoder in &state.encoders {
+                        for encoder in state.encoders.iter().filter(|encoder| crate::codec_policy::Codecs::for_room(state.protected).supports(encoder.codec)) {
                             ui.selectable_value(
                                 &mut self.encoder,
                                 encoder.factory.clone(),
@@ -2459,10 +2466,17 @@ impl PublisherUi {
                 .map(|s| s.id.clone())
                 .unwrap_or_default();
         }
-        if self.encoder.is_empty() {
+        let available_codecs = crate::codec_policy::Codecs::for_room(state.protected);
+        if self.encoder.is_empty()
+            || state
+                .encoders
+                .iter()
+                .any(|e| e.factory == self.encoder && !available_codecs.supports(e.codec))
+        {
             self.encoder = state
                 .encoders
-                .first()
+                .iter()
+                .find(|e| available_codecs.supports(e.codec))
                 .map(|e| e.factory.clone())
                 .unwrap_or_default();
         }
@@ -3802,68 +3816,7 @@ mod tests {
 
     fn app() -> PublisherUi {
         gstreamer::init().expect("Test media runtime");
-        PublisherUi {
-            private: Default::default(),
-            following_client: crate::following::Client::disabled(),
-            following: Default::default(),
-            following_key: None,
-            next_follow_attempt: Instant::now(),
-            account_client: crate::account::Client::disabled(),
-            profile_connection_key: None,
-            account_state: Default::default(),
-            account_server: crate::account::DEFAULT_SERVER.into(),
-            profile_client: None,
-            profile_state: Default::default(),
-            profile_textures: HashMap::new(),
-            profile_started: Instant::now(),
-            profile_open: false,
-            profile_page: profile::SettingsPage::Profile,
-            profile_name: String::new(),
-            saved_guest_name: String::new(),
-            updates: crate::updates::Client::new(),
-            update_open: false,
-            update_announced_version: None,
-            update_restart_prompt: false,
-            activation: crate::activation::Inbox::new(),
-            prior_room: None,
-            // Paint fixtures exercise UI state without requesting OS capture permission.
-            controller: Controller::recording_for_test(Snapshot::default()).0,
-            invitation: String::new(),
-            name: String::new(),
-            session_name: None,
-            source_id: String::new(),
-            encoder: String::new(),
-            quality: Settings::default(),
-            custom_bitrate: false,
-            download_budget: None,
-            textures: HashMap::new(),
-            focused: None,
-            stream_menu: None,
-            fullscreen: None,
-            fullscreen_controls_until: Instant::now(),
-            settings_error: String::new(),
-            auto_join_ready: false,
-            copied_until: None,
-            remembered_volume: HashMap::new(),
-            advanced_open: false,
-            diagnostics_open: false,
-            show_invitation: false,
-            browser_invitation_open: false,
-            pending_link: None,
-            link_result: None,
-            browser_links_enabled: false,
-            self_preview_revision: None,
-            #[cfg(feature = "performance-experiments")]
-            planar: Default::default(),
-            picker: crate::source_picker::Preview::new(),
-            picker_hover: None,
-            picker_texture: None,
-            picker_failed: None,
-            picker_refreshed: None,
-            picker_keyboard: false,
-            closing_since: None,
-            force_close: false,
-        }
+        PublisherUi::for_fixture(Controller::recording_for_test(Snapshot::default()).0)
     }
 
     fn painted_text(shape: &egui::epaint::Shape, text: &mut String) {

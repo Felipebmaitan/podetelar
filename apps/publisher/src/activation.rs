@@ -9,6 +9,11 @@ impl Drop for Inbox {
     }
 }
 impl Inbox {
+    #[cfg(any(test, feature = "ui-review", feature = "performance-experiments"))]
+    pub fn disabled() -> Self {
+        Self(None, Default::default())
+    }
+
     pub fn new() -> Self {
         let stopped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let (Ok(address), Ok(token)) = (

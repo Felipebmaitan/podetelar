@@ -41,7 +41,7 @@ pub fn run() -> Result<()> {
     };
     eframe::run_native("PodeTelar · layout fixture", options, Box::new(move |cc| {
         configure_theme(&cc.egui_ctx);
-        let mut inner = PublisherUi::with_browser_link(None);
+        let mut inner = PublisherUi::for_fixture(Controller::recording_for_test(Snapshot::default()).0);
         let source = crate::sources::fixture().info;
         let encoder = crate::encoding::Encoder { factory: "nvd3d11av1enc".into(), label: "NVIDIA NVENC AV1".into(), codec: crate::encoding::Codec::Av1 };
         inner.source_id = source.id.clone();

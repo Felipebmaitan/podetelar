@@ -58,50 +58,7 @@ pub fn qualify_planar_transitions(
 ) -> Result<Vec<serde_json::Value>> {
     use livekit::webrtc::video_frame::{I420Buffer, NV12Buffer};
     use std::sync::Arc;
-    let mut app = PublisherUi {
-        private: Default::default(),
-        activation: crate::activation::Inbox::new(),
-        prior_room: None,
-        updates: crate::updates::Client::new(),
-        update_open: false,
-        update_announced_version: None,
-        update_restart_prompt: false,
-        controller: Controller::new(),
-        invitation: String::new(),
-        name: String::new(),
-        session_name: None,
-        source_id: String::new(),
-        encoder: String::new(),
-        quality: Settings::default(),
-        custom_bitrate: false,
-        download_budget: None,
-        textures: HashMap::new(),
-        focused: None,
-        stream_menu: None,
-        fullscreen: None,
-        fullscreen_controls_until: Instant::now(),
-        settings_error: String::new(),
-        auto_join_ready: false,
-        copied_until: None,
-        remembered_volume: HashMap::new(),
-        advanced_open: false,
-        diagnostics_open: false,
-        show_invitation: false,
-        browser_invitation_open: false,
-        pending_link: None,
-        link_result: None,
-        browser_links_enabled: false,
-        self_preview_revision: None,
-        planar: Default::default(),
-        picker: crate::source_picker::Preview::new(),
-        picker_hover: None,
-        picker_texture: None,
-        picker_failed: None,
-        picker_refreshed: None,
-        picker_keyboard: false,
-        closing_since: None,
-        force_close: false,
-    };
+    let mut app = PublisherUi::for_fixture(Controller::new());
     let tile = Tile {
         id: "qualification".into(),
         name: String::new(),
@@ -223,8 +180,7 @@ pub fn run(request: Request) -> Result<()> {
         options,
         Box::new(move |context| {
             configure_theme(&context.egui_ctx);
-            let mut inner = PublisherUi::with_browser_link(None);
-            inner.store = None;
+            let mut inner = PublisherUi::for_fixture(Controller::new());
             inner.invitation = request.invitation_url.clone();
             inner.name = "Local benchmark".into();
             if !request.disconnected {
@@ -232,6 +188,8 @@ pub fn run(request: Request) -> Result<()> {
                     invitation: request.invitation_url.clone(),
                     name: inner.name.clone(),
                     route: Route::Auto,
+                    account: None,
+                    voice: None,
                 });
             }
             inner.download_budget = Some(200_000_000);
@@ -408,6 +366,8 @@ impl BenchmarkUi {
                                 invitation: self.request.invitation_url.clone(),
                                 name: "Local benchmark".into(),
                                 route: Route::Auto,
+                                account: None,
+                                voice: None,
                             });
                         }
                     }

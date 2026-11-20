@@ -159,7 +159,7 @@ test("only private invitation holders can request protected codec fallback", asy
       continuousWatch: true,
     });
     children.push(unrelated.child);
-    expect(await requireDecode(observer, "initial-av1")).toBe("video/av1");
+    expect(await requireDecode(observer, "initial-hevc")).toBe("video/h265");
     noContent((await unrelated.result) as Watched);
     const receiver = nativeRequest("--watch-fixture", {
       invitationUrl,
@@ -175,7 +175,7 @@ test("only private invitation holders can request protected codec fallback", asy
     ]);
     await attachPlayback("fallback-observer", watched);
     await attachPlayback("fallback-member", compatible);
-    expect(advancingCodec(watched, "video/av1", () => true)).toBe(true);
+    expect(advancingCodec(watched, "video/h265", () => true)).toBe(true);
     expect(advancingCodec(watched, "video/h264", () => true)).toBe(true);
     expect(advancingCodec(compatible, "video/h264", () => true)).toBe(true);
     expect(sent.codec).toBe("h264");
@@ -248,7 +248,8 @@ test("removing an authenticated descriptor stops an existing protected subscript
 });
 
 for (const codec of ["h264", "h265", "av1"] as const) {
-  test(`protected ${codec}: native video, encrypted preview, stop and rewatch`, async ({
+  const expectedCodec = codec === "av1" ? "h265" : codec;
+  test(`protected ${codec} request uses ${expectedCodec}: native video, encrypted preview, stop and rewatch`, async ({
     request,
     baseURL,
   }) => {
@@ -320,18 +321,18 @@ for (const codec of ["h264", "h265", "av1"] as const) {
       expect(sent.previewUploads).toBe(1);
       expect(watched.previewBeforeWatching).toBe(true);
       if (codec === "h264") expect(watched.cryptorDisableRejected).toBe(true);
-      expect(sent.codec).toBe(codec);
+      expect(sent.codec).toBe(expectedCodec);
       expect(
         advancingCodec(
           watched,
-          `video/${codec}`,
+          `video/${expectedCodec}`,
           (s) => s.phaseSecond !== null && s.phaseSecond < 5,
         ),
       ).toBe(true);
       expect(
         advancingCodec(
           watched,
-          `video/${codec}`,
+          `video/${expectedCodec}`,
           (s) => s.phaseSecond !== null && s.phaseSecond >= 8,
         ),
       ).toBe(true);

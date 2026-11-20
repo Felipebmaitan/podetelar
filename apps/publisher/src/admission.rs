@@ -755,6 +755,9 @@ impl Admission {
         &self,
         decoders: crate::codec_policy::Codecs,
     ) -> Result<MediaAccess> {
+        let decoders = decoders.intersect(crate::codec_policy::Codecs::for_room(
+            self.protection.is_some(),
+        ));
         let response = self
             .client
             .post(

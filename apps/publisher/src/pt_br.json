@@ -92,6 +92,7 @@
   "Licenses and library sources": "Licenças e código-fonte das bibliotecas",
   "No supported encoder": "Nenhum codificador compatível",
   "AV1 → HEVC → H.264, using hardware support from everyone in the room. Interruptions do not change codecs.": "AV1 → HEVC → H.264, usando o suporte de hardware de todos na sala. Interrupções não alteram os codecs.",
+  "Private streams use hardware HEVC or H.264. AV1 is available in transport-only rooms.": "Transmissões privadas usam HEVC ou H.264 por hardware. O AV1 está disponível em salas com criptografia apenas no transporte.",
   "Shared across everything you watch, with headroom. This is an allowance, not a speed test.": "Compartilhado entre as transmissões assistidas, com margem. Este limite não é um teste de velocidade.",
   "A slower watcher's limit can reduce the one shared stream for everyone watching it.": "O limite de um espectador mais lento pode reduzir a transmissão compartilhada para todos.",
   "Higher frame rates use more upload bandwidth.": "Taxas de quadros maiores usam mais banda de upload.",

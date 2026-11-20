@@ -14,6 +14,14 @@ rejected oversized envelopes and oversized legacy JPEGs. Synthetic Discord
 voice events against a real local SFU also removed the voice-controlled peer
 while the independent guest stayed connected.
 
+A Windows controller test on a real local SFU interrupted an active H.264
+session. The client reused its admitted HTTP identity, generated a new
+authenticated sender session, resumed decoding the previously selected remote
+stream without another Watch, and kept its own capture stopped. Revoking the
+HTTP session then ended access even though the invitation was still valid.
+The test used a manual guest invitation and synthetic video. The real Discord
+OAuth and Gateway flow on a deployed system remains a separate qualification.
+
 ## Historical acceptance on the pre-Discord branch
 
 These results were recorded on 2026-11-10 for `feat/native-room-e2ee`, based on

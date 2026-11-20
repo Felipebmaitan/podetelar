@@ -116,9 +116,15 @@ key for the connection. Repeated valid descriptors use a bounded per-connection
 cache. Each new sender session has its own media key. Reconciliation looks up
 cryptor readiness for the selected track without copying the whole SDK map.
 
+Protected publishers use hardware HEVC or H.264. These codecs preserve the headers
+needed for RTP packetization. The pinned cryptor encrypts all AV1 OBU headers,
+which the AV1 RTP packetizer needs to frame the stream. Private clients exclude
+AV1 from publication, decoder capabilities and subscriptions. A saved AV1 preference
+selects HEVC or H.264 according to available hardware. Transport-only rooms retain
+hardware AV1. [Pinned AV1 RTP packetizer](https://github.com/webrtc-sdk/webrtc/blob/a545de4/modules/rtp_rtcp/source/rtp_packetizer_av1.cc)
+
 Protected publishers use codec capabilities and bandwidth limits from peers with
-verified private sender descriptors. A lone publisher can start with its preferred
-hardware codec. When another private participant arrives, its advertised hardware
+verified private sender descriptors. When another private participant arrives, its advertised hardware
 capabilities join the existing codec selection policy. These signaling values
 are quality hints and can be altered by the server. Legacy rooms retain the
 all-participant policy.

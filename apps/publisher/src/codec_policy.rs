@@ -9,6 +9,12 @@ pub const DECODE_PREFIX: &str = "podetelar.decode.publisher.";
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Codecs(u8);
 impl Codecs {
+    /// The pinned frame cryptor encrypts every AV1 OBU byte, but the AV1 RTP
+    /// packetizer needs those headers. H.26x retains its packetization headers.
+    pub fn for_room(protected: bool) -> Self {
+        Self::new(!protected, true, true)
+    }
+
     pub fn new(av1: bool, hevc: bool, h264: bool) -> Self {
         Self(u8::from(av1) | (u8::from(hevc) << 1) | (u8::from(h264) << 2))
     }

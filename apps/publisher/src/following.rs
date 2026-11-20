@@ -109,7 +109,7 @@ impl Client {
             stop,
         }
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "ui-review", feature = "performance-experiments"))]
     pub fn disabled() -> Self {
         Self {
             desired: Arc::new(Mutex::new((0, None))),

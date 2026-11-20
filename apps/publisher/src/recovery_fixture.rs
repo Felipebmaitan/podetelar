@@ -8,15 +8,9 @@ use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 use std::{
     io::Read,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::Ordering,
     time::{Duration, Instant},
 };
-
-static SYNTHETIC_ONLY: AtomicBool = AtomicBool::new(false);
-
-pub(crate) fn synthetic_only() -> bool {
-    SYNTHETIC_ONLY.load(Ordering::Acquire)
-}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -168,7 +162,7 @@ pub(crate) fn run() -> Result<()> {
             && matches!(url.host_str(), Some("127.0.0.1" | "[::1]" | "localhost")),
         "Recovery qualification requires a private loopback room."
     );
-    SYNTHETIC_ONLY.store(true, Ordering::Release);
+    crate::sources::restrict_to_fixture();
     let controller = Controller::new();
     let result = exercise(&controller, request.invitation_url);
     controller.begin_shutdown();

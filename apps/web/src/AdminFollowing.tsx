@@ -90,10 +90,7 @@ export function AdminFollowing({
   const servers = new Map(guilds.map((guild) => [guild.id, guild]));
   return (
     <section className="discord-view">
-      <SectionHeader
-        title="Automatic joining"
-        description="Control how signed-in users follow Discord voice."
-      />
+      <SectionHeader title="Automatic joining" />
       {error && (
         <p className="discord-feedback" role="alert">
           {error}
@@ -102,15 +99,9 @@ export function AdminFollowing({
       {!data && !error && <EmptyState>Loading automatic joining…</EmptyState>}
       {data && (
         <>
-          <article className="discord-surface">
-            <div className="discord-section-header">
-              <div>
-                <h3>Server policy</h3>
-                <p>
-                  Pausing ends current voice sessions. Invitation sessions stay
-                  connected.
-                </p>
-              </div>
+          <article className="discord-surface discord-policy-row">
+            <div className="discord-policy-info">
+              <h3>Server policy</h3>
               <StatusLabel tone={data.enabled ? "good" : "attention"}>
                 {data.enabled ? "Enabled" : "Paused"}
               </StatusLabel>

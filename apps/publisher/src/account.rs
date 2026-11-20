@@ -185,8 +185,15 @@ impl Client {
     }
     #[cfg(test)]
     pub fn disabled() -> Self {
+        Self::fixture(None)
+    }
+    #[cfg(any(test, feature = "ui-review"))]
+    pub fn fixture(account: Option<Account>) -> Self {
         Self {
-            state: Arc::new(Mutex::new(State::default())),
+            state: Arc::new(Mutex::new(State {
+                account,
+                ..State::default()
+            })),
             commands: None,
             browser: Arc::default(),
             stop: Arc::new(AtomicBool::new(false)),

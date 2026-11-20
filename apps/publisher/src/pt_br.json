@@ -383,5 +383,13 @@
   "Could not remember your guest name on this PC.": "Não foi possível salvar seu apelido de visitante neste PC.",
   "After restart, open a fresh invitation. Your guest nickname is remembered.": "Após reiniciar, abra um convite válido. Seu apelido de visitante será lembrado.",
   "Your guest nickname is remembered on this PC.": "Seu apelido de visitante é salvo neste PC.",
-  "This invitation selects the server. Your guest nickname is remembered on this PC.": "Este convite seleciona o servidor. Seu apelido de visitante é salvo neste PC."
+  "This invitation selects the server. Your guest nickname is remembered on this PC.": "Este convite seleciona o servidor. Seu apelido de visitante é salvo neste PC.",
+  "Recommended": "Recomendado",
+  "or": "ou",
+  "No login required": "Sem login",
+  "Manage": "Gerenciar",
+  "Guest": "Visitante",
+  "Disabled": "Desativado",
+  "No active streams": "Nenhuma transmissão ativa",
+  "No one is sharing yet": "Ninguém está transmitindo ainda"
 }

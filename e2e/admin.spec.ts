@@ -7,9 +7,7 @@ test("administrator login, filters, charts, reload and logout", async ({
 }) => {
   await page.goto("/");
   await expect(page).toHaveTitle("PodeTelar");
-  await expect(
-    page.getByRole("link", { name: "PodeTelar", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText("PodeTelar", { exact: true })).toBeVisible();
   await expect
     .poll(() =>
       page
@@ -18,7 +16,7 @@ test("administrator login, filters, charts, reload and logout", async ({
     )
     .toBeGreaterThan(0);
   await expect(
-    page.getByRole("heading", { name: "Administrator login" }),
+    page.getByRole("heading", { name: "Administrator", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Create a room" }),
@@ -39,7 +37,9 @@ test("administrator login, filters, charts, reload and logout", async ({
   ).toBeVisible();
   await expect(page.getByRole("img", { name: /Server traffic/ })).toBeVisible();
   await expect(
-    page.getByText("Speed in Mb/s · Data in MB or GB"),
+    page
+      .getByRole("img", { name: "Server traffic in megabits per second" })
+      .getByText("Mb/s", { exact: true }),
   ).toBeVisible();
   const cookies = await context.cookies(`${baseURL}/api/admin/session`);
   const admin = cookies.find((c) => c.name === "podetelar_admin");
@@ -74,11 +74,11 @@ test("administrator login, filters, charts, reload and logout", async ({
   ).toBeVisible();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(
-    page.getByRole("heading", { name: "Administrator login" }),
+    page.getByRole("heading", { name: "Administrator", exact: true }),
   ).toBeVisible();
   expect((await page.request.get("/api/admin/session")).status()).toBe(401);
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: "Administrator login" }),
+    page.getByRole("heading", { name: "Administrator", exact: true }),
   ).toBeVisible();
 });

@@ -6,29 +6,73 @@ pub(super) enum SettingsPage {
     Discord,
 }
 
-fn settings_card(ui: &mut egui::Ui, title: &str, content: impl FnOnce(&mut egui::Ui)) {
+fn surface_card(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
     let width = ui.available_width();
+    let compact = ui.ctx().content_rect().height() <= 600.0;
     egui::Frame::new()
-        .fill(CARD)
+        .fill(PANEL)
         .stroke(egui::Stroke::new(1.0, BORDER))
-        .corner_radius(10)
-        .inner_margin(egui::Margin::same(14))
+        .corner_radius(14)
+        .inner_margin(egui::Margin::symmetric(20, if compact { 10 } else { 20 }))
         .show(ui, |ui| {
-            ui.set_width((width - 30.0).max(0.0));
-            ui.label(skin::strong(tr(title), 16.0));
-            ui.add_space(3.0);
+            ui.set_width((width - 42.0).max(0.0));
+            ui.spacing_mut().item_spacing.y = if compact { 6.0 } else { 10.0 };
             content(ui);
         });
 }
 
-fn description(ui: &mut egui::Ui, text: &str) {
-    ui.label(egui::RichText::new(tr(text)).size(13.0).color(MUTED));
+fn labeled_divider(ui: &mut egui::Ui, text: &str) {
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 20.0), egui::Sense::hover());
+    let galley = ui.painter().layout_no_wrap(
+        text.to_owned(),
+        egui::FontId::proportional(11.5),
+        skin::TERTIARY,
+    );
+    let text_w = galley.size().x;
+    let gap = 12.0;
+    let mid_y = rect.center().y;
+    let left_end = (rect.center().x - text_w / 2.0 - gap).max(rect.left());
+    let right_start = (rect.center().x + text_w / 2.0 + gap).min(rect.right());
+    if left_end > rect.left() {
+        ui.painter().line_segment(
+            [egui::pos2(rect.left(), mid_y), egui::pos2(left_end, mid_y)],
+            egui::Stroke::new(1.0, skin::DIVIDER),
+        );
+    }
+    if right_start < rect.right() {
+        ui.painter().line_segment(
+            [
+                egui::pos2(right_start, mid_y),
+                egui::pos2(rect.right(), mid_y),
+            ],
+            egui::Stroke::new(1.0, skin::DIVIDER),
+        );
+    }
+    ui.painter().galley(
+        egui::pos2(
+            rect.center().x - text_w / 2.0,
+            mid_y - galley.size().y / 2.0,
+        ),
+        galley,
+        skin::TERTIARY,
+    );
 }
 
 fn joining_status(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
     ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
         ui.colored_label(color, "●");
         ui.label(skin::strong(tr(text), 13.0).color(color));
+    });
+}
+
+fn detail_row(ui: &mut egui::Ui, label: &str, value: &str) {
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(label).size(12.0).color(MUTED));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.add(egui::Label::new(egui::RichText::new(value).size(12.0).color(TEXT)).truncate());
+        });
     });
 }
 
@@ -42,6 +86,7 @@ pub(super) fn avatar(ui: &mut egui::Ui, name: &str, size: f32, texture: Option<e
         super::avatar(ui, name, size);
     }
 }
+
 impl PublisherUi {
     pub(super) fn poll_following(&mut self, ctx: &egui::Context) {
         if self.closing_since.is_some() {
@@ -95,52 +140,91 @@ impl PublisherUi {
             }
         }
     }
+
     pub(super) fn join_landing(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+        let compact = ui.ctx().content_rect().height() <= 600.0;
         egui::ScrollArea::vertical()
             .id_salt("room-entry")
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                let width = ui.available_width().min(860.0);
+                let width = ui.available_width().min(436.0);
                 let offset = ((ui.available_width() - width) / 2.0).max(0.0);
-                ui.add_space((ui.available_height() * 0.09).clamp(14.0, 52.0));
+                let top_pad = ((ui.available_height() - 470.0) * 0.36).clamp(16.0, 72.0);
+                ui.add_space(if compact { 0.0 } else { top_pad });
                 ui.horizontal_top(|ui| {
                     ui.add_space(offset);
                     ui.vertical(|ui| {
                         ui.set_width(width);
-                        ui.label(skin::strong(tr("Join a room"), 28.0));
-                        ui.add_space(12.0);
-                        let left = |this: &mut Self, ui: &mut egui::Ui| {
-                            settings_card(ui, "Discord voice", |ui| {
-                                if let Some(account) = &this.account_state.account {
-                                    ui.label(skin::strong(&account.display_name, 14.0));
-                                    this.discord_following(ui);
-                                    if ui.button(tr("Manage Discord connection")).clicked() {
-                                        this.open_profile();
-                                        this.profile_page = SettingsPage::Discord;
-                                    }
-                                } else {
-                                    this.discord_sign_in(ui);
-                                }
-                            });
-                        };
-                        let right = |this: &mut Self, ui: &mut egui::Ui| {
-                            settings_card(ui, "Room invitation", |ui| {
-                                description(ui, "Use a link from a friend to join independently.");
-                                ui.add_space(5.0);
-                                this.join_form(ui, state);
-                            });
-                        };
-                        if width >= 630.0 {
-                            ui.spacing_mut().item_spacing.x = 14.0;
-                            ui.columns(2, |columns| {
-                                left(self, &mut columns[0]);
-                                right(self, &mut columns[1]);
-                            });
+                        ui.heading(skin::strong(tr("Join a room"), 26.0).color(TEXT));
+                        ui.add_space(if compact { 4.0 } else { 12.0 });
+
+                        // Option 1 (Primary): Discord voice / sign-in
+                        surface_card(ui, |ui| {
+                            if let Some(display_name) = self
+                                .account_state
+                                .account
+                                .as_ref()
+                                .map(|account| account.display_name.clone())
+                            {
+                                ui.horizontal(|ui| {
+                                    avatar(ui, &display_name, 34.0, None);
+                                    ui.vertical(|ui| {
+                                        ui.spacing_mut().item_spacing.y = 1.0;
+                                        ui.label(skin::strong(&display_name, 14.5).color(TEXT));
+                                        ui.label(
+                                            egui::RichText::new("Discord").size(11.5).color(MUTED),
+                                        );
+                                    });
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            if ui
+                                                .add(
+                                                    egui::Button::new(tr("Manage"))
+                                                        .corner_radius(7),
+                                                )
+                                                .clicked()
+                                            {
+                                                self.open_profile();
+                                                self.profile_page = SettingsPage::Discord;
+                                            }
+                                        },
+                                    );
+                                });
+                                ui.separator();
+                                self.discord_following(ui);
+                            } else {
+                                ui.label(skin::strong(tr("Discord voice"), 15.0).color(TEXT));
+                                self.discord_sign_in(ui);
+                            }
+                        });
+
+                        if compact {
+                            ui.add_space(6.0);
                         } else {
-                            left(self, ui);
-                            ui.add_space(8.0);
-                            right(self, ui);
+                            ui.add_space(10.0);
+                            labeled_divider(ui, tr("or"));
+                            ui.add_space(10.0);
                         }
+
+                        // Option 2 (Secondary): Join via room invitation without signing in
+                        surface_card(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(skin::strong(tr("Room invitation"), 15.0).color(TEXT));
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        ui.label(
+                                            egui::RichText::new(tr("No login required"))
+                                                .size(11.5)
+                                                .color(skin::TERTIARY),
+                                        );
+                                    },
+                                );
+                            });
+                            self.join_form(ui, state);
+                        });
+                        ui.add_space(24.0);
                     });
                 });
             });
@@ -148,39 +232,62 @@ impl PublisherUi {
 
     fn discord_account(&mut self, ui: &mut egui::Ui) {
         if let Some(account) = &self.account_state.account {
+            let display_name = account.display_name.clone();
+            let user_id = account.user_id.clone();
+            let expires_at = account.expires_at;
             ui.horizontal(|ui| {
-                avatar(ui, &account.display_name, 36.0, None);
+                avatar(ui, &display_name, 42.0, None);
+                ui.add_space(4.0);
                 ui.vertical(|ui| {
-                    ui.label(skin::strong(&account.display_name, 15.0));
-                    description(ui, "Signed in with Discord");
+                    ui.spacing_mut().item_spacing.y = 2.0;
+                    ui.label(skin::strong(&display_name, 15.5).color(TEXT));
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 5.0;
+                        ui.colored_label(SAGE, "●");
+                        ui.label(
+                            egui::RichText::new(tr("Connected"))
+                                .size(12.0)
+                                .color(MUTED),
+                        );
+                    });
+                });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let disconnect = ui
+                        .add(
+                            egui::Button::new(
+                                skin::strong(tr("Disconnect Discord"), 12.5).color(ERROR),
+                            )
+                            .corner_radius(8)
+                            .fill(ERROR.gamma_multiply(0.10))
+                            .stroke(egui::Stroke::new(1.0, ERROR.gamma_multiply(0.35)))
+                            .min_size(egui::vec2(0.0, 32.0)),
+                        )
+                        .on_hover_text(tr(
+                            "Sign out of this server and remove the remembered login from this device.",
+                        ));
+                    if disconnect.clicked() {
+                        self.account_client.sign_out();
+                    }
                 });
             });
-            ui.add_space(4.0);
-            let disconnect = ui.button(tr("Disconnect Discord")).on_hover_text(tr(
-                "Sign out of this server and remove the remembered login from this device.",
-            ));
-            if disconnect.clicked() {
-                self.account_client.sign_out();
-            }
-            egui::CollapsingHeader::new(tr("Account details"))
-                .id_salt("discord-account-details")
-                .show(ui, |ui| {
-                    ui.label(format!(
-                        "{}: {}",
-                        tr("PodeTelar server"),
-                        self.account_state.server
-                    ));
-                    ui.label(format!("Discord ID: {}", account.user_id));
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as u64;
-                    ui.label(format!(
-                        "{}: {}",
-                        tr("Remembered login days remaining"),
-                        account.expires_at.saturating_sub(now) / 86_400_000
-                    ));
-                });
+            ui.add_space(2.0);
+            egui::CollapsingHeader::new(
+                egui::RichText::new(tr("Account details"))
+                    .size(12.5)
+                    .color(MUTED),
+            )
+            .id_salt("discord-account-details")
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 5.0;
+                detail_row(ui, tr("PodeTelar server"), &self.account_state.server);
+                detail_row(ui, "Discord ID", &user_id);
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                let days = expires_at.saturating_sub(now) / 86_400_000;
+                detail_row(ui, tr("Remembered login days remaining"), &days.to_string());
+            });
             if !self.account_state.error.is_empty() {
                 ui.colored_label(ERROR, tr(&self.account_state.error));
             }
@@ -190,14 +297,19 @@ impl PublisherUi {
     }
 
     fn discord_sign_in(&mut self, ui: &mut egui::Ui) {
-        description(ui, "Sign in to follow your Discord voice channel.");
-        ui.add_space(5.0);
         if self.account_state.busy {
             ui.horizontal_wrapped(|ui| {
                 ui.spinner();
                 ui.label(tr("Finish signing in in your browser."));
             });
-            if ui.button(tr("Cancel sign-in")).clicked() {
+            if ui
+                .add(
+                    egui::Button::new(tr("Cancel sign-in"))
+                        .corner_radius(8)
+                        .min_size(egui::vec2(ui.available_width(), 34.0)),
+                )
+                .clicked()
+            {
                 self.account_client.cancel();
             }
         } else {
@@ -205,33 +317,46 @@ impl PublisherUi {
             if ui
                 .add_enabled(
                     valid,
-                    primary(tr("Sign in with Discord"), ui.available_width()),
+                    primary(tr("Sign in with Discord"), ui.available_width())
+                        .min_size(egui::vec2(ui.available_width(), 40.0)),
                 )
                 .clicked()
             {
                 self.account_client
                     .sign_in(self.account_server.trim().to_owned());
             }
-            egui::CollapsingHeader::new(tr("Server settings"))
-                .id_salt("discord-server-settings")
-                .show(ui, |ui| {
-                    let label = ui.label(tr("PodeTelar server"));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.account_server)
-                            .desired_width(f32::INFINITY),
-                    )
-                    .labelled_by(label.id);
-                    if !valid {
-                        ui.colored_label(
-                            WARNING,
-                            tr("Use an HTTPS server or a local test address."),
-                        );
-                    } else if !self.account_state.available
-                        && self.account_state.server == self.account_server.trim()
-                    {
-                        description(ui, "Discord sign-in may need to be enabled on this server.");
-                    }
-                });
+            egui::CollapsingHeader::new(
+                egui::RichText::new(tr("Server settings"))
+                    .size(12.0)
+                    .color(MUTED),
+            )
+            .id_salt("discord-server-settings")
+            .show(ui, |ui| {
+                let label = ui.label(
+                    egui::RichText::new(tr("PodeTelar server"))
+                        .size(12.0)
+                        .color(MUTED),
+                );
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.account_server)
+                        .desired_width(f32::INFINITY)
+                        .margin(egui::Margin::symmetric(10, 7)),
+                )
+                .labelled_by(label.id);
+                if !valid {
+                    ui.colored_label(WARNING, tr("Use an HTTPS server or a local test address."));
+                } else if !self.account_state.available
+                    && self.account_state.server == self.account_server.trim()
+                {
+                    ui.label(
+                        egui::RichText::new(tr(
+                            "Discord sign-in may need to be enabled on this server.",
+                        ))
+                        .size(12.0)
+                        .color(MUTED),
+                    );
+                }
+            });
         }
         if !self.account_state.error.is_empty() {
             ui.colored_label(ERROR, tr(&self.account_state.error));
@@ -241,51 +366,79 @@ impl PublisherUi {
     fn discord_following(&mut self, ui: &mut egui::Ui) {
         let voice = self.following_client.state();
         if self.following.paused || self.following.independent {
-            joining_status(ui, "Automatic joining paused", WARNING);
-            if ui.button(tr("Resume automatic joining")).clicked() {
-                self.following.resume();
-            }
+            ui.horizontal(|ui| {
+                joining_status(ui, "Automatic joining paused", WARNING);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .add(egui::Button::new(tr("Resume automatic joining")).corner_radius(7))
+                        .clicked()
+                    {
+                        self.following.resume();
+                    }
+                });
+            });
         } else if !voice.known {
             joining_status(ui, "Waiting for Discord voice information…", MUTED);
         } else if !voice.enabled {
             joining_status(ui, "Automatic joining disabled", WARNING);
-            description(ui, "The server administrator has paused this feature.");
         } else if voice.locations.is_empty() {
             joining_status(ui, "Waiting for your Discord voice channel…", MUTED);
-            description(
-                ui,
-                "Join a voice channel in Discord with the PodeTelar bot.",
-            );
         } else {
-            if voice.locations.len() > 1 {
-                description(ui, "Choose which voice channel to follow.");
-            }
             for channel in &voice.locations {
                 let current = self
                     .following
                     .current
                     .as_ref()
                     .is_some_and(|location| location.key() == channel.key());
-                ui.label(skin::strong(&channel.channel_name, 14.0));
-                ui.label(
-                    egui::RichText::new(&channel.guild_name)
-                        .size(13.0)
-                        .color(MUTED),
-                );
-                if !channel.enabled {
-                    joining_status(ui, "Automatic joining disabled for this channel", WARNING);
-                } else if current {
-                    joining_status(ui, "Following", ACCENT);
-                } else if voice.locations.len() > 1
-                    && ui
-                        .button(format!("{} {}", tr("Follow channel"), channel.channel_name))
-                        .clicked()
-                {
-                    self.following.selected = Some(channel.key());
-                }
+                egui::Frame::new()
+                    .fill(CARD)
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        if current {
+                            ACCENT.gamma_multiply(0.45)
+                        } else {
+                            BORDER
+                        },
+                    ))
+                    .corner_radius(10)
+                    .inner_margin(egui::Margin::symmetric(12, 9))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.vertical(|ui| {
+                                ui.spacing_mut().item_spacing.y = 1.0;
+                                ui.label(skin::strong(&channel.channel_name, 13.5).color(TEXT));
+                                ui.label(
+                                    egui::RichText::new(&channel.guild_name)
+                                        .size(11.5)
+                                        .color(MUTED),
+                                );
+                            });
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if !channel.enabled {
+                                        badge(ui, tr("Disabled"), WARNING);
+                                    } else if current {
+                                        badge(ui, tr("Following"), ACCENT);
+                                    } else if voice.locations.len() > 1
+                                        && ui
+                                            .button(format!(
+                                                "{} {}",
+                                                tr("Follow channel"),
+                                                channel.channel_name
+                                            ))
+                                            .clicked()
+                                    {
+                                        self.following.selected = Some(channel.key());
+                                    }
+                                },
+                            );
+                        });
+                    });
             }
         }
     }
+
     pub(super) fn observe_profile_name(&mut self, name: &str) {
         // An invitation has its own editable name draft in self.name. Live updates
         // to the current room must not replace that draft before it is submitted.
@@ -294,16 +447,19 @@ impl PublisherUi {
         }
         self.session_name = Some(name.to_owned());
     }
+
     pub(super) fn remember_guest_name(&mut self, name: String) {
         self.name = name.clone();
         self.session_name = Some(name.clone());
         self.saved_guest_name = name;
     }
+
     pub(super) fn open_profile(&mut self) {
         self.profile_name = self.name.clone();
         self.profile_page = SettingsPage::Profile;
         self.profile_open = true;
     }
+
     pub(super) fn poll_profile(&mut self, state: &Snapshot) {
         if matches!(state.connection, "connected" | "reconnecting") {
             if let Some(access) = &state.profile_access
@@ -368,6 +524,7 @@ impl PublisherUi {
         self.profile_textures
             .retain(|revision, _| self.profile_state.avatars.contains_key(revision));
     }
+
     pub(super) fn apply_profile_names(&self, state: &mut Snapshot) {
         for profile in &self.profile_state.profiles {
             if let Some((index, (_, name))) = state
@@ -390,6 +547,7 @@ impl PublisherUi {
             }
         }
     }
+
     pub(super) fn profile_texture(
         &mut self,
         ctx: &egui::Context,
@@ -426,23 +584,50 @@ impl PublisherUi {
             .insert(revision.clone(), (frame, texture));
         Some(id)
     }
+
     fn edit_nickname(&mut self, ui: &mut egui::Ui) {
-        let label = ui.label(tr("Guest nickname"));
+        let label = ui.label(
+            egui::RichText::new(tr("Guest nickname"))
+                .size(12.0)
+                .color(MUTED),
+        );
         let busy = self.profile_state.busy;
-        let field = ui
-            .add_enabled(
-                !busy,
-                egui::TextEdit::singleline(&mut self.profile_name)
-                    .char_limit(60)
-                    .desired_width(f32::INFINITY),
-            )
-            .labelled_by(label.id);
         let valid = !busy && crate::settings::valid_name(&self.profile_name);
-        if ui
-            .add_enabled(valid, egui::Button::new(tr("Save nickname")))
-            .clicked()
-            || (valid && field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-        {
+        let save_label = tr("Save nickname");
+        let save_w = (button_width(ui, save_label) + 8.0).max(96.0);
+        let mut submit = false;
+        ui.horizontal(|ui| {
+            let input_w = (ui.available_width() - save_w - ui.spacing().item_spacing.x).max(120.0);
+            let field = ui
+                .add_enabled(
+                    !busy,
+                    egui::TextEdit::singleline(&mut self.profile_name)
+                        .char_limit(60)
+                        .desired_width(input_w)
+                        .margin(egui::Margin::symmetric(10, 7)),
+                )
+                .labelled_by(label.id);
+            if valid && field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                submit = true;
+            }
+            if ui
+                .add_enabled(
+                    valid,
+                    egui::Button::new(skin::strong(save_label, 12.5).color(if valid {
+                        AMBER_INK
+                    } else {
+                        MUTED
+                    }))
+                    .fill(if valid { ACCENT } else { CARD })
+                    .corner_radius(8)
+                    .min_size(egui::vec2(save_w, 34.0)),
+                )
+                .clicked()
+            {
+                submit = true;
+            }
+        });
+        if submit {
             let name = self.profile_name.trim().to_owned();
             if let Some(client) = &self.profile_client {
                 client.name(name);
@@ -468,31 +653,64 @@ impl PublisherUi {
         let texture = own
             .as_ref()
             .and_then(|p| self.profile_texture(ui.ctx(), &p.participant_id));
-        if own.as_ref().is_some_and(|p| p.discord) {
-            settings_card(ui, "Room profile", |ui| {
-                ui.horizontal(|ui| {
-                    avatar(ui, &self.name, 48.0, texture);
-                    ui.vertical(|ui| {
-                        ui.label(skin::strong(&self.name, 15.0));
-                        description(ui, "Your nickname and picture are managed by Discord.");
-                    });
-                });
-                if ui.button(tr("Manage Discord connection")).clicked() {
-                    self.profile_page = SettingsPage::Discord;
-                }
-            });
-            return;
-        }
-        settings_card(ui, "Room profile", |ui| self.edit_nickname(ui));
-        ui.add_space(8.0);
-        settings_card(ui, "Profile picture", |ui| {
-            ui.horizontal_top(|ui| {
-                avatar(ui, &self.name, 48.0, texture);
+        let is_discord = own.as_ref().is_some_and(|p| p.discord);
+
+        surface_card(ui, |ui| {
+            ui.horizontal(|ui| {
+                avatar(ui, &self.name, 58.0, texture);
+                ui.add_space(8.0);
                 ui.vertical(|ui| {
-                    if self.profile_client.is_none() {
-                        description(ui, "Join a room to manage your profile picture.");
+                    ui.spacing_mut().item_spacing.y = 5.0;
+                    ui.horizontal(|ui| {
+                        ui.label(skin::strong(&self.name, 16.0).color(TEXT));
+                        badge(
+                            ui,
+                            if is_discord { "Discord" } else { tr("Guest") },
+                            if is_discord { ACCENT } else { MUTED },
+                        );
+                    });
+                    if is_discord {
+                        if ui
+                            .add(
+                                egui::Button::new(tr("Manage Discord connection")).corner_radius(8),
+                            )
+                            .clicked()
+                        {
+                            self.profile_page = SettingsPage::Discord;
+                        }
+                    } else if let Some(client) = &self.profile_client {
+                        let busy = self.profile_state.busy;
+                        ui.horizontal_wrapped(|ui| {
+                            if ui
+                                .add_enabled(
+                                    !busy && own.as_ref().is_some_and(|p| !p.uploads_blocked),
+                                    egui::Button::new(tr("Upload picture")).corner_radius(8),
+                                )
+                                .on_hover_text(tr("PNG, JPEG, WebP or animated GIF, up to 3 MB."))
+                                .clicked()
+                            {
+                                client.choose();
+                            }
+                            if own.as_ref().is_some_and(|p| p.avatar_revision.is_some())
+                                && ui
+                                    .add_enabled(
+                                        !busy,
+                                        egui::Button::new(tr("Remove picture")).corner_radius(8),
+                                    )
+                                    .clicked()
+                            {
+                                client.remove();
+                            }
+                            if busy {
+                                ui.spinner();
+                            }
+                        });
                     } else {
-                        description(ui, "PNG, JPEG, WebP or animated GIF, up to 3 MB.");
+                        ui.label(
+                            egui::RichText::new(tr("Join a room to manage your profile picture."))
+                                .size(12.0)
+                                .color(MUTED),
+                        );
                     }
                     if own.as_ref().is_some_and(|p| p.uploads_blocked) {
                         ui.colored_label(
@@ -500,34 +718,19 @@ impl PublisherUi {
                             tr("Profile picture uploads are disabled for this PC."),
                         );
                     }
-                    if let Some(client) = &self.profile_client {
-                        ui.horizontal_wrapped(|ui| {
-                            let busy = self.profile_state.busy;
-                            if ui
-                                .add_enabled(
-                                    !busy && own.as_ref().is_some_and(|p| !p.uploads_blocked),
-                                    egui::Button::new(tr("Upload picture")),
-                                )
-                                .clicked()
-                            {
-                                client.choose();
-                            }
-                            if own.as_ref().is_some_and(|p| p.avatar_revision.is_some())
-                                && ui
-                                    .add_enabled(!busy, egui::Button::new(tr("Remove picture")))
-                                    .clicked()
-                            {
-                                client.remove();
-                            }
-                        });
-                    }
                 });
             });
+
+            if !is_discord {
+                ui.add_space(4.0);
+                ui.separator();
+                ui.add_space(2.0);
+                self.edit_nickname(ui);
+            }
         });
-        if self.profile_state.busy {
-            ui.spinner();
-        }
+
         if !self.profile_state.error.is_empty() {
+            ui.add_space(6.0);
             ui.colored_label(ERROR, tr(&self.profile_state.error));
         }
     }
@@ -536,43 +739,61 @@ impl PublisherUi {
         if !self.profile_open {
             return;
         }
-        let width = (ctx.content_rect().width() - 64.0).clamp(300.0, 490.0);
-        let max_body_height = (ctx.content_rect().height() - 145.0).clamp(130.0, 460.0);
+        let width = (ctx.content_rect().width() - 64.0).clamp(320.0, 472.0);
+        let max_body_height = (ctx.content_rect().height() - 165.0).clamp(140.0, 460.0);
         let mut close = false;
-        egui::Modal::new(egui::Id::unique("user-settings"))
-            .frame(skin::menu_frame().inner_margin(egui::Margin::same(16)))
+        let modal = egui::Modal::new(egui::Id::unique("user-settings"))
+            .backdrop_color(egui::Color32::from_black_alpha(175))
+            .frame(
+                skin::menu_frame()
+                    .fill(CANVAS)
+                    .corner_radius(16)
+                    .inner_margin(egui::Margin::same(22)),
+            )
             .show(ctx, |ui| {
                 ui.set_width(width);
-                ui.heading(tr("User settings"));
-                ui.add_space(8.0);
-                ui.columns(2, |columns| {
-                    let pages = [
+                ui.horizontal(|ui| {
+                    ui.label(skin::strong(tr("User settings"), 20.0).color(TEXT));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if skin::icon_button(ui, Icon::Close, tr("Close")).clicked() {
+                            close = true;
+                        }
+                    });
+                });
+                ui.add_space(10.0);
+
+                // Crisp underline tabs
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 18.0;
+                    for (page, label) in [
                         (SettingsPage::Profile, "Profile"),
                         (SettingsPage::Discord, "Discord"),
-                    ];
-                    for (column, (page, label)) in columns.iter_mut().zip(pages) {
+                    ] {
                         let selected = self.profile_page == page;
-                        let response = column.add_sized(
-                            [column.available_width(), 34.0],
-                            egui::Button::new(skin::strong(tr(label), 13.0).color(if selected {
-                                ACCENT
-                            } else {
-                                MUTED
-                            }))
-                            .fill(if selected {
-                                egui::Color32::from_rgb(34, 55, 53)
-                            } else {
-                                PANEL
-                            })
-                            .stroke(egui::Stroke::new(
-                                1.0,
-                                if selected { ACCENT } else { BORDER },
-                            )),
+                        let text = skin::strong(tr(label), 13.5).color(if selected {
+                            TEXT
+                        } else {
+                            MUTED
+                        });
+                        let response = ui.add(
+                            egui::Button::new(text)
+                                .frame(false)
+                                .min_size(egui::vec2(0.0, 30.0)),
                         );
+                        if selected {
+                            let r = response.rect;
+                            ui.painter().line_segment(
+                                [
+                                    egui::pos2(r.left(), r.bottom() + 2.0),
+                                    egui::pos2(r.right(), r.bottom() + 2.0),
+                                ],
+                                egui::Stroke::new(2.0, ACCENT),
+                            );
+                        }
                         response.widget_info(|| {
                             egui::WidgetInfo::selected(
                                 egui::Role::Tab,
-                                column.is_enabled(),
+                                ui.is_enabled(),
                                 selected,
                                 tr(label),
                             )
@@ -582,7 +803,9 @@ impl PublisherUi {
                         }
                     }
                 });
-                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(10.0);
+
                 egui::ScrollArea::vertical()
                     .id_salt(match self.profile_page {
                         SettingsPage::Profile => "profile",
@@ -592,29 +815,39 @@ impl PublisherUi {
                     .show(ui, |ui| match self.profile_page {
                         SettingsPage::Profile => self.profile_cards(ui),
                         SettingsPage::Discord => {
-                            settings_card(ui, "Discord account", |ui| self.discord_account(ui));
+                            surface_card(ui, |ui| self.discord_account(ui));
                             if self.account_state.account.is_some() {
-                                ui.add_space(8.0);
-                                settings_card(ui, "Automatic joining", |ui| {
-                                    self.discord_following(ui)
+                                ui.add_space(10.0);
+                                surface_card(ui, |ui| {
+                                    ui.label(
+                                        skin::strong(tr("Automatic joining"), 14.5).color(TEXT),
+                                    );
+                                    self.discord_following(ui);
                                 });
                             }
                         }
                     });
                 settings_divider(ui);
                 ui.horizontal(|ui| {
-                    if ui.button(tr("Advanced settings")).clicked() {
+                    if ui
+                        .add(
+                            egui::Button::new(tr("Advanced settings"))
+                                .min_size(egui::vec2(0.0, 34.0))
+                                .corner_radius(8),
+                        )
+                        .clicked()
+                    {
                         self.advanced_open = true;
                         close = true;
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(primary(tr("Done"), 80.0)).clicked() {
+                        if ui.add(primary(tr("Done"), 88.0)).clicked() {
                             close = true;
                         }
                     });
                 });
             });
-        if close {
+        if close || modal.should_close() {
             self.profile_open = false;
         }
     }

@@ -155,10 +155,7 @@ export function AdminChannels({
   }
   return (
     <section className="discord-view">
-      <SectionHeader
-        title="Channel rooms"
-        description="Manage invitations and automatic joining for each voice channel."
-      >
+      <SectionHeader title="Channel rooms">
         {channels.size > 0 && (
           <input
             className="discord-search"
@@ -220,9 +217,7 @@ export function AdminChannels({
                           <ActionGroup
                             title="Guest invitation"
                             description={
-                              c.guestEnabled
-                                ? "Anyone with the link can use it to join independently."
-                                : "Guest invitation disabled."
+                              c.guestEnabled ? undefined : "Disabled"
                             }
                           >
                             <button
@@ -264,11 +259,7 @@ export function AdminChannels({
                           )}
                           <ActionGroup
                             title="Automatic joining"
-                            description={
-                              c.autoEnabled
-                                ? "Signed-in members can follow this channel."
-                                : "Automatic joining paused for this channel."
-                            }
+                            description={c.autoEnabled ? undefined : "Paused"}
                           >
                             <button
                               disabled={busy}
@@ -285,7 +276,7 @@ export function AdminChannels({
                             title="Discord announcement"
                             description={
                               c.announcementError
-                                ? "Announcement unavailable. Check the bot’s message permissions."
+                                ? "Announcement unavailable. Check bot permissions."
                                 : undefined
                             }
                           >

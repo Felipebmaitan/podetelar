@@ -22,10 +22,7 @@ export function DirectDownload({ ticket }: { ticket: string | null }) {
         <h1>Windows app download</h1>
         {valid ? (
           <>
-            <p>
-              Your download is starting. If it expires, return to the room and
-              request a new download.
-            </p>
+            <p>Your download is starting.</p>
             <form ref={form} method="post" action="/api/publisher/download">
               <input type="hidden" name="ticket" value={ticket} />
               <button className="button" type="submit">

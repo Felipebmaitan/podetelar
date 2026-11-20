@@ -155,10 +155,7 @@ export function AdminAccounts({ onExpired }: { onExpired: () => void }) {
   };
   return (
     <section className="discord-view">
-      <SectionHeader
-        title="Discord accounts"
-        description="Manage remembered sign-ins and Discord profiles."
-      />
+      <SectionHeader title="Discord accounts" />
       {error && !selected && (
         <p className="discord-feedback" role="alert">
           {error}
@@ -203,14 +200,12 @@ export function AdminAccounts({ onExpired }: { onExpired: () => void }) {
                   {expanded && (
                     <div className="discord-record-body">
                       <p className="discord-account-id">
-                        Discord user ID <code>{a.userId}</code>
+                        ID <code>{a.userId}</code>
                       </p>
                       <ActionGroup
                         title="Room profile"
                         description={
-                          a.avatarHidden
-                            ? "Discord avatar hidden."
-                            : "Discord avatar visible."
+                          a.avatarHidden ? "Avatar hidden" : undefined
                         }
                       >
                         <button

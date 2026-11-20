@@ -63,6 +63,12 @@ export function App() {
     );
   if (window.location.pathname === "/download")
     return <DirectDownload ticket={downloadTicket} />;
+  if (managedRoomId)
+    return (
+      <main className="invitation-page">
+        <RoomAccess roomId={managedRoomId} />
+      </main>
+    );
   if (entryRoomId)
     return <InvitationPage roomId={entryRoomId} invitation={entryInvitation} />;
   return window.location.pathname === "/" ? <Admin /> : <RoomApp />;

@@ -3,7 +3,8 @@ import type {
   ChangedAccess,
   RoomAccess as AccessState,
 } from "@podetelar/contracts";
-import { request } from "./api";
+import { ApiError, request } from "./api";
+import { CardBrand } from "./BrandMark";
 
 /** The operator key and new invitation exist only in this mounted form. */
 export function RoomAccess({ roomId }: { roomId: string }) {
@@ -24,10 +25,19 @@ export function RoomAccess({ roomId }: { roomId: string }) {
     setFeedback("");
     try {
       await run();
-    } catch {
-      setFeedback(
-        "Room management failed. Check the server access key and connection, then retry.",
-      );
+    } catch (error) {
+      if (error instanceof ApiError && [401, 403].includes(error.status)) {
+        setState(null);
+        setInvitation("");
+        setRevokeSessions(false);
+        setFeedback("Check the server access key and try again.");
+      } else {
+        setFeedback(
+          error instanceof ApiError
+            ? error.message
+            : "Could not reach the server. Try again.",
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -36,18 +46,15 @@ export function RoomAccess({ roomId }: { roomId: string }) {
     if (replaceInvitation) setInvitation(result.invitationUrl ?? "");
     setFeedback(
       result.pendingDisconnects
-        ? "API access ended. Live media disconnection is pending; the server is retrying. Refresh to check."
-        : "Access updated. Save the new invitation in your private group chat if you rotated it.",
+        ? "Access ended. Disconnecting active streams…"
+        : "Access updated.",
     );
     await refresh();
   };
   return (
-    <section className="panel access-panel">
+    <section className="panel invitation-card access-panel">
+      <CardBrand />
       <h1>Manage room access</h1>
-      <p>
-        The server access key controls invitations and sessions. Each browser or
-        publisher joins as a separate session.
-      </p>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -67,46 +74,56 @@ export function RoomAccess({ roomId }: { roomId: string }) {
               setKey(event.target.value);
               setState(null);
               setInvitation("");
+              setRevokeSessions(false);
+              setFeedback("");
             }}
           />
         </label>
-        <button className="button" disabled={busy}>
-          Load access
-        </button>
-        <button
-          type="button"
-          className="button secondary"
-          disabled={busy}
-          onClick={() => {
-            setKey("");
-            setState(null);
-            setInvitation("");
-            setFeedback("");
-          }}
-        >
-          Lock
-        </button>
+        <div className="access-form-actions">
+          {!state && (
+            <button className="button" disabled={busy || !key.trim()}>
+              {busy ? "Loading…" : "Load access"}
+            </button>
+          )}
+          <button
+            type="button"
+            className="button secondary"
+            disabled={busy || !key}
+            onClick={() => {
+              setKey("");
+              setState(null);
+              setInvitation("");
+              setFeedback("");
+              setRevokeSessions(false);
+            }}
+          >
+            Lock
+          </button>
+        </div>
       </form>
       {state && (
-        <>
-          <p>
-            Invitation {state.invitationEnabled ? "enabled" : "disabled"}.{" "}
-            {state.pendingDisconnects} pending live disconnections.
-          </p>
-          <label>
+        <div className="access-section">
+          <div className="access-status-row">
+            <span
+              className={`access-pill ${state.invitationEnabled ? "is-enabled" : "is-disabled"}`}
+            >
+              Invitation {state.invitationEnabled ? "enabled" : "disabled"}
+            </span>
+            {state.pendingDisconnects > 0 && (
+              <span className="access-pill is-pending">
+                {state.pendingDisconnects} pending
+              </span>
+            )}
+          </div>
+          <label className="access-check">
             <input
               type="checkbox"
+              disabled={busy}
               checked={revokeSessions}
               onChange={(event) => setRevokeSessions(event.target.checked)}
-            />{" "}
-            Also end every current session, including yours
+            />
+            <span>Also end every current session</span>
           </label>
-          <p className="help">
-            Rotating stops the old link admitting new sessions. Disabling
-            prevents new joins. Current sessions stay until you end them or they
-            expire after 24 hours. Someone with a still-valid invitation can
-            join again after their session is revoked.
-          </p>
           <div className="copy-row">
             <button
               className="button"
@@ -159,7 +176,7 @@ export function RoomAccess({ roomId }: { roomId: string }) {
               disabled={busy}
               onClick={() => void act(refresh)}
             >
-              Refresh access
+              Refresh
             </button>
           </div>
           {invitation && (
@@ -172,39 +189,44 @@ export function RoomAccess({ roomId }: { roomId: string }) {
               />
             </label>
           )}
-          <h2>Current sessions</h2>
-          {state.sessions.map((session) => (
-            <div className="access-session" key={session.id}>
-              <span>
-                {session.displayName}{" "}
-                <small>
-                  expires {new Date(session.expiresAt).toLocaleString()}
-                </small>
-              </span>
-              <button
-                className="button secondary"
-                disabled={busy}
-                onClick={() =>
-                  void act(async () =>
-                    changed(
-                      await request<ChangedAccess>(
-                        `/api/rooms/${roomId}/access/sessions/${session.id}`,
-                        { method: "DELETE", ...options() },
+          <div className="access-sessions">
+            <h2>Current sessions</h2>
+            {state.sessions.map((session) => (
+              <div className="access-session" key={session.id}>
+                <span>
+                  <strong>{session.displayName}</strong>
+                  <small>
+                    Expires {new Date(session.expiresAt).toLocaleString()}
+                  </small>
+                </span>
+                <button
+                  className="button secondary"
+                  disabled={busy}
+                  aria-label={`End session for ${session.displayName}`}
+                  onClick={() =>
+                    void act(async () =>
+                      changed(
+                        await request<ChangedAccess>(
+                          `/api/rooms/${roomId}/access/sessions/${session.id}`,
+                          { method: "DELETE", ...options() },
+                        ),
+                        false,
                       ),
-                      false,
-                    ),
-                  )
-                }
-              >
-                End session for {session.displayName}
-              </button>
-            </div>
-          ))}
-          {!state.sessions.length && <p>No current sessions.</p>}
-        </>
+                    )
+                  }
+                >
+                  End session
+                </button>
+              </div>
+            ))}
+            {!state.sessions.length && <p>No active sessions.</p>}
+          </div>
+        </div>
       )}
       {feedback && <p role="status">{feedback}</p>}
-      <a href={`/r/${roomId}`}>Return to room</a>
+      <a className="access-back" href={`/r/${roomId}`}>
+        Return to room
+      </a>
     </section>
   );
 }

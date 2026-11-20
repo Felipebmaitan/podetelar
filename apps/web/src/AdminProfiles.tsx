@@ -87,57 +87,78 @@ export function AdminProfiles({ onExpired }: { onExpired: () => void }) {
   return (
     <main className="admin-main">
       <div className="admin-heading">
-        <div>
-          <h1>Guest profiles</h1>
-          <p>Pictures and upload permissions for recognized PCs.</p>
-        </div>
-        <button onClick={() => setRevision((v) => v + 1)}>
-          Refresh profiles
-        </button>
+        <h1>Guest profiles</h1>
+        <button onClick={() => setRevision((v) => v + 1)}>Refresh</button>
       </div>
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p className="admin-error" role="alert">
+          {error}
+        </p>
+      )}
       {!data ? (
-        <p role="status">Loading guest profiles…</p>
+        <p className="admin-empty" role="status">
+          Loading guest profiles…
+        </p>
       ) : (
         <>
-          {!data.profiles.length && <p>No guest profiles yet.</p>}
+          {!data.profiles.length && (
+            <p className="admin-empty">No guest profiles yet.</p>
+          )}
           <div className="admin-profile-grid">
             {data.profiles.map((profile) => (
               <article className="admin-panel admin-profile" key={profile.id}>
-                {profile.avatarRevision ? (
-                  <a
-                    href={`/api/admin/profiles/${profile.id}/avatar/${profile.avatarRevision}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <img
-                      alt={`${profile.displayName}'s profile picture`}
-                      src={`/api/admin/profiles/${profile.id}/avatar/${profile.avatarRevision}`}
-                      width="96"
-                      height="96"
-                    />
-                  </a>
-                ) : (
-                  <div
-                    className="admin-profile-placeholder"
-                    aria-label="No profile picture"
-                  >
-                    {profile.displayName.slice(0, 1).toUpperCase()}
+                <div className="admin-profile-head">
+                  {profile.avatarRevision ? (
+                    <a
+                      className="admin-profile-avatar-link"
+                      href={`/api/admin/profiles/${profile.id}/avatar/${profile.avatarRevision}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <img
+                        alt={`${profile.displayName}'s profile picture`}
+                        src={`/api/admin/profiles/${profile.id}/avatar/${profile.avatarRevision}`}
+                        width="52"
+                        height="52"
+                      />
+                    </a>
+                  ) : (
+                    <div
+                      className="admin-profile-placeholder"
+                      aria-label="No profile picture"
+                    >
+                      {profile.displayName.slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="admin-profile-identity">
+                    <div className="admin-profile-name-row">
+                      <h2>{profile.displayName}</h2>
+                      <span
+                        className={`admin-badge ${profile.uploadsBlocked ? "is-blocked" : "is-allowed"}`}
+                      >
+                        {profile.uploadsBlocked
+                          ? "Uploads blocked"
+                          : "Uploads allowed"}
+                      </span>
+                    </div>
+                    <p className="admin-profile-meta">
+                      {profile.bytes
+                        ? `${Math.ceil(profile.bytes / 1000)} KB · ${profile.animated ? "Animated GIF" : "Static"}`
+                        : "No picture"}
+                    </p>
                   </div>
-                )}
-                <h2>{profile.displayName}</h2>
-                <code>{profile.deviceId}</code>
-                <p>
-                  {profile.bytes
-                    ? `${Math.ceil(profile.bytes / 1000)} KB · ${profile.animated ? "Animated GIF" : "Static image"}`
-                    : "No stored picture"}
-                </p>
-                <p>{new Date(profile.updatedAt).toLocaleString()}</p>
-                <p>
-                  {profile.uploadsBlocked
-                    ? "Uploads blocked"
-                    : "Uploads allowed"}
-                </p>
+                </div>
+                <div className="admin-profile-details">
+                  <code title={profile.deviceId}>{profile.deviceId}</code>
+                  <time>
+                    {new Date(profile.updatedAt).toLocaleString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </time>
+                </div>
                 <div className="admin-profile-actions">
                   <button
                     disabled={busy || !profile.avatarRevision}
@@ -146,6 +167,7 @@ export function AdminProfiles({ onExpired }: { onExpired: () => void }) {
                     Delete picture
                   </button>
                   <button
+                    className={profile.uploadsBlocked ? "" : "admin-danger"}
                     disabled={busy}
                     onClick={() =>
                       void act(
@@ -160,20 +182,22 @@ export function AdminProfiles({ onExpired }: { onExpired: () => void }) {
               </article>
             ))}
           </div>
-          <div className="admin-profile-actions">
-            <button
-              disabled={!offset}
-              onClick={() => setOffset(Math.max(0, offset - 24))}
-            >
-              Previous profiles
-            </button>
-            <button
-              disabled={data.nextOffset === null}
-              onClick={() => setOffset(data.nextOffset!)}
-            >
-              Next profiles
-            </button>
-          </div>
+          {(offset > 0 || data.nextOffset !== null) && (
+            <nav className="admin-pagination" aria-label="Profile pages">
+              <button
+                disabled={!offset}
+                onClick={() => setOffset(Math.max(0, offset - 24))}
+              >
+                Previous profiles
+              </button>
+              <button
+                disabled={data.nextOffset === null}
+                onClick={() => setOffset(data.nextOffset!)}
+              >
+                Next profiles
+              </button>
+            </nav>
+          )}
         </>
       )}
       <dialog

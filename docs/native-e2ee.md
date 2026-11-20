@@ -39,7 +39,7 @@ continues to open whichever room the channel currently uses. A private invitatio
 is valid only for the original public server origin and concrete room.
 
 When guest access is disabled the server withholds both guest links. An organizer
-already admitted by voice can still create a voice-only code. It contains an
+already admitted by voice chooses **Create private voice code**. It contains an
 independent secret and binds the server origin, Discord guild and channel,
 concrete room and generation. It contains no guest credential. Each friend
 uses their own Discord login and voice membership for admission, then pastes the
@@ -165,9 +165,9 @@ publication proof, room access and the start/once-per-minute cadence still apply
   devices, authenticated group key agreement, complete replay protection or proof
   that received content is currently live. Previously valid descriptors and
   ciphertext can be replayed by an operator to a fresh client.
-- The operator still observes signaling, room/participant/track information,
-  packetization headers needed for the negotiated codec, and
-  traffic patterns, and can deny service. Application secrets must not enter
+- The operator can deny service and still observes signaling, room/participant/track
+  information, packetization headers needed for the codec, and traffic patterns.
+  Application secrets must stay out of
   metadata, HTTP URLs, diagnostics, argv, browser storage or committed fixtures.
 - Existing browser/native invitations cannot be transparently upgraded without
   the organizer distributing new private invitation material.

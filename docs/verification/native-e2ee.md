@@ -40,6 +40,36 @@ zero RTP payload bytes over 25 seconds. Transport-only AV1 decoded on the same
 hardware. The historical AV1 result below accepted a decoded fallback and
 does not qualify protected AV1.
 
+At implementation commit `0134044`, the isolated SDK suite passed four tests.
+They cover encryption-mode negotiation, independent protected peer construction,
+same-SID replacement serialization and retention of the replacement's key slot
+after obsolete cleanup. Three Windows C++ regressions exercised the initial
+receive guard, H.264/HEVC payload authentication including escaped legacy IVs,
+and concurrent nonce allocation with exhaustion and random-source failure.
+Nineteen setup/integrity tests passed, including rejection of changed native
+engine build inputs. The macOS archive has a matching crypto ABI header and a
+single stock cryptor object. Archive inspection does not exercise the macOS
+linker, capture device, speaker or Keychain.
+
+The Node 24 check passed formatting, type checks, 87 server tests, two web
+tests, 13 configuration tests and builds. Windows native formatting, Clippy,
+114 publisher tests and 11 portable tests passed. The publisher unit run
+ignored six external fixture/hardware tests. The all-features Windows examples
+also compiled against the integrated private-room APIs.
+
+**Final Windows acceptance.** All 12 cases in `e2ee.spec.ts`,
+`e2ee-discord.spec.ts` and `e2ee-recovery.spec.ts` passed together against a
+real local SFU in 5.9 minutes. The debug publisher SHA-256 was
+`15015f6b9b33eaea4e93b0bb9aa9042438d63b4b8cf9d84713c34065086b1af2`.
+The cases cover both Discord invitation modes, correct-root H.264/HEVC video,
+authenticated previews, stereo and native speaker output, wrong/missing roots,
+legacy plaintext, descriptor tampering and withdrawal, receiver bytes on Stop,
+rewatch, codec fallback and session-authorized recovery. Discord events were
+synthetic. Two independent receive-path reviews requested fixes to early media
+handling and same-SID replacement. Their regression tests passed, and the final
+independent reviewer approved the combined implementation at `0134044` and
+test-only follow-up `a5454e1` for the documented threat model.
+
 ## Historical acceptance on the pre-Discord branch
 
 These results were recorded on 2026-11-10 for `feat/native-room-e2ee`, based on

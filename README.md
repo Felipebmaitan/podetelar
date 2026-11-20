@@ -32,8 +32,9 @@ actions; Stop watching unsubscribes from both video and audio. Rooms close after
 all participants leave, allowing a short reconnect grace period.
 
 This branch adds optional end-to-end encryption for native audio, video and
-previews. Choose **Create private invitation** in an admitted room and share the
-code through a trusted channel. Friends paste it into the native app and can
+previews. Choose **Create private invitation** in an admitted room, or **Create
+private voice code** in a voice-only room. Share the code through a trusted
+channel. Friends paste it into the native app and can
 remember it for later joins. Ordinary room and Discord links provide
 transport-only access. See [private invitations and voice-only rooms](docs/native-e2ee.md).
 

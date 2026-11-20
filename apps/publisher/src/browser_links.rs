@@ -164,7 +164,7 @@ impl Link {
         let reply: Reply =
             serde_json::from_slice(&bytes).context("Invalid app invitation response.")?;
         ensure!(
-            crate::admission::valid_invitation(&reply.invitation_url)
+            crate::admission::valid_legacy_invitation(&reply.invitation_url)
                 && Url::parse(&reply.invitation_url)?.origin() == self.origin.origin(),
             "Invalid app invitation response."
         );

@@ -12,11 +12,11 @@ const run = (file, args) =>
   });
 if (process.arch !== "arm64")
   throw new Error("The macOS build currently targets Apple Silicon (arm64).");
+await import("./setup-native-sdk.mjs");
+await import("./setup-native-decoder.mjs");
 switch (action) {
   case "setup":
     await setupMacosRuntime();
-    await import("./setup-native-sdk.mjs");
-    await import("./setup-native-decoder.mjs");
     mkdirSync(resolve(root, ".local/macos"), { recursive: true });
     run("xcrun", [
       "swiftc",

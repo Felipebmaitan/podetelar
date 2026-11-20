@@ -119,6 +119,34 @@ if (existsSync(destination)) {
 `,
     ),
   );
+  for (const [file, marker, field] of [
+    [
+      "src/peer_connection_factory.rs",
+      "    pub enable_sctp_snap: bool,",
+      "    /// Drop incoming media until an authenticated frame transform is installed.\n    pub protect_receive_streams: bool,",
+    ],
+    [
+      "src/peer_connection_factory.rs",
+      "            enable_sctp_snap: false,",
+      "            protect_receive_streams: false,",
+    ],
+    [
+      "src/peer_connection.rs",
+      "            enable_sctp_snap: false,",
+      "            protect_receive_streams: false,",
+    ],
+    [
+      "src/native/peer_connection.rs",
+      "            enable_sctp_snap: value.enable_sctp_snap,",
+      "            protect_receive_streams: value.protect_receive_streams,",
+    ],
+  ]) {
+    const path = join(source, file);
+    const original = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+    if (original.split(marker).length !== 2)
+      throw Error("Unexpected native RTC configuration");
+    writeFileSync(path, original.replace(marker, marker + "\n" + field));
+  }
   const actual = tree(source);
   if (actual !== pin.treeSha256)
     throw Error(`Audio SDK patched tree mismatch: ${actual}`);

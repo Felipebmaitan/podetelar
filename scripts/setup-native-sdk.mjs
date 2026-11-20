@@ -23,8 +23,8 @@ const base = join(repository, ".local/native-sdk");
 const destination = join(base, "livekit");
 const hash = (data) => createHash("sha256").update(data).digest("hex");
 
-// This is the complete compatibility patch. Keep it narrow and remove it when
-// the pinned SDK announces NativeAudioSource's stereo channels upstream.
+// Complete pinned compatibility/security patch. Never trust SFU encryption
+// negotiation to disable a client-requested frame cryptor.
 const marker = "            LocalTrack::Audio(_audio_track) => {\n";
 const addition = `                if let libwebrtc::audio_source::RtcAudioSource::Native(source) = _audio_track.rtc_source() {
                     if source.num_channels() == 2 {
@@ -32,6 +32,219 @@ const addition = `                if let libwebrtc::audio_source::RtcAudioSource
                     }
                 }
 `;
+const encryptionMarker =
+  "        let track_info = self.inner.rtc_engine.add_track(req).await?;\n";
+const encryptionCheck = `        if !negotiated_track_encryption_matches(self.local.encryption_type, track_info.encryption) {
+            track.disable();
+            return Err(RoomError::Internal("SFU changed requested track encryption".into()));
+        }
+`;
+const restartingMarker =
+  "    fn handle_restarting(self: &Arc<Self>, tx: oneshot::Sender<()>) {\n";
+const restartingCheck = `        // Full reconnect creates new RTP cryptors. Retained keys must never be
+        // reused with reset per-cryptor IV counters; require a fresh client Room.
+        if self.e2ee_manager.enabled() {
+            for publication in self.local_participant.track_publications().values() {
+                if let Some(track) = publication.track() { track.disable(); }
+            }
+            let session = self.clone();
+            tokio::spawn(async move { let _ = session.close(DisconnectReason::ClientInitiated).await; });
+            let _ = tx.send(());
+            return;
+        }
+`;
+const restartedMarker =
+  "    fn handle_restarted(self: &Arc<Self>, tx: oneshot::Sender<()>) {\n";
+const restartedCheck = `        if self.e2ee_manager.enabled() {
+            let _ = tx.send(());
+            return;
+        }
+`;
+const receiverMarker =
+  "        if !self.initialized() || publication.encryption_type() == EncryptionType::None {\n";
+const receiverCheck = `        // A protected client requires a receiver cryptor even when signaling
+        // labels a track plaintext. Later metadata updates must never turn an
+        // already-attached plaintext decoder into an apparently protected track.
+        if !self.initialized() {
+`;
+const protectedTrailerChanges = [
+  [
+    "            if needs_video_sender_transformer(&options, has_timing_subscribers) {\n",
+    "            if self.local.encryption_type == EncryptionType::None && needs_video_sender_transformer(&options, has_timing_subscribers) {\n",
+  ],
+  [
+    "        let mut encodings = Vec::default();\n",
+    "        if self.local.encryption_type != EncryptionType::None { req.packet_trailer_features.clear(); }\n        let mut encodings = Vec::default();\n",
+  ],
+];
+const protectedReceiverTrailerChanges = [
+  [
+    "    data_packet_cryptor: Option<DataPacketCryptor>,",
+    "    remote_owners: HashMap<(ParticipantIdentity, TrackSid), std::sync::Weak<crate::room::publication::TrackPublicationInner>>,\n    data_packet_cryptor: Option<DataPacketCryptor>,",
+  ],
+  [
+    "                frame_cryptors: HashMap::new(),",
+    "                frame_cryptors: HashMap::new(),\n                remote_owners: HashMap::new(),",
+  ],
+  [
+    "        inner.frame_cryptors.clear();",
+    "        inner.frame_cryptors.clear();\n        inner.remote_owners.clear();",
+  ],
+  [
+    "        participant: RemoteParticipant,\n    ) {\n        let identity = participant.identity();",
+    "        identity: ParticipantIdentity,\n    ) {",
+  ],
+  [
+    "        inner.frame_cryptors.insert((identity, publication.sid()), frame_cryptor.clone());\n    }\n\n    pub(crate) fn on_local_track_published(",
+    "        inner.remote_owners.insert((identity.clone(), publication.sid()), publication.weak_inner());\n        inner.frame_cryptors.insert((identity, publication.sid()), frame_cryptor.clone());\n    }\n\n    pub(crate) fn on_local_track_published(",
+  ],
+  [
+    "        participant: RemoteParticipant,\n    ) {\n        self.remove_frame_cryptor(participant.identity(), publication.sid());",
+    `        participant: RemoteParticipant,
+    ) {
+        self.release_remote_slot(participant.identity(), &publication);
+    }
+
+    pub(in crate::room) fn release_remote_slot(&self, identity: ParticipantIdentity, publication: &RemoteTrackPublication) {
+        let key = (identity, publication.sid());
+        let mut inner = self.inner.lock();
+        if inner.remote_owners.get(&key).is_some_and(|owner| owner.ptr_eq(&publication.weak_inner())) {
+            inner.remote_owners.remove(&key);
+            inner.frame_cryptors.remove(&key);
+        }`,
+  ],
+  [
+    "    pub fn frame_cryptors(&self) ->",
+    `    /// Check one publication without cloning every participant's cryptor.
+    pub fn frame_cryptor_enabled(&self, identity: ParticipantIdentity, sid: TrackSid) -> bool {
+        self.inner.lock().frame_cryptors.get(&(identity, sid)).is_some_and(FrameCryptor::enabled)
+    }
+
+    pub fn frame_cryptors(&self) ->`,
+  ],
+  [
+    "        let needs_packet_trailer_handler = needs_video_receiver_packet_trailer_handler(\n",
+    "        let needs_packet_trailer_handler = !self.initialized() && needs_video_receiver_packet_trailer_handler(\n",
+  ],
+];
+const roomReceiverChanges = [
+  [
+    "        let e2ee_manager = E2eeManager::new(encryption_options, with_dc_encryption);",
+    `        // Immutable local policy for every peer transport, before SDP or RTP.
+        options.rtc_config.protect_receive_streams = encryption_options.is_some();
+        let e2ee_manager = E2eeManager::new(encryption_options, with_dc_encryption);`,
+  ],
+  [
+    "            key_provider.set_sif_trailer(join_response.sif_trailer);",
+    "            // Protected rooms never authorize server-injected frames.\n            key_provider.set_sif_trailer(Vec::new());",
+  ],
+  [
+    `        if let Some(remote_participant) = remote_participant {
+            tokio::spawn(async move {
+                remote_participant.add_subscribed_media_track(track_id, track, transceiver).await;
+`,
+    `        if let Some(remote_participant) = remote_participant {
+            let receiver_encryption = self.e2ee_manager.clone();
+            tokio::spawn(async move {
+                remote_participant.add_subscribed_media_track(track_id, track, transceiver, receiver_encryption).await;
+`,
+  ],
+  [
+    `        participant.on_track_subscribed({
+            let dispatcher = self.dispatcher.clone();
+            let e2ee_manager = self.e2ee_manager.clone();
+`,
+    `        participant.on_track_subscribed({
+            let dispatcher = self.dispatcher.clone();
+`,
+  ],
+  [
+    "                e2ee_manager.on_track_subscribed(track, publication, participant);\n",
+    "",
+  ],
+];
+const participantReceiverChanges = [
+  [
+    "        transceiver: RtpTransceiver,\n    ) {\n",
+    "        transceiver: RtpTransceiver,\n        receiver_encryption: crate::room::e2ee::manager::E2eeManager,\n    ) {\n",
+  ],
+  [
+    `            self.add_publication(TrackPublication::Remote(remote_publication.clone()));
+            track.enable();
+
+            remote_publication.set_track(Some(track)); // This will fire TrackSubscribed on the
+                                                       // publication
+`,
+    `            self.add_publication(TrackPublication::Remote(remote_publication.clone()));
+            remote_publication.attach_track(track, &receiver_encryption, self.identity());
+`,
+  ],
+  [
+    "                publication.set_track(None);",
+    "                publication.clear_track();",
+  ],
+];
+const publicationChanges = [
+  ["            self.set_track(None);", "            self.clear_track();"],
+  [
+    "struct RemoteInner {\n",
+    "struct RemoteInner {\n    track_update: Mutex<()>,\n",
+  ],
+  [
+    "                events: Default::default(),\n",
+    "                events: Default::default(),\n                track_update: Mutex::new(()),\n",
+  ],
+  [
+    "    pub(crate) fn set_track(&self, track: Option<RemoteTrack>) {\n",
+    `    pub(in crate::room) fn weak_inner(&self) -> std::sync::Weak<TrackPublicationInner> {
+        Arc::downgrade(&self.inner)
+    }
+
+    pub(crate) fn attach_track(&self, track: RemoteTrack, encryption: &crate::room::e2ee::manager::E2eeManager, identity: ParticipantIdentity) {
+        self.update_track(Some(track), |track| {
+            encryption.on_track_subscribed(track.clone(), self.clone(), identity);
+            track.enable();
+        });
+    }
+
+    pub(crate) fn clear_track(&self) {
+        self.update_track(None, |_| {});
+    }
+
+    fn update_track(&self, track: Option<RemoteTrack>, prepare: impl FnOnce(&RemoteTrack)) {
+        let _update = self.remote.track_update.lock();
+`,
+  ],
+  [
+    `        super::set_track(
+            &self.inner,
+            &TrackPublication::Remote(self.clone()),
+            track.clone().map(Into::into),
+        );
+
+        if let Some(track) = track {
+            if let Some(subscribed) = self.remote.events.subscribed.lock().as_ref() {
+                subscribed(self.clone(), track);
+            }
+        }
+`,
+    `        // Remove the old slot first. Installing before unsubscribe would remove
+        // the replacement cryptor when two receivers share the publication SID.
+        super::set_track(&self.inner, &TrackPublication::Remote(self.clone()), None);
+        if let Some(track) = track.as_ref() {
+            prepare(track);
+            if let Some(subscribed) = self.remote.events.subscribed.lock().as_ref() {
+                subscribed(self.clone(), track.clone());
+            }
+        }
+        super::set_track(
+            &self.inner,
+            &TrackPublication::Remote(self.clone()),
+            track.map(Into::into),
+        );
+`,
+  ],
+];
 
 function treeHash(root) {
   const digest = createHash("sha256");
@@ -59,7 +272,9 @@ if (existsSync(destination)) {
     throw new Error(
       "The generated native SDK differs from its pinned patched source. Inspect it before replacing it.",
     );
-  console.log("Kept the verified native SDK with the stereo publication fix.");
+  console.log(
+    "Kept the verified native SDK with stereo and strict encryption fixes.",
+  );
 } else {
   const downloads = join(repository, ".local/downloads");
   mkdirSync(downloads, { recursive: true });
@@ -127,10 +342,137 @@ if (existsSync(destination)) {
     throw new Error(
       "The native SDK patch no longer matches its pinned source.",
     );
-  const patched = original.replace(marker, marker + addition);
+  if (original.split(encryptionMarker).length !== 2)
+    throw new Error("Native SDK encryption patch marker mismatch.");
+  let patched = original
+    .replace(marker, marker + addition)
+    .replace(encryptionMarker, encryptionMarker + encryptionCheck);
+  for (const [marker, replacement] of protectedTrailerChanges) {
+    if (patched.split(marker).length !== 2)
+      throw new Error("Native SDK protected sender trailer marker mismatch.");
+    patched = patched.replace(marker, replacement);
+  }
+  patched += `
+fn negotiated_track_encryption_matches(expected: EncryptionType, received: i32) -> bool {
+    proto::encryption::Type::from(expected) as i32 == received
+}
+
+#[cfg(test)]
+mod podetelar_sender_encryption_tests {
+    use super::*;
+
+    #[test]
+    fn podetelar_encryption_reply_must_exactly_match_requested_mode() {
+        let gcm = proto::encryption::Type::Gcm as i32;
+        let none = proto::encryption::Type::None as i32;
+        assert!(negotiated_track_encryption_matches(EncryptionType::Gcm, gcm));
+        assert!(!negotiated_track_encryption_matches(EncryptionType::Gcm, none));
+        assert!(!negotiated_track_encryption_matches(EncryptionType::Gcm, 0x7fff));
+        assert!(negotiated_track_encryption_matches(EncryptionType::None, none));
+        assert!(!negotiated_track_encryption_matches(EncryptionType::None, gcm));
+        assert!(!negotiated_track_encryption_matches(EncryptionType::None, 0x7fff));
+    }
+}
+`;
   if (hash(patched) !== pin.patchedSourceSha256)
-    throw new Error("The native SDK patch checksum did not match the pin.");
+    throw new Error(
+      `Native SDK patched sender checksum mismatch: ${hash(patched)}`,
+    );
   writeFileSync(target, patched);
+  const roomTarget = join(source, "src/room/mod.rs");
+  const roomOriginal = readFileSync(roomTarget, "utf8").replaceAll(
+    "\r\n",
+    "\n",
+  );
+  if (
+    hash(roomOriginal) !== pin.roomOriginalSourceSha256 ||
+    roomOriginal.split(restartingMarker).length !== 2 ||
+    roomOriginal.split(restartedMarker).length !== 2
+  )
+    throw new Error("Native SDK protected reconnect patch marker mismatch.");
+  let roomPatched = roomOriginal
+    .replace(restartingMarker, restartingMarker + restartingCheck)
+    .replace(restartedMarker, restartedMarker + restartedCheck);
+  for (const [marker, replacement] of roomReceiverChanges) {
+    if (roomPatched.split(marker).length !== 2)
+      throw new Error("Native SDK direct receiver encryption marker mismatch.");
+    roomPatched = roomPatched.replace(marker, replacement);
+  }
+  if (hash(roomPatched) !== pin.roomPatchedSourceSha256)
+    throw new Error(
+      `Native SDK patched room checksum mismatch: ${hash(roomPatched)}`,
+    );
+  writeFileSync(roomTarget, roomPatched);
+  const participantTarget = join(
+    source,
+    "src/room/participant/remote_participant.rs",
+  );
+  const participantOriginal = readFileSync(
+    participantTarget,
+    "utf8",
+  ).replaceAll("\r\n", "\n");
+  if (hash(participantOriginal) !== pin.participantOriginalSourceSha256)
+    throw new Error("Native SDK receiver participant source mismatch.");
+  let participantPatched = participantOriginal;
+  for (const [marker, replacement] of participantReceiverChanges) {
+    if (participantPatched.split(marker).length !== 2)
+      throw new Error("Native SDK receiver participant patch marker mismatch.");
+    participantPatched = participantPatched.replace(marker, replacement);
+  }
+  if (hash(participantPatched) !== pin.participantPatchedSourceSha256)
+    throw new Error(
+      `Native SDK receiver participant patch checksum mismatch: ${hash(participantPatched)}`,
+    );
+  writeFileSync(participantTarget, participantPatched);
+  const managerTarget = join(source, "src/room/e2ee/manager.rs");
+  const managerOriginal = readFileSync(managerTarget, "utf8").replaceAll(
+    "\r\n",
+    "\n",
+  );
+  if (
+    hash(managerOriginal) !== pin.managerOriginalSourceSha256 ||
+    managerOriginal.split(receiverMarker).length !== 3
+  )
+    throw new Error(
+      "Native SDK mandatory receiver cryptor patch marker mismatch.",
+    );
+  // Replace the first occurrence (remote receiver), retaining the local check.
+  let managerPatched = managerOriginal.replace(receiverMarker, receiverCheck);
+  for (const [marker, replacement] of protectedReceiverTrailerChanges) {
+    if (managerPatched.split(marker).length !== 2)
+      throw new Error("Native SDK protected receiver trailer marker mismatch.");
+    managerPatched = managerPatched.replace(marker, replacement);
+  }
+  if (hash(managerPatched) !== pin.managerPatchedSourceSha256)
+    throw new Error(
+      `Native SDK mandatory receiver cryptor patch checksum mismatch: ${hash(managerPatched)}`,
+    );
+  writeFileSync(managerTarget, managerPatched);
+  const publicationTarget = join(source, "src/room/publication/remote.rs");
+  const publicationOriginal = readFileSync(
+    publicationTarget,
+    "utf8",
+  ).replaceAll("\r\n", "\n");
+  if (hash(publicationOriginal) !== pin.publicationOriginalSourceSha256)
+    throw new Error("Native SDK receiver publication source mismatch.");
+  let publicationPatched = publicationOriginal;
+  for (const [marker, replacement] of publicationChanges) {
+    if (publicationPatched.split(marker).length !== 2)
+      throw new Error("Native SDK receiver publication patch marker mismatch.");
+    publicationPatched = publicationPatched.replace(marker, replacement);
+  }
+  const publicationTests = readFileSync(
+    join(repository, "apps/publisher/sdk/receiver-publication-tests.rs"),
+    "utf8",
+  ).replaceAll("\r\n", "\n");
+  if (hash(publicationTests) !== pin.publicationTestsSha256)
+    throw new Error("Native SDK receiver regression test checksum mismatch.");
+  publicationPatched += "\n" + publicationTests;
+  if (hash(publicationPatched) !== pin.publicationPatchedSourceSha256)
+    throw new Error(
+      `Native SDK receiver publication patch checksum mismatch: ${hash(publicationPatched)}`,
+    );
+  writeFileSync(publicationTarget, publicationPatched);
   // Read-only association used by opt-in local qualification. Never log IDs.
   for (const [file, kind] of [
     ["remote_audio_track.rs", "RtcAudioTrack"],
@@ -164,6 +506,38 @@ ${marker}`,
       ),
     );
   }
+  // These lazy instrumentation APIs replace an existing RTP transform. Keep them
+  // out of the application API until they can compose with the frame cryptor.
+  for (const [file, method] of [
+    ["local_video_track.rs", "publish_timing_events"],
+    ["remote_video_track.rs", "subscribe_timing_events"],
+  ]) {
+    const path = join(source, "src/room/track", file);
+    const original = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+    const marker = `    pub fn ${method}(`;
+    if (original.split(marker).length !== 2)
+      throw new Error("Unexpected SDK timing API.");
+    writeFileSync(
+      path,
+      original.replace(marker, `    pub(crate) fn ${method}(`),
+    );
+  }
+  const publications = join(source, "src/room/publication/mod.rs");
+  const genericSetter = `    #[allow(dead_code)]
+    pub(crate) fn set_track(&self, track: Option<Track>) {
+        match self {
+            TrackPublication::Local(p) => p.set_track(track),
+            TrackPublication::Remote(p) => p.set_track(track.map(|t| t.try_into().unwrap())),
+        }
+    }
+`;
+  const originalPublications = readFileSync(publications, "utf8").replaceAll(
+    "\r\n",
+    "\n",
+  );
+  if (originalPublications.split(genericSetter).length !== 2)
+    throw Error("Unexpected generic publication setter");
+  writeFileSync(publications, originalPublications.replace(genericSetter, ""));
   const actualTree = treeHash(source);
   if (actualTree !== pin.treeSha256)
     throw new Error(
@@ -182,6 +556,6 @@ ${marker}`,
   renameSync(resolvedSource, destination);
   rmdirSync(stage); // Empty after moving the one pinned package; no recursive deletion.
   console.log(
-    "Prepared the verified native SDK with the stereo publication fix.",
+    "Prepared the verified native SDK with stereo and strict encryption fixes.",
   );
 }

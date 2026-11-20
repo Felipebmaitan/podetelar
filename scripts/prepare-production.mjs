@@ -101,11 +101,14 @@ export function productionConfiguration(
     "proxy_set_header Host $host;",
     "proxy_set_header Host $http_host;",
   );
-  // Guest pictures have their own bounded upload path on both HTTPS listeners.
-  result.nginx = result.nginx.replaceAll(
-    "  location / {",
-    `  location ~ "^/api/rooms/[A-Za-z0-9_-]{22}/profile/avatar$" {
-    client_max_body_size 3000000;
+  // Preserve the default body limit. These uploads have route-specific limits
+  // on both HTTPS listeners, with the API applying the exact per-format limit.
+  const uploadLocations = [
+    ["profile/avatar", 3_000_000],
+    ["previews/(?:screen|camera)", 266_240],
+  ].map(
+    ([path, limit]) => `  location ~ "^/api/rooms/[A-Za-z0-9_-]{22}/${path}$" {
+    client_max_body_size ${limit};
     proxy_pass http://127.0.0.1:18080;
     proxy_http_version 1.1;
     proxy_set_header Host $http_host;
@@ -114,8 +117,11 @@ export function productionConfiguration(
     proxy_read_timeout 15s;
     proxy_send_timeout 15s;
     proxy_buffering off;
-  }
-  location / {`,
+  }`,
+  );
+  result.nginx = result.nginx.replaceAll(
+    "  location / {",
+    [...uploadLocations, "  location / {"].join("\n"),
   );
   return result;
 }

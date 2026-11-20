@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { productionConfiguration } from "./prepare-production.mjs";
-import { PREVIEW_MAX_BYTES } from "@podetelar/contracts";
+import {
+  PREVIEW_MAX_BYTES,
+  PROTECTED_PREVIEW_MAX_BYTES,
+} from "@podetelar/contracts";
 const secrets = Object.fromEntries(
   ["admin", "apiKey", "apiSecret", "turn"].map((key, i) => [
     key,
@@ -26,6 +29,13 @@ test("split domains retain the gateway and keep bulk traffic off the website lis
   assert.match(website, /listen 443 ssl/);
   assert.match(website, /network-test\(\?:\/\|\$\).*return 421/);
   assert.ok(!website.includes("client_max_body_size 48m"));
+  for (const listener of [website, direct]) {
+    assert.ok(
+      listener.includes(
+        `previews/(?:screen|camera)$" {\n    client_max_body_size ${PROTECTED_PREVIEW_MAX_BYTES};`,
+      ),
+    );
+  }
   assert.match(direct, /listen 8443 ssl/);
   assert.match(direct, /server_name stream-direct.maitan.me/);
   assert.match(direct, /client_max_body_size 48m/);

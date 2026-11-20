@@ -58,21 +58,25 @@ impl PublisherUi {
             self.following_key = key;
         }
         let state = self.controller.snapshot();
-        if self.following.current.is_some()
-            && !self.browser_invitation_open
-            && state.connection == "connected"
-            && let Some(access) = &state.profile_access
+        let voice = self.automatic_voice_state();
+        if (state.voice_private_mismatch || state.protected_access_ended)
+            && self.following.current.as_ref().is_some_and(|current| {
+                voice
+                    .locations
+                    .iter()
+                    .any(|seen| seen.key() == current.key())
+            })
         {
-            self.invitation = access.invitation_url.clone().unwrap_or_default();
+            self.following.manual_leave(&voice);
         }
-        let voice = self.following_client.state();
         let busy = state.busy || Instant::now() < self.next_follow_attempt;
         if let Some(action) = self.following.tick(
             self.account_state.account.is_some(),
             &voice,
             matches!(state.connection, "connected" | "reconnecting"),
             busy,
-            self.browser_invitation_open,
+            self.browser_invitation_open
+                || (self.private.store_locked && self.private.required.is_none()),
         ) {
             self.set_fullscreen(ctx, None);
             self.focused = None;
@@ -82,7 +86,7 @@ impl PublisherUi {
                 crate::following::Action::Join(location) => {
                     self.next_follow_attempt = Instant::now() + Duration::from_secs(10);
                     self.controller.send(Command::Join {
-                        invitation: String::new(),
+                        invitation: self.private.required.clone().unwrap_or_default(),
                         name: self.name.clone(),
                         route: Route::Auto,
                         account: self.account_state.credential.clone(),
@@ -240,6 +244,25 @@ impl PublisherUi {
 
     fn discord_following(&mut self, ui: &mut egui::Ui) {
         let voice = self.following_client.state();
+        if self.private.requires_private() {
+            description(
+                ui,
+                if self.private.store_locked && self.private.required.is_none() {
+                    "Could not read the saved private invitation. Automatic joining is paused."
+                } else {
+                    "Automatic joining requires the room in your private invitation."
+                },
+            );
+            if ui
+                .button(tr("Allow transport-only Discord rooms for this run"))
+                .clicked()
+            {
+                self.private.set_required(None);
+                self.private.store_locked = false;
+                self.following.resume();
+                self.next_follow_attempt = Instant::now();
+            }
+        }
         if self.following.paused || self.following.independent {
             joining_status(ui, "Automatic joining paused", WARNING);
             if ui.button(tr("Resume automatic joining")).clicked() {

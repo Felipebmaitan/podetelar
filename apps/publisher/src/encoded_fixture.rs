@@ -30,6 +30,10 @@ pub async fn publish(request: Request) -> Result<()> {
         (10..=30).contains(&request.seconds),
         "Invalid fixture duration."
     );
+    ensure!(
+        crate::admission::valid_legacy_invitation(&request.invitation_url),
+        "The standalone IVF fixture requires a transport-only invitation."
+    );
     let mut data = Vec::new();
     std::fs::File::open(request.fixture_path)?
         .take(64 * 1024 * 1024 + 1)

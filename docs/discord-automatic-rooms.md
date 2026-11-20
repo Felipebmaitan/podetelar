@@ -40,6 +40,20 @@ can rotate or disable it. Disabling automatic joining does not disable invitatio
 The channel announcement updates one message with the permanent invitation;
 `/stream` and `/telar` resolve the same channel room without requiring app login.
 
+When guest invitations are enabled, the voice join response also supplies a
+guest invitation for that specific room. The native app can use it to create a
+private invitation. Friends paste it in the native app. When guest invitations
+are disabled, a voice-admitted organizer can instead copy a voice-only private
+code. Friends need their own signed-in voice session for the same channel and
+room. Remembering the code lets the app use it automatically on a later matching
+join. A newly created room needs a new code.
+
+Both kinds of code contain a device-generated secret. Share the code through a
+channel you trust with that secret. The bot and admission service only handle
+access to the room. Someone controlling those services can admit a fake
+participant, but that participant also needs the code to decrypt a protected
+stream. See [native private invitations](native-e2ee.md).
+
 The dashboard lists voice-controlled sessions and blocked users, provides global
 pause/resume and per-user pause/allow, and keeps channel policies and invitations
 alongside the bot/account controls. Pausing ends current controlled sessions;

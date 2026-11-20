@@ -1,3 +1,6 @@
+#[cfg(any(test, feature = "ui-review", feature = "performance-experiments"))]
+#[path = "ui/fixture.rs"]
+mod fixture;
 #[path = "ui/profile.rs"]
 mod profile;
 #[cfg(feature = "ui-review")]
@@ -90,7 +93,62 @@ pub fn configure_theme(ctx: &egui::Context) {
     ctx.set_style_of(egui::Theme::Dark, style);
 }
 
+#[derive(Default)]
+struct PrivateInvitations {
+    // One user-selected capability. Discord can request an admission, but cannot
+    // replace this value or supply a different encryption mode.
+    required: Option<String>,
+    voice_scope: Option<crate::admission::voice_code::Scope>,
+    saved: Option<String>,
+    pasted: String,
+    store_locked: bool,
+}
+
+impl PrivateInvitations {
+    fn load() -> Self {
+        match crate::settings::PrivateStore::open().and_then(|store| store.load()) {
+            Ok(saved) => {
+                let mut private = Self::default();
+                private.set_required(saved.clone());
+                private.saved = saved;
+                private
+            }
+            Err(_) => Self {
+                store_locked: true,
+                ..Self::default()
+            },
+        }
+    }
+
+    fn set_required(&mut self, value: Option<String>) {
+        self.voice_scope = value
+            .as_deref()
+            .filter(|v| v.starts_with(crate::admission::voice_code::PREFIX))
+            .and_then(|v| {
+                crate::admission::voice_code::parse(v)
+                    .ok()
+                    .map(|(scope, _)| scope)
+            });
+        self.required = value;
+    }
+
+    fn restrict_voice(&self, server: &str, state: &mut crate::following::State) {
+        if let Some(scope) = &self.voice_scope {
+            state.locations.retain(|location| {
+                scope.origin == server
+                    && scope.guild_id == location.guild_id
+                    && scope.channel_id == location.channel_id
+            });
+        }
+    }
+
+    fn requires_private(&self) -> bool {
+        self.store_locked || self.required.is_some()
+    }
+}
+
 pub struct PublisherUi {
+    private: PrivateInvitations,
     following_client: crate::following::Client,
     following: crate::following::Follow,
     following_key: Option<String>,
@@ -202,6 +260,7 @@ impl PublisherUi {
         });
         let link_result = link.map(crate::browser_links::Load::start);
         Self {
+            private: PrivateInvitations::load(),
             following_client: crate::following::Client::new(),
             following: Default::default(),
             following_key: None,
@@ -264,7 +323,41 @@ impl PublisherUi {
         }
     }
 
+    fn automatic_voice_state(&self) -> crate::following::State {
+        let mut state = self.following_client.state();
+        self.private
+            .restrict_voice(&self.account_state.server, &mut state);
+        state
+    }
+
     fn join(&mut self) {
+        let value = self.invitation.trim();
+        if value.starts_with(crate::admission::voice_code::PREFIX) {
+            let Ok((scope, _)) = crate::admission::voice_code::parse(value) else {
+                self.settings_error = "Invalid private Discord voice code.".into();
+                return;
+            };
+            let signed_in = self
+                .account_state
+                .credential
+                .as_ref()
+                .and_then(|c| c.for_server(&scope.origin))
+                .is_some();
+            self.private.required = Some(value.to_owned());
+            self.private.voice_scope = Some(scope);
+            self.following.resume();
+            self.next_follow_attempt = Instant::now();
+            self.settings_error.clear();
+            if !signed_in {
+                self.settings_error = "Sign in to the matching Discord backend and join the voice channel to use this code.".into();
+            }
+            // The regular voice poll supplies the actual authenticated location. Until then,
+            // keep this capability armed and never submit it through guest admission.
+            return;
+        }
+        if crate::settings::valid_private(value) {
+            self.private.set_required(Some(value.to_owned()));
+        }
         self.following.invitation();
         self.session_name = Some(self.name.trim().to_owned());
         self.prior_room = None;
@@ -280,6 +373,132 @@ impl PublisherUi {
         });
     }
 
+    fn protect_room(&mut self, access: &crate::admission::Admission) -> anyhow::Result<()> {
+        let invitation = access.create_private_invitation()?;
+        if access.protection.is_some()
+            && self.private.saved.is_some()
+            && self.private.saved.as_deref() == access.invitation_url.as_deref()
+        {
+            crate::settings::PrivateStore::open()?.save(&invitation)?;
+            self.private.saved = Some(invitation.clone());
+        }
+        self.join_private(invitation);
+        Ok(())
+    }
+
+    fn join_private(&mut self, invitation: String) {
+        self.private.set_required(Some(invitation.clone()));
+        self.private.pasted.clear();
+        self.invitation = invitation;
+        self.textures.clear();
+        self.copied_until = None;
+        if let Some(location) = self.following.current.clone() {
+            // Retain voice membership checks for both key creation and import.
+            self.controller.send(Command::Join {
+                invitation: self.invitation.clone(),
+                name: self.name.clone(),
+                route: Route::Auto,
+                account: self.account_state.credential.clone(),
+                voice: Some(crate::following::Target {
+                    server: self.account_state.server.clone(),
+                    location,
+                }),
+            });
+        } else {
+            self.join();
+        }
+    }
+
+    fn private_actions(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+        if let Some(access) = &state.profile_access {
+            egui::CollapsingHeader::new(tr("Use a private invitation for this room"))
+                .id_salt("import-private-invitation")
+                .show(ui, |ui| {
+                    let input = ui.add(
+                        egui::TextEdit::singleline(&mut self.private.pasted)
+                            .password(true)
+                            .char_limit(2048)
+                            .hint_text(tr("Paste your private invitation")),
+                    );
+                    let enter =
+                        input.lost_focus() && ui.input(|keys| keys.key_pressed(egui::Key::Enter));
+                    if !state.busy
+                        && !self.private.pasted.is_empty()
+                        && (ui.button(tr("Join with encryption")).clicked() || enter)
+                    {
+                        if access.accepts_private_invitation(self.private.pasted.trim()) {
+                            let invitation = std::mem::take(&mut self.private.pasted);
+                            self.join_private(invitation.trim().to_owned());
+                            self.settings_error.clear();
+                            ui.close();
+                        } else {
+                            self.settings_error =
+                                "Use a private invitation for the current room and server.".into();
+                        }
+                    }
+                });
+            let label = match (state.protected, access.voice_code_required()) {
+                (false, true) => "Create private voice code",
+                (true, true) => "Replace private voice code",
+                (false, false) => "Create private invitation",
+                (true, false) => "Replace private invitation",
+            };
+            if access.voice_code_required() {
+                ui.label(tr(
+                    "This code requires Discord sign-in and presence in this voice channel.",
+                ));
+            }
+            if ui.add_enabled(!state.busy, egui::Button::new(tr(label)))
+                .on_hover_text(tr("Rejoin with a new encryption key. Share the new invitation with trusted friends.")).clicked() {
+                if let Err(error) = self.protect_room(access) { self.settings_error = error.to_string(); }
+                ui.close();
+            }
+            if state.protected
+                && let Some(current) = access.invitation_url.as_deref()
+                && self.private.saved.as_deref() != Some(current)
+                && ui
+                    .button(tr("Remember private invitation on this device"))
+                    .clicked()
+            {
+                match crate::settings::PrivateStore::open().and_then(|store| store.save(current)) {
+                    Ok(()) => {
+                        self.private.saved = Some(current.to_owned());
+                        self.private.set_required(Some(current.to_owned()));
+                        self.private.store_locked = false;
+                        self.settings_error.clear();
+                    }
+                    Err(error) => self.settings_error = error.to_string(),
+                }
+                ui.close();
+            }
+        }
+        if (self.private.saved.is_some() || self.private.store_locked)
+            && ui.button(tr("Forget saved private invitation")).clicked()
+        {
+            match crate::settings::PrivateStore::open().and_then(|store| store.forget()) {
+                Ok(()) => {
+                    let saved = self.private.saved.take();
+                    if !state.protected
+                        && !state.busy
+                        && saved.is_some()
+                        && self.private.required == saved
+                    {
+                        self.private.set_required(None);
+                        self.following.manual_leave(&self.automatic_voice_state());
+                        if saved.as_deref() == Some(&self.invitation) {
+                            self.invitation.clear();
+                        }
+                    }
+                    self.private.store_locked = false;
+                    // Forgetting a saved key never downgrades an active session.
+                    self.settings_error.clear();
+                }
+                Err(error) => self.settings_error = error.to_string(),
+            }
+            ui.close();
+        }
+    }
+
     fn room_header(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
         let connected = matches!(state.connection, "connected" | "reconnecting");
         ui.horizontal(|ui| {
@@ -288,7 +507,8 @@ impl PublisherUi {
             if connected {
                 ui.separator();
                 let room_label = format!(
-                    "{}  ·  {} {}",
+                    "{}  ·  {}  ·  {} {}",
+                    tr(if state.protected && state.profile_access.as_ref().is_some_and(|access| access.voice_code_required()) { "Voice code · Encrypted" } else if state.protected { "Invitation-encrypted" } else { "Transport encryption only" }),
                     if state.room_name.is_empty() {
                         tr("Your private room")
                     } else if state.room_name == "Friends" {
@@ -332,11 +552,11 @@ impl PublisherUi {
                 }
                 if state.connection == "connecting" {
                     if ui.button(tr("Cancel join")).clicked() {
-                        self.following.manual_leave(&self.following_client.state());
+                        self.following.manual_leave(&self.automatic_voice_state());
                         self.controller.send(Command::Leave);
                     }
                 } else if connected && ui.button(tr("Leave room")).clicked() {
-                    self.following.manual_leave(&self.following_client.state());
+                    self.following.manual_leave(&self.automatic_voice_state());
                     self.controller.send(Command::Leave);
                     self.textures.clear();
                 }
@@ -344,6 +564,7 @@ impl PublisherUi {
                 egui::Popup::menu(&room_options)
                     .frame(skin::menu_frame())
                     .show(|ui| {
+                        self.private_actions(ui, state);
                         if ui.button(tr("User settings")).clicked() {
                             self.open_profile();
                             ui.close();
@@ -374,7 +595,7 @@ impl PublisherUi {
                     }
                         open_licenses(ui);
                     });
-                if connected && !self.invitation.is_empty() {
+                if connected && let Some(invitation) = state.profile_access.as_ref().and_then(|access| access.invitation_url.as_deref()) {
                     let copied = self
                         .copied_until
                         .is_some_and(|until| Instant::now() < until);
@@ -385,7 +606,7 @@ impl PublisherUi {
                     )
                     .clicked()
                     {
-                        ui.ctx().copy_text(self.invitation.clone());
+                        ui.ctx().copy_text(invitation.to_owned());
                         self.copied_until = Some(Instant::now() + Duration::from_secs(2));
                     }
                 }
@@ -488,6 +709,17 @@ impl PublisherUi {
             ));
             return;
         }
+        if let Some(saved) = &self.private.saved
+            && ui
+                .add_enabled(
+                    !state.busy,
+                    egui::Button::new(tr("Use saved private invitation")),
+                )
+                .clicked()
+        {
+            self.invitation = saved.clone();
+            self.show_invitation = false;
+        }
         let invitation_label = ui.horizontal(|ui| {
             let label = ui.label(tr("Invitation link"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -508,6 +740,15 @@ impl PublisherUi {
                     .hint_text(tr("Paste your private invitation link")),
             )
             .labelled_by(invitation_label.id);
+        let voice_code = self
+            .invitation
+            .trim()
+            .starts_with(crate::admission::voice_code::PREFIX);
+        if voice_code {
+            ui.small(tr(
+                "This code requires Discord sign-in and presence in this voice channel.",
+            ));
+        }
         let name_label = ui.label(tr("Your name"));
         let name = ui
             .add(
@@ -522,7 +763,7 @@ impl PublisherUi {
         let valid = ui.is_enabled()
             && !state.busy
             && !self.invitation.trim().is_empty()
-            && !self.name.trim().is_empty();
+            && (voice_code || !self.name.trim().is_empty());
         let enter = ui.input(|i| i.key_pressed(egui::Key::Enter))
             && (invitation.has_focus()
                 || invitation.lost_focus()
@@ -1025,7 +1266,11 @@ impl PublisherUi {
                 let label = skin::help_label(
                     ui,
                     tr("Encoder"),
-                    tr("AV1 → HEVC → H.264, using hardware support from everyone in the room. Interruptions do not change codecs."),
+                    tr(if state.protected {
+                        "Private streams use hardware HEVC or H.264. AV1 is available in transport-only rooms."
+                    } else {
+                        "AV1 → HEVC → H.264, using hardware support from everyone in the room. Interruptions do not change codecs."
+                    }),
                 );
                 egui::ComboBox::from_id_salt("hardware-encoder")
                     .width(ui.available_width())
@@ -1039,7 +1284,7 @@ impl PublisherUi {
                             .unwrap_or(tr("No supported encoder")),
                     )
                     .show_ui(ui, |ui| {
-                        for encoder in &state.encoders {
+                        for encoder in state.encoders.iter().filter(|encoder| crate::codec_policy::Codecs::for_room(state.protected).supports(encoder.codec)) {
                             ui.selectable_value(
                                 &mut self.encoder,
                                 encoder.factory.clone(),
@@ -2085,7 +2330,8 @@ impl PublisherUi {
                         self.invitation = invitation;
                         self.settings_error.clear();
                         let state = self.controller.snapshot();
-                        self.auto_join_ready = self.session_name.is_some()
+                        self.auto_join_ready = !self.private.requires_private()
+                            && self.session_name.is_some()
                             && !matches!(state.connection, "connected" | "reconnecting");
                         if self.auto_join_ready {
                             self.name = self.session_name.clone().unwrap();
@@ -2220,10 +2466,17 @@ impl PublisherUi {
                 .map(|s| s.id.clone())
                 .unwrap_or_default();
         }
-        if self.encoder.is_empty() {
+        let available_codecs = crate::codec_policy::Codecs::for_room(state.protected);
+        if self.encoder.is_empty()
+            || state
+                .encoders
+                .iter()
+                .any(|e| e.factory == self.encoder && !available_codecs.supports(e.codec))
+        {
             self.encoder = state
                 .encoders
-                .first()
+                .iter()
+                .find(|e| available_codecs.supports(e.codec))
                 .map(|e| e.factory.clone())
                 .unwrap_or_default();
         }
@@ -3161,6 +3414,42 @@ mod tests {
     }
 
     #[test]
+    fn protected_discord_organizer_retains_voice_control_and_browser_handoff_requires_confirmation()
+    {
+        let mut app = app();
+        let (controller, mut command) = Controller::recording_for_test(Snapshot::default());
+        app.controller = controller;
+        app.name = "Friend".into();
+        app.session_name = Some(app.name.clone());
+        app.account_state.server = "https://example.test".into();
+        let room = format!(
+            "https://example.test/r/{}#invite={}",
+            "r".repeat(22),
+            "s".repeat(43)
+        );
+        app.following.current = Some(crate::following::Location {
+            guild_id: "1".repeat(17),
+            guild_name: "".into(),
+            channel_id: "2".repeat(18),
+            channel_name: "".into(),
+            enabled: true,
+        });
+        let mut access = crate::admission::Admission::profile_test("https://example.test");
+        access.room_invitation_url = Some(room.clone().into());
+        app.protect_room(&access).unwrap();
+        assert!(app.private.requires_private());
+        assert!(app.private.saved.is_none());
+        assert!(
+            matches!(command(), Some(Command::Join { invitation, voice: Some(target), .. })
+            if crate::settings::valid_private(&invitation) && target.location.channel_id == "2".repeat(18))
+        );
+        finish_link(&mut app, &room);
+        assert!(app.browser_invitation_open);
+        assert!(!app.auto_join_ready);
+        assert!(command().is_none());
+    }
+
+    #[test]
     fn fresh_process_asks_for_name_and_idle_session_reuses_name_on_each_server() {
         let mut app = app();
         let (controller, mut command) = Controller::recording_for_test(Snapshot::default());
@@ -3527,67 +3816,7 @@ mod tests {
 
     fn app() -> PublisherUi {
         gstreamer::init().expect("Test media runtime");
-        PublisherUi {
-            following_client: crate::following::Client::disabled(),
-            following: Default::default(),
-            following_key: None,
-            next_follow_attempt: Instant::now(),
-            account_client: crate::account::Client::disabled(),
-            profile_connection_key: None,
-            account_state: Default::default(),
-            account_server: crate::account::DEFAULT_SERVER.into(),
-            profile_client: None,
-            profile_state: Default::default(),
-            profile_textures: HashMap::new(),
-            profile_started: Instant::now(),
-            profile_open: false,
-            profile_page: profile::SettingsPage::Profile,
-            profile_name: String::new(),
-            saved_guest_name: String::new(),
-            updates: crate::updates::Client::new(),
-            update_open: false,
-            update_announced_version: None,
-            update_restart_prompt: false,
-            activation: crate::activation::Inbox::new(),
-            prior_room: None,
-            // Paint fixtures exercise UI state without requesting OS capture permission.
-            controller: Controller::recording_for_test(Snapshot::default()).0,
-            invitation: String::new(),
-            name: String::new(),
-            session_name: None,
-            source_id: String::new(),
-            encoder: String::new(),
-            quality: Settings::default(),
-            custom_bitrate: false,
-            download_budget: None,
-            textures: HashMap::new(),
-            focused: None,
-            stream_menu: None,
-            fullscreen: None,
-            fullscreen_controls_until: Instant::now(),
-            settings_error: String::new(),
-            auto_join_ready: false,
-            copied_until: None,
-            remembered_volume: HashMap::new(),
-            advanced_open: false,
-            diagnostics_open: false,
-            show_invitation: false,
-            browser_invitation_open: false,
-            pending_link: None,
-            link_result: None,
-            browser_links_enabled: false,
-            self_preview_revision: None,
-            #[cfg(feature = "performance-experiments")]
-            planar: Default::default(),
-            picker: crate::source_picker::Preview::new(),
-            picker_hover: None,
-            picker_texture: None,
-            picker_failed: None,
-            picker_refreshed: None,
-            picker_keyboard: false,
-            closing_since: None,
-            force_close: false,
-        }
+        PublisherUi::for_fixture(Controller::recording_for_test(Snapshot::default()).0)
     }
 
     fn painted_text(shape: &egui::epaint::Shape, text: &mut String) {
@@ -3917,7 +4146,8 @@ mod tests {
     #[test]
     fn long_room_names_preserve_header_actions_at_the_minimum_window_width() {
         let mut app = app();
-        app.invitation="https://room.example/r/AAAAAAAAAAAAAAAAAAAAAA#invite=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".into();
+        let mut access = crate::admission::Admission::profile_test("https://room.example");
+        access.invitation_url = Some("synthetic".into());
         let (client, _actions) = crate::updates::Client::fixture(crate::update_protocol::Status {
             phase: crate::update_protocol::Phase::Ready,
             ..Default::default()
@@ -3927,6 +4157,7 @@ mod tests {
         configure_theme(&ctx);
         let state = Snapshot {
             connection: "connected",
+            profile_access: Some(access),
             room_name: "W".repeat(60),
             ..Default::default()
         };

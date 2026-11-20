@@ -3237,6 +3237,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rfd",
+ "ring",
  "serde",
  "serde_json",
  "sha2",
@@ -3247,6 +3248,7 @@ dependencies = [
  "windows",
  "winit",
  "winresource",
+ "zeroize",
 ]
 
 [[package]]

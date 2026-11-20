@@ -16,6 +16,7 @@
 ## Behavior
 
 - [Room access](access.md): invitations, sessions and revocation.
+- [Private invitations](native-e2ee.md): native stream encryption, Discord voice admission and key ownership.
 - [Audio](audio.md): Windows source selection, exclusions and lifecycle.
 - [Video quality](quality.md): codecs, bitrate controls and watching budgets.
 - [Bitrate guidance](bitrate-guidance.md): tuning and bandwidth planning.

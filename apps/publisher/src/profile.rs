@@ -328,6 +328,10 @@ pub struct Qualification {
 
 /// Explicit stdin-only acceptance, using real native admission, SFU and image decoding.
 pub async fn qualify(request: Qualification) -> Result<()> {
+    anyhow::ensure!(
+        crate::admission::valid_legacy_invitation(&request.invitation_url),
+        "Profile qualification requires a transport-only invitation."
+    );
     let admission = Admission::join(&request.invitation_url, &request.display_name).await?;
     let access = admission.media_access().await?;
     let (room, _events) = livekit::Room::connect(
@@ -394,7 +398,7 @@ mod tests {
     }
     #[test]
     fn identity_detach_retries_and_acknowledges_only_the_restored_profile() {
-        use std::io::{Read, Write};
+        use std::io::{BufRead, BufReader, Write};
         use std::net::TcpListener;
         use std::sync::atomic::AtomicUsize;
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -411,12 +415,28 @@ mod tests {
                     std::thread::sleep(Duration::from_millis(10));
                     continue;
                 };
+                // Only accept() polls for shutdown. Accepted sockets can inherit
+                // the listener's nonblocking mode on macOS.
+                socket.set_nonblocking(false).unwrap();
                 socket
                     .set_read_timeout(Some(Duration::from_secs(2)))
                     .unwrap();
-                let mut bytes = [0u8; 8192];
-                let size = socket.read(&mut bytes).unwrap();
-                let request = String::from_utf8_lossy(&bytes[..size]);
+                let mut request = String::new();
+                let mut reader = BufReader::new((&socket).take(8192));
+                match reader.read_line(&mut request) {
+                    Ok(0) => continue,
+                    Ok(_) if request.ends_with("\r\n") => {}
+                    Ok(_) => continue,
+                    Err(e)
+                        if matches!(
+                            e.kind(),
+                            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                        ) =>
+                    {
+                        continue;
+                    }
+                    Err(e) => panic!("Profile test request failed: {e}"),
+                }
                 let (status, body) = if request.starts_with("DELETE ") {
                     if calls.fetch_add(1, Ordering::AcqRel) == 0 {
                         ("503 Service Unavailable", "{}".into())

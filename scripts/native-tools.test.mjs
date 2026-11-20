@@ -79,6 +79,11 @@ const decoderHeaders = [
   "bounded_readback.h",
   "native_output_guard.h",
   "native_output_mixer.h",
+  "protected_receive_guard.h",
+  "protected_receive_call.h",
+  "protected_frame_bounds.h",
+  "protected_frame_payload.h",
+  "sender_nonce.h",
 ];
 
 for (const state of ["archive", "source"]) {
@@ -128,7 +133,12 @@ for (const state of ["archive", "source"]) {
     }
   });
 }
-for (const tampered of decoderHeaders) {
+const engineSources = [
+  "webrtc-a545de4/frame_crypto_transformer.cpp",
+  "webrtc-a545de4/frame_crypto_transformer.h",
+  "guarded_webrtc_archive.rs",
+];
+for (const tampered of [...decoderHeaders, ...engineSources]) {
   test(`Native decoder setup rejects changed ${tampered} before SDK reuse`, () => {
     const root = mkdtempSync(join(tmpdir(), "PodeTelar native decoder "));
     try {
@@ -160,6 +170,18 @@ for (const tampered of decoderHeaders) {
           bytes + (name === tampered ? "\n// changed\n" : ""),
         );
       }
+      for (const name of engineSources) {
+        const target = join(root, "apps/publisher/sdk", name);
+        mkdirSync(dirname(target), { recursive: true });
+        const bytes = readFileSync(
+          new URL(`../apps/publisher/sdk/${name}`, import.meta.url),
+          "utf8",
+        );
+        writeFileSync(
+          target,
+          bytes + (name === tampered ? "\n// changed\n" : ""),
+        );
+      }
       const result = spawnSync(
         process.execPath,
         [join(root, "scripts/setup-native-decoder.mjs")],
@@ -169,17 +191,21 @@ for (const tampered of decoderHeaders) {
       assert.notEqual(result.status, 0);
       assert.match(
         result.stderr,
-        tampered === "podetelar_decoder.h"
-          ? /Decoder adapter differs from its pin/
-          : tampered === "podetelar_macos_decoder.h"
-            ? /macOS decoder adapter differs from its pin/
-            : tampered === "deferred_i420.h"
-              ? /Deferred I420 buffer differs from its pin/
-              : tampered === "bounded_readback.h"
-                ? /Bounded readback differs from its pin/
-                : tampered === "native_output_guard.h"
-                  ? /Native output guard differs from its pin/
-                  : /Native output mixer differs from its pin/,
+        engineSources.includes(tampered)
+          ? /Pinned WebRTC frame engine source differs/
+          : tampered === "podetelar_decoder.h"
+            ? /Decoder adapter differs from its pin/
+            : tampered === "podetelar_macos_decoder.h"
+              ? /macOS decoder adapter differs from its pin/
+              : tampered === "deferred_i420.h"
+                ? /Deferred I420 buffer differs from its pin/
+                : tampered === "bounded_readback.h"
+                  ? /Bounded readback differs from its pin/
+                  : tampered === "native_output_guard.h"
+                    ? /Native output guard differs from its pin/
+                    : tampered === "native_output_mixer.h"
+                      ? /Native output mixer differs from its pin/
+                      : /Native protected receive header differs from its pin/,
       );
     } finally {
       removeFixture(root);

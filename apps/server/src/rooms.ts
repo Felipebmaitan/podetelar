@@ -319,6 +319,10 @@ export class Rooms {
     const handoff = this.channelHandoff(created.room);
     return handoff ? { room: created.room, invitation: handoff } : null;
   }
+  channelGuestRoomInvitation(roomId: string) {
+    const room = this.find(roomId);
+    return room?.invitation_enabled ? this.channelHandoff(room) : null;
+  }
   private channelHandoff(room: RoomRow) {
     if (!this.invitationKey) return null;
     const channel = this.db

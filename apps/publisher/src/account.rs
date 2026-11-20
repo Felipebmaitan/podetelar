@@ -14,6 +14,14 @@ use std::{
 };
 pub const DEFAULT_SERVER: &str = "https://stream.maitan.me";
 #[derive(Clone)]
+#[cfg_attr(
+    any(test, debug_assertions, feature = "media-qualification"),
+    derive(serde::Deserialize)
+)]
+#[cfg_attr(
+    any(test, debug_assertions, feature = "media-qualification"),
+    serde(deny_unknown_fields)
+)]
 pub struct Credential {
     pub server: String,
     token: String,
@@ -183,7 +191,7 @@ impl Client {
             stop,
         }
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "ui-review", feature = "performance-experiments"))]
     pub fn disabled() -> Self {
         Self {
             state: Arc::new(Mutex::new(State::default())),

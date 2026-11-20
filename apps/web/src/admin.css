@@ -1291,10 +1291,18 @@
   .admin-authenticated .admin-nav {
     position: static;
     width: auto;
-    flex-direction: row;
-    flex-wrap: wrap;
-    padding: 12px 16px 0;
-    gap: 6px;
+    display: grid;
+    grid-template-columns: 1fr 1fr auto 1fr;
+    padding: 8px 12px 0;
+    gap: 2px;
+  }
+  .admin-authenticated .admin-nav button {
+    justify-content: center;
+    min-height: 44px;
+    padding: 6px 4px;
+  }
+  .admin-authenticated .admin-nav button svg {
+    display: none;
   }
   .admin-authenticated .admin-main {
     padding: 20px 16px 28px;

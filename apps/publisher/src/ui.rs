@@ -1841,6 +1841,10 @@ impl PublisherUi {
             if tile.watching && response.double_clicked() {
                 self.set_fullscreen(ui.ctx(), Some(tile.id.clone()));
             }
+            if !tile.watching {
+                ui.painter()
+                    .rect_filled(rect, 12.0, egui::Color32::from_black_alpha(68));
+            }
             let overlay = egui::Color32::from_rgba_unmultiplied(14, 14, 16, 224);
             let name_width = ui
                 .painter()
@@ -1886,8 +1890,6 @@ impl PublisherUi {
                     });
                 });
             if !tile.watching {
-                ui.painter()
-                    .rect_filled(rect, 12.0, egui::Color32::from_black_alpha(68));
                 let target = egui::Rect::from_center_size(rect.center(), egui::vec2(132.0, 40.0));
                 if ui.put(target, primary(tr("Watch"), 132.0)).clicked() {
                     self.controller.send(Command::Watch {

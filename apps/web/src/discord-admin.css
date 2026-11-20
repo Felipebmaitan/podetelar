@@ -419,8 +419,15 @@
 }
 
 @media (max-width: 480px) {
+  .discord-nav {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    margin-bottom: 16px;
+  }
   .discord-admin .discord-nav button {
-    padding-inline: 9px;
+    padding-inline: 2px;
+    min-height: 44px;
     font-size: 0.82rem;
   }
   .discord-record-body,

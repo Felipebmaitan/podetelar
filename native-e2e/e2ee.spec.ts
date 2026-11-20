@@ -73,11 +73,11 @@ function noContent(result: Watched) {
   ).toBe(true);
 }
 
-test("protected AV1 to H.264 compatibility fallback retains encryption and watch intent", async ({
+test("only private invitation holders can request protected codec fallback", async ({
   request,
   baseURL,
 }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(100_000);
   const created = await createTestRoom(
     request,
     baseURL!,
@@ -85,36 +85,65 @@ test("protected AV1 to H.264 compatibility fallback retains encryption and watch
   );
   const room = await created.json();
   const invitationUrl = await protect(room.invitationUrl);
+  const wrongRoot = await protect(room.invitationUrl);
   const sender = nativeRequest("--publish-fixture", {
     invitationUrl,
     displayName: "Protected publisher",
     codec: "av1",
-    seconds: 23,
+    seconds: 42,
     quality,
   });
-  await sender.reported;
-  const receiver = nativeRequest("--watch-fixture", {
-    invitationUrl,
-    seconds: 19,
-    h264Only: true,
-  });
+  const children = [sender.child];
   try {
-    const [sent, watched] = await Promise.all([
+    await sender.reported;
+    const observer = nativeRequest("--watch-fixture", {
+      invitationUrl,
+      seconds: 36,
+      continuousWatch: true,
+    });
+    children.push(observer.child);
+    const unrelated = nativeRequest("--watch-fixture", {
+      invitationUrl: wrongRoot,
+      seconds: 12,
+      h264Only: true,
+      continuousWatch: true,
+    });
+    children.push(unrelated.child);
+    noContent((await unrelated.result) as Watched);
+    const receiver = nativeRequest("--watch-fixture", {
+      invitationUrl,
+      seconds: 18,
+      h264Only: true,
+      continuousWatch: true,
+    });
+    children.push(receiver.child);
+    const [sent, watched, compatible] = await Promise.all([
       sender.result as Promise<Sent>,
+      observer.result as Promise<Watched>,
       receiver.result as Promise<Watched>,
     ]);
+    const sawCodec = (
+      result: Watched,
+      codec: string,
+      start: number,
+      end: number,
+    ) => {
+      const frames = result.samples
+        .filter((s) => s.second >= start && s.second <= end)
+        .flatMap((s) =>
+          s.streams
+            .filter((t) => t.watching && t.codec.toLowerCase() === codec)
+            .map((t) => t.frames),
+        );
+      return frames.length >= 2 && frames.at(-1)! - frames[0]! > 5;
+    };
+    expect(sawCodec(watched, "video/av1", 3, 11)).toBe(true);
+    expect(sawCodec(watched, "video/h264", 14, 35)).toBe(true);
+    expect(sawCodec(compatible, "video/h264", 3, 17)).toBe(true);
     expect(sent.codec).toBe("h264");
     expect(sent.finalSid).not.toBe(sent.initialSid);
-    expect(
-      watched.samples.some((s) =>
-        s.streams.some(
-          (t) => t.codec.toLowerCase() === "video/h264" && t.frames > 5,
-        ),
-      ),
-    ).toBe(true);
   } finally {
-    sender.child.kill();
-    receiver.child.kill();
+    for (const child of children) child.kill();
   }
 });
 

@@ -49,12 +49,8 @@ impl Codecs {
         }
         Some(result)
     }
-    pub fn common(members: impl IntoIterator<Item = Option<Self>>) -> Option<Self> {
-        members
-            .into_iter()
-            .try_fold(Self::new(true, true, true), |shared, member| {
-                member.map(|supported| shared.intersect(supported))
-            })
+    pub fn common(previous: Option<Self>, member: Option<Self>) -> Option<Self> {
+        Some(previous?.intersect(member?))
     }
     pub fn select(
         self,
@@ -155,9 +151,9 @@ mod tests {
         for malformed in ["", "future,AV1,h264", "av1,av1", "av1,"] {
             assert_eq!(Codecs::parse(malformed), None);
         }
-        assert_eq!(Codecs::common([Some(all), None]), None);
+        assert_eq!(Codecs::common(Some(all), None), None);
         assert_eq!(
-            Codecs::common([Some(all), Some(Codecs::default())]),
+            Codecs::common(Some(all), Some(Codecs::default())),
             Some(Codecs::default())
         );
     }

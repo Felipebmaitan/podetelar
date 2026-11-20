@@ -467,6 +467,11 @@ impl Session {
         Ok(())
     }
 
+    pub(crate) fn descriptor(&self) -> Result<String> {
+        serde_json::to_string(&self.local)
+            .map_err(|_| anyhow::anyhow!("Could not announce protected sender."))
+    }
+
     pub async fn announce(&self, room: &Room) -> Result<()> {
         // A malicious SFU must not nominate an unencrypted server-injected-frame
         // sentinel that bypasses the receiver's cryptor.
@@ -477,8 +482,7 @@ impl Session {
                 && room.local_participant().identity().as_str() == self.local.identity,
             "Protected room identity mismatch."
         );
-        let descriptor = serde_json::to_string(&self.local)
-            .map_err(|_| anyhow::anyhow!("Could not announce protected sender."))?;
+        let descriptor = self.descriptor()?;
         tokio::time::timeout(
             std::time::Duration::from_secs(3),
             room.local_participant()

@@ -846,10 +846,11 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
         let audio = if request.source_audio { audio::for_source(&source)? } else {request.audio};
         let config=publisher::StreamConfig { source,encoder:encoder.clone(),quality:request.quality,audio,exclusions:request.exclusions };
         ensure!(request.upload_limit_bps.is_none_or(|v|(64_000..=100_000_000).contains(&v)),"Invalid fixture upload ceiling.");
+        let votes = playback::RoomVotes::read(&room, &admission);
         let mut active = if request.upload_limit_bps.is_some() {
-            publisher::Stream::start_with_upload_cap(&room, config.clone(), stop, request.upload_limit_bps).await?
+            publisher::Stream::start_with_upload_cap(&room, config.clone(), stop, request.upload_limit_bps, votes).await?
         } else {
-            publisher::Stream::start(&room, config.clone(), stop).await?
+            publisher::Stream::start(&room, config.clone(), stop, votes).await?
         };
         let initial_sid=active.sid();
         if request.exercise_encryption_disable {
@@ -878,7 +879,8 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             next.mode()?;
             ensure!(!active.apply_live(&next)?,"Source/codec/mode fixture unexpectedly avoided a restart.");
             active.stop(&room).await?;
-            active=publisher::Stream::start_with_upload_cap(&room,next,cancellation.register(),request.upload_limit_bps).await?;
+            let votes = playback::RoomVotes::read(&room, &admission);
+            active=publisher::Stream::start_with_upload_cap(&room,next,cancellation.register(),request.upload_limit_bps,votes).await?;
             active.start_previews(admission.clone());
 
             tokio::time::sleep(Duration::from_secs(request.seconds-after)).await;
@@ -917,7 +919,8 @@ async fn serve_fixture(
     let started = std::time::Instant::now();
     let mut next_sample = 0;
     while started.elapsed().as_secs() < seconds {
-        active.constrain_watchers(room);
+        let votes = playback::RoomVotes::read(room, admission);
+        active.constrain_watchers(votes);
         let second = started.elapsed().as_secs();
         if sample_rates && second >= next_sample {
             let metrics = active.metrics.lock().map(|m| m.clone()).unwrap_or_default();
@@ -928,7 +931,7 @@ async fn serve_fixture(
                 .unwrap_or_default();
             println!(
                 "{}",
-                serde_json::json!({"rateSample":true,"second":second,"encoderBps":metrics.encoder_bitrate,"encodedBps":metrics.encoded_bps,"deliveryBps":delivered.bitrate_bps,"sentFps":delivered.sent_fps,"fps":metrics.fps,"watcherCap":playback::requested_cap(room)})
+                serde_json::json!({"rateSample":true,"second":second,"encoderBps":metrics.encoder_bitrate,"encodedBps":metrics.encoded_bps,"deliveryBps":delivered.bitrate_bps,"sentFps":delivered.sent_fps,"fps":metrics.fps,"watcherCap":votes.watcher_cap})
             );
             next_sample = second + 1;
         }
@@ -936,7 +939,7 @@ async fn serve_fixture(
         if active.cancelled() {
             break;
         }
-        if let Some(config) = active.compatible_config(room)? {
+        if let Some(config) = active.compatible_config(votes)? {
             active = active
                 .fallback(room, admission.clone(), stop, config)
                 .await?;

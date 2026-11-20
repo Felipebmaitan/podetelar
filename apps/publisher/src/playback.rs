@@ -696,16 +696,15 @@ impl Playback {
                 };
                 // Signaling metadata is mutable. Require the actual receiver
                 // transform before starting or retaining any protected pump.
-                if admission.protection.is_some() {
-                    if !room.e2ee_manager().enabled()
+                if admission.protection.is_some()
+                    && (!room.e2ee_manager().enabled()
                         || !room
                             .e2ee_manager()
-                            .frame_cryptor_enabled(participant.identity(), publication.sid())
-                    {
-                        apply_subscription(publication, false);
-                        self.pumps.remove(&sid);
-                        continue;
-                    }
+                            .frame_cryptor_enabled(participant.identity(), publication.sid()))
+                {
+                    apply_subscription(publication, false);
+                    self.pumps.remove(&sid);
+                    continue;
                 }
                 pumps.insert(sid.clone());
                 if self
@@ -1050,15 +1049,63 @@ pub(crate) fn audio_buffer(samples: Vec<i16>) -> gst::Buffer {
     )
 }
 
-/// Every connected member constrains hardware compatibility, including previews.
-/// None means pending/older capabilities, never an inferred H.264-only decoder.
-pub fn room_codecs(room: &Room) -> Option<Codecs> {
-    Codecs::common(room.remote_participants().values().map(|participant| {
-        participant
-            .attributes()
-            .get(codec_policy::HARDWARE_CAPABILITIES)
-            .and_then(|value| Codecs::parse(value))
-    }))
+/// A snapshot of the remote hardware and watching allowances for one publisher.
+#[derive(Clone, Copy)]
+pub struct RoomVotes {
+    pub codecs: Option<Codecs>,
+    pub watcher_cap: Option<u64>,
+}
+impl RoomVotes {
+    pub fn read(room: &Room, admission: &crate::admission::Admission) -> Self {
+        let members = room.remote_participants();
+        Self::collect(
+            room.local_participant().identity().as_str(),
+            admission.protection.as_deref(),
+            members
+                .values()
+                .map(|member| (member.identity(), member.attributes())),
+        )
+    }
+
+    fn collect(
+        publisher: &str,
+        protection: Option<&crate::protection::Session>,
+        members: impl Iterator<Item = (ParticipantIdentity, HashMap<String, String>)>,
+    ) -> Self {
+        let watch = format!("{WATCH_PREFIX}{publisher}");
+        let limit = format!("{LIMIT_PREFIX}{publisher}");
+        let mut votes = Self {
+            codecs: Some(Codecs::new(true, true, true)),
+            watcher_cap: None,
+        };
+        for (identity, attributes) in members {
+            // Discord membership can admit a participant without the private
+            // invitation. Only eligible viewers should constrain private media.
+            if protection.is_some_and(|p| {
+                !p.authorize(
+                    identity.as_str(),
+                    attributes.get(crate::protection::ATTRIBUTE),
+                )
+            }) {
+                continue;
+            }
+            let codecs = attributes
+                .get(codec_policy::HARDWARE_CAPABILITIES)
+                .and_then(|value| Codecs::parse(value));
+            votes.codecs = Codecs::common(votes.codecs, codecs);
+            if attributes
+                .get(&watch)
+                .is_some_and(|v| matches!(v.as_str(), "hevc" | "h264" | "av1"))
+                && let Some(cap) = attributes
+                    .get(&limit)
+                    .and_then(|v| v.parse().ok())
+                    .filter(|bps| (64_000..=100_000_000).contains(bps))
+            {
+                votes.watcher_cap = Some(votes.watcher_cap.map_or(cap, |prior| prior.min(cap)));
+            }
+        }
+        votes
+    }
 }
 
 /// A bounded, quiet local fixture exercises exclusion of our native playback process.
@@ -1090,34 +1137,85 @@ pub fn qualification_tone() -> Result<AudioPipeline> {
     Ok(pipeline)
 }
 
-/// A limit applies only while the same participant also requests this publisher.
-/// The minimum watcher allowance is shared by the single encoder, not per viewer.
-pub fn requested_cap(room: &Room) -> Option<u64> {
-    let identity = room.local_participant().identity();
-    let watch = format!("{WATCH_PREFIX}{identity}");
-    let limit = format!("{LIMIT_PREFIX}{identity}");
-    room.remote_participants()
-        .values()
-        .filter_map(|p| {
-            let attributes = p.attributes();
-            if !attributes
-                .get(&watch)
-                .is_some_and(|v| matches!(v.as_str(), "hevc" | "h264" | "av1"))
-            {
-                return None;
-            }
-            attributes
-                .get(&limit)?
-                .parse::<u64>()
-                .ok()
-                .filter(|bps| (64_000..=100_000_000).contains(bps))
-        })
-        .min()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn protected_quality_counts_only_authenticated_room_descriptors() {
+        use crate::protection::{self, Session};
+        let room = format!(
+            "https://example.test/r/{}#invite={}",
+            "r".repeat(22),
+            "s".repeat(43)
+        );
+        let private = protection::protect_invitation(&room).unwrap();
+        let unrelated = protection::protect_invitation(&room).unwrap();
+        let publisher = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        let trusted = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+        let stranger = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+        let session = |invite, id: &str| {
+            Session::new(
+                protection::unwrap_invitation(invite).unwrap().1.unwrap(),
+                id.into(),
+            )
+            .unwrap()
+        };
+        let owner = session(&private, publisher);
+        let guest = session(&private, trusted);
+        let wrong = session(&unrelated, stranger);
+        let preferences = |descriptor: Option<String>, codecs: Option<&str>, bps: u64| {
+            let mut attrs = HashMap::from([
+                (format!("{WATCH_PREFIX}{publisher}"), "h264".to_owned()),
+                (format!("{LIMIT_PREFIX}{publisher}"), bps.to_string()),
+            ]);
+            if let Some(value) = descriptor {
+                attrs.insert(protection::ATTRIBUTE.into(), value);
+            }
+            if let Some(value) = codecs {
+                attrs.insert(codec_policy::HARDWARE_CAPABILITIES.into(), value.into());
+            }
+            attrs
+        };
+        let collect =
+            |protected: bool, members: Vec<(ParticipantIdentity, HashMap<String, String>)>| {
+                RoomVotes::collect(publisher, protected.then_some(&owner), members.into_iter())
+            };
+        let unprotected_guest = (stranger.into(), preferences(None, None, 64_000));
+        let eligible = (
+            trusted.into(),
+            preferences(
+                Some(guest.descriptor().unwrap()),
+                Some("hevc,h264"),
+                8_000_000,
+            ),
+        );
+        let invalid = (
+            stranger.into(),
+            preferences(Some(wrong.descriptor().unwrap()), Some("h264"), 128_000),
+        );
+        let alone = collect(true, vec![unprotected_guest.clone(), invalid.clone()]);
+        assert_eq!(alone.codecs, Some(Codecs::new(true, true, true)));
+        assert_eq!(alone.watcher_cap, None);
+        let mixed = collect(
+            true,
+            vec![eligible.clone(), invalid.clone(), unprotected_guest.clone()],
+        );
+        assert_eq!(mixed.codecs, Some(Codecs::new(false, true, true)));
+        assert_eq!(mixed.watcher_cap, Some(8_000_000));
+        let legacy = collect(false, vec![eligible, invalid, unprotected_guest]);
+        assert_eq!(legacy.codecs, None);
+        assert_eq!(legacy.watcher_cap, Some(64_000));
+        let pending = collect(
+            true,
+            vec![(
+                trusted.into(),
+                preferences(Some(guest.descriptor().unwrap()), None, 2_000_000),
+            )],
+        );
+        assert_eq!(pending.codecs, None);
+        assert_eq!(pending.watcher_cap, Some(2_000_000));
+    }
 
     #[test]
     fn receiver_never_feeds_unexpected_ciphertext_or_plaintext_to_decoders() {

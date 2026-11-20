@@ -2,6 +2,7 @@ use crate::{
     admission::Admission,
     audio, connection, delivery,
     encoding::{Codec, Encoder, Encoding, Metrics, Mode},
+    playback::RoomVotes,
     preview::{self, Latest},
     quality::{MAX_BITRATE, RateControl, Settings},
     sources::{self, Source, SourceInfo},
@@ -465,8 +466,13 @@ pub struct StreamConfig {
     pub exclusions: Vec<String>,
 }
 impl StreamConfig {
-    fn negotiate(&mut self, room: &Room, preferred: &Encoder, available: &[Encoder]) -> Result<()> {
-        let shared = crate::playback::room_codecs(room)
+    fn negotiate(
+        &mut self,
+        votes: RoomVotes,
+        preferred: &Encoder,
+        available: &[Encoder],
+    ) -> Result<()> {
+        let shared = votes.codecs
             .context("Waiting for every room member's hardware decoder capabilities. Update older apps and retry.")?;
         self.negotiate_codecs(shared, preferred, available)
     }
@@ -588,9 +594,8 @@ impl Stream {
         self.stop.flag.load(Ordering::Acquire)
     }
 
-    pub fn constrain_watchers(&self, room: &Room) {
-        self.rate
-            .set_viewer_cap(crate::playback::requested_cap(room));
+    pub fn constrain_watchers(&self, votes: RoomVotes) {
+        self.rate.set_viewer_cap(votes.watcher_cap);
     }
 
     pub fn encoder(&self) -> &Encoder {
@@ -599,20 +604,32 @@ impl Stream {
     pub fn preview_captures(&self) -> u64 {
         self.preview_capture.gate.captures()
     }
-    pub async fn start(room: &Room, config: StreamConfig, stop: Arc<AtomicBool>) -> Result<Self> {
-        Self::start_with_upload_cap(room, config, stop, None).await
+    pub async fn start(
+        room: &Room,
+        config: StreamConfig,
+        stop: Arc<AtomicBool>,
+        votes: RoomVotes,
+    ) -> Result<Self> {
+        Self::start_with_upload_cap(room, config, stop, None, votes).await
     }
     pub async fn start_with_upload_cap(
         room: &Room,
         mut config: StreamConfig,
         stop: Arc<AtomicBool>,
         upload_cap: Option<u64>,
+        votes: RoomVotes,
     ) -> Result<Self> {
         let preferred = config.encoder.clone();
-        config.negotiate(room, &preferred, &crate::encoding::encoders())?;
-        let mut active =
-            Self::start_with_preview(room, config, stop, upload_cap, preview::Capture::new())
-                .await?;
+        config.negotiate(votes, &preferred, &crate::encoding::encoders())?;
+        let mut active = Self::start_with_preview(
+            room,
+            config,
+            stop,
+            upload_cap,
+            votes.watcher_cap,
+            preview::Capture::new(),
+        )
+        .await?;
         active.preferred_encoder = preferred;
         Ok(active)
     }
@@ -621,6 +638,7 @@ impl Stream {
         config: StreamConfig,
         stop: Arc<AtomicBool>,
         upload_cap: Option<u64>,
+        watcher_cap: Option<u64>,
         preview_capture: preview::Capture,
     ) -> Result<Self> {
         let mut lease = StopOnDrop::new(stop.clone());
@@ -630,7 +648,7 @@ impl Stream {
         let cancelled = stop.clone();
         let rate = RateControl::new(mode.bitrate);
         rate.set_upload_cap(upload_cap);
-        rate.set_viewer_cap(crate::playback::requested_cap(room));
+        rate.set_viewer_cap(watcher_cap);
         let encoding_rate = rate.clone();
         let capture = preview_capture.clone();
         let encoding = tokio::task::spawn_blocking(move || {
@@ -805,8 +823,8 @@ impl Stream {
         Ok(active)
     }
 
-    pub fn compatible_config(&self, room: &Room) -> Result<Option<StreamConfig>> {
-        let Some(shared) = crate::playback::room_codecs(room) else {
+    pub fn compatible_config(&self, votes: RoomVotes) -> Result<Option<StreamConfig>> {
+        let Some(shared) = votes.codecs else {
             // A missing announcement cannot authorize a codec change.
             return Ok(None);
         };
@@ -841,8 +859,15 @@ impl Stream {
         if let Ok(mut latest) = preview_capture.latest.lock() {
             *latest = cached_preview;
         }
-        let mut replacement =
-            Self::start_with_preview(room, config, stop, Some(upload_cap), preview_capture).await?;
+        let mut replacement = Self::start_with_preview(
+            room,
+            config,
+            stop,
+            Some(upload_cap),
+            RoomVotes::read(room, &admission).watcher_cap,
+            preview_capture,
+        )
+        .await?;
         replacement.preferred_encoder = preferred_encoder;
         replacement.preview_uploads = uploads;
         replacement.start_previews(admission);
@@ -1266,7 +1291,10 @@ async fn worker(
                     let replacement_stop = cancellation.register();
                     if joined.room.connection_state() == ConnectionState::Connected
                         && stream.as_ref().is_some_and(|s| !s.cancelled()) {
-                        match stream.as_ref().unwrap().compatible_config(&joined.room) {
+                        let votes = RoomVotes::read(&joined.room, &joined.admission);
+                        let active = stream.as_ref().unwrap();
+                        active.constrain_watchers(votes);
+                        match active.compatible_config(votes) {
                             Ok(Some(config)) => {
                                 let active = stream.take().unwrap();
                                 match active.fallback(&joined.room, joined.admission.clone(), replacement_stop, config).await {
@@ -1285,7 +1313,6 @@ async fn worker(
                 if let Some(active) = &stream {
                     active.rate.set_upload_cap(capacity.upload_video_cap());
                     update(&snapshot, |state| state.self_preview=active.previews.clone());
-                    active.constrain_watchers(&session.as_ref().unwrap().room);
                     if let Ok(metrics) = active.metrics.lock() { update(&snapshot, |state| state.metrics = metrics.clone()); }
                     if let Ok(metrics) = active.audio_metrics.lock() { update(&snapshot, |state| state.audio = metrics.clone()); }
                     if let Ok(metrics) = active.delivery.lock() { update(&snapshot, |state| { state.delivery = metrics.clone(); state.mode=Some(active.mode); }); }
@@ -1424,11 +1451,8 @@ async fn worker(
                         audio: audio.clone(),
                         exclusions,
                     };
-                    config.negotiate(
-                        &joined.room,
-                        &preferred_encoder,
-                        &crate::encoding::encoders(),
-                    )?;
+                    let votes = RoomVotes::read(&joined.room, &joined.admission);
+                    config.negotiate(votes, &preferred_encoder, &crate::encoding::encoders())?;
                     if let Some(active) = stream.as_mut()
                         && active.apply_live(&config)?
                     {
@@ -1451,6 +1475,7 @@ async fn worker(
                         config,
                         stop.clone(),
                         capacity.upload_video_cap(),
+                        votes,
                     )
                     .await?;
                     active.preferred_encoder = preferred_encoder;

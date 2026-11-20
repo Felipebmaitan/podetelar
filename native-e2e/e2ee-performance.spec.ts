@@ -38,14 +38,16 @@ type Received = {
     measurementTimeMs: number;
     receivedBytes: number;
     streams: { frames: number; watching: boolean }[];
+    mediaTiming: { kind: string; decodedFrames: number }[];
   }[];
 };
 test("measure invitation encryption on/off targeting 35 Mbps with one and four watchers", async ({
   request,
   baseURL,
 }, testInfo) => {
+  const pilot = process.env.PODETELAR_MEASURE_E2EE === "pilot";
   test.skip(
-    process.env.PODETELAR_MEASURE_E2EE !== "1",
+    !pilot && process.env.PODETELAR_MEASURE_E2EE !== "1",
     "Explicit opt-in hardware measurement.",
   );
   test.setTimeout(900_000);
@@ -54,11 +56,12 @@ test("measure invitation encryption on/off targeting 35 Mbps with one and four w
     cpu: cpus()[0]?.model,
     logicalProcessors: cpus().length,
     requestedBps: 35_000_000,
+    pilot,
     geometry: "1920x1080@60",
     source: "D3D11 snow fixture",
     build: process.env.PODETELAR_MEASUREMENT_BUILD ?? "unspecified",
     limitations:
-      "Two alternating-order rounds; separate native watcher processes, not a real game or four streams decoded in one app. The synthetic watcher requests decoded pictures without a UI renderer. A qualifying window requires measured sender and every receiver within 10% of target. No latency measurement.",
+      "The full run uses two alternating-order rounds; the optional pilot uses one publisher and one watcher for a single pair. Separate native watcher processes, not a real game or four streams decoded in one app. The synthetic watcher requests decoded pictures without a UI renderer. A qualifying window requires measured sender and every receiver within 10% of target. No latency measurement.",
     samples,
   };
   const quality = {
@@ -67,8 +70,8 @@ test("measure invitation encryption on/off targeting 35 Mbps with one and four w
     profile: "motion",
     bitrate: { mode: "manual", bps: 35_000_000 },
   };
-  for (let round = 0; round < 2; round++) {
-    for (const watchers of [1, 4]) {
+  for (let round = 0; round < (pilot ? 1 : 2); round++) {
+    for (const watchers of pilot ? [1] : [1, 4]) {
       for (const encrypted of round === 0 ? [false, true] : [true, false]) {
         const created = await createTestRoom(
           request,
@@ -208,10 +211,15 @@ test("measure invitation encryption on/off targeting 35 Mbps with one and four w
             expect(last.streams[0]!.frames).toBeGreaterThan(
               first.streams[0]!.frames,
             );
+            const rtcDecoded = (sample: (typeof inside)[number]) =>
+              sample.mediaTiming
+                .filter((t) => t.kind === "video")
+                .reduce((total, t) => total + t.decodedFrames, 0);
             return {
               bps: ((last.receivedBytes - first.receivedBytes) * 8) / seconds,
               seconds,
-              decodedFrames: last.streams[0]!.frames - first.streams[0]!.frames,
+              rtcDecodedFps: (rtcDecoded(last) - rtcDecoded(first)) / seconds,
+              pictureFrames: last.streams[0]!.frames - first.streams[0]!.frames,
             };
           });
           const sentBps = mean(window.map((s) => s.deliveryBps));
@@ -234,6 +242,12 @@ test("measure invitation encryption on/off targeting 35 Mbps with one and four w
             measurementWindow: {
               samples: window.length,
               deliveryBps: sentBps,
+              slowestSenderSampleBps: Math.min(
+                ...window.map((s) => s.deliveryBps),
+              ),
+              fastestSenderSampleBps: Math.max(
+                ...window.map((s) => s.deliveryBps),
+              ),
               received,
               encodedBps: mean(window.map((s) => s.encodedBps)),
               sentFps: mean(window.map((s) => s.sentFps)),

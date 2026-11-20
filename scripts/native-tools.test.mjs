@@ -82,6 +82,8 @@ const decoderHeaders = [
   "protected_receive_guard.h",
   "protected_receive_call.h",
   "protected_frame_bounds.h",
+  "protected_frame_payload.h",
+  "sender_nonce.h",
 ];
 
 for (const state of ["archive", "source"]) {

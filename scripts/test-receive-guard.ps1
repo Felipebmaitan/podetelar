@@ -19,8 +19,12 @@ $bin = "$($msvc.FullName)/bin/Hostx64/x64"
 $env:PATH = "$bin;$env:PATH"
 $output = Join-Path $repo '.local/receive-guard-test'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
-& "$bin/cl.exe" /nologo /O2 /EHsc /MT /std:c++20 /DNDEBUG /DNOMINMAX /DWEBRTC_WIN "/I$repo/apps/publisher/decoder" "/I$webrtc/include" "/I$webrtc/include/third_party/abseil-cpp" "/Fo$output/test.obj" "/Fe$output/test.exe" "$repo/apps/publisher/sdk/receive-guard-test.cpp" /link "$webrtc/lib/webrtc.lib" user32.lib winmm.lib ws2_32.lib iphlpapi.lib secur32.lib crypt32.lib ole32.lib strmiids.lib dmoguids.lib msdmo.lib wmcodecdspuuid.lib
-if ($LASTEXITCODE) { throw 'Could not build the native receive guard regression.' }
-& "$output/test.exe"
-if ($LASTEXITCODE) { throw 'Native receive guard regression failed.' }
-Write-Output 'Protected audio/video receive configs drop until an enforcing transform is registered.'
+$include = @("/I$repo/apps/publisher/decoder", "/I$webrtc/include", "/I$webrtc/include/third_party/abseil-cpp", "/I$webrtc/include/third_party/boringssl/src/include")
+$libraries = @("$webrtc/lib/webrtc.lib", 'user32.lib', 'winmm.lib', 'ws2_32.lib', 'iphlpapi.lib', 'secur32.lib', 'crypt32.lib', 'ole32.lib', 'strmiids.lib', 'dmoguids.lib', 'msdmo.lib', 'wmcodecdspuuid.lib')
+foreach ($test in @('receive-guard-test', 'protected-frame-payload-test', 'sender-nonce-test')) {
+    & "$bin/cl.exe" /nologo /O2 /EHsc /MT /std:c++20 /DNDEBUG /DNOMINMAX /DWEBRTC_WIN /DRTC_ENABLE_H265 @include "/Fo$output/$test.obj" "/Fe$output/$test.exe" "$repo/apps/publisher/sdk/$test.cpp" /link @libraries
+    if ($LASTEXITCODE) { throw "Could not build $test." }
+    & "$output/$test.exe"
+    if ($LASTEXITCODE) { throw "$test failed." }
+    Write-Output "$test passed."
+}

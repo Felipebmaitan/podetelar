@@ -82,7 +82,7 @@ inline bool CanDecrypt(webrtc::TransformableFrameInterface& frame,
 }
 }  // namespace frame_bounds
 
-// The prebuilt transformer parses frames on its worker queue. Validate the
+// The pinned transformer parses frames on its worker queue. Validate the
 // same owned frame before scheduling it. No frame is rewritten.
 class ProtectedReceiverCryptor final : public webrtc::FrameCryptorTransformer {
  public:

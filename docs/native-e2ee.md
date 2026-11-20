@@ -116,6 +116,21 @@ key for the connection. Repeated valid descriptors use a bounded per-connection
 cache. Each new sender session has its own media key. Reconciliation looks up
 cryptor readiness for the selected track without copying the whole SDK map.
 
+The native WebRTC build uses the pinned LiveKit AES-GCM implementation with a
+shared sender nonce allocator. Audio, video and SDK data encryption draw from
+one process-wide sequence. Threads reserve blocks, so ordinary frames need
+neither a random-number call nor a shared counter update. A fresh random offset
+and a reversible encoding produce 12-byte nonces without zero bytes. The
+sequence survives track replacement, codec changes and Stop/Start. Exhaustion
+or failure to initialize the random offset stops encryption. New processes and
+full media reconnects establish independent sender keys.
+
+H.264 and HEVC use emulation-prevention bytes for RTP packetization. The receiver
+removes them before reading the nonce and authenticating the ciphertext. It
+accepts older valid encrypted frames whose nonce itself needed escaping. The
+pinned codec parser uses an 8-bit clear-prefix length. Encoder output with more
+than 255 bytes of leading codec headers is outside the tested compatibility set.
+
 Protected publishers use hardware HEVC or H.264. These codecs preserve the headers
 needed for RTP packetization. The pinned cryptor encrypts all AV1 OBU headers,
 which the AV1 RTP packetizer needs to frame the stream. Private clients exclude
@@ -150,7 +165,8 @@ publication proof, room access and the start/once-per-minute cadence still apply
   devices, authenticated group key agreement, complete replay protection or proof
   that received content is currently live. Previously valid descriptors and
   ciphertext can be replayed by an operator to a fresh client.
-- The operator still observes signaling, room/participant/track information and
+- The operator still observes signaling, room/participant/track information,
+  packetization headers needed for the negotiated codec, and
   traffic patterns, and can deny service. Application secrets must not enter
   metadata, HTTP URLs, diagnostics, argv, browser storage or committed fixtures.
 - Existing browser/native invitations cannot be transparently upgraded without

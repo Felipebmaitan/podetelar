@@ -97,6 +97,8 @@ const protectedHeaders = [
   "protected_receive_guard.h",
   "protected_receive_call.h",
   "protected_frame_bounds.h",
+  "protected_frame_payload.h",
+  "sender_nonce.h",
 ].map((file) => {
   const contents = readFileSync(
     join(root, "apps/publisher/decoder", file),
@@ -105,6 +107,24 @@ const protectedHeaders = [
   if (hash(contents) !== pin.protectedReceiveHeaders[file])
     throw new Error("Native protected receive header differs from its pin.");
   return [file, contents];
+});
+const engineSources = [
+  [
+    "webrtc-a545de4/frame_crypto_transformer.cpp",
+    "src/podetelar_frame_crypto_transformer.cpp",
+  ],
+  ["webrtc-a545de4/frame_crypto_transformer.h", "frame_crypto_transformer.h"],
+  ["guarded_webrtc_archive.rs", "guarded_webrtc_archive.rs"],
+].map(([file, target]) => {
+  const contents = readFileSync(
+    join(root, "apps/publisher/sdk", file),
+    "utf8",
+  ).replaceAll("\r\n", "\n");
+  if (hash(contents) !== pin.engineSources[file])
+    throw new Error(
+      "Pinned WebRTC frame engine source differs from its checksum.",
+    );
+  return [target, contents];
 });
 await import("./setup-native-audio.mjs");
 if (existsSync(destination)) {
@@ -301,6 +321,28 @@ if (existsSync(destination)) {
   }
   if (!pc->Initialize(to_native_rtc_configuration(config), std::move(trials)) ||
       (guard_receipt && !guard_receipt->load())) {`,
+  );
+  for (const [file, contents] of engineSources)
+    writeFileSync(join(source, file), contents);
+  modify(
+    "build.rs",
+    "fn main() {",
+    "mod guarded_webrtc_archive;\n\nfn main() {",
+  );
+  modify(
+    "build.rs",
+    '        "src/frame_cryptor.cpp",',
+    '        "src/frame_cryptor.cpp",\n        "src/podetelar_frame_crypto_transformer.cpp",',
+  );
+  modify(
+    "build.rs",
+    '        webrtc_include.join("third_party/abseil-cpp/"),',
+    '        webrtc_include.join("third_party/abseil-cpp/"),\n        webrtc_include.join("third_party/boringssl/src/include"),',
+  );
+  modify(
+    "build.rs",
+    '    println!("cargo:rustc-link-lib=static=webrtc");',
+    "    guarded_webrtc_archive::prepare(&builder, &webrtc_dir, &target_os);",
   );
   const actual = treeHash(source);
   if (actual !== pin.treeSha256)

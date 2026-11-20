@@ -24,6 +24,10 @@ export function copyEncryptionSourceNotices(root, notices) {
   }
   for (const file of [
     "webrtc-sys/src/frame_cryptor.cpp",
+    "webrtc-sys/src/podetelar_frame_crypto_transformer.cpp",
+    "webrtc-sys/frame_crypto_transformer.h",
+    "webrtc-sys/guarded_webrtc_archive.rs",
+    "webrtc-sys/build.rs",
     "webrtc-sys/src/peer_connection_factory.cpp",
     "webrtc-sys/src/peer_connection.cpp",
     "webrtc-sys/src/peer_connection.rs",
@@ -46,10 +50,14 @@ export function copyEncryptionSourceNotices(root, notices) {
     "apps/publisher/decoder/protected_receive_guard.h",
     "apps/publisher/decoder/protected_receive_call.h",
     "apps/publisher/decoder/protected_frame_bounds.h",
+    "apps/publisher/decoder/protected_frame_payload.h",
+    "apps/publisher/decoder/sender_nonce.h",
+    "apps/publisher/sdk/sender-nonce-test.cpp",
+    "apps/publisher/sdk/protected-frame-payload-test.cpp",
   ])
     copy(file, file);
   writeFileSync(
     join(out, "README.txt"),
-    "PodeTelar modifies LiveKit 0.10.1, libwebrtc 0.4.0 and webrtc-sys 0.3.53 (Apache-2.0) to enforce native frame encryption before media activation, authenticate the negotiated publication mode and close protected full reconnects before reusing a key. This directory includes the changed LiveKit sources, frame cryptor wrapper, deterministic patch scripts, tests and checksums. Upstream copyright and license notices are retained.\n",
+    "PodeTelar modifies LiveKit 0.10.1, libwebrtc 0.4.0 and webrtc-sys 0.3.53 (Apache-2.0) to enforce native frame encryption before media activation, authenticate the negotiated publication mode and close protected full reconnects before reusing a key. This directory includes the changed LiveKit sources, frame cryptor wrapper, deterministic patch scripts, tests and checksums. The replacement LiveKit frame_crypto_transformer.cpp derives from webrtc-sdk/webrtc revision a545de4, api/crypto/frame_crypto_transformer.cc (original SHA-256 d1efb0cc4b9ec30a64230ab59fbd8bb5d0ad3e12b7fb7b8888a9ab493dd3b76d). It allocates process-wide sender nonces and reads H.26x encryption metadata after RBSP decoding. Upstream copyright and license notices are retained.\n",
   );
 }

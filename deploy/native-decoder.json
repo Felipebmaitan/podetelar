@@ -3,7 +3,7 @@
   "url": "https://static.crates.io/crates/webrtc-sys/webrtc-sys-0.3.53.crate",
   "sha256": "dbfe2c11c98bfd4839242abf9a4b8ddb16a7ff3cbf87416f40928a06886eb5c7",
   "adapterSha256": "17324300e534cab7f4b33f4b83960ee8798348314fbe33cfec194e747ac6fc13",
-  "treeSha256": "48eceed60a67361daffdd8e777b88a31e1c39a48a5a6945a1b40fe72ea2c38e7",
+  "treeSha256": "0cabaf44f36aabc71f24d4682fef94acffeeae911c4863608ce5dbea8d54ebf8",
   "deferredI420Sha256": "b99c2927dc4115b80a4831b7bad47c2845cdf6d5a4ccf874d1e32f16aabfc93c",
   "readbackSha256": "9bc985f501c1e1562d81bfb49746160ed1520c3ec32ed4eecf6a8fc2615ec0a0",
   "outputGuardSha256": "c1a91808c2e64f7bbf738d971e067a8fe307fdf4f677abbb0f911e5f73926c54",
@@ -14,6 +14,13 @@
   "protectedReceiveHeaders": {
     "protected_receive_guard.h": "9af65a1e66b42f737f588a1012e435e11afbca1cc3e6dab4cb9f89857a95dc78",
     "protected_receive_call.h": "2e9cd86b056ce5036f807e0721c57050f583a83591e37b1bf84e1654e91e7158",
-    "protected_frame_bounds.h": "0c0b6d716882e1abf4f2a2b0e3ea3b524b318dcd2a491a2e42fe1ec050724f5d"
+    "protected_frame_bounds.h": "eba9da6d2c4880a60f3e681457c42fedf5e4331eb6ac4a7a7add0775a7bb7277",
+    "sender_nonce.h": "33c5c358da86a9ce9ad816d784b23888470c914920a9ee2a68b0385240dc4cb6",
+    "protected_frame_payload.h": "9fee25b908eab56f28cb8e2b447237651674caa017536ac071e325b34e1ea79d"
+  },
+  "engineSources": {
+    "webrtc-a545de4/frame_crypto_transformer.cpp": "3162ee5d84dfcb0698d27ca161d2004a7802f0f49ede951c8739ba7b6502e374",
+    "webrtc-a545de4/frame_crypto_transformer.h": "97e5f1bdbfc6b9167668b12b895bff7fd72c5906a533e1a961bb78367d7e8a43",
+    "guarded_webrtc_archive.rs": "9f9eb1d8cc780dedf079fbe904bc8a23238f62caa2d6037a8f712f9b8c1f3348"
   }
 }

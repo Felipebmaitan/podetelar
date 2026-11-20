@@ -69,6 +69,7 @@ pub fn configure_theme(ctx: &egui::Context) {
     style.visuals.widgets.noninteractive.bg_fill = PANEL;
     style.visuals.widgets.noninteractive.weak_bg_fill = PANEL;
     style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, skin::DIVIDER);
+    style.visuals.widgets.open.weak_bg_fill = CARD;
     style.visuals.widgets.inactive.bg_fill = CARD;
     style.visuals.widgets.inactive.weak_bg_fill = CARD;
     style.visuals.widgets.hovered.bg_fill = skin::SURFACE_3;
@@ -82,6 +83,7 @@ pub fn configure_theme(ctx: &egui::Context) {
     style.spacing.interact_size.y = 32.0;
     style.spacing.scroll = egui::style::ScrollStyle::solid();
     style.spacing.scroll.bar_width = 7.0;
+    style.spacing.scroll.foreground_color = true;
     style
         .text_styles
         .insert(egui::TextStyle::Heading, skin::semibold(22.0));
@@ -958,7 +960,7 @@ impl PublisherUi {
                     if let Some((_, texture)) = &self.picker_texture {
                         egui::Image::new((texture.id(), texture.size_vec2()))
                             .corner_radius(6)
-                            .paint_at(ui, rect);
+                            .paint_at(ui, fit_picture(rect, texture.aspect_ratio()));
                     } else {
                         let message = if self.picker_failed.as_deref() == Some(&source.id) {
                             tr("Preview unavailable. Refresh sources to try again.")
@@ -1043,17 +1045,6 @@ impl PublisherUi {
         let valid = self.valid_selection(state);
         ui.add_space(6.0);
         ui.separator();
-        ui.horizontal(|ui| {
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(15.0, 18.0), egui::Sense::hover());
-            skin::icon(ui.painter(), rect, Icon::Volume, MUTED);
-            ui.label(
-                egui::RichText::new(tr("Source audio"))
-                    .size(12.0)
-                    .color(MUTED),
-            );
-        })
-        .response
-        .on_hover_text(tr("Discord and PodeTelar excluded."));
         if state.sharing || state.capture_pending {
             if let Some(mode) = state.mode {
                 ui.horizontal(|ui| {
@@ -1093,7 +1084,7 @@ impl PublisherUi {
                 if ui
                     .add_sized(
                         [width, 36.0],
-                        egui::Button::new(skin::strong(tr("Stop"), 13.5).color(ERROR))
+                        egui::Button::new(skin::strong(tr("Stop"), 13.5).color(skin::DANGER_INK))
                             .corner_radius(8)
                             .fill(ERROR.gamma_multiply(0.14))
                             .stroke(egui::Stroke::new(1.0, ERROR.gamma_multiply(0.45))),
@@ -1265,7 +1256,7 @@ impl PublisherUi {
                     14.0,
                 ));
                 ui.label(
-                    egui::RichText::new(tr("To this VPS"))
+                    egui::RichText::new(tr("To this server"))
                         .size(12.0)
                         .color(MUTED),
                 );
@@ -1332,6 +1323,7 @@ impl PublisherUi {
                             egui::vec2(width - 186.0, 44.0),
                             egui::Layout::left_to_right(egui::Align::Center),
                             |ui| {
+                                ui.set_min_width(width - 186.0);
                                 ui.label(
                                     egui::RichText::new(tr(if dirty {
                                         "Updates your current stream."
@@ -1748,7 +1740,7 @@ impl PublisherUi {
                                     ui.spacing_mut().slider_width = 110.0;
                                     let slider = skin::mint_slider(ui, &mut volume, 0..=100)
                                         .on_hover_text(tr("This stream's volume"));
-                                    let value = ui.label(format!("{volume}%"));
+                                    ui.label(format!("{volume}%"));
                                     slider.widget_info(|| {
                                         egui::WidgetInfo::slider(
                                             ui.is_enabled(),
@@ -1756,7 +1748,7 @@ impl PublisherUi {
                                             tr("Volume"),
                                         )
                                     });
-                                    if slider.labelled_by(value.id).changed() {
+                                    if slider.accessible_name(tr("Volume")).changed() {
                                         tile.volume.store(volume, Ordering::Relaxed);
                                     }
                                     ui.add_space(4.0);
@@ -1766,7 +1758,8 @@ impl PublisherUi {
                                     if ui
                                         .add(
                                             egui::Button::new(
-                                                skin::strong(tr("Stop"), 13.0).color(ERROR),
+                                                skin::strong(tr("Stop watching"), 13.0)
+                                                    .color(skin::DANGER_INK),
                                             )
                                             .fill(ERROR.gamma_multiply(0.14))
                                             .stroke(
@@ -1944,9 +1937,12 @@ impl PublisherUi {
                     .inner_margin(egui::Margin::symmetric(4, 2))
                     .show(&mut hud, |ui| {
                         ui.horizontal(|ui| {
-                            if fullscreen_button(ui)
-                                .on_hover_text(tr("Full screen"))
-                                .clicked()
+                            if skin::icon_button(
+                                ui,
+                                Icon::Fullscreen,
+                                &format!("{} · {}", tr("Full screen"), tile.name),
+                            )
+                            .clicked()
                             {
                                 self.set_fullscreen(ui.ctx(), Some(tile.id.clone()));
                             }
@@ -2060,6 +2056,7 @@ impl PublisherUi {
         if self.closing_since.is_some()
             || self.browser_invitation_open
             || self.advanced_open
+            || self.profile_open
             || self.fullscreen.is_some()
         {
             return;
@@ -2556,6 +2553,7 @@ impl PublisherUi {
         if connected {
             self.studio_dock(root, &state);
         }
+        let stage_bounds = root.available_rect_before_wrap();
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
@@ -2707,7 +2705,7 @@ impl PublisherUi {
             && !self.browser_invitation_open
             && !self.update_open
         {
-            self.broadcast_setup_popover(&ctx, &state);
+            self.broadcast_setup_popover(&ctx, &state, stage_bounds);
         } else {
             self.clear_picker();
         }
@@ -3021,7 +3019,7 @@ impl PublisherUi {
                                     .add_sized(
                                         [92.0, 36.0],
                                         egui::Button::new(
-                                            skin::strong(tr("Stop"), 13.5).color(ERROR),
+                                            skin::strong(tr("Stop"), 13.5).color(skin::DANGER_INK),
                                         )
                                         .corner_radius(10)
                                         .fill(ERROR.gamma_multiply(0.14))
@@ -3201,15 +3199,21 @@ impl PublisherUi {
             });
     }
 
-    fn broadcast_setup_popover(&mut self, ctx: &egui::Context, state: &Snapshot) {
+    fn broadcast_setup_popover(
+        &mut self,
+        ctx: &egui::Context,
+        state: &Snapshot,
+        stage: egui::Rect,
+    ) {
         let footer_height = if state.sharing || state.capture_pending {
-            162.0
+            136.0
         } else {
-            76.0
+            50.0
         };
-        let max_height = (ctx.content_rect().height() - 170.0 - footer_height).clamp(100.0, 480.0);
+        let max_height = (stage.height() - 112.0 - footer_height).clamp(48.0, 480.0);
         let panel = egui::Area::new(egui::Id::unique("broadcast-setup"))
-            .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(26.0, -74.0))
+            .constrain_to(stage.shrink2(egui::vec2(0.0, 6.0)))
+            .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(26.0, 0.0))
             .order(egui::Order::Foreground)
             .interactable(true)
             .show(ctx, |ui| {
@@ -3392,7 +3396,7 @@ fn quality_controls(
         .labelled_by(label.id);
     let label = ui
         .horizontal(|ui| {
-            let label = ui.label(egui::RichText::new("FPS").size(11.0).color(MUTED));
+            let label = ui.label(egui::RichText::new("FPS").size(12.0).color(MUTED));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(skin::strong(format!("{} FPS", settings.fps), 12.0));
             });
@@ -3413,7 +3417,7 @@ fn quality_controls(
     }
     let label = ui.label(
         egui::RichText::new(tr("Quality preset"))
-            .size(11.0)
+            .size(12.0)
             .color(MUTED),
     );
     egui::ComboBox::from_id_salt("quality-preset")
@@ -3542,10 +3546,6 @@ fn brand_mark(ui: &mut egui::Ui) {
         });
     ui.add(egui::Image::new((texture.id(), egui::vec2(28.0, 28.0))))
         .on_hover_text("PodeTelar");
-}
-
-fn fullscreen_button(ui: &mut egui::Ui) -> egui::Response {
-    skin::icon_button(ui, Icon::Fullscreen, tr("Full screen"))
 }
 
 fn fit_picture(rect: egui::Rect, aspect: f32) -> egui::Rect {
@@ -3825,16 +3825,17 @@ mod tests {
             ..Default::default()
         });
         app.updates = client;
-        for blocked in 0..4 {
+        for blocked in 0..5 {
             app.browser_invitation_open = blocked == 0;
             app.advanced_open = blocked == 1;
+            app.profile_open = blocked == 3;
             app.fullscreen = (blocked == 2).then(|| "watched-stream".into());
             let mut output = ctx.run_ui(egui::RawInput::default(), |root| {
                 app.update_dialog(root.ctx())
             });
             output.textures_delta.clear();
-            assert_eq!(app.update_open, blocked == 3);
-            assert_eq!(app.update_announced_version.is_some(), blocked == 3);
+            assert_eq!(app.update_open, blocked == 4);
+            assert_eq!(app.update_announced_version.is_some(), blocked == 4);
         }
         assert!(actions.try_recv().is_err());
     }

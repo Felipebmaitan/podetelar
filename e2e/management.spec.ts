@@ -36,13 +36,12 @@ test("room management fits the viewport and Lock clears operator authority", asy
     if (request.method() === "POST" && request.url().endsWith("/access"))
       mutationRequests.push(request.method());
   });
-  const warning = page.waitForEvent("dialog").then(async (dialog) => {
-    const message = dialog.message();
-    await dialog.dismiss();
-    return message;
-  });
   await page.getByRole("button", { name: "Disable invitation" }).click();
-  expect(await warning).toContain("all current sessions will end");
+  const warning = page.getByRole("dialog", { name: "Disable invitation?" });
+  await expect(warning).toContainText("all current sessions will end");
+  await expect(warning.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(warning).toHaveCount(0);
   expect(mutationRequests).toHaveLength(0);
   await page.getByRole("button", { name: "Lock", exact: true }).click();
   await expect(

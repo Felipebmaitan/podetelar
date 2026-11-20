@@ -1,3 +1,4 @@
+import { ConfirmInvitationChange } from "./ConfirmInvitationChange";
 import { useState } from "react";
 import type {
   ChangedAccess,
@@ -8,6 +9,8 @@ import { CardBrand } from "./BrandMark";
 
 /** The operator key and new invitation exist only in this mounted form. */
 export function RoomAccess({ roomId }: { roomId: string }) {
+  const [showKey, setShowKey] = useState(false);
+  const [pending, setPending] = useState<"rotate" | "disable" | null>(null);
   const [key, setKey] = useState("");
   const [state, setState] = useState<AccessState | null>(null);
   const [revokeSessions, setRevokeSessions] = useState(false);
@@ -52,14 +55,7 @@ export function RoomAccess({ roomId }: { roomId: string }) {
     await refresh();
   };
   const changeInvitation = (invitation: "rotate" | "disable") => {
-    const action =
-      invitation === "rotate"
-        ? "Replace the current invitation?"
-        : "Disable the current invitation?";
-    const consequence = revokeSessions
-      ? "The current link will stop working and all current sessions will end."
-      : "The current link will stop working.";
-    if (!window.confirm(action + " " + consequence)) return;
+    setPending(null);
     void act(async () =>
       changed(
         await request<ChangedAccess>(`/api/rooms/${roomId}/access`, {
@@ -80,24 +76,34 @@ export function RoomAccess({ roomId }: { roomId: string }) {
           void act(refresh);
         }}
       >
-        <label className="field">
-          <span>Server access key</span>
-          <input
-            type="password"
-            autoComplete="off"
-            required
-            maxLength={256}
-            disabled={busy}
-            value={key}
-            onChange={(event) => {
-              setKey(event.target.value);
-              setState(null);
-              setInvitation("");
-              setRevokeSessions(false);
-              setFeedback("");
-            }}
-          />
-        </label>
+        <div className="field">
+          <label htmlFor="room-access-key">Server access key</label>
+          <div className="admin-password">
+            <input
+              id="room-access-key"
+              type={showKey ? "text" : "password"}
+              autoComplete="off"
+              required
+              maxLength={256}
+              disabled={busy}
+              value={key}
+              onChange={(event) => {
+                setKey(event.target.value);
+                setState(null);
+                setInvitation("");
+                setRevokeSessions(false);
+                setFeedback("");
+              }}
+            />
+            <button
+              type="button"
+              aria-label={showKey ? "Hide access key" : "Show access key"}
+              onClick={() => setShowKey(!showKey)}
+            >
+              {showKey ? "Hide" : "Show"}
+            </button>
+          </div>
+        </div>
         <div className="access-form-actions">
           {!state && (
             <button className="button" disabled={busy || !key.trim()}>
@@ -111,6 +117,7 @@ export function RoomAccess({ roomId }: { roomId: string }) {
               disabled={busy || !key}
               onClick={() => {
                 setKey("");
+                setShowKey(false);
                 setState(null);
                 setInvitation("");
                 setFeedback("");
@@ -149,14 +156,14 @@ export function RoomAccess({ roomId }: { roomId: string }) {
             <button
               className="button"
               disabled={busy}
-              onClick={() => changeInvitation("rotate")}
+              onClick={() => setPending("rotate")}
             >
               Rotate invitation
             </button>
             <button
               className="button secondary"
               disabled={busy}
-              onClick={() => changeInvitation("disable")}
+              onClick={() => setPending("disable")}
             >
               Disable invitation
             </button>
@@ -211,6 +218,20 @@ export function RoomAccess({ roomId }: { roomId: string }) {
             {!state.sessions.length && <p>No active sessions.</p>}
           </div>
         </div>
+      )}
+      {pending && (
+        <ConfirmInvitationChange
+          action={
+            pending === "rotate" ? "Rotate invitation" : "Disable invitation"
+          }
+          description={
+            revokeSessions
+              ? "The current link will stop working and all current sessions will end."
+              : "The current link will stop working."
+          }
+          onCancel={() => setPending(null)}
+          onConfirm={() => changeInvitation(pending)}
+        />
       )}
       {feedback && <p role="status">{feedback}</p>}
       <a className="access-back" href={`/r/${roomId}`}>

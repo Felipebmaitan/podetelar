@@ -121,6 +121,18 @@ pub fn run() -> Result<()> {
             expires_at: 0,
         });
         let mut inner = PublisherUi::with_account_client(None, crate::account::Client::fixture(account));
+        if mode == "discord" && std::env::args().any(|arg| arg == "--signed-in") {
+            inner.account_state = inner.account_client.state();
+            inner.poll_following(&cc.egui_ctx);
+            inner.following_client = crate::following::Client::fixture(crate::following::State {
+                known: true,
+                enabled: true,
+                locations: ["Screening room", "Game night", "Studio"].iter().enumerate().map(|(i, name)| crate::following::Location {
+                    guild_id: format!("fixture-guild-{i}"), guild_name: format!("Server {}", i+1),
+                    channel_id: format!("fixture-channel-{i}"), channel_name: name.to_string(), enabled: true,
+                }).collect(),
+            });
+        }
         let source = crate::sources::fixture().info;
         let second_source = crate::sources::SourceInfo {
             id: "window:studio".into(),
@@ -168,12 +180,24 @@ pub fn run() -> Result<()> {
         *diagnostics.rtc_at.lock().unwrap() = Some(Instant::now());
         *diagnostics.rtc.lock().unwrap() = vec![("Decode time".into(), "1.24 ms/frame".into()), ("Decoder".into(), "Direct3D11 (hardware)".into())];
         *diagnostics.sender.lock().unwrap() = Some((Instant::now(), serde_json::json!({ "stale": false, "age_ms": 180, "sample": { "window_ms": 3000, "sequence": 24, "codec": "AV1", "encoder": "NVIDIA NVENC AV1", "metrics": { "requested_bps": 20_000_000, "effective_bps": 20_000_000, "sent_bps": 13_800_000, "requested_fps": 60, "encoded_fps": 59.9, "sent_fps": 59.9 } } })));
-        let tiles = match mode.as_str() {
+        let mut tiles = match mode.as_str() {
             "information" | "fullscreen" => vec![tile.clone()],
             "room-streams" | "setup" | "roster" => vec![tile.clone(), preview_tile],
             _ => vec![],
         };
-        let state = if mode == "join" { Snapshot::default() } else {
+        let four_streams = mode == "room-streams" && std::env::args().any(|arg| arg == "--four-streams");
+        if four_streams {
+            for (index, name) in ["Lucas", "Sam"].iter().enumerate() {
+                let mut extra = tiles[index].clone();
+                extra.id = format!("p-{}", name.to_lowercase());
+                extra.name = name.to_string();
+                extra.picture = Arc::new(std::sync::Mutex::new(Some(synth_stream_frame(640, 360, (1-index) as u8))));
+                extra.volume = Arc::new(45.into());
+                extra.presentation = Arc::default();
+                tiles.push(extra);
+            }
+        }
+        let mut state = if mode == "join" { Snapshot::default() } else {
             Snapshot {
                 connection: "connected",
                 room_name: "Friday Screening".into(),
@@ -192,6 +216,11 @@ pub fn run() -> Result<()> {
                 ..Default::default()
             }
         };
+        if four_streams {
+            state.participants.push("Sam".into());
+            state.participant_ids.push(("p-sam".into(), "Sam".into()));
+        }
+        if mode == "setup" && std::env::args().any(|arg| arg == "--feedback") { state.error = "Waiting for the selected source.".into(); }
         let (controller, commands) = Controller::recording_for_test(state);
         inner.controller = controller;
         inner.advanced_open = mode == "settings";
@@ -224,7 +253,7 @@ pub fn run() -> Result<()> {
             inner.update_open = true;
         }
         if mode == "settings" { inner.quality.bitrate = Bitrate::Manual(25_000_000); inner.custom_bitrate = std::env::args().any(|arg| arg == "--custom"); }
-        Ok(Box::new(Capture { inner, _commands: Box::new(commands), output, started: Instant::now(), requested: false, finished: Arc::new(std::sync::atomic::AtomicBool::new(false)) }))
+        Ok(Box::new(Capture { inner, _commands: Box::new(commands), output, started: Instant::now(), requested: false, inspect: std::env::args().any(|arg| arg == "--inspect"), finished: Arc::new(std::sync::atomic::AtomicBool::new(false)) }))
     })).map_err(|error| anyhow::anyhow!("Native layout capture failed: {error}"))
 }
 struct Capture {
@@ -233,11 +262,12 @@ struct Capture {
     output: PathBuf,
     started: Instant,
     requested: bool,
+    inspect: bool,
     finished: Arc<std::sync::atomic::AtomicBool>,
 }
 impl eframe::App for Capture {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if self.finished.load(Ordering::Acquire) || self.started.elapsed() > Duration::from_secs(15)
+        if (self.finished.load(Ordering::Acquire) && !self.inspect) || self.started.elapsed() > Duration::from_secs(if self.inspect { 90 } else { 15 })
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
@@ -245,7 +275,7 @@ impl eframe::App for Capture {
     }
     fn ui(&mut self, root: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.inner.render(root, frame);
-        if !self.requested && self.started.elapsed() > Duration::from_millis(800) {
+        if !self.requested && self.started.elapsed() > Duration::from_millis(if self.inspect { 4000 } else { 800 }) {
             self.requested = true;
             let output = self.output.clone();
             let finished = self.finished.clone();

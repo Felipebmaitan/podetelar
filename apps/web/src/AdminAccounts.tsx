@@ -173,30 +173,32 @@ export function AdminAccounts({ onExpired }: { onExpired: () => void }) {
               const expanded = open === a.userId;
               return (
                 <article className="discord-record" key={a.userId}>
-                  <button
-                    className="discord-record-toggle"
-                    aria-expanded={expanded}
-                    disabled={busy}
-                    onClick={() => {
-                      setSessions(null);
-                      setSessionError("");
-                      setOpen(expanded ? null : a.userId);
-                    }}
-                  >
-                    <span className="discord-initial" aria-hidden="true">
-                      {Array.from(a.displayName)[0]?.toUpperCase()}
-                    </span>
-                    <span className="discord-record-name">
-                      <strong>{a.displayName}</strong>
-                      <small>
-                        {a.loginCount} active{" "}
-                        {a.loginCount === 1 ? "login" : "logins"}
-                      </small>
-                    </span>
-                    <StatusLabel tone={a.disabled ? "attention" : "good"}>
-                      {a.disabled ? "Disabled" : "Enabled"}
-                    </StatusLabel>
-                  </button>
+                  <h3>
+                    <button
+                      className="discord-record-toggle"
+                      aria-expanded={expanded}
+                      disabled={busy}
+                      onClick={() => {
+                        setSessions(null);
+                        setSessionError("");
+                        setOpen(expanded ? null : a.userId);
+                      }}
+                    >
+                      <span className="discord-initial" aria-hidden="true">
+                        {Array.from(a.displayName)[0]?.toUpperCase()}
+                      </span>
+                      <span className="discord-record-name">
+                        <strong>{a.displayName}</strong>
+                        <small>
+                          {a.loginCount} active{" "}
+                          {a.loginCount === 1 ? "login" : "logins"}
+                        </small>
+                      </span>
+                      <StatusLabel tone={a.disabled ? "attention" : "good"}>
+                        {a.disabled ? "Disabled" : "Enabled"}
+                      </StatusLabel>
+                    </button>
+                  </h3>
                   {expanded && (
                     <div className="discord-record-body">
                       <p className="discord-account-id">

@@ -64,7 +64,6 @@
 .discord-view {
   display: grid;
   gap: 16px;
-  max-width: 1040px;
   min-width: 0;
 }
 
@@ -355,6 +354,10 @@
   font: inherit;
 }
 
+.discord-pause-form :is(input, button) {
+  min-height: 44px;
+}
+
 .discord-pause-form {
   margin: 12px 0;
 }
@@ -421,6 +424,11 @@
 }
 
 @media (max-width: 480px) {
+  .discord-login-list li {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .discord-nav {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));

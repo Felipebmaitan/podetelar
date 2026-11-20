@@ -15,6 +15,7 @@ pub const INK: Color32 = Color32::from_rgb(242, 240, 235); // #F2F0EB warm linen
 pub const SECONDARY: Color32 = Color32::from_rgb(166, 163, 155); // #A6A39B warm stone secondary
 pub const TERTIARY: Color32 = Color32::from_rgb(154, 151, 143); // muted caption
 pub const DANGER: Color32 = Color32::from_rgb(229, 72, 77); // #E5484D tally crimson
+pub const DANGER_INK: Color32 = Color32::from_rgb(255, 154, 158);
 pub const SAGE: Color32 = Color32::from_rgb(92, 184, 122); // #5CB87A quiet connected sage
 pub const WARN: Color32 = Color32::from_rgb(242, 201, 125); // #F2C97D warm amber warning
 

@@ -341,8 +341,8 @@ pub fn panel(ctx: &eframe::egui::Context, tile: &crate::playback::Tile) {
         .open(&mut open)
         .collapsible(false)
         .default_width(560.0)
-        .default_height((ctx.content_rect().height() - 220.0).clamp(180.0, 520.0))
-        .max_height((ctx.content_rect().height() - 220.0).clamp(180.0, 600.0))
+        .default_height((ctx.content_rect().height() - 194.0).clamp(180.0, 520.0))
+        .max_height((ctx.content_rect().height() - 194.0).clamp(180.0, 600.0))
         .default_pos(eframe::egui::pos2(
             ((ctx.viewport_rect().width() - 580.0) / 2.0).max(8.0),
             60.0,

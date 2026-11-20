@@ -1,3 +1,4 @@
+import { ConfirmInvitationChange } from "./ConfirmInvitationChange";
 import { useEffect, useRef, useState } from "react";
 import { ApiError, request } from "./api";
 import {
@@ -37,6 +38,10 @@ export function AdminChannels({
     [open, setOpen] = useState<string | null>(null),
     [feedback, setFeedback] = useState(""),
     [invitation, setInvitation] = useState("");
+  const [pending, setPending] = useState<{
+    channel: Channel;
+    action: "rotate" | "disable";
+  } | null>(null);
   const mutation = useRef<AbortController | null>(null);
   useEffect(() => () => mutation.current?.abort(), []);
   useEffect(() => {
@@ -74,20 +79,6 @@ export function AdminChannels({
     action: string,
   ) => {
     if (mutation.current) return;
-    if (
-      action === "rotate" &&
-      !window.confirm(
-        "Replace this channel invitation? The previous link will stop working.",
-      )
-    )
-      return;
-    if (
-      action === "disable" &&
-      !window.confirm(
-        "Disable this channel invitation? People using this link will lose access to join.",
-      )
-    )
-      return;
     const abort = new AbortController();
     mutation.current = abort;
     setBusy(true);
@@ -243,7 +234,9 @@ export function AdminChannels({
                             </button>
                             <button
                               disabled={busy}
-                              onClick={() => void act(c, "rotate")}
+                              onClick={() =>
+                                setPending({ channel: c, action: "rotate" })
+                              }
                             >
                               {c.guestEnabled
                                 ? "Replace link"
@@ -252,10 +245,12 @@ export function AdminChannels({
                             <button
                               disabled={busy}
                               onClick={() =>
-                                void act(
-                                  c,
-                                  c.guestEnabled ? "disable" : "enable",
-                                )
+                                c.guestEnabled
+                                  ? setPending({
+                                      channel: c,
+                                      action: "disable",
+                                    })
+                                  : void act(c, "enable")
                               }
                             >
                               {c.guestEnabled ? "Disable link" : "Enable link"}
@@ -314,6 +309,21 @@ export function AdminChannels({
             </div>
           </section>
         ))}
+      {pending && (
+        <ConfirmInvitationChange
+          action={
+            pending.action === "rotate"
+              ? "Replace channel invitation"
+              : "Disable channel invitation"
+          }
+          description={`The current link to ${pending.channel.name} will stop working.`}
+          onCancel={() => setPending(null)}
+          onConfirm={() => {
+            setPending(null);
+            void act(pending.channel, pending.action);
+          }}
+        />
+      )}
     </section>
   );
 }

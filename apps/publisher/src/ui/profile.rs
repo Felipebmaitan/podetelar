@@ -255,7 +255,7 @@ impl PublisherUi {
                     let disconnect = ui
                         .add(
                             egui::Button::new(
-                                skin::strong(tr("Disconnect Discord"), 12.5).color(ERROR),
+                                skin::strong(tr("Disconnect Discord"), 12.5).color(skin::DANGER_INK),
                             )
                             .corner_radius(8)
                             .fill(ERROR.gamma_multiply(0.10))
@@ -744,7 +744,7 @@ impl PublisherUi {
             return;
         }
         let width = (ctx.content_rect().width() - 64.0).clamp(320.0, 472.0);
-        let max_body_height = (ctx.content_rect().height() - 165.0).clamp(140.0, 460.0);
+        let max_body_height = (ctx.content_rect().height() - 255.0).clamp(96.0, 460.0);
         let mut close = false;
         let modal = egui::Modal::new(egui::Id::unique("user-settings"))
             .backdrop_color(egui::Color32::from_black_alpha(175))

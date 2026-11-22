@@ -147,6 +147,7 @@ pub struct SharingSelection {
 
 #[derive(Clone)]
 pub struct Snapshot {
+    pub profile_access: Option<Admission>,
     pub connection: &'static str,
     pub room_name: String,
     pub error: String,
@@ -163,6 +164,7 @@ pub struct Snapshot {
     pub applications: Vec<audio::Application>,
     pub tiles: Vec<crate::playback::Tile>,
     pub participants: Vec<String>,
+    pub participant_ids: Vec<(String, String)>,
     pub active_selection: Option<SharingSelection>,
     pub self_preview: Latest,
     pub capacity: crate::network::Capacity,
@@ -172,6 +174,7 @@ pub struct Snapshot {
 impl Default for Snapshot {
     fn default() -> Self {
         Self {
+            profile_access: None,
             connection: "disconnected",
             room_name: String::new(),
             error: String::new(),
@@ -188,6 +191,7 @@ impl Default for Snapshot {
             applications: Vec::new(),
             tiles: Vec::new(),
             participants: Vec::new(),
+            participant_ids: Vec::new(),
             active_selection: None,
             self_preview: Arc::default(),
             capacity: crate::network::Capacity::default(),
@@ -201,6 +205,8 @@ pub enum Command {
         invitation: String,
         name: String,
         route: connection::Route,
+        account: Option<crate::account::Credential>,
+        voice: Option<crate::following::Target>,
     },
     Start {
         source_id: String,
@@ -348,7 +354,10 @@ impl Controller {
         // Register before enqueueing: Stop must also cancel capture work that
         // has not yet reached the room worker.
         let capture = capture_pending.then(|| self.cancellation.register());
-        if matches!(command, Command::Stop | Command::Leave | Command::Shutdown) {
+        if matches!(
+            command,
+            Command::Join { .. } | Command::Stop | Command::Leave | Command::Shutdown
+        ) {
             self.cancel_capture();
         }
         if self
@@ -951,18 +960,23 @@ struct Session {
 impl Session {
     async fn join(
         invitation: &str,
-        name: &str,
+        identity: (
+            &str,
+            Option<crate::account::Credential>,
+            Option<crate::following::Target>,
+        ),
         route: connection::Route,
         snapshot: Arc<Mutex<Snapshot>>,
         cancellation: Cancellation,
         recovery: Arc<AtomicU64>,
         ticket: JoinTicket,
     ) -> Result<Option<Self>> {
+        let (name, account, voice) = identity;
         let invitation = invitation.to_owned();
         let name = name.to_owned();
         let Some(admission) = ticket
             .run(
-                async move { Admission::join(&invitation, &name).await },
+                async move { Admission::join_target(&invitation, &name, account, voice).await },
                 |admission| async move {
                     admission.leave().await;
                 },
@@ -1133,11 +1147,11 @@ async fn worker(
                         update(&snapshot,|state|{state.capacity=capacity.clone();state.testing_connection=false;});
                 }
                 if let Some(joined) = &session {
-                    let mut participants: Vec<_> = joined.room.remote_participants().values().map(|p| {
-                        let name = p.name(); if name.is_empty() { "Participant".to_owned() } else { name }
+                    let mut ids:Vec<_>=joined.room.remote_participants().values().map(|p|{
+                        let name=p.name();(p.identity().to_string(),if name.is_empty(){"Participant".to_owned()}else{name})
                     }).collect();
-                    participants.sort_by_key(|name| name.to_lowercase());
-                    update(&snapshot, |state| state.participants = participants);
+                    ids.sort_by_key(|(id,name)|(name.to_lowercase(),id.clone()));
+                    update(&snapshot,|state|{state.participants=ids.iter().map(|(_,name)|name.clone()).collect();state.participant_ids=ids;});
                     if joined.room.connection_state() == ConnectionState::Connected {
                         match playback.reconcile(&joined.room, &joined.admission).await {
                             Ok(tiles) => update(&snapshot, |state| state.tiles = tiles),
@@ -1201,6 +1215,8 @@ async fn worker(
                     invitation,
                     name,
                     route,
+                    account,
+                    voice,
                 } => {
                     if let Some(job) = probe.take() {
                         job.abort();
@@ -1227,7 +1243,7 @@ async fn worker(
                     });
                     let joined = Session::join(
                         &invitation,
-                        &name,
+                        (&name, account, voice),
                         route,
                         snapshot.clone(),
                         cancellation.clone(),
@@ -1242,6 +1258,7 @@ async fn worker(
                         })));
                         update(&snapshot, |state| {
                             state.connection = "connected";
+                            state.profile_access = Some(joined.admission.clone());
                             state.room_name = joined.admission.room_name.clone();
                             state.testing_connection = true;
                         });
@@ -1437,6 +1454,30 @@ async fn worker(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn room_switch_cancels_capture_before_the_worker_handles_the_join() {
+        let (sender, mut receiver) = mpsc::channel(8);
+        let controller = Controller {
+            commands: sender,
+            snapshot: Arc::default(),
+            cancellation: Arc::default(),
+            join_cancellation: JoinCancellation::new(),
+            shutdown: Arc::default(),
+            worker: None,
+        };
+        let capture = controller.cancellation.register();
+        controller.send(Command::Join {
+            invitation: String::new(),
+            name: "Friend".into(),
+            route: connection::Route::Auto,
+            account: None,
+            voice: None,
+        });
+        assert!(capture.load(Ordering::Acquire));
+        let queued = receiver.try_recv().unwrap();
+        assert!(matches!(queued.command, Command::Join { .. }));
+        assert!(queued.capture.is_none());
+    }
 
     #[tokio::test]
     async fn shutdown_bypasses_a_full_queue_and_rejects_new_work() {

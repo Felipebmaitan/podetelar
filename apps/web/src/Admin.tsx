@@ -5,6 +5,8 @@ import { ApiError, request } from "./api";
 import { dataSize, periodRange, speed, type Period } from "./usage";
 import "./admin.css";
 import { AdminRooms } from "./AdminRooms";
+import { AdminProfiles } from "./AdminProfiles";
+import { AdminDiscord } from "./AdminDiscord";
 import { BrandMark } from "./BrandMark";
 import { Icon, Segmented, stagger, useCountUp } from "./ui";
 
@@ -28,7 +30,9 @@ export function Admin() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [section, setSection] = useState<"usage" | "rooms">("rooms");
+  const [section, setSection] = useState<
+    "usage" | "rooms" | "profiles" | "discord"
+  >("rooms");
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     const abort = new AbortController();
@@ -96,6 +100,13 @@ export function Admin() {
               <span>PodeTelar</span>
             </a>
             <nav className="admin-nav" aria-label="Administration sections">
+              <button
+                aria-pressed={section === "discord"}
+                onClick={() => setSection("discord")}
+              >
+                {Icon.chat()}
+                Discord
+              </button>
               <p aria-hidden="true">Administration</p>
               <button
                 aria-pressed={section === "rooms"}
@@ -103,6 +114,13 @@ export function Admin() {
               >
                 {Icon.hash()}
                 Rooms
+              </button>
+              <button
+                aria-pressed={section === "profiles"}
+                onClick={() => setSection("profiles")}
+              >
+                {Icon.users()}
+                Guest profiles
               </button>
               <button
                 aria-pressed={section === "usage"}
@@ -134,7 +152,21 @@ export function Admin() {
             <div className="admin-top-error">
               {error && <p role="alert">{error}</p>}
             </div>
-            {section === "usage" ? (
+            {section === "discord" ? (
+              <AdminDiscord
+                onExpired={() => {
+                  setAuth("login");
+                  setError("Your session expired. Sign in again.");
+                }}
+              />
+            ) : section === "profiles" ? (
+              <AdminProfiles
+                onExpired={() => {
+                  setAuth("login");
+                  setError("Your session expired. Sign in again.");
+                }}
+              />
+            ) : section === "usage" ? (
               <Dashboard
                 onExpired={() => {
                   setAuth("login");

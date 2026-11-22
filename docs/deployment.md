@@ -306,7 +306,11 @@ restores against a dedicated test room before relying on a backup.
 
 For application rollback, stop the app, take a verified backup, point `current`
 and `shared/release.env` at the previous tested commit/image and use its Compose
-file. Do not run old code against a newer unsupported database schema. Keep a
+file. While the app is stopped, run
+`python3 deploy/production/cd-state.py revoke-discord-voice /opt/podetelar/shared/data/podetelar.db`
+from the outgoing release directory if the previous version lacks Discord voice
+following. The command revokes Discord voice sessions and queues
+their SFU removal while preserving independently joined guests. Keep a
 matching backup for schema rollback. Do not delete volumes or use Docker prune.
 
 ## Resource budget and acceptance

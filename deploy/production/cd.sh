@@ -40,6 +40,12 @@ rollback() {
   trap - ERR HUP TERM
   set +e
   failed=0
+  if [[ $(readlink -f "$root/current") == "$release" && ! -f "$old/apps/server/src/voice-following.ts" ]]; then
+    if ! compose stop app || ! python3 "$release/deploy/production/cd-state.py" revoke-discord-voice "$state/data/podetelar.db"; then
+      echo "Could not safely roll back Discord voice access. Private recovery backup: $backup" >&2
+      exit 1
+    fi
+  fi
   atomic_copy "$backup/release.env" "$state/release.env" || failed=1
   atomic_copy "$backup/livekit.yaml" "$state/livekit.yaml" || failed=1
   activate_link "$old" || failed=1

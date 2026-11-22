@@ -88,6 +88,10 @@ test("production config preserves the admission gateway and isolated certificate
   assert.match(config.livekit, /host: relay.example.com/);
   assert.match(config.acme, /location \/ \{ return 404/);
   assert.ok(!config.nginx.includes(secrets.admin));
+  assert.match(
+    config.nginx,
+    /profile\/avatar\$" \{\n    client_max_body_size 3000000;/,
+  );
 });
 test("deployment identifiers cannot inject config or shell lines", () => {
   assert.throws(

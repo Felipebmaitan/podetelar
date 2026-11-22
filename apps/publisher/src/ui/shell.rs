@@ -113,40 +113,17 @@ impl PublisherUi {
                 });
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.y = 10.0;
-                    if rail_button(
-                        ui,
-                        false,
-                        tr("Advanced settings"),
-                        |painter, rect, color| {
-                            skin::icon(
-                                painter,
-                                egui::Rect::from_center_size(rect.center(), egui::vec2(24.0, 24.0)),
-                                Icon::Settings,
-                                color,
-                            );
-                        },
-                    )
-                    .clicked()
-                    {
-                        self.advanced_open = true;
-                    }
-                    if rail_button(ui, false, tr("Change theme"), |painter, rect, color| {
-                        // Palette glyph: a ring of swatches in the colors of the next theme.
-                        let c = rect.center();
-                        painter.circle_stroke(c, 9.5, egui::Stroke::new(1.8, color));
-                        for (dx, dy) in [(-3.5, -3.0), (3.5, -3.0), (0.0, 4.0)] {
-                            painter.circle_filled(c + egui::vec2(dx, dy), 2.1, color);
-                        }
+                    if rail_button(ui, false, tr("User settings"), |painter, rect, color| {
+                        skin::icon(
+                            painter,
+                            egui::Rect::from_center_size(rect.center(), egui::vec2(24.0, 24.0)),
+                            Icon::Settings,
+                            color,
+                        );
                     })
                     .clicked()
                     {
-                        let all = theme::Theme::ALL;
-                        let next =
-                            all[(all.iter().position(|t| *t == theme::current()).unwrap_or(0) + 1)
-                                % all.len()];
-                        theme::select(next);
-                        apply_theme(ui.ctx());
-                        theme::save();
+                        self.open_profile();
                     }
                 });
             });
@@ -225,13 +202,41 @@ impl PublisherUi {
                             self.stream_row(ui, tile);
                         }
                         section_label(ui, tr("In room"), state.participants.len() + 1);
-                        participant(ui, &self.name, true, state.sharing);
-                        for name in &state.participants {
+                        let own_id = self
+                            .profile_client
+                            .as_ref()
+                            .map(|c| c.participant_id.clone())
+                            .unwrap_or_default();
+                        let texture = self.profile_texture(ui.ctx(), &own_id);
+                        let discord = self
+                            .profile_state
+                            .profiles
+                            .iter()
+                            .any(|p| p.participant_id == own_id && p.discord);
+                        if participant(ui, &self.name, true, state.sharing, texture, discord)
+                            .clicked()
+                        {
+                            self.open_profile();
+                        }
+                        for (index, name) in state.participants.iter().enumerate() {
+                            let id = state
+                                .participant_ids
+                                .get(index)
+                                .map(|(id, _)| id.as_str())
+                                .unwrap_or("");
+                            let texture = self.profile_texture(ui.ctx(), id);
+                            let discord = self
+                                .profile_state
+                                .profiles
+                                .iter()
+                                .any(|p| p.participant_id == id && p.discord);
                             participant(
                                 ui,
                                 name,
                                 false,
-                                state.tiles.iter().any(|tile| tile.name == *name),
+                                state.tiles.iter().any(|tile| tile.id == id),
+                                texture,
+                                discord,
                             );
                         }
                     });
@@ -243,12 +248,26 @@ impl PublisherUi {
                         .show(ui, |ui| {
                             ui.set_width(ui.available_width());
                             ui.horizontal(|ui| {
-                                avatar(ui, &self.name, 34.0);
+                                let own_id = self
+                                    .profile_client
+                                    .as_ref()
+                                    .map(|c| c.participant_id.clone())
+                                    .unwrap_or_default();
+                                let texture = self.profile_texture(ui.ctx(), &own_id);
+                                profile::avatar(ui, &self.name, 34.0, texture);
                                 ui.vertical(|ui| {
                                     ui.spacing_mut().item_spacing.y = 1.0;
-                                    ui.add(
-                                        egui::Label::new(skin::strong(&self.name, 14.0)).truncate(),
-                                    );
+                                    if ui
+                                        .add(
+                                            egui::Label::new(skin::strong(&self.name, 14.0))
+                                                .truncate()
+                                                .sense(egui::Sense::click()),
+                                        )
+                                        .on_hover_text(tr("User settings"))
+                                        .clicked()
+                                    {
+                                        self.open_profile();
+                                    }
                                     ui.label(
                                         egui::RichText::new(tr(if state.sharing {
                                             "Sharing"
@@ -291,7 +310,8 @@ impl PublisherUi {
                 .max_rect(rect.shrink2(egui::vec2(10.0, 0.0)))
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
         );
-        avatar(&mut row, &tile.name, 34.0);
+        let texture = self.profile_texture(ui.ctx(), &tile.id);
+        profile::avatar(&mut row, &tile.name, 34.0, texture);
         row.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 1.0;
             ui.add(egui::Label::new(skin::strong(&tile.name, 13.0)).truncate());
@@ -538,58 +558,5 @@ impl PublisherUi {
             self.go_live = None;
             self.clear_picker();
         }
-    }
-
-    /// First screen: a single welcoming card on a soft glow instead of a form in a sidebar.
-    pub(super) fn join_card(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
-        let p = pal();
-        let area = ui.max_rect();
-        let time = ui.input(|i| i.time) as f32;
-        ui.ctx().request_repaint_after(Duration::from_millis(40));
-        // Two slow, soft orbs: decoration only, drawn behind the card.
-        for (k, (fx, fy, radius, tint)) in
-            [(0.25, 0.3, 230.0, p.accent), (0.78, 0.72, 280.0, p.spark)]
-                .into_iter()
-                .enumerate()
-        {
-            let drift = egui::vec2(
-                (time * 0.35 + k as f32 * 2.0).sin() * 24.0,
-                (time * 0.28 + k as f32).cos() * 18.0,
-            );
-            let center = area.min + egui::vec2(area.width() * fx, area.height() * fy) + drift;
-            for ring in 0..14 {
-                let t = ring as f32 / 13.0;
-                ui.painter().circle_filled(
-                    center,
-                    radius * (1.0 - t * 0.85),
-                    tint.gamma_multiply(0.012),
-                );
-            }
-        }
-        ui.vertical_centered(|ui| {
-            ui.add_space(((area.height() - 520.0) / 2.0).max(10.0));
-            brand_mark_sized(ui, 72.0);
-            ui.add_space(10.0);
-            ui.label(skin::strong("PodeTelar", 30.0));
-            ui.label(
-                egui::RichText::new(tr("A room for your friends' screens"))
-                    .size(14.0)
-                    .color(p.muted),
-            );
-            ui.add_space(18.0);
-            egui::Frame::new()
-                .fill(p.card)
-                .stroke(egui::Stroke::new(1.0, p.border))
-                .corner_radius(24)
-                .inner_margin(28)
-                .shadow(skin::menu_frame().shadow)
-                .show(ui, |ui| {
-                    ui.set_width(380.0);
-                    ui.spacing_mut().item_spacing.y = 8.0;
-                    ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
-                        self.join_form(ui, state);
-                    });
-                });
-        });
     }
 }

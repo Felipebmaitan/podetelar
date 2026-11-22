@@ -3,7 +3,13 @@ import { fileURLToPath } from "node:url";
 import { isIP } from "node:net";
 
 export type Config = {
-  discord?: { applicationId: string; publicKey: string; guildIds: string[] };
+  discord?: {
+    applicationId: string;
+    publicKey: string;
+    guildIds: string[];
+    botToken?: string;
+    clientSecret?: string;
+  };
   host: string;
   port: number;
   publicUrl: string;
@@ -102,6 +108,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     env.DISCORD_GUILD_IDS,
   ];
   let discord: Config["discord"];
+  if (
+    (env.DISCORD_BOT_TOKEN || env.DISCORD_CLIENT_SECRET) &&
+    !discordValues.every(Boolean)
+  )
+    throw new Error(
+      "Discord bot runtime requires the Discord application configuration.",
+    );
   if (discordValues.some(Boolean)) {
     const guildIds = (env.DISCORD_GUILD_IDS ?? "")
       .split(",")
@@ -121,6 +134,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       applicationId: env.DISCORD_APPLICATION_ID!,
       publicKey: env.DISCORD_PUBLIC_KEY!,
       guildIds,
+      ...(env.DISCORD_BOT_TOKEN ? { botToken: env.DISCORD_BOT_TOKEN } : {}),
+      ...(env.DISCORD_CLIENT_SECRET
+        ? { clientSecret: env.DISCORD_CLIENT_SECRET }
+        : {}),
     };
   }
   return {

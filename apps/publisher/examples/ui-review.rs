@@ -2,6 +2,8 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 #![allow(dead_code)]
 
+#[path = "../src/account.rs"]
+mod account;
 #[path = "../src/activation.rs"]
 mod activation;
 #[path = "../../activation_protocol.rs"]
@@ -24,6 +26,8 @@ mod device;
 mod diagnostics;
 #[path = "../src/encoding.rs"]
 mod encoding;
+#[path = "../src/following.rs"]
+mod following;
 #[path = "../src/locale.rs"]
 mod locale;
 #[path = "../src/network.rs"]
@@ -32,6 +36,8 @@ mod network;
 mod playback;
 #[path = "../src/preview.rs"]
 mod preview;
+#[path = "../src/profile.rs"]
+mod profile;
 #[path = "../src/publisher.rs"]
 mod publisher;
 #[path = "../src/quality.rs"]

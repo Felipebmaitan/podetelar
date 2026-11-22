@@ -1,3 +1,5 @@
+#[path = "ui/profile.rs"]
+mod profile;
 #[cfg(feature = "ui-review")]
 #[path = "ui/review.rs"]
 pub mod review;
@@ -110,6 +112,22 @@ pub fn apply_theme(ctx: &egui::Context) {
 }
 
 pub struct PublisherUi {
+    following_client: crate::following::Client,
+    following: crate::following::Follow,
+    following_key: Option<String>,
+    next_follow_attempt: Instant,
+    account_client: crate::account::Client,
+    account_state: crate::account::State,
+    account_server: String,
+    profile_connection_key: Option<(String, Option<String>)>,
+    profile_client: Option<crate::profile::Client>,
+    profile_state: crate::profile::State,
+    profile_textures: HashMap<String, (usize, egui::TextureHandle)>,
+    profile_started: Instant,
+    profile_open: bool,
+    profile_page: profile::SettingsPage,
+    profile_name: String,
+    saved_guest_name: String,
     updates: crate::updates::Client,
     update_open: bool,
     update_announced_version: Option<String>,
@@ -207,6 +225,23 @@ impl PublisherUi {
         });
         let link_result = link.map(crate::browser_links::Load::start);
         Self {
+            following_client: crate::following::Client::new(),
+            following: Default::default(),
+            following_key: None,
+            next_follow_attempt: Instant::now(),
+            account_client: crate::account::Client::new(),
+            profile_connection_key: None,
+            account_state: Default::default(),
+            account_server: crate::settings::login_server()
+                .unwrap_or_else(|| crate::account::DEFAULT_SERVER.into()),
+            profile_client: None,
+            profile_state: Default::default(),
+            profile_textures: HashMap::new(),
+            profile_started: Instant::now(),
+            profile_open: false,
+            profile_page: profile::SettingsPage::Profile,
+            profile_name: String::new(),
+            saved_guest_name: crate::settings::guest_name(),
             updates: crate::updates::Client::new(),
             update_open: false,
             update_announced_version: None,
@@ -215,7 +250,7 @@ impl PublisherUi {
             prior_room: None,
             controller: Controller::new(),
             invitation: String::new(),
-            name: String::new(),
+            name: crate::settings::guest_name(),
             session_name: None,
             source_id: String::new(),
             encoder: String::new(),
@@ -254,6 +289,7 @@ impl PublisherUi {
     }
 
     fn join(&mut self) {
+        self.following.invitation();
         self.session_name = Some(self.name.trim().to_owned());
         self.prior_room = None;
         self.browser_invitation_open = false;
@@ -263,6 +299,8 @@ impl PublisherUi {
             invitation: self.invitation.trim().to_owned(),
             name: self.name.trim().to_owned(),
             route: Route::Auto,
+            account: self.account_state.credential.clone(),
+            voice: None,
         });
     }
 
@@ -273,6 +311,10 @@ impl PublisherUi {
         egui::Popup::menu(&room_options)
                 .frame(skin::menu_frame())
                 .show(|ui| {
+                    if ui.button(tr("User settings")).clicked() {
+                        self.open_profile();
+                        ui.close();
+                    }
                     if ui.button(tr("Advanced settings")).clicked() {
                         self.advanced_open = true;
                         ui.close();
@@ -302,6 +344,7 @@ impl PublisherUi {
 
         if state.connection == "connecting" {
             if ui.button(tr("Cancel join")).clicked() {
+                self.following.manual_leave(&self.following_client.state());
                 self.controller.send(Command::Leave);
             }
         } else if connected
@@ -316,6 +359,7 @@ impl PublisherUi {
                 )
                 .clicked()
         {
+            self.following.manual_leave(&self.following_client.state());
             self.controller.send(Command::Leave);
             self.textures.clear();
         }
@@ -413,20 +457,12 @@ impl PublisherUi {
                 self.join();
             }
             ui.small(tr(
-                "This invitation selects the server. Your name is kept only while the app is open.",
+                "This invitation selects the server. Your guest nickname is remembered on this PC.",
             ));
             return;
         }
-        ui.heading(tr("Join your room"));
-        ui.label(
-            egui::RichText::new(tr(
-                "Paste an invitation from a friend, then choose your name.",
-            ))
-            .color(pal().muted),
-        );
-        ui.add_space(8.0);
         let invitation_label = ui.horizontal(|ui| {
-            let label = ui.label(tr("Room invitation"));
+            let label = ui.label(tr("Invitation link"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.add_enabled(!state.busy, egui::Button::new(if self.show_invitation { tr("Hide") } else { tr("Show") })).on_hover_text(tr("Reveal this private invitation only when it is safe to show your screen")).clicked() {
                     self.show_invitation = !self.show_invitation;
@@ -481,9 +517,6 @@ impl PublisherUi {
         {
             self.join();
         }
-        ui.small(tr(
-            "Open a room link from /stream or /telar in Discord, or paste an invitation. Nothing is restored from a previous launch.",
-        ));
     }
 
     fn selection(&self) -> SharingSelection {
@@ -821,11 +854,6 @@ impl PublisherUi {
     }
 
     fn sharing_menu(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
-        if !matches!(state.connection, "connected" | "reconnecting") {
-            self.clear_picker();
-            self.join_form(ui, state);
-            return;
-        }
         ui.spacing_mut().item_spacing.y = 6.0;
         let encoder = state.encoders.iter().find(|e| e.factory == self.encoder);
         let source = state.sources.iter().find(|s| s.id == self.source_id);
@@ -1964,7 +1992,7 @@ impl PublisherUi {
             ui.heading(tr("Restart to update"));
             ui.label(tr("Restarting ends sharing and watching."));
             ui.label(tr(
-                "After restart, open a fresh invitation and enter your name again.",
+                "After restart, open a fresh invitation. Your guest nickname is remembered.",
             ));
             ui.horizontal(|ui| {
                 let row_width = button_width(ui, tr("Later"))
@@ -2087,6 +2115,14 @@ impl PublisherUi {
 
     fn render(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
+        self.account_state = self.account_client.state();
+        if let Some(url) = self.account_client.take_browser_url() {
+            ctx.open_url(egui::OpenUrl::new_tab(url));
+        }
+        self.poll_following(&ctx);
+        let profile_snapshot = self.controller.snapshot();
+        self.poll_profile(&profile_snapshot);
+        self.profile_dialog(&ctx);
         ctx.request_repaint_after(Duration::from_secs(1));
         if let Some(started) = self.closing_since {
             egui::CentralPanel::default().show(root, |ui| {
@@ -2109,7 +2145,9 @@ impl PublisherUi {
             && !self.update_open
             && ctx.input(|i| i.key_pressed(egui::Key::Escape))
         {
-            if self.advanced_open {
+            if self.profile_open {
+                self.profile_open = false;
+            } else if self.advanced_open {
                 self.advanced_open = false;
             } else if self.fullscreen.is_some() {
                 self.set_fullscreen(&ctx, None);
@@ -2117,7 +2155,8 @@ impl PublisherUi {
                 self.focused = None;
             }
         }
-        let state = self.controller.snapshot();
+        let mut state = self.controller.snapshot();
+        self.apply_profile_names(&mut state);
         for tile in &state.tiles {
             crate::stream_diagnostics::panel(&ctx, tile);
         }
@@ -2259,7 +2298,8 @@ impl PublisherUi {
                 ui.set_opacity(intro);
                 ui.add_space((1.0 - intro) * 10.0);
                 if !connected {
-                    self.join_card(ui, &state);
+                    self.clear_picker();
+                    self.join_landing(ui, &state);
                     return;
                 }
                 ui.horizontal(|ui| {
@@ -2730,12 +2770,19 @@ fn avatar(ui: &mut egui::Ui, name: &str, size: f32) {
     );
 }
 
-fn participant(ui: &mut egui::Ui, name: &str, own: bool, sharing: bool) {
+fn participant(
+    ui: &mut egui::Ui,
+    name: &str,
+    own: bool,
+    sharing: bool,
+    texture: Option<egui::TextureId>,
+    discord: bool,
+) -> egui::Response {
     ui.scope(|ui| {
         ui.spacing_mut().interact_size.y = 26.0;
         ui.spacing_mut().item_spacing.y = 3.0;
         ui.horizontal(|ui| {
-            avatar(ui, name, 26.0);
+            profile::avatar(ui, name, 26.0, texture);
             let label = if own {
                 format!("{} ({})", name, tr("you"))
             } else {
@@ -2751,11 +2798,27 @@ fn participant(ui: &mut egui::Ui, name: &str, own: bool, sharing: bool) {
             )
             .response
             .on_hover_text(name);
+            ui.label(
+                egui::RichText::new(if discord { "D" } else { "G" })
+                    .small()
+                    .color(pal().muted),
+            )
+            .on_hover_text(if discord {
+                tr("Discord identity")
+            } else {
+                tr("Guest identity")
+            });
             if sharing {
                 badge(ui, tr("Live"), pal().accent);
             }
         });
-    });
+    })
+    .response
+    .interact(if own {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    })
 }
 
 /// Theme cards (each a miniature of the real window) and the language switch.
@@ -3188,6 +3251,47 @@ mod tests {
     }
 
     #[test]
+    fn offline_nickname_change_is_used_by_the_next_invitation() {
+        let mut app = app();
+        app.session_name = Some("Previous name".into());
+        app.name = "Previous name".into();
+        app.remember_guest_name("Updated offline name".into());
+        let (controller, mut command) = Controller::recording_for_test(Snapshot::default());
+        app.controller = controller;
+        finish_link(&mut app, "https://next.test/synthetic");
+        assert!(matches!(command(),Some(Command::Join{name,..})if name=="Updated offline name"));
+        assert!(
+            command().is_none(),
+            "A nickname update must not start capture or subscriptions"
+        );
+    }
+
+    #[test]
+    fn current_profile_updates_preserve_an_active_invitation_name_draft() {
+        let mut app = app();
+        app.browser_invitation_open = true;
+        app.invitation = "https://destination.test/synthetic".into();
+        app.name = "Destination nickname draft".into();
+        app.session_name = Some("Current nickname".into());
+        let (controller, mut command) = Controller::recording_for_test(Snapshot {
+            connection: "connected",
+            ..Default::default()
+        });
+        app.controller = controller;
+        app.observe_profile_name("Updated current nickname");
+        assert_eq!(app.name, "Destination nickname draft");
+        assert_eq!(
+            app.session_name.as_deref(),
+            Some("Updated current nickname")
+        );
+        app.join();
+        assert!(
+            matches!(command(),Some(Command::Join{name,..})if name=="Destination nickname draft")
+        );
+        assert!(command().is_none());
+    }
+
+    #[test]
     fn latest_link_supersedes_pending_load_without_detaching_worker() {
         let mut app = app();
         app.link_result = Some(crate::browser_links::Load::with_request(
@@ -3461,6 +3565,22 @@ mod tests {
     fn app() -> PublisherUi {
         gstreamer::init().expect("Test media runtime");
         PublisherUi {
+            following_client: crate::following::Client::disabled(),
+            following: Default::default(),
+            following_key: None,
+            next_follow_attempt: Instant::now(),
+            account_client: crate::account::Client::disabled(),
+            profile_connection_key: None,
+            account_state: Default::default(),
+            account_server: crate::account::DEFAULT_SERVER.into(),
+            profile_client: None,
+            profile_state: Default::default(),
+            profile_textures: HashMap::new(),
+            profile_started: Instant::now(),
+            profile_open: false,
+            profile_page: profile::SettingsPage::Profile,
+            profile_name: String::new(),
+            saved_guest_name: String::new(),
             updates: crate::updates::Client::new(),
             update_open: false,
             update_announced_version: None,
@@ -3835,6 +3955,7 @@ mod tests {
     #[test]
     fn room_actions_stay_inside_the_window_at_the_minimum_width() {
         let mut app = app();
+        app.invitation="https://room.example/r/AAAAAAAAAAAAAAAAAAAAAA#invite=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".into();
         let (client, _actions) = crate::updates::Client::fixture(crate::update_protocol::Status {
             phase: crate::update_protocol::Phase::Ready,
             ..Default::default()

@@ -40,6 +40,8 @@ The local app/server derivation avoids directly exposing that common identifier.
 The result remains a persistent pseudonymous identifier, not anonymous data or
 proof of a person. A modified client can spoof or omit its identifier. This feature
 provides usage recognition, not a hardware ban or account authentication.
+Guest avatars also use this identifier for cosmetic profile selection and editing,
+with the explicitly accepted spoofing limitation described in [guest profiles](guest-profiles.md).
 
 ## Admission, storage and compatibility
 

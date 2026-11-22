@@ -92,4 +92,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" macos-release/*
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          checksums=(macos-release/**/SHA256SUMS-macos)
+          [[ ${#checksums[@]} == 1 ]]
+          cd "$(dirname -- "${checksums[0]}")"
+          sha256sum --check --strict SHA256SUMS-macos
+          assets=(*.dmg *-full.nupkg releases.osx-arm64.json macos-manifest.json SHA256SUMS-macos)
+          [[ ${#assets[@]} == 5 ]]
+          gh release upload "$RELEASE_TAG" "${assets[@]}"

@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Config } from "./config.js";
 import type { Rooms } from "./rooms.js";
+import type { DiscordVoice } from "./discord-voice.js";
 
 const snowflake = z.string().regex(/^\d{17,20}$/);
 const interaction = z.object({
@@ -43,6 +44,7 @@ export async function discordRoutes(
   config: Config,
   rooms: Rooms,
   now = Date.now,
+  voice?: DiscordVoice,
 ) {
   if (!config.discord) return;
   const discord = config.discord;
@@ -112,11 +114,30 @@ export async function discordRoutes(
           return message(
             "Room creation is unavailable in this Discord server.",
           );
+        const lookup = voice?.index.lookup(
+          input.member.user.id,
+          input.guild_id,
+        );
+        if (voice?.status().configured && !lookup?.known)
+          return message(
+            "Discord voice discovery is reconnecting. Please try again shortly.",
+          );
+        const location = voice?.index.lookup(
+          input.member.user.id,
+          input.guild_id,
+        ).locations[0];
         const created = rooms.createFromDiscord(
           input.id,
           input.guild_id,
           input.member.user.id,
           discordRoomName(input.member),
+          location
+            ? {
+                guildId: location.guildId,
+                channelId: location.channelId,
+                name: location.channelName,
+              }
+            : undefined,
         );
         if (created === "duplicate")
           return message(
@@ -124,10 +145,25 @@ export async function discordRoutes(
           );
         if (created === "limited")
           return message("Too many rooms created. Try again in a minute.");
+        if (created === "unavailable")
+          return message(
+            "Room invitations are unavailable for this voice channel. Ask the administrator to check room access.",
+          );
         // Angle brackets and SUPPRESS_EMBEDS prevent link unfurling. The secret is fragment-only.
+        const permanent = location
+          ? rooms.channelInvitation(
+              location.guildId,
+              location.channelId,
+              location.channelName,
+            )
+          : null;
+        const url =
+          permanent && location
+            ? `${config.publicUrl}/c/${location.guildId}/${location.channelId}#invite=${permanent}`
+            : `${config.publicUrl}/r/${created.room.id}#invite=${created.invitation}`;
         return message(
-          `Join a new PodeTelar room: <${config.publicUrl}/r/${created.room.id}#invite=${created.invitation}>\nAnyone with this link can join. Share it only with friends.`,
-          false,
+          `Join a PodeTelar room: <${url}>\nAnyone with this link can join. Share it only with friends.`,
+          Boolean(location),
         );
       },
     );

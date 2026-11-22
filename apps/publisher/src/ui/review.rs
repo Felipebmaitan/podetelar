@@ -8,14 +8,16 @@ pub fn run() -> Result<()> {
     ensure!(
         [
             "room",
+            "join",
             "settings",
+            "profile",
+            "discord",
             "information",
             "update",
-            "join",
             "golive"
         ]
         .contains(&mode.as_str()),
-        "Choose room, settings, information, update, join or golive."
+        "Choose room, join, settings, profile, discord, information, update or golive."
     );
     let output = PathBuf::from(
         std::env::args()
@@ -65,11 +67,15 @@ pub fn run() -> Result<()> {
         *diagnostics.rtc_at.lock().unwrap() = Some(Instant::now());
         *diagnostics.rtc.lock().unwrap() = vec![("Decode time".into(), "1.24 ms/frame".into()), ("Decoder".into(), "Direct3D11 (hardware)".into())];
         *diagnostics.sender.lock().unwrap() = Some((Instant::now(), serde_json::json!({ "stale": false, "age_ms": 180, "sample": { "window_ms": 3000, "sequence": 24, "codec": "AV1", "encoder": "NVIDIA NVENC AV1", "metrics": { "requested_bps": 20_000_000, "effective_bps": 20_000_000, "sent_bps": 13_800_000, "requested_fps": 60, "encoded_fps": 59.9, "sent_fps": 59.9 } } })));
-        let state = Snapshot { connection: if mode == "join" { "idle" } else { "connected" }, room_name: "Friends".into(), sources: vec![source], encoders: vec![encoder], sharing: true, mode: Some(crate::quality::Mode { width: 1920, height: 1080, fps: 60, bitrate: 20_000_000 }), active_selection: Some(active_selection), tiles: if mode == "information" { vec![tile] } else { vec![] }, ..Default::default() };
+        let state = if mode == "join" { Snapshot::default() } else {
+            Snapshot { connection: "connected", room_name: "Friends".into(), sources: vec![source], encoders: vec![encoder], sharing: true, mode: Some(crate::quality::Mode { width: 1920, height: 1080, fps: 60, bitrate: 20_000_000 }), active_selection: Some(active_selection), tiles: if mode == "information" { vec![tile] } else { vec![] }, ..Default::default() }
+        };
         let (controller, commands) = Controller::recording_for_test(state);
         inner.controller = controller;
         inner.advanced_open = mode == "settings";
         if mode == "golive" { inner.go_live = Some(false); }
+        if mode == "profile" || mode == "discord" { inner.open_profile(); }
+        if mode == "discord" { inner.profile_page = profile::SettingsPage::Discord; }
         if mode == "update" {
             use crate::update_protocol::{Phase, Status};
             inner.updates = crate::updates::Client::fixture(Status {

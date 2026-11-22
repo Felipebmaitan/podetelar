@@ -195,6 +195,7 @@ try {
     env: {
       ...process.env,
       E2E_BASE_URL: origin,
+      PODETELAR_TEST_SFU_URL: mediaOrigin,
       PODETELAR_TEST_SFU_PID: String(sfu.pid),
       PODETELAR_TEST_SFU_EXE: serverExecutable,
       PODETELAR_NATIVE_EXE: resolve(

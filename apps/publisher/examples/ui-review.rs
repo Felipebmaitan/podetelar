@@ -44,6 +44,8 @@ mod source_picker;
 mod sources;
 #[path = "../src/stream_diagnostics.rs"]
 mod stream_diagnostics;
+#[path = "../src/theme.rs"]
+mod theme;
 #[path = "../src/ui.rs"]
 mod ui;
 #[path = "../src/ui_style.rs"]

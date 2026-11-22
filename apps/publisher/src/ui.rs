@@ -1,7 +1,10 @@
 #[cfg(feature = "ui-review")]
 #[path = "ui/review.rs"]
 pub mod review;
+#[path = "ui/shell.rs"]
+mod shell;
 use crate::locale::tr;
+use crate::theme::{self, pal};
 #[cfg(feature = "performance-experiments")]
 #[allow(dead_code)]
 #[path = "ui/experiment.rs"]
@@ -20,30 +23,41 @@ use std::{
     time::{Duration, Instant},
 };
 
-const ACCENT: egui::Color32 = egui::Color32::from_rgb(68, 216, 184);
-const TEXT: egui::Color32 = egui::Color32::from_rgb(233, 239, 247);
-const MUTED: egui::Color32 = egui::Color32::from_rgb(166, 179, 198);
-const PANEL: egui::Color32 = egui::Color32::from_rgb(30, 33, 38);
-const CANVAS: egui::Color32 = egui::Color32::from_rgb(20, 23, 27);
-const CARD: egui::Color32 = egui::Color32::from_rgb(37, 41, 47);
-const BORDER: egui::Color32 = egui::Color32::from_rgb(55, 61, 69);
-const WARNING: egui::Color32 = egui::Color32::from_rgb(255, 205, 130);
-const ERROR: egui::Color32 = egui::Color32::from_rgb(255, 165, 170);
-
 pub fn configure_theme(ctx: &egui::Context) {
     skin::install_fonts(ctx);
-    ctx.set_theme(egui::ThemePreference::Dark);
-    let mut style = (*ctx.style_of(egui::Theme::Dark)).clone();
-    style.visuals = egui::Visuals::dark();
-    style.visuals.override_text_color = Some(TEXT);
-    style.visuals.weak_text_color = Some(MUTED);
-    style.visuals.panel_fill = PANEL;
-    style.visuals.window_fill = CARD;
-    style.visuals.extreme_bg_color = CANVAS;
-    style.visuals.faint_bg_color = CARD;
-    style.visuals.window_corner_radius = egui::CornerRadius::same(10);
-    style.visuals.selection.bg_fill = ACCENT;
-    style.visuals.selection.stroke.color = CANVAS;
+    apply_theme(ctx);
+}
+
+/// Apply the selected palette. Safe to call again whenever the theme changes.
+pub fn apply_theme(ctx: &egui::Context) {
+    let p = pal();
+    let which = if p.dark {
+        egui::Theme::Dark
+    } else {
+        egui::Theme::Light
+    };
+    ctx.set_theme(if p.dark {
+        egui::ThemePreference::Dark
+    } else {
+        egui::ThemePreference::Light
+    });
+    let mut style = (*ctx.style_of(which)).clone();
+    style.visuals = if p.dark {
+        egui::Visuals::dark()
+    } else {
+        egui::Visuals::light()
+    };
+    style.visuals.override_text_color = Some(p.text);
+    style.visuals.weak_text_color = Some(p.muted);
+    style.visuals.hyperlink_color = p.accent;
+    style.visuals.panel_fill = p.panel;
+    style.visuals.window_fill = p.card;
+    style.visuals.extreme_bg_color = p.canvas;
+    style.visuals.faint_bg_color = p.card;
+    style.visuals.window_corner_radius = egui::CornerRadius::same(18);
+    style.visuals.menu_corner_radius = egui::CornerRadius::same(12);
+    style.visuals.selection.bg_fill = p.accent;
+    style.visuals.selection.stroke.color = p.on_accent;
     style.visuals.handle_shape = egui::style::HandleShape::Circle;
     style.visuals.slider_trailing_fill = true;
     style.visuals.popup_shadow = skin::menu_frame().shadow;
@@ -54,23 +68,30 @@ pub fn configure_theme(ctx: &egui::Context) {
         &mut style.visuals.widgets.inactive,
         &mut style.visuals.widgets.hovered,
         &mut style.visuals.widgets.active,
+        &mut style.visuals.widgets.open,
     ] {
-        widget.corner_radius = egui::CornerRadius::same(6);
-        widget.fg_stroke.color = TEXT;
-        widget.bg_stroke = egui::Stroke::new(0.5, BORDER);
+        widget.corner_radius = egui::CornerRadius::same(11);
+        widget.fg_stroke.color = p.text;
+        widget.bg_stroke = egui::Stroke::new(0.5, p.border);
     }
-    style.visuals.widgets.noninteractive.bg_fill = CARD;
-    style.visuals.widgets.noninteractive.weak_bg_fill = CARD;
-    style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(43, 48, 56);
-    style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(43, 48, 56);
-    style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(54, 61, 70);
-    style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(54, 61, 70);
-    style.visuals.widgets.hovered.bg_stroke =
-        egui::Stroke::new(1.0, egui::Color32::from_rgb(91, 111, 115));
-    style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(33, 91, 85);
+    style.visuals.widgets.noninteractive.bg_fill = p.card;
+    style.visuals.widgets.noninteractive.weak_bg_fill = p.card;
+    style.visuals.widgets.inactive.bg_fill = p.control;
+    style.visuals.widgets.inactive.weak_bg_fill = p.control;
+    style.visuals.widgets.hovered.bg_fill = p.control_hover;
+    style.visuals.widgets.hovered.weak_bg_fill = p.control_hover;
+    style.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, p.hover_stroke);
+    style.visuals.widgets.active.bg_fill = p.control_active;
+    style.visuals.widgets.active.weak_bg_fill = p.control_active;
+    style.visuals.widgets.open.bg_fill = p.control;
+    style.visuals.widgets.open.weak_bg_fill = p.control;
+    style.visuals.window_stroke = egui::Stroke::new(1.0, p.border);
+    style.visuals.window_shadow = skin::menu_frame().shadow;
+    // Hover and press transitions: quick enough to feel direct, slow enough to read.
+    style.animation_time = 0.14;
     style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-    style.spacing.button_padding = egui::vec2(10.0, 6.0);
-    style.spacing.interact_size.y = 32.0;
+    style.spacing.button_padding = egui::vec2(14.0, 7.0);
+    style.spacing.interact_size.y = 34.0;
     style.spacing.scroll = egui::style::ScrollStyle::solid();
     style.spacing.scroll.bar_width = 8.0;
     style
@@ -85,7 +106,7 @@ pub fn configure_theme(ctx: &egui::Context) {
     style
         .text_styles
         .insert(egui::TextStyle::Small, egui::FontId::proportional(12.0));
-    ctx.set_style_of(egui::Theme::Dark, style);
+    ctx.set_style_of(which, style);
 }
 
 pub struct PublisherUi {
@@ -114,6 +135,8 @@ pub struct PublisherUi {
     copied_until: Option<Instant>,
     remembered_volume: HashMap<String, u32>,
     advanced_open: bool,
+    /// Go-live dialog; the value is whether it was opened while idle.
+    go_live: Option<bool>,
     diagnostics_open: bool,
     show_invitation: bool,
     browser_invitation_open: bool,
@@ -209,6 +232,7 @@ impl PublisherUi {
             copied_until: None,
             remembered_volume: HashMap::new(),
             advanced_open: false,
+            go_live: None,
             diagnostics_open: false,
             show_invitation: false,
             browser_invitation_open: is_browser_launch,
@@ -242,117 +266,60 @@ impl PublisherUi {
         });
     }
 
-    fn room_header(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+    /// Right-aligned room actions; the caller supplies a right-to-left layout.
+    fn room_actions(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
         let connected = matches!(state.connection, "connected" | "reconnecting");
-        ui.horizontal(|ui| {
-            brand_mark(ui);
-            ui.label(skin::strong("PodeTelar", 20.0));
-            ui.separator();
-            let room_label = format!(
-                "{}  ·  {} {}",
-                if state.room_name.is_empty() {
-                    tr("Your private room")
-                } else if state.room_name == "Friends" {
-                    tr("Friends")
-                } else {
-                    &state.room_name
-                },
-                if connected {
-                    state.participants.len() + 1
-                } else {
-                    0
-                },
-                tr("in room")
-            );
-            let room_button = ui
-                .add_sized(
-                    [260.0, 32.0],
-                    egui::Button::new("")
-                        .left_text(skin::strong(&room_label, 14.0))
-                        .truncate()
-                        .frame(false),
-                )
-                .on_hover_text(&room_label);
-            egui::Popup::menu(&room_button)
+        let room_options = skin::icon_button(ui, Icon::More, tr("Room options"));
+        egui::Popup::menu(&room_options)
                 .frame(skin::menu_frame())
                 .show(|ui| {
-                    if connected {
-                        ui.label(egui::RichText::new(tr("People in this room")).strong());
-                        ui.label(format!("{} ({})", self.name, tr("you")));
-                        for name in &state.participants {
-                            ui.label(name);
-                        }
-                    } else {
-                        ui.label(tr("Join a room to see its members."));
+                    if ui.button(tr("Advanced settings")).clicked() {
+                        self.advanced_open = true;
+                        ui.close();
                     }
+                    ui.separator();
+                if std::env::var_os(crate::activation_protocol::INSTALLED).is_some() {
+                    ui.label(tr(if self.browser_links_enabled { "Room links open this installed app automatically." } else { "Room links are handled by another application or need repair." }));
+                } else {
+                let label = if self.browser_links_enabled { "Disable browser links" } else { "Enable browser links" };
+                if ui.button(tr(label)).on_hover_text(tr("Allow invitation pages to open this app for your Windows user. A launcher copy is kept in Local AppData.")).clicked() {
+                    match crate::browser_links::set_enabled(!self.browser_links_enabled) {
+                        Ok(()) => { self.browser_links_enabled = !self.browser_links_enabled; self.settings_error.clear(); }
+                        Err(error) => self.settings_error = error.to_string(),
+                    }
+                    ui.close();
+                }
+                if self.browser_links_enabled && ui.button(tr("Update browser links to this version")).clicked() {
+                    match crate::browser_links::set_enabled(true) {
+                        Ok(()) => self.settings_error.clear(),
+                        Err(error) => self.settings_error = error.to_string(),
+                    }
+                    ui.close();
+                }
+                }
+                    open_licenses(ui);
                 });
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                self.update_badge(ui);
-                let mut pt = crate::locale::portuguese();
-                egui::ComboBox::from_id_salt("ui-language")
-                    .selected_text(if pt { "PT-BR" } else { "EN" })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut pt, true, "Português (Brasil)");
-                        ui.selectable_value(&mut pt, false, "English");
-                    });
-                if pt != crate::locale::portuguese() {
-                    crate::locale::select(pt);
-                }
-                if state.connection == "connecting" {
-                    if ui.button(tr("Cancel join")).clicked() {
-                        self.controller.send(Command::Leave);
-                    }
-                } else if connected && ui.button(tr("Leave room")).clicked() {
-                    self.controller.send(Command::Leave);
-                    self.textures.clear();
-                }
-                let room_options = skin::icon_button(ui, Icon::More, tr("Room options"));
-                egui::Popup::menu(&room_options)
-                    .frame(skin::menu_frame())
-                    .show(|ui| {
-                        if ui.button(tr("Advanced settings")).clicked() {
-                            self.advanced_open = true;
-                            ui.close();
-                        }
-                        ui.separator();
-                    if std::env::var_os(crate::activation_protocol::INSTALLED).is_some() {
-                        ui.label(tr(if self.browser_links_enabled { "Room links open this installed app automatically." } else { "Room links are handled by another application or need repair." }));
-                    } else {
-                    let label = if self.browser_links_enabled { "Disable browser links" } else { "Enable browser links" };
-                    if ui.button(tr(label)).on_hover_text(tr("Allow invitation pages to open this app for your Windows user. A launcher copy is kept in Local AppData.")).clicked() {
-                        match crate::browser_links::set_enabled(!self.browser_links_enabled) {
-                            Ok(()) => { self.browser_links_enabled = !self.browser_links_enabled; self.settings_error.clear(); }
-                            Err(error) => self.settings_error = error.to_string(),
-                        }
-                        ui.close();
-                    }
-                    if self.browser_links_enabled && ui.button(tr("Update browser links to this version")).clicked() {
-                        match crate::browser_links::set_enabled(true) {
-                            Ok(()) => self.settings_error.clear(),
-                            Err(error) => self.settings_error = error.to_string(),
-                        }
-                        ui.close();
-                    }
-                    }
-                        open_licenses(ui);
-                    });
-                if connected {
-                    let copied = self
-                        .copied_until
-                        .is_some_and(|until| Instant::now() < until);
-                    if skin::outline_button(
-                        ui,
-                        if copied { tr("Copied!") } else { tr("Invite") },
-                        Icon::Invite,
-                    )
-                    .clicked()
-                    {
-                        ui.ctx().copy_text(self.invitation.clone());
-                        self.copied_until = Some(Instant::now() + Duration::from_secs(2));
-                    }
-                }
-            });
-        });
+
+        if state.connection == "connecting" {
+            if ui.button(tr("Cancel join")).clicked() {
+                self.controller.send(Command::Leave);
+            }
+        } else if connected
+            && ui
+                .add(
+                    egui::Button::new(skin::strong(tr("Leave room"), 13.0).color(pal().danger))
+                        .fill(egui::Color32::TRANSPARENT)
+                        .stroke(egui::Stroke::new(
+                            1.0,
+                            pal().danger_bg.lerp_to_gamma(pal().danger, 0.35),
+                        )),
+                )
+                .clicked()
+        {
+            self.controller.send(Command::Leave);
+            self.textures.clear();
+        }
+        self.update_badge(ui);
     }
 
     fn dismiss_browser_invitation(&mut self) {
@@ -378,8 +345,8 @@ impl PublisherUi {
             .backdrop_color(egui::Color32::from_black_alpha(155))
             .frame(
                 egui::Frame::new()
-                    .fill(CARD)
-                    .stroke(egui::Stroke::new(1.0, BORDER))
+                    .fill(pal().card)
+                    .stroke(egui::Stroke::new(1.0, pal().border))
                     .corner_radius(16)
                     .inner_margin(28)
                     .shadow(skin::menu_frame().shadow),
@@ -409,7 +376,7 @@ impl PublisherUi {
                     self.join_form(ui, state);
                 }
                 if !self.settings_error.is_empty() {
-                    ui.colored_label(ERROR, tr(&self.settings_error));
+                    ui.colored_label(pal().error, tr(&self.settings_error));
                 }
                 dismiss |= ui.button(tr("Dismiss browser invitation")).clicked();
             });
@@ -455,7 +422,7 @@ impl PublisherUi {
             egui::RichText::new(tr(
                 "Paste an invitation from a friend, then choose your name.",
             ))
-            .color(MUTED),
+            .color(pal().muted),
         );
         ui.add_space(8.0);
         let invitation_label = ui.horizontal(|ui| {
@@ -504,8 +471,8 @@ impl PublisherUi {
                 if valid {
                     primary(tr("Join room"), ui.available_width())
                 } else {
-                    egui::Button::new(egui::RichText::new(tr("Join room")).color(MUTED))
-                        .fill(CARD)
+                    egui::Button::new(egui::RichText::new(tr("Join room")).color(pal().muted))
+                        .fill(pal().card)
                         .min_size(egui::vec2(ui.available_width(), 38.0))
                 },
             )
@@ -604,7 +571,7 @@ impl PublisherUi {
         let width = ui.available_width();
         let (rect, _) =
             ui.allocate_exact_size(egui::vec2(width, width * 9.0 / 16.0), egui::Sense::hover());
-        ui.painter().rect_filled(rect, 6.0, CANVAS);
+        ui.painter().rect_filled(rect, 6.0, pal().canvas);
         if state.sharing
             && let Some(texture) = self.textures.get("__self_preview")
         {
@@ -617,7 +584,7 @@ impl PublisherUi {
                 egui::Align2::CENTER_CENTER,
                 tr("Your screen"),
                 egui::FontId::proportional(14.0),
-                MUTED,
+                pal().muted,
             );
         }
         ui.interact(
@@ -797,7 +764,7 @@ impl PublisherUi {
                     ui.horizontal(|ui| {
                         let (icon, _) =
                             ui.allocate_exact_size(egui::vec2(22.0, 34.0), egui::Sense::hover());
-                        skin::icon(ui.painter(), icon, Icon::Monitor, TEXT);
+                        skin::icon(ui.painter(), icon, Icon::Monitor, pal().text);
                         ui.vertical(|ui| {
                             ui.add(
                                 egui::Label::new(skin::strong(source_name(source), 14.0))
@@ -809,7 +776,7 @@ impl PublisherUi {
                                     source.width, source.height
                                 ))
                                 .size(12.0)
-                                .color(MUTED),
+                                .color(pal().muted),
                             );
                         });
                     });
@@ -817,7 +784,7 @@ impl PublisherUi {
                         egui::vec2(width, width * 9.0 / 16.0),
                         egui::Sense::hover(),
                     );
-                    ui.painter().rect_filled(rect, 6.0, CANVAS);
+                    ui.painter().rect_filled(rect, 6.0, pal().canvas);
                     if let Some((_, texture)) = &self.picker_texture {
                         egui::Image::new((texture.id(), texture.size_vec2()))
                             .corner_radius(6)
@@ -831,11 +798,11 @@ impl PublisherUi {
                         let text = ui.painter().layout(
                             message.to_owned(),
                             egui::FontId::proportional(12.0),
-                            MUTED,
+                            pal().muted,
                             rect.width() - 32.0,
                         );
                         ui.painter()
-                            .galley(rect.center() - text.size() / 2.0, text, MUTED);
+                            .galley(rect.center() - text.size() / 2.0, text, pal().muted);
                         if self.picker_failed.as_deref() != Some(&source.id) {
                             ctx.request_repaint_after(Duration::from_millis(40));
                         }
@@ -847,7 +814,7 @@ impl PublisherUi {
                             "Local preview · not broadcasting"
                         }))
                         .size(12.0)
-                        .color(MUTED),
+                        .color(pal().muted),
                     );
                 });
             });
@@ -859,24 +826,25 @@ impl PublisherUi {
             self.join_form(ui, state);
             return;
         }
-        ui.horizontal(|ui| {
-            ui.label(skin::strong(tr("Share your screen").to_uppercase(), 12.0));
-        });
         ui.spacing_mut().item_spacing.y = 6.0;
         let encoder = state.encoders.iter().find(|e| e.factory == self.encoder);
         let source = state.sources.iter().find(|s| s.id == self.source_id);
         ui.add_enabled_ui(!state.busy, |ui| {
             self.source_selector(ui,state);
             if let Some(encoder) = encoder { quality_controls(ui, &mut self.quality, source, encoder); }
-            else { ui.colored_label(WARNING, tr("No supported hardware encoder was found. You can still watch compatible streams.")); }
+            else { ui.colored_label(pal().warning, tr("No supported hardware encoder was found. You can still watch compatible streams.")); }
         });
         ui.horizontal(|ui| {
             let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 22.0), egui::Sense::hover());
-            skin::icon(ui.painter(), rect, Icon::Settings, MUTED);
+            skin::icon(ui.painter(), rect, Icon::Settings, pal().muted);
             if ui
                 .add(
-                    egui::Button::new(egui::RichText::new(tr("Advanced")).size(12.0).color(MUTED))
-                        .frame(false),
+                    egui::Button::new(
+                        egui::RichText::new(tr("Advanced"))
+                            .size(12.0)
+                            .color(pal().muted),
+                    )
+                    .frame(false),
                 )
                 .clicked()
             {
@@ -909,7 +877,7 @@ impl PublisherUi {
         ui.separator();
         ui.horizontal(|ui| {
             let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 18.0), egui::Sense::hover());
-            skin::icon(ui.painter(), rect, Icon::Volume, TEXT);
+            skin::icon(ui.painter(), rect, Icon::Volume, pal().text);
             ui.label(egui::RichText::new(tr("Source audio")).size(12.0));
         })
         .response
@@ -917,7 +885,7 @@ impl PublisherUi {
         if state.sharing || state.capture_pending {
             if let Some(mode) = state.mode {
                 ui.colored_label(
-                    ACCENT,
+                    pal().accent,
                     skin::strong(
                         format!("{}×{} · {} FPS", mode.width, mode.height, mode.fps),
                         12.0,
@@ -932,7 +900,7 @@ impl PublisherUi {
                     tr("sent")
                 ));
             } else {
-                ui.colored_label(WARNING, tr("Starting your stream…"));
+                ui.colored_label(pal().warning, tr("Starting your stream…"));
             }
             let selection = self.selection();
             let dirty = state
@@ -944,8 +912,8 @@ impl PublisherUi {
                 if ui
                     .add_sized(
                         [width, 38.0],
-                        egui::Button::new(egui::RichText::new(tr("Stop")).color(ERROR))
-                            .fill(egui::Color32::from_rgb(65, 37, 46)),
+                        egui::Button::new(egui::RichText::new(tr("Stop")).color(pal().error))
+                            .fill(pal().danger_bg),
                     )
                     .on_hover_text(tr("Stop sharing"))
                     .clicked()
@@ -953,11 +921,11 @@ impl PublisherUi {
                     self.controller.send(Command::Stop);
                 }
                 let apply = egui::Button::new(egui::RichText::new(tr("Apply")).color(if dirty {
-                    CANVAS
+                    pal().on_accent
                 } else {
-                    MUTED
+                    pal().muted
                 }))
-                .fill(if dirty { ACCENT } else { CARD })
+                .fill(if dirty { pal().accent } else { pal().card })
                 .min_size(egui::vec2(width, 38.0));
                 if ui
                     .add_enabled(state.sharing && !state.busy && valid && dirty, apply)
@@ -974,7 +942,7 @@ impl PublisherUi {
                         && a.quality.fps == selection.quality.fps
                 });
                 ui.colored_label(
-                    WARNING,
+                    pal().warning,
                     if live {
                         tr("Changes pending · applies live")
                     } else {
@@ -995,6 +963,8 @@ impl PublisherUi {
 
     fn advanced(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
         ui.spacing_mut().item_spacing.y = 10.0;
+        appearance_controls(ui);
+        settings_divider(ui);
         ui.label(skin::strong(tr("Video"), 20.0));
         ui.add_space(4.0);
         ui.add_enabled_ui(!state.busy, |ui| {
@@ -1047,7 +1017,7 @@ impl PublisherUi {
         ui.label(
             egui::RichText::new(tr("Shared across the streams you watch."))
                 .size(12.0)
-                .color(MUTED),
+                .color(pal().muted),
         );
         settings_divider(ui);
         ui.label(skin::strong(tr("Connection"), 20.0));
@@ -1063,7 +1033,7 @@ impl PublisherUi {
                     ui.painter(),
                     rect,
                     Icon::Info,
-                    if failed { WARNING } else { MUTED },
+                    if failed { pal().warning } else { pal().muted },
                 );
             }
             ui.vertical(|ui| {
@@ -1082,7 +1052,7 @@ impl PublisherUi {
                 ui.label(
                     egui::RichText::new(tr("To this VPS"))
                         .size(12.0)
-                        .color(MUTED),
+                        .color(pal().muted),
                 );
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1114,8 +1084,8 @@ impl PublisherUi {
                 .backdrop_color(egui::Color32::from_black_alpha(150))
                 .frame(
                     egui::Frame::new()
-                        .fill(CARD)
-                        .stroke(egui::Stroke::new(1.0, BORDER))
+                        .fill(pal().card)
+                        .stroke(egui::Stroke::new(1.0, pal().border))
                         .corner_radius(12)
                         .inner_margin(24),
                 )
@@ -1151,7 +1121,7 @@ impl PublisherUi {
                                     "Ready for your next stream."
                                 }))
                                 .size(12.0)
-                                .color(MUTED),
+                                .color(pal().muted),
                             )
                             .wrap(),
                         );
@@ -1185,7 +1155,7 @@ impl PublisherUi {
         ui.label(
             egui::RichText::new(tr("Capacity to this VPS · payload capped at 200 Mbps"))
                 .size(12.0)
-                .color(MUTED),
+                .color(pal().muted),
         );
         for (name, value) in [
             ("Download", state.capacity.download_bps),
@@ -1204,12 +1174,12 @@ impl PublisherUi {
             }
         }
         if !state.capacity.error.is_empty() {
-            ui.colored_label(WARNING, tr(&state.capacity.error));
+            ui.colored_label(pal().warning, tr(&state.capacity.error));
             if state.capacity.download_bps.is_some() || state.capacity.upload_bps.is_some() {
                 ui.small(tr("Incomplete test; showing last available measurements."));
             }
         }
-        ui.label(egui::RichText::new(tr("A slower watcher's limit can reduce the one shared stream for everyone watching it.")).size(12.0).color(MUTED));
+        ui.label(egui::RichText::new(tr("A slower watcher's limit can reduce the one shared stream for everyone watching it.")).size(12.0).color(pal().muted));
         if ui
             .add_enabled(
                 matches!(state.connection, "connected" | "reconnecting") && !state.busy,
@@ -1337,9 +1307,9 @@ impl PublisherUi {
 
     fn stream_metrics(ui: &mut egui::Ui, rect: egui::Rect, tile: &Tile) {
         let text = stream_metrics_text(&tile.codec, tile.received_bps.load(Ordering::Relaxed));
-        let galley = ui
-            .painter()
-            .layout_no_wrap(text, egui::FontId::proportional(12.0), TEXT);
+        let galley =
+            ui.painter()
+                .layout_no_wrap(text, egui::FontId::proportional(12.0), pal().text);
         let background = egui::Rect::from_min_size(
             rect.right_bottom() - galley.size() - egui::vec2(18.0, 16.0),
             galley.size() + egui::vec2(12.0, 8.0),
@@ -1347,7 +1317,7 @@ impl PublisherUi {
         ui.painter()
             .rect_filled(background, 4.0, egui::Color32::from_black_alpha(195));
         ui.painter()
-            .galley(background.min + egui::vec2(6.0, 4.0), galley, TEXT);
+            .galley(background.min + egui::vec2(6.0, 4.0), galley, pal().text);
     }
 
     fn watch_menu(&mut self, ui: &mut egui::Ui, tile: &Tile) {
@@ -1357,7 +1327,7 @@ impl PublisherUi {
         ui.add_space(3.0);
         ui.horizontal(|ui| {
             ui.add_space(10.0);
-            ui.label(skin::strong(&tile.name, 12.0).color(MUTED));
+            ui.label(skin::strong(&tile.name, 12.0).color(pal().muted));
         });
         ui.add_space(5.0);
         if !tile.watching {
@@ -1385,7 +1355,7 @@ impl PublisherUi {
         ui.horizontal(|ui| {
             ui.add_space(10.0);
             let (rect, _) = ui.allocate_exact_size(egui::vec2(17.0, 24.0), egui::Sense::hover());
-            skin::icon(ui.painter(), rect, Icon::Volume, TEXT);
+            skin::icon(ui.painter(), rect, Icon::Volume, pal().text);
             ui.spacing_mut().slider_width = ui.available_width() - 10.0;
             // Keep egui's slider focus, keyboard, drag and range semantics.
             if skin::mint_slider(ui, &mut volume, 0..=100)
@@ -1535,7 +1505,7 @@ impl PublisherUi {
                         .order(egui::Order::Foreground)
                         .show(&ctx, |ui| {
                             egui::Frame::new()
-                                .fill(CARD)
+                                .fill(pal().card)
                                 .inner_margin(8)
                                 .corner_radius(6)
                                 .show(ui, |ui| {
@@ -1572,7 +1542,7 @@ impl PublisherUi {
                         egui::Align2::CENTER_TOP,
                         tr(&tile.status),
                         egui::FontId::proportional(16.0),
-                        WARNING,
+                        pal().warning,
                     );
                 }
             });
@@ -1602,7 +1572,7 @@ impl PublisherUi {
             if present {
                 self.update_picture(ui.ctx(), tile);
             }
-            ui.painter().rect_filled(rect, 8.0, egui::Color32::BLACK);
+            ui.painter().rect_filled(rect, 14.0, egui::Color32::BLACK);
             #[cfg(feature = "performance-experiments")]
             let planar = present && self.planar.paint(ui, &tile.id, rect);
             #[cfg(not(feature = "performance-experiments"))]
@@ -1614,7 +1584,7 @@ impl PublisherUi {
                     *viewport = Some((target.width() * ppp, target.height() * ppp));
                 }
                 egui::Image::new((texture.id(), texture.size_vec2()))
-                    .corner_radius(8)
+                    .corner_radius(14)
                     .paint_at(ui, fit_picture(rect, texture.aspect_ratio()));
             } else if !planar {
                 ui.painter().text(
@@ -1626,16 +1596,16 @@ impl PublisherUi {
                         tr("Loading preview…")
                     },
                     egui::FontId::proportional(14.0),
-                    MUTED,
+                    pal().muted,
                 );
             }
             if tile.watching && response.double_clicked() {
                 self.set_fullscreen(ui.ctx(), Some(tile.id.clone()));
             }
-            let overlay = egui::Color32::from_rgba_unmultiplied(23, 31, 37, 230);
+            let overlay = pal().overlay;
             let name_width = ui
                 .painter()
-                .layout_no_wrap(tile.name.clone(), skin::semibold(14.0), TEXT)
+                .layout_no_wrap(tile.name.clone(), skin::semibold(14.0), pal().text)
                 .size()
                 .x
                 .min(160.0);
@@ -1650,7 +1620,7 @@ impl PublisherUi {
             );
             egui::Frame::new()
                 .fill(overlay)
-                .corner_radius(8)
+                .corner_radius(12)
                 .inner_margin(6)
                 .show(&mut header, |ui| {
                     ui.horizontal(|ui| {
@@ -1671,13 +1641,17 @@ impl PublisherUi {
                             } else {
                                 tr("Connecting")
                             },
-                            if tile.watching { ACCENT } else { MUTED },
+                            if tile.watching {
+                                pal().accent
+                            } else {
+                                pal().muted
+                            },
                         );
                     });
                 });
             if !tile.watching {
                 ui.painter()
-                    .rect_filled(rect, 6.0, egui::Color32::from_black_alpha(65));
+                    .rect_filled(rect, 14.0, egui::Color32::from_black_alpha(70));
                 let target = egui::Rect::from_center_size(rect.center(), egui::vec2(124.0, 40.0));
                 if ui.put(target, primary(tr("Watch"), 124.0)).clicked() {
                     self.controller.send(Command::Watch {
@@ -1689,13 +1663,22 @@ impl PublisherUi {
                     egui::pos2(rect.left(), rect.bottom() - 28.0),
                     rect.max,
                 );
-                ui.painter().rect_filled(caption, 0.0, overlay);
+                ui.painter().rect_filled(
+                    caption,
+                    egui::CornerRadius {
+                        nw: 0,
+                        ne: 0,
+                        sw: 14,
+                        se: 14,
+                    },
+                    overlay,
+                );
                 ui.painter().text(
                     caption.left_center() + egui::vec2(10.0, 0.0),
                     egui::Align2::LEFT_CENTER,
                     tr("Still preview · updates up to once a minute"),
                     egui::FontId::proportional(11.0),
-                    TEXT,
+                    pal().text,
                 );
             }
             // The entire video is the hover target, including its overlay buttons.
@@ -1751,9 +1734,27 @@ impl PublisherUi {
                 notice_ui.label(
                     egui::RichText::new(tr(&tile.status))
                         .size(12.0)
-                        .color(WARNING),
+                        .color(pal().warning),
                 );
             }
+            // Hover frames the tile in the accent; selection of what to watch feels direct.
+            let hover = ui.ctx().animate_bool_with_time_and_easing(
+                response.id.with("tile-hover"),
+                response.hovered(),
+                0.16,
+                egui::emath::easing::cubic_out,
+            );
+            let edge = if tile.watching {
+                pal().accent
+            } else {
+                pal().border
+            };
+            ui.painter().rect_stroke(
+                rect,
+                14.0,
+                egui::Stroke::new(1.0 + hover * 1.5, edge.lerp_to_gamma(pal().accent, hover)),
+                egui::StrokeKind::Inside,
+            );
             ui.advance_cursor_after_rect(rect);
         });
     }
@@ -1788,21 +1789,21 @@ impl PublisherUi {
         let response = ui.add_sized(
             [32.0, 32.0],
             egui::Button::new(egui::RichText::new("↻").color(if attention {
-                ACCENT
+                pal().accent
             } else {
-                TEXT
+                pal().text
             }))
             .fill(if attention {
-                egui::Color32::from_rgb(33, 70 + (glow * 18.0) as u8, 66 + (glow * 16.0) as u8)
+                pal().accent.gamma_multiply(0.16 + glow * 0.1)
             } else {
-                CARD
+                pal().card
             })
             .stroke(egui::Stroke::new(
                 1.0,
                 if attention {
-                    ACCENT.gamma_multiply(0.45 + glow * 0.25)
+                    pal().accent.gamma_multiply(0.45 + glow * 0.25)
                 } else {
-                    BORDER
+                    pal().border
                 },
             )),
         );
@@ -1851,8 +1852,8 @@ impl PublisherUi {
             .backdrop_color(egui::Color32::from_black_alpha(150))
             .frame(
                 egui::Frame::new()
-                    .fill(CARD)
-                    .stroke(egui::Stroke::new(1.0, BORDER))
+                    .fill(pal().card)
+                    .stroke(egui::Stroke::new(1.0, pal().border))
                     .corner_radius(12)
                     .inner_margin(24),
             )
@@ -1875,7 +1876,7 @@ impl PublisherUi {
                     Phase::Error => "Retry update check",
                     Phase::Disabled => unreachable!(),
                 };
-                ui.colored_label(ACCENT, tr(label));
+                ui.colored_label(pal().accent, tr(label));
                 if !status.version.is_empty() {
                     ui.label(format!("{} {}", tr("New version"), status.version));
                 }
@@ -2206,14 +2207,6 @@ impl PublisherUi {
         if self.browser_invitation_open {
             root.disable();
         }
-        egui::Panel::top("room-header")
-            .exact_size(54.0)
-            .frame(
-                egui::Frame::new()
-                    .fill(PANEL)
-                    .inner_margin(egui::Margin::symmetric(16, 8)),
-            )
-            .show(root, |ui| self.room_header(ui, &state));
         if !state.error.is_empty()
             || !self.settings_error.is_empty()
             || state.busy
@@ -2222,15 +2215,15 @@ impl PublisherUi {
             egui::Panel::top("action-feedback")
                 .frame(
                     egui::Frame::new()
-                        .fill(PANEL)
+                        .fill(pal().panel)
                         .inner_margin(egui::Margin::symmetric(16, 8)),
                 )
                 .show(root, |ui| {
                     if !state.error.is_empty() {
-                        ui.colored_label(ERROR, tr(&state.error));
+                        ui.colored_label(pal().error, tr(&state.error));
                     }
                     if !self.settings_error.is_empty() {
-                        ui.colored_label(ERROR, tr(&self.settings_error));
+                        ui.colored_label(pal().error, tr(&self.settings_error));
                     }
                     if state.busy {
                         ui.horizontal(|ui| {
@@ -2247,119 +2240,35 @@ impl PublisherUi {
                     }
                 });
         }
-        egui::Panel::left("sharing-menu")
-            .default_size(252.0)
-            .min_size(236.0)
-            .max_size(300.0)
-            .resizable(true)
-            .frame(
-                egui::Frame::new()
-                    .fill(PANEL)
-                    .inner_margin(egui::Margin::symmetric(16, 10)),
-            )
-            .show(root, |ui| {
-                if matches!(state.connection, "connected" | "reconnecting") {
-                    let pinned_actions = ui.available_height() < 600.0 || state.sharing;
-                    let footer = 56.0
-                        + if pinned_actions {
-                            if state.sharing || state.capture_pending {
-                                196.0
-                            } else {
-                                128.0
-                            }
-                        } else {
-                            0.0
-                        };
-                    egui::ScrollArea::vertical()
-                        .id_salt("sharing-scroll")
-                        .max_height((ui.available_height() - footer).max(80.0))
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            self.sharing_menu(ui, &state);
-                            if !pinned_actions {
-                                self.sharing_actions(ui, &state);
-                            }
-                            ui.add_space(10.0);
-                            ui.separator();
-                            ui.label(
-                                skin::strong(
-                                    format!("{} · {}", tr("In room"), state.participants.len() + 1),
-                                    11.0,
-                                )
-                                .color(MUTED),
-                            );
-                            participant(ui, &self.name, true, state.sharing);
-                            for name in &state.participants {
-                                participant(
-                                    ui,
-                                    name,
-                                    false,
-                                    state.tiles.iter().any(|tile| tile.name == *name),
-                                );
-                            }
-                        });
-                    if pinned_actions {
-                        self.sharing_actions(ui, &state);
-                    }
-                    ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                        ui.allocate_ui_with_layout(
-                            egui::vec2(ui.available_width(), 44.0),
-                            egui::Layout::left_to_right(egui::Align::Center),
-                            |ui| {
-                                avatar(ui, &self.name, 30.0);
-                                let info_width = (ui.available_width() - 40.0).max(20.0);
-                                ui.allocate_ui_with_layout(
-                                    egui::vec2(info_width, 38.0),
-                                    egui::Layout::top_down(egui::Align::LEFT),
-                                    |ui| {
-                                        ui.set_width(info_width);
-                                        ui.spacing_mut().item_spacing.y = 3.0;
-                                        ui.add(
-                                            egui::Label::new(skin::strong(&self.name, 14.0))
-                                                .truncate(),
-                                        );
-                                        ui.label(
-                                            egui::RichText::new(tr(
-                                                if state.connection == "connected" {
-                                                    "Connected"
-                                                } else {
-                                                    "Reconnecting"
-                                                },
-                                            ))
-                                            .size(12.0)
-                                            .color(
-                                                if state.connection == "connected" {
-                                                    ACCENT
-                                                } else {
-                                                    WARNING
-                                                },
-                                            ),
-                                        );
-                                    },
-                                );
-                                if skin::icon_button(ui, Icon::Settings, tr("Advanced settings"))
-                                    .clicked()
-                                {
-                                    self.advanced_open = true;
-                                }
-                            },
-                        );
-                        ui.separator();
-                    });
-                } else {
-                    egui::ScrollArea::vertical()
-                        .id_salt("joining-scroll")
-                        .show(ui, |ui| self.sharing_menu(ui, &state));
-                }
-            });
+        let connected = matches!(state.connection, "connected" | "reconnecting");
+        self.rail(root, &state);
+        if connected {
+            self.room_panel(root, &state);
+        }
+        let stage = root.available_rect_before_wrap();
         egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(CANVAS).inner_margin(egui::Margin::symmetric(14,14)))
+            .frame(egui::Frame::new().fill(pal().canvas).inner_margin(egui::Margin::symmetric(14,14)))
             .show(root, |ui| {
+                // One calm entrance when the room opens; nothing animates afterwards.
+                let intro = ctx.animate_bool_with_time_and_easing(
+                    ui.scope_id().with("room-intro"),
+                    ctx.cumulative_frame_nr() > 2,
+                    0.55,
+                    egui::emath::easing::cubic_out,
+                );
+                ui.set_opacity(intro);
+                ui.add_space((1.0 - intro) * 10.0);
+                if !connected {
+                    self.join_card(ui, &state);
+                    return;
+                }
                 ui.horizontal(|ui| {
                     ui.heading(if self.focused.is_some(){tr("Focused stream")}else{tr("Streams")});
                     ui.add_space(8.0);
-                    ui.label(egui::RichText::new(format!("{} {} · {} {}",state.tiles.len(),tr("live"),state.tiles.iter().filter(|t|t.watching).count(),tr("watching"))).size(13.0).color(MUTED));
+                    ui.label(egui::RichText::new(format!("{} {} · {} {}",state.tiles.len(),tr("live"),state.tiles.iter().filter(|t|t.watching).count(),tr("watching"))).size(13.0).color(pal().muted));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| {
+                        self.room_actions(ui, &state);
+                        ui.add_space(6.0);
                         let watched=state.tiles.iter().find(|tile|tile.watching);
                         ui.add_enabled_ui(watched.is_some(),|ui| {
                             if skin::layout_button(ui,Icon::Focus,tr("Focus stream"),self.focused.is_some()).clicked(){self.focused=watched.map(|tile|tile.id.clone());}
@@ -2370,7 +2279,18 @@ impl PublisherUi {
                 ui.add_space(6.0);
                 if state.tiles.is_empty() {
                     ui.vertical_centered(|ui| {
-                        ui.add_space((ui.available_height() * 0.25).max(20.0));
+                        ui.add_space((ui.available_height() * 0.2).max(20.0));
+                        // Breathing monitor mark: a slow ring so the empty room feels alive.
+                        let (mark, _) = ui.allocate_exact_size(egui::vec2(96.0, 96.0), egui::Sense::hover());
+                        let time = ctx.input(|i| i.time) as f32;
+                        let breath = (time * 1.4).sin() * 0.5 + 0.5;
+                        let center = mark.center();
+                        ui.painter().circle_filled(center, 44.0 + breath * 4.0, egui::Color32::from_rgba_unmultiplied(79, 134, 247, (18.0 + breath * 14.0) as u8));
+                        ui.painter().circle_filled(center, 34.0, egui::Color32::from_rgb(17, 30, 53));
+                        ui.painter().circle_stroke(center, 34.0, egui::Stroke::new(1.0, pal().border));
+                        skin::icon(ui.painter(), egui::Rect::from_center_size(center, egui::vec2(34.0, 34.0)), Icon::Monitor, pal().accent);
+                        ctx.request_repaint_after(Duration::from_millis(33));
+                        ui.add_space(14.0);
                         ui.heading(if state.connection == "connected" {
                             tr("You're in. Make yourself at home.")
                         } else {
@@ -2392,7 +2312,7 @@ impl PublisherUi {
                             egui::RichText::new(
                                 tr("Previews first. Live video and audio only when you choose Watch."),
                             )
-                            .color(MUTED),
+                            .color(pal().muted),
                         );
                     });
                     return;
@@ -2418,7 +2338,7 @@ impl PublisherUi {
                     ui.label(
                         egui::RichText::new(tr("Scroll to see all streams"))
                             .size(12.0)
-                            .color(MUTED),
+                            .color(pal().muted),
                     );
                 }
                 let max_width = (ui.available_width() - scroll_space - gap * (columns - 1) as f32)
@@ -2460,8 +2380,11 @@ impl PublisherUi {
                                     }
                                 });
                         });
+                        ui.add_space(96.0);
                     });
             });
+        self.dock(&ctx, &state, stage);
+        self.go_live_modal(&ctx, &state);
         self.advanced_modal(&ctx, &state);
         if self.browser_invitation_open {
             defocus_invitation_background(root);
@@ -2515,18 +2438,18 @@ fn button_width(ui: &egui::Ui, label: &str) -> f32 {
     let text = ui.painter().layout_no_wrap(
         label.to_owned(),
         egui::TextStyle::Button.resolve(ui.style()),
-        TEXT,
+        pal().text,
     );
     (text.size().x + ui.spacing().button_padding.x * 2.0).max(ui.spacing().interact_size.x)
 }
 
 fn primary(label: &str, width: f32) -> egui::Button<'_> {
-    let text = skin::strong(label, 14.0).color(CANVAS);
+    let text = skin::strong(label, 14.0).color(pal().on_accent);
     let atoms = if label == tr("Watch") || label == tr("Start sharing") {
         egui::Atoms::new((
             egui::Atom::grow(),
             egui::Atom::paint(egui::vec2(16.0, 16.0), |ui, args| {
-                skin::icon(ui.painter(), args.rect, Icon::Play, CANVAS)
+                skin::icon(ui.painter(), args.rect, Icon::Play, pal().on_accent)
             }),
             text,
             egui::Atom::grow(),
@@ -2535,7 +2458,7 @@ fn primary(label: &str, width: f32) -> egui::Button<'_> {
         egui::Atoms::new((egui::Atom::grow(), text, egui::Atom::grow()))
     };
     egui::Button::new(atoms)
-        .fill(ACCENT)
+        .fill(pal().accent)
         .min_size(egui::vec2(width, 38.0))
 }
 
@@ -2600,7 +2523,7 @@ fn quality_controls(
         .labelled_by(label.id);
     let label = ui
         .horizontal(|ui| {
-            let label = ui.label(egui::RichText::new("FPS").size(11.0).color(MUTED));
+            let label = ui.label(egui::RichText::new("FPS").size(11.0).color(pal().muted));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(skin::strong(format!("{} FPS", settings.fps), 12.0));
             });
@@ -2622,7 +2545,7 @@ fn quality_controls(
     let label = ui.label(
         egui::RichText::new(tr("Quality preset"))
             .size(11.0)
-            .color(MUTED),
+            .color(pal().muted),
     );
     egui::ComboBox::from_id_salt("quality-preset")
         .width(ui.available_width())
@@ -2641,7 +2564,7 @@ fn quality_controls(
             }
             _ => {
                 ui.colored_label(
-                    WARNING,
+                    pal().warning,
                     tr("This source / encoder cannot use that resolution and frame rate."),
                 );
             }
@@ -2730,7 +2653,7 @@ fn uv() -> egui::Rect {
     egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0))
 }
 
-fn brand_mark(ui: &mut egui::Ui) {
+fn brand_mark_sized(ui: &mut egui::Ui, size: f32) {
     let id = egui::Id::unique("podetelar-brand-mark");
     let texture = ui
         .ctx()
@@ -2748,7 +2671,7 @@ fn brand_mark(ui: &mut egui::Ui) {
                 .data_mut(|data| data.insert_temp(id, texture.clone()));
             texture
         });
-    ui.add(egui::Image::new((texture.id(), egui::vec2(28.0, 28.0))))
+    ui.add(egui::Image::new((texture.id(), egui::vec2(size, size))).corner_radius(size * 0.24))
         .on_hover_text("PodeTelar");
 }
 
@@ -2779,7 +2702,7 @@ fn stream_metrics_text(codec: &str, bps: u64) -> String {
 fn avatar(ui: &mut egui::Ui, name: &str, size: f32) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
     let palette = [
-        egui::Color32::from_rgb(55, 81, 85),
+        egui::Color32::from_rgb(44, 80, 150),
         egui::Color32::from_rgb(77, 64, 96),
         egui::Color32::from_rgb(66, 80, 109),
         egui::Color32::from_rgb(91, 72, 64),
@@ -2803,7 +2726,7 @@ fn avatar(ui: &mut egui::Ui, name: &str, size: f32) {
             .to_uppercase()
             .to_string(),
         skin::semibold(size * 0.43),
-        TEXT,
+        pal().text,
     );
 }
 
@@ -2829,10 +2752,156 @@ fn participant(ui: &mut egui::Ui, name: &str, own: bool, sharing: bool) {
             .response
             .on_hover_text(name);
             if sharing {
-                badge(ui, tr("Live"), ACCENT);
+                badge(ui, tr("Live"), pal().accent);
             }
         });
     });
+}
+
+/// Theme cards (each a miniature of the real window) and the language switch.
+fn appearance_controls(ui: &mut egui::Ui) {
+    ui.label(skin::strong(tr("Appearance"), 20.0));
+    ui.add_space(2.0);
+    let ctx = ui.ctx().clone();
+    let mut changed = false;
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(10.0, 10.0);
+        for theme in theme::Theme::ALL {
+            let swatch = theme::palette_of(theme);
+            let selected = theme::current() == theme;
+            let (rect, response) =
+                ui.allocate_exact_size(egui::vec2(124.0, 92.0), egui::Sense::click());
+            let lift = ctx.animate_bool_with_time_and_easing(
+                response.id.with("lift"),
+                response.hovered() || response.has_focus(),
+                0.16,
+                egui::emath::easing::cubic_out,
+            );
+            let ring = ctx.animate_bool_with_time_and_easing(
+                response.id.with("ring"),
+                selected,
+                0.22,
+                egui::emath::easing::cubic_out,
+            );
+            let card = rect.translate(egui::vec2(0.0, -2.0 * lift));
+            let painter = ui.painter();
+            painter.rect_filled(
+                card.translate(egui::vec2(0.0, 3.0)),
+                14.0,
+                egui::Color32::from_black_alpha((50.0 * lift) as u8),
+            );
+            painter.rect_filled(card, 14.0, swatch.canvas);
+            // Miniature: sidebar strip, header bar, two stream tiles and an accent action.
+            let strip = egui::Rect::from_min_size(card.min, egui::vec2(28.0, card.height()));
+            painter.rect_filled(
+                strip,
+                egui::CornerRadius {
+                    nw: 14,
+                    sw: 14,
+                    ne: 0,
+                    se: 0,
+                },
+                swatch.panel,
+            );
+            for row in 0..3 {
+                painter.rect_filled(
+                    egui::Rect::from_min_size(
+                        strip.min + egui::vec2(7.0, 12.0 + row as f32 * 11.0),
+                        egui::vec2(14.0, 5.0),
+                    ),
+                    2.5,
+                    if row == 0 {
+                        swatch.accent
+                    } else {
+                        swatch.control_hover
+                    },
+                );
+            }
+            let stage = egui::Rect::from_min_max(
+                card.min + egui::vec2(36.0, 10.0),
+                card.max - egui::vec2(8.0, 22.0),
+            );
+            let half = (stage.width() - 5.0) / 2.0;
+            for column in 0..2 {
+                painter.rect_filled(
+                    egui::Rect::from_min_size(
+                        stage.min + egui::vec2(column as f32 * (half + 5.0), 0.0),
+                        egui::vec2(half, stage.height()),
+                    ),
+                    5.0,
+                    swatch.card,
+                );
+            }
+            painter.rect_filled(
+                egui::Rect::from_center_size(
+                    egui::pos2(stage.left() + half / 2.0, stage.center().y),
+                    egui::vec2(18.0, 8.0),
+                ),
+                4.0,
+                swatch.accent,
+            );
+            painter.circle_filled(
+                egui::pos2(stage.right() - 7.0, stage.top() + 7.0),
+                3.0,
+                swatch.spark,
+            );
+            painter.text(
+                egui::pos2(card.center().x + 14.0, card.bottom() - 11.0),
+                egui::Align2::CENTER_CENTER,
+                tr(theme.label()),
+                skin::semibold(12.0),
+                swatch.text,
+            );
+            painter.rect_stroke(
+                card,
+                14.0,
+                egui::Stroke::new(
+                    1.0 + 1.5 * ring,
+                    if selected {
+                        pal().accent
+                    } else {
+                        pal().border.gamma_multiply(1.0 + lift)
+                    },
+                ),
+                egui::StrokeKind::Inside,
+            );
+            response.widget_info(|| {
+                egui::WidgetInfo::selected(egui::Role::Button, true, selected, tr(theme.label()))
+            });
+            if response.clicked() && !selected {
+                theme::select(theme);
+                changed = true;
+            }
+        }
+    });
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.label(skin::strong(tr("Language"), 14.0));
+        ui.add_space(6.0);
+        for (label, portuguese) in [("Português (Brasil)", true), ("English", false)] {
+            let selected = crate::locale::portuguese() == portuguese;
+            let button = egui::Button::new(skin::strong(label, 13.0).color(if selected {
+                pal().on_accent
+            } else {
+                pal().text
+            }))
+            .fill(if selected {
+                pal().accent
+            } else {
+                pal().control
+            })
+            .corner_radius(16)
+            .min_size(egui::vec2(0.0, 32.0));
+            if ui.add(button).clicked() && !selected {
+                crate::locale::select(portuguese);
+                changed = true;
+            }
+        }
+    });
+    if changed {
+        apply_theme(&ctx);
+        theme::save();
+    }
 }
 
 fn settings_divider(ui: &mut egui::Ui) {
@@ -3418,6 +3487,7 @@ mod tests {
             copied_until: None,
             remembered_volume: HashMap::new(),
             advanced_open: false,
+            go_live: None,
             diagnostics_open: false,
             show_invitation: false,
             browser_invitation_open: false,
@@ -3763,7 +3833,7 @@ mod tests {
     }
 
     #[test]
-    fn long_room_names_preserve_header_actions_at_the_minimum_window_width() {
+    fn room_actions_stay_inside_the_window_at_the_minimum_width() {
         let mut app = app();
         let (client, _actions) = crate::updates::Client::fixture(crate::update_protocol::Status {
             phase: crate::update_protocol::Phase::Ready,
@@ -3789,7 +3859,12 @@ mod tests {
                 |root| {
                     egui::Panel::top("header-test")
                         .exact_size(48.0)
-                        .show(root, |ui| app.room_header(ui, &state));
+                        .show(root, |ui| {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| app.room_actions(ui, &state),
+                            );
+                        });
                 },
             );
             output.textures_delta.clear();
@@ -3802,7 +3877,8 @@ mod tests {
                     ));
                 }
             }
-            for action in [tr("Invite"), tr("Leave room")] {
+            {
+                let action = tr("Leave room");
                 let (_, right) = labels
                     .iter()
                     .find(|(label, _)| label.trim() == action)

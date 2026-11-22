@@ -213,7 +213,6 @@ function RoomApp() {
           <div className="room-content">
             <div className="room-heading">
               <div>
-                <p className="eyebrow">YOUR PRIVATE SPACE</p>
                 <h1>{session.room.name}</h1>
               </div>
               <button
@@ -338,7 +337,6 @@ function Start({ onCreated }: { onCreated: (result: CreatedRoom) => void }) {
   return (
     <div className="welcome-content">
       <div className="welcome-heading">
-        <p className="eyebrow">GET TOGETHER</p>
         <h1>A room for your people.</h1>
         <p>
           Create a private room, or open the invitation from your group chat.
@@ -447,7 +445,6 @@ function JoinRoom({
     <div className="centered">
       {secret && <OpenInApp roomId={roomId} invitation={secret} />}
       <form className="panel join-panel" onSubmit={(event) => void join(event)}>
-        <p className="eyebrow">YOU'RE INVITED</p>
         <h1>Take your place.</h1>
         {secret ? (
           <>

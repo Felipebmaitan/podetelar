@@ -34,6 +34,7 @@ mod settings;
 mod source_picker;
 mod sources;
 mod stream_diagnostics;
+mod theme;
 mod ui;
 mod ui_style;
 #[path = "../../update_protocol.rs"]
@@ -344,6 +345,7 @@ fn run() -> Result<()> {
                 Box::new(move |context| {
                     #[cfg(target_os = "macos")]
                     macos::request_capture_permission();
+                    theme::load();
                     ui::configure_theme(&context.egui_ctx);
                     Ok(Box::new(ui::PublisherUi::with_browser_link(browser_link)))
                 }),

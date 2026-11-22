@@ -346,7 +346,7 @@ pub fn panel(ctx: &eframe::egui::Context, tile: &crate::playback::Tile) {
         .show(ctx, |ui| {
             ui.spacing_mut().item_spacing.y = 8.0;
             ui.label(skin::strong(&tile.name, 18.0));
-            ui.label(egui::RichText::new(tr("Live measurements · refresh every 3 seconds")).size(12.0).color(skin::SECONDARY));
+            ui.label(egui::RichText::new(tr("Live measurements · refresh every 3 seconds")).size(12.0).color(crate::theme::pal().muted));
             section(ui, "Reception");
             metric(ui, "Codec", &tile.codec);
             metric(ui, "Received video payload", &format!("{:.2} Mbps", tile.received_bps.load(Ordering::Relaxed) as f64 / 1e6));
@@ -441,14 +441,16 @@ fn section(ui: &mut eframe::egui::Ui, label: &str) {
     ui.add_space(10.0);
     ui.separator();
     ui.add_space(4.0);
-    ui.label(crate::ui_style::strong(crate::locale::tr(label), 15.0).color(crate::ui_style::MINT));
+    ui.label(
+        crate::ui_style::strong(crate::locale::tr(label), 15.0).color(crate::theme::pal().accent),
+    );
 }
 
 fn note(ui: &mut eframe::egui::Ui, text: &str) {
     ui.label(
         eframe::egui::RichText::new(crate::locale::tr(text))
             .size(12.0)
-            .color(crate::ui_style::SECONDARY),
+            .color(crate::theme::pal().muted),
     );
 }
 
@@ -467,7 +469,7 @@ fn metric(ui: &mut eframe::egui::Ui, label: &str, value: &str) {
                         egui::Label::new(
                             egui::RichText::new(crate::locale::tr(label))
                                 .size(12.0)
-                                .color(crate::ui_style::SECONDARY),
+                                .color(crate::theme::pal().muted),
                         )
                         .wrap(),
                     );

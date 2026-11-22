@@ -29,7 +29,6 @@ mod diagnostics;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/encoding.rs"]
 mod encoding;
-#[cfg(feature = "performance-experiments")]
 #[path = "../src/locale.rs"]
 mod locale;
 #[cfg(feature = "performance-experiments")]
@@ -65,10 +64,11 @@ mod sources;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/stream_diagnostics.rs"]
 mod stream_diagnostics;
+#[path = "../src/theme.rs"]
+mod theme;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/ui.rs"]
 mod ui;
-#[cfg(feature = "performance-experiments")]
 #[path = "../src/ui_style.rs"]
 mod ui_style;
 #[path = "../../update_protocol.rs"]

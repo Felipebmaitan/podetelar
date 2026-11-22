@@ -6,6 +6,7 @@ import { dataSize, periodRange, speed, type Period } from "./usage";
 import "./admin.css";
 import { AdminRooms } from "./AdminRooms";
 import { BrandMark } from "./BrandMark";
+import { Icon, Segmented, stagger, useCountUp } from "./ui";
 
 const periods: Period[] = [
   "Real time",
@@ -82,14 +83,6 @@ export function Admin() {
           <BrandMark className="admin-brand-mark" />
           PodeTelar
         </a>
-        {auth === "ready" && (
-          <div>
-            <span>Private administration</span>
-            <button onClick={() => void logout()} disabled={busy}>
-              Sign out
-            </button>
-          </div>
-        )}
       </header>
       {auth === "loading" ? (
         <div className="admin-center" role="status">
@@ -97,39 +90,66 @@ export function Admin() {
         </div>
       ) : auth === "ready" ? (
         <>
-          <div className="admin-top-error">
-            {error && <p role="alert">{error}</p>}
+          <aside className="admin-sidebar">
+            <a href="/" className="admin-brand" aria-label="PodeTelar home">
+              <BrandMark className="admin-brand-mark" />
+              <span>PodeTelar</span>
+            </a>
+            <nav className="admin-nav" aria-label="Administration sections">
+              <p aria-hidden="true">Administration</p>
+              <button
+                aria-pressed={section === "rooms"}
+                onClick={() => setSection("rooms")}
+              >
+                {Icon.hash()}
+                Rooms
+              </button>
+              <button
+                aria-pressed={section === "usage"}
+                onClick={() => setSection("usage")}
+              >
+                {Icon.usage()}
+                Usage
+              </button>
+            </nav>
+            <div className="admin-account-card">
+              <span className="avatar" aria-hidden="true">
+                A
+              </span>
+              <div>
+                <strong>Administrator</strong>
+                <small>Private administration</small>
+              </div>
+              <button
+                onClick={() => void logout()}
+                disabled={busy}
+                aria-label="Sign out"
+                title="Sign out"
+              >
+                {Icon.signOut()}
+              </button>
+            </div>
+          </aside>
+          <div className="admin-content">
+            <div className="admin-top-error">
+              {error && <p role="alert">{error}</p>}
+            </div>
+            {section === "usage" ? (
+              <Dashboard
+                onExpired={() => {
+                  setAuth("login");
+                  setError("Your session expired. Sign in again.");
+                }}
+              />
+            ) : (
+              <AdminRooms
+                onExpired={() => {
+                  setAuth("login");
+                  setError("Your session expired. Sign in again.");
+                }}
+              />
+            )}
           </div>
-          <nav className="admin-nav" aria-label="Administration sections">
-            <p>Administration</p>
-            <button
-              aria-pressed={section === "rooms"}
-              onClick={() => setSection("rooms")}
-            >
-              Rooms
-            </button>
-            <button
-              aria-pressed={section === "usage"}
-              onClick={() => setSection("usage")}
-            >
-              Usage
-            </button>
-          </nav>
-          {section === "usage" ? (
-            <Dashboard
-              onExpired={() => {
-                setAuth("login");
-                setError("Your session expired. Sign in again.");
-              }}
-            />
-          ) : (
-            <AdminRooms
-              onExpired={() => {
-                setAuth("login");
-                setError("Your session expired. Sign in again.");
-              }}
-            />
-          )}
         </>
       ) : (
         <div className="admin-center">
@@ -308,21 +328,16 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
         )}
       </div>
       <div className="admin-filter-row">
-        <div className="admin-periods" role="group" aria-label="Usage period">
-          {periods.map((p) => (
-            <button
-              key={p}
-              aria-pressed={p === period}
-              onClick={() => {
-                setPeriod(p);
-                setPage(0);
-                setValidation("");
-              }}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label="Usage period"
+          options={periods}
+          value={period}
+          onChange={(p) => {
+            setPeriod(p);
+            setPage(0);
+            setValidation("");
+          }}
+        />
         <span className="admin-timezone">
           {Intl.DateTimeFormat().resolvedOptions().timeZone}
         </span>
@@ -376,28 +391,15 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
               missing measurements are gaps, not zero traffic.
             </p>
           )}
-          <div className="admin-summary">
-            <Metric
-              label="Uploaded to server"
-              bytes={data.uploadedBytes}
-              hint="Server inbound"
-            />
-            <Metric
-              label="Downloaded from server"
-              bytes={data.downloadedBytes}
-              hint="Server outbound"
-            />
-            <Metric
-              label="Total transfer"
-              bytes={data.uploadedBytes + data.downloadedBytes}
-              hint="Selected period"
-            />
-          </div>
-          <section className="admin-panel admin-server-chart">
+          <section className="admin-panel usage-hero admin-server-chart">
             <div className="admin-section-heading">
               <h2>Server traffic over time</h2>
               <Legend />
             </div>
+            <TotalTraffic
+              uploaded={data.uploadedBytes}
+              downloaded={data.downloadedBytes}
+            />
             <TrafficChart
               points={data.points}
               bucketMs={data.bucketMs}
@@ -420,15 +422,27 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
               </div>
             ) : (
               <div className="admin-user-grid">
-                {data.users.map((user) => (
-                  <article key={user.id} className="admin-panel admin-user">
+                {data.users.map((user, index) => (
+                  <article
+                    key={user.id}
+                    className="admin-panel admin-user"
+                    style={stagger(index)}
+                  >
                     <div className="admin-user-heading">
-                      <h3>{user.displayName}</h3>
-                      <span title={user.id}>
-                        {user.identityKind === "device"
-                          ? `PC ${user.id.slice(4, 16)}`
-                          : `Unidentified session ${user.id.slice(0, 8)}`}
+                      <span
+                        className={`admin-avatar avatar-${index % 4}`}
+                        aria-hidden="true"
+                      >
+                        {user.displayName.slice(0, 1).toLocaleUpperCase()}
                       </span>
+                      <div>
+                        <h3>{user.displayName}</h3>
+                        <span title={user.id}>
+                          {user.identityKind === "device"
+                            ? `PC ${user.id.slice(4, 16)}`
+                            : `Unidentified session ${user.id.slice(0, 8)}`}
+                        </span>
+                      </div>
                     </div>
                     <div className="admin-user-totals">
                       <Metric label="Uploaded" bytes={user.uploadedBytes} />
@@ -436,6 +450,21 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
                       <Metric
                         label="Total"
                         bytes={user.uploadedBytes + user.downloadedBytes}
+                      />
+                    </div>
+                    <div className="admin-share" aria-hidden="true">
+                      <i
+                        style={{
+                          width: `${Math.max(
+                            3,
+                            ((user.uploadedBytes + user.downloadedBytes) /
+                              Math.max(
+                                1,
+                                data.uploadedBytes + data.downloadedBytes,
+                              )) *
+                              100,
+                          )}%`,
+                        }}
                       />
                     </div>
                     <Legend />
@@ -535,13 +564,62 @@ function Metric({
   bytes: number;
   hint?: string;
 }) {
+  const shown = useCountUp(bytes);
   return (
     <div className="admin-metric">
       <span>{label}</span>
-      <strong>{dataSize(bytes)}</strong>
+      <strong>{dataSize(shown)}</strong>
       {hint && <small>{hint}</small>}
     </div>
   );
+}
+function TotalTraffic({
+  uploaded,
+  downloaded,
+}: {
+  uploaded: number;
+  downloaded: number;
+}) {
+  const total = uploaded + downloaded;
+  const shown = useCountUp(total);
+  const upShare = total ? (uploaded / total) * 100 : 50;
+  return (
+    <div className="usage-split">
+      <div className="usage-total">
+        <span>Total transfer</span>
+        <strong>{dataSize(shown)}</strong>
+        <small>Selected period</small>
+      </div>
+      <div
+        className={`usage-bar ${total ? "" : "is-empty"}`}
+        aria-hidden="true"
+      >
+        <i className="up" style={{ width: `${upShare}%` }} />
+        <i className="down" style={{ width: `${100 - upShare}%` }} />
+      </div>
+      <div className="admin-summary">
+        <div className="admin-metric">
+          <span>
+            <i className="dot up" />
+            Uploaded to server
+          </span>
+          <AnimatedSize bytes={uploaded} />
+          <small>Server inbound</small>
+        </div>
+        <div className="admin-metric">
+          <span>
+            <i className="dot down" />
+            Downloaded from server
+          </span>
+          <AnimatedSize bytes={downloaded} />
+          <small>Server outbound</small>
+        </div>
+      </div>
+    </div>
+  );
+}
+function AnimatedSize({ bytes }: { bytes: number }) {
+  return <strong>{dataSize(useCountUp(bytes))}</strong>;
 }
 function Legend() {
   return (
@@ -615,6 +693,29 @@ function TrafficChart({
       })
       .join(" ");
   };
+  // Filled area under each continuous run of measurements.
+  const areas = (key: "up" | "down") => {
+    const runs: number[][] = [];
+    points.forEach((p, i) => {
+      if (!p.durationMs) runs.push([]);
+      else {
+        if (!runs.length) runs.push([]);
+        runs[runs.length - 1]!.push(i);
+      }
+    });
+    return runs
+      .filter((run) => run.length > 1)
+      .map((run) => {
+        const line = run
+          .map(
+            (i, n) =>
+              `${n ? "L" : "M"}${x(i).toFixed(2)},${y(rates[i]![key]).toFixed(2)}`,
+          )
+          .join(" ");
+        return `${line} L${x(run.at(-1)!).toFixed(2)},${top + plotHeight} L${x(run[0]!).toFixed(2)},${top + plotHeight} Z`;
+      })
+      .join(" ");
+  };
   const time = (at: number) =>
     new Intl.DateTimeFormat(undefined, {
       ...((points.at(-1)?.at ?? 0) - (points[0]?.at ?? 0) >= 86400000
@@ -673,8 +774,33 @@ function TrafficChart({
             </text>
           </g>
         ))}
-        <path d={path("up")} className="admin-line admin-up" />
-        <path d={path("down")} className="admin-line admin-down" />
+        <defs>
+          <linearGradient id={`${id}-up`} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor="var(--yellow)" stopOpacity="0.28" />
+            <stop offset="1" stopColor="var(--yellow)" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id={`${id}-down`} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor="var(--blue)" stopOpacity="0.3" />
+            <stop offset="1" stopColor="var(--blue)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {(["down", "up"] as const).map((key) => {
+          const fill = areas(key);
+          return fill ? (
+            <path
+              key={`area-${key}`}
+              className="admin-area"
+              fill={`url(#${id}-${key})`}
+              d={fill}
+            />
+          ) : null;
+        })}
+        <path d={path("up")} pathLength={1} className="admin-line admin-up" />
+        <path
+          d={path("down")}
+          pathLength={1}
+          className="admin-line admin-down"
+        />
         {points.flatMap((point, i) =>
           point.durationMs &&
           (!points[i - 1]?.durationMs || !points[i + 1]?.durationMs)
@@ -718,13 +844,31 @@ function TrafficChart({
               ),
           )}
         {hover !== null && selected && (
-          <line
-            x1={x(hover)}
-            x2={x(hover)}
-            y1={top}
-            y2={top + plotHeight}
-            className="admin-crosshair"
-          />
+          <>
+            <line
+              x1={x(hover)}
+              x2={x(hover)}
+              y1={top}
+              y2={top + plotHeight}
+              className="admin-crosshair"
+            />
+            {selected.durationMs ? (
+              <>
+                <circle
+                  cx={x(hover)}
+                  cy={y(rates[hover]!.up)}
+                  r={4.5}
+                  className="admin-hover-dot admin-up-dot"
+                />
+                <circle
+                  cx={x(hover)}
+                  cy={y(rates[hover]!.down)}
+                  r={4.5}
+                  className="admin-hover-dot admin-down-dot"
+                />
+              </>
+            ) : null}
+          </>
         )}
       </svg>
       <div className="admin-chart-detail" aria-live="off">

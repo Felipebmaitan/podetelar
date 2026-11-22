@@ -31,8 +31,11 @@ the raw Cargo executable still requires its runtime. Both production executables
 use the GUI subsystem. Helper processes run hidden.
 
 Open a room invitation from `/stream` or `/telar` in Discord, or paste a link and
-enter your nickname. Each invitation selects its backend; no server, nickname,
-room or language preference is restored or saved. Later links may reuse the nickname
+enter your nickname. Each invitation selects its backend; no server, nickname
+or room is restored or saved. Only the appearance choice (theme and interface
+language, set in Advanced settings → Appearance) is remembered in
+`appearance.json` under the PodeTelar folder in Local AppData (or Application
+Support on macOS). Later links may reuse the nickname
 and join when idle while the app remains open. An active room requires confirmation
 before switching. Sharing and watching remain explicit. See
 [launch and firewall behavior](distribution.md#invitations-and-launch-behavior).

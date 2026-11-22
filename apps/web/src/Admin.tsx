@@ -105,7 +105,7 @@ export function Admin() {
                 onClick={() => setSection("discord")}
               >
                 {Icon.chat()}
-                Discord
+                <span className="admin-nav-label">Discord</span>
               </button>
               <p aria-hidden="true">Administration</p>
               <button
@@ -113,21 +113,21 @@ export function Admin() {
                 onClick={() => setSection("rooms")}
               >
                 {Icon.hash()}
-                Rooms
+                <span className="admin-nav-label">Rooms</span>
               </button>
               <button
                 aria-pressed={section === "profiles"}
                 onClick={() => setSection("profiles")}
               >
                 {Icon.users()}
-                Guest profiles
+                <span className="admin-nav-label">Guest profiles</span>
               </button>
               <button
                 aria-pressed={section === "usage"}
                 onClick={() => setSection("usage")}
               >
                 {Icon.usage()}
-                Usage
+                <span className="admin-nav-label">Usage</span>
               </button>
             </nav>
             <div className="admin-account-card">

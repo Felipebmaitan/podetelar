@@ -179,33 +179,15 @@ function RoomApp() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <a className="brand" href="/">
-          <BrandMark className="brand-mark" />
-          <span>PodeTelar</span>
-        </a>
-        <div className="room-navigation">
-          <p className="eyebrow">YOUR ROOM</p>
-          <div className="room-link">
-            <span aria-hidden="true">#</span>
-            {session?.room.name ?? "A space for friends"}
-          </div>
-        </div>
-        <div className="sidebar-footer">
-          <span className="avatar" aria-hidden="true">
-            {session?.participant.displayName.slice(0, 1).toUpperCase() ?? "P"}
-          </span>
-          <div>
-            <strong>{session?.participant.displayName ?? "Welcome"}</strong>
-            <span>
-              {session ? "Room access verified" : "Your screen. Your people."}
-            </span>
-          </div>
-        </div>
-      </aside>
       <main>
         <header className="topbar">
-          <span>{session?.room.name ?? "Welcome to PodeTelar"}</span>
+          <a className="brand" href="/">
+            <BrandMark className="brand-mark" />
+            <span>PodeTelar</span>
+          </a>
+          <span className="room-title">
+            {session?.room.name ?? "Welcome to PodeTelar"}
+          </span>
           <span className="privacy-label">Invite only</span>
         </header>
         {error && (

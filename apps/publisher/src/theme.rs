@@ -1,4 +1,4 @@
-//! Appearance: four selectable palettes and the saved appearance choice.
+//! Appearance: five selectable palettes and the saved appearance choice.
 //!
 //! Only the theme and interface language are stored (never servers, names,
 //! invitations or credentials). A malformed or missing file means defaults.
@@ -10,30 +10,37 @@ use std::sync::atomic::{AtomicU8, Ordering};
 #[serde(rename_all = "lowercase")]
 pub enum Theme {
     Classic,
+    Black,
     Light,
-    Comunista,
-    Patriota,
+    /// Formerly saved as "comunista".
+    #[serde(alias = "comunista")]
+    Ruby,
+    /// Formerly saved as "patriota".
+    #[serde(alias = "patriota")]
+    Emerald,
 }
 
 impl Theme {
-    pub const ALL: [Theme; 4] = [
+    pub const ALL: [Theme; 5] = [
         Theme::Classic,
+        Theme::Black,
         Theme::Light,
-        Theme::Comunista,
-        Theme::Patriota,
+        Theme::Ruby,
+        Theme::Emerald,
     ];
 
     pub fn label(self) -> &'static str {
         match self {
             Theme::Classic => "Classic",
+            Theme::Black => "Black",
             Theme::Light => "Light",
-            Theme::Comunista => "Communist",
-            Theme::Patriota => "Patriot",
+            Theme::Ruby => "Ruby",
+            Theme::Emerald => "Emerald",
         }
     }
 
     fn index(self) -> u8 {
-        self as u8
+        Theme::ALL.iter().position(|t| *t == self).unwrap_or(0) as u8
     }
 
     fn from_index(index: u8) -> Theme {
@@ -99,6 +106,29 @@ const CLASSIC: Palette = Palette {
     overlay: Color32::from_rgba_premultiplied(8, 15, 28, 225),
 };
 
+const BLACK: Palette = Palette {
+    dark: true,
+    accent: Color32::from_rgb(236, 236, 236),
+    on_accent: Color32::from_rgb(8, 8, 8),
+    spark: Color32::from_rgb(190, 190, 190),
+    text: Color32::from_rgb(245, 245, 245),
+    muted: Color32::from_rgb(158, 158, 158),
+    panel: Color32::from_rgb(6, 6, 6),
+    canvas: Color32::from_rgb(0, 0, 0),
+    card: Color32::from_rgb(15, 15, 15),
+    border: Color32::from_rgb(46, 46, 46),
+    control: Color32::from_rgb(24, 24, 24),
+    control_hover: Color32::from_rgb(38, 38, 38),
+    control_active: Color32::from_rgb(78, 78, 78),
+    hover_stroke: Color32::from_rgb(130, 130, 130),
+    success: Color32::from_rgb(80, 220, 140),
+    warning: Color32::from_rgb(255, 200, 100),
+    error: Color32::from_rgb(255, 150, 150),
+    danger: Color32::from_rgb(255, 112, 112),
+    danger_bg: Color32::from_rgb(58, 20, 20),
+    overlay: Color32::from_rgba_premultiplied(0, 0, 0, 225),
+};
+
 const LIGHT: Palette = Palette {
     dark: false,
     accent: Color32::from_rgb(37, 99, 235),
@@ -122,7 +152,7 @@ const LIGHT: Palette = Palette {
     overlay: Color32::from_rgba_premultiplied(250, 252, 255, 232),
 };
 
-const COMUNISTA: Palette = Palette {
+const RUBY: Palette = Palette {
     dark: true,
     accent: Color32::from_rgb(224, 32, 40),
     on_accent: Color32::WHITE,
@@ -145,7 +175,7 @@ const COMUNISTA: Palette = Palette {
     overlay: Color32::from_rgba_premultiplied(26, 4, 7, 228),
 };
 
-const PATRIOTA: Palette = Palette {
+const EMERALD: Palette = Palette {
     dark: true,
     accent: Color32::from_rgb(255, 205, 20),
     on_accent: Color32::from_rgb(2, 32, 18),
@@ -182,8 +212,9 @@ pub fn palette_of(theme: Theme) -> Palette {
     match theme {
         Theme::Classic => CLASSIC,
         Theme::Light => LIGHT,
-        Theme::Comunista => COMUNISTA,
-        Theme::Patriota => PATRIOTA,
+        Theme::Black => BLACK,
+        Theme::Ruby => RUBY,
+        Theme::Emerald => EMERALD,
     }
 }
 
@@ -287,8 +318,6 @@ mod tests {
     fn malformed_or_oversized_files_use_defaults() {
         assert!(parse(b"not json").theme.is_none());
         assert!(parse(&vec![b' '; 5000]).theme.is_none());
-        assert!(
-            parse(br#"{"theme":"patriota","portuguese":false}"#).theme == Some(Theme::Patriota)
-        );
+        assert!(parse(br#"{"theme":"patriota","portuguese":false}"#).theme == Some(Theme::Emerald));
     }
 }

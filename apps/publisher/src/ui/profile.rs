@@ -11,10 +11,10 @@ fn settings_card(ui: &mut egui::Ui, title: &str, content: impl FnOnce(&mut egui:
     egui::Frame::new()
         .fill(pal().card)
         .stroke(egui::Stroke::new(1.0, pal().border))
-        .corner_radius(10)
-        .inner_margin(egui::Margin::same(14))
+        .corner_radius(20)
+        .inner_margin(egui::Margin::same(18))
         .show(ui, |ui| {
-            ui.set_width((width - 30.0).max(0.0));
+            ui.set_width((width - 38.0).max(0.0));
             ui.label(skin::strong(tr(title), 16.0));
             ui.add_space(3.0);
             content(ui);
@@ -96,52 +96,94 @@ impl PublisherUi {
         }
     }
     pub(super) fn join_landing(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+        let ctx = ui.ctx().clone();
+        let time = ui.input(|i| i.time) as f32;
+        ctx.request_repaint();
+        let enter = ctx.animate_bool_with_time_and_easing(
+            ui.scope_id().with("entry-in"),
+            ctx.cumulative_frame_nr() > 2,
+            0.7,
+            egui::emath::easing::cubic_out,
+        );
         egui::ScrollArea::vertical()
             .id_salt("room-entry")
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                let width = ui.available_width().min(860.0);
-                let offset = ((ui.available_width() - width) / 2.0).max(0.0);
-                ui.add_space((ui.available_height() * 0.09).clamp(14.0, 52.0));
-                ui.horizontal_top(|ui| {
-                    ui.add_space(offset);
-                    ui.vertical(|ui| {
-                        ui.set_width(width);
-                        ui.label(skin::strong(tr("Join a room"), 28.0));
-                        ui.add_space(12.0);
-                        let left = |this: &mut Self, ui: &mut egui::Ui| {
-                            settings_card(ui, "Discord voice", |ui| {
-                                if let Some(account) = &this.account_state.account {
-                                    ui.label(skin::strong(&account.display_name, 14.0));
-                                    this.discord_following(ui);
-                                    if ui.button(tr("Manage Discord connection")).clicked() {
-                                        this.open_profile();
-                                        this.profile_page = SettingsPage::Discord;
-                                    }
-                                } else {
-                                    this.discord_sign_in(ui);
-                                }
-                            });
-                        };
-                        let right = |this: &mut Self, ui: &mut egui::Ui| {
-                            settings_card(ui, "Room invitation", |ui| {
-                                description(ui, "Use a link from a friend to join independently.");
-                                ui.add_space(5.0);
-                                this.join_form(ui, state);
-                            });
-                        };
-                        if width >= 630.0 {
-                            ui.spacing_mut().item_spacing.x = 14.0;
-                            ui.columns(2, |columns| {
-                                left(self, &mut columns[0]);
-                                right(self, &mut columns[1]);
-                            });
+                let full = ui.available_width();
+                let width = full.min(1040.0);
+                let offset = ((full - width) / 2.0).max(0.0);
+                let wide = width >= 820.0;
+                let left = |this: &mut Self, ui: &mut egui::Ui| {
+                    settings_card(ui, "Discord voice", |ui| {
+                        if let Some(account) = &this.account_state.account {
+                            ui.label(skin::strong(&account.display_name, 14.0));
+                            this.discord_following(ui);
+                            if ui.button(tr("Manage Discord connection")).clicked() {
+                                this.open_profile();
+                                this.profile_page = SettingsPage::Discord;
+                            }
                         } else {
-                            left(self, ui);
-                            ui.add_space(8.0);
-                            right(self, ui);
+                            this.discord_sign_in(ui);
                         }
                     });
+                };
+                let right = |this: &mut Self, ui: &mut egui::Ui| {
+                    settings_card(ui, "Room invitation", |ui| {
+                        description(ui, "Use a link from a friend to join independently.");
+                        ui.add_space(5.0);
+                        this.join_form(ui, state);
+                    });
+                };
+                let hero = |ui: &mut egui::Ui, hero_width: f32, scale: f32| {
+                    let (rect, _) = ui.allocate_exact_size(
+                        egui::vec2(hero_width, 250.0 * scale),
+                        egui::Sense::hover(),
+                    );
+                    stage::monitor_art(ui.painter(), rect.center(), 0.9 * scale, time);
+                    ui.label(skin::strong(tr("Join a room"), 40.0 * scale.max(0.8)));
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(tr(
+                            "Paste an invitation from a friend, then choose your name.",
+                        ))
+                        .size(15.0)
+                        .color(pal().muted),
+                    );
+                };
+                ui.add_space(if wide {
+                    ((ui.available_height() - 470.0) / 2.0).clamp(8.0, 80.0)
+                } else {
+                    10.0
+                });
+                ui.horizontal_top(|ui| {
+                    ui.add_space(offset);
+                    if wide {
+                        let hero_width = width * 0.44;
+                        ui.vertical(|ui| {
+                            ui.set_width(hero_width);
+                            ui.set_opacity(enter);
+                            hero(ui, hero_width, 1.0);
+                        });
+                        ui.add_space(28.0);
+                        ui.vertical(|ui| {
+                            ui.set_width(width - hero_width - 28.0);
+                            ui.set_opacity(enter);
+                            ui.add_space((1.0 - enter) * 18.0);
+                            right(self, ui);
+                            ui.add_space(14.0);
+                            left(self, ui);
+                        });
+                    } else {
+                        ui.vertical(|ui| {
+                            ui.set_width(width);
+                            ui.set_opacity(enter);
+                            hero(ui, width, 0.7);
+                            ui.add_space(14.0 + (1.0 - enter) * 18.0);
+                            right(self, ui);
+                            ui.add_space(12.0);
+                            left(self, ui);
+                        });
+                    }
                 });
             });
     }
@@ -544,7 +586,11 @@ impl PublisherUi {
         let max_body_height = (ctx.content_rect().height() - 145.0).clamp(130.0, 460.0);
         let mut close = false;
         egui::Modal::new(egui::Id::unique("user-settings"))
-            .frame(skin::menu_frame().inner_margin(egui::Margin::same(16)))
+            .frame(
+                skin::menu_frame()
+                    .corner_radius(26)
+                    .inner_margin(egui::Margin::same(20)),
+            )
             .show(ctx, |ui| {
                 ui.set_width(width);
                 ui.heading(tr("User settings"));

@@ -395,5 +395,21 @@
   "Could not remember your guest name on this PC.": "Não foi possível salvar seu apelido de visitante neste PC.",
   "After restart, open a fresh invitation. Your guest nickname is remembered.": "Após reiniciar, abra um convite válido. Seu apelido de visitante será lembrado.",
   "Your guest nickname is remembered on this PC.": "Seu apelido de visitante é salvo neste PC.",
-  "This invitation selects the server. Your guest nickname is remembered on this PC.": "Este convite seleciona o servidor. Seu apelido de visitante é salvo neste PC."
+  "This invitation selects the server. Your guest nickname is remembered on this PC.": "Este convite seleciona o servidor. Seu apelido de visitante é salvo neste PC.",
+  "Channels": "Canais",
+  "No signal": "Sem sinal",
+  "Waiting for a channel": "Aguardando um canal",
+  "Go on air": "Entrar no ar",
+  "On air": "No ar",
+  "Nobody is sharing yet": "Ninguém está transmitindo ainda",
+  "Spotlight": "Destaque",
+  "You're live": "Você está ao vivo",
+  "You": "Você",
+  "Here now": "Aqui agora",
+  "Hide preview": "Ocultar prévia",
+  "Unmute": "Ativar som",
+  "Friends watch from their own Watch button. This still updates about once a minute.": "Seus amigos assistem pelo botão Assistir. Esta imagem atualiza cerca de uma vez por minuto.",
+  "Ruby": "Rubi",
+  "Emerald": "Esmeralda",
+  "Black": "Preto"
 }

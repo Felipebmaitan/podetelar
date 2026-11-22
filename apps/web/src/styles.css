@@ -367,7 +367,7 @@ input[readonly] {
 /* Room application shell */
 .app-shell {
   display: grid;
-  grid-template-columns: 264px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   min-height: 100vh;
   min-height: 100svh;
 }
@@ -866,4 +866,38 @@ input[readonly] {
     animation-delay: 0ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Room pages without a sidebar: the brand lives in the top bar. */
+.topbar .brand {
+  padding: 0;
+  gap: 10px;
+}
+.topbar .brand-mark {
+  width: 34px;
+  height: 34px;
+}
+.topbar .room-title {
+  flex: 1;
+  color: var(--muted);
+  font-weight: 550;
+  padding-left: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.access-panel form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+}
+.access-panel form .field {
+  flex: 1 1 100%;
+}
+.invitation-page::before,
+.invitation-page::after,
+.ambient::before,
+.ambient::after {
+  opacity: 0.22;
 }

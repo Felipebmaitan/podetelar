@@ -45,9 +45,9 @@ pub enum Icon {
     Stop,
     Play,
     Settings,
-    Invite,
     More,
     Grid,
+    Spotlight,
     Monitor,
 }
 
@@ -84,6 +84,11 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
             for (x, y) in [(-7.0, -7.0), (1.0, -7.0), (-7.0, 1.0), (1.0, 1.0)] {
                 box_at(x, y, 6.0, 6.0);
             }
+        }
+        Icon::Spotlight => {
+            box_at(-8.0, -7.0, 11.0, 14.0);
+            box_at(5.0, -7.0, 3.0, 6.0);
+            box_at(5.0, 1.0, 3.0, 6.0);
         }
         Icon::Fullscreen | Icon::Focus => {
             for (x, y, dx, dy) in [
@@ -138,21 +143,6 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
             box_at(-8.0, -7.0, 16.0, 12.0);
             line((0.0, 5.0), (0.0, 9.0));
             line((-4.0, 9.0), (4.0, 9.0));
-        }
-        Icon::Invite => {
-            p.circle_stroke(point(-3.0, -4.0), 3.0, stroke);
-            p.add(egui::Shape::line(
-                vec![
-                    point(-8.0, 7.0),
-                    point(-8.0, 4.0),
-                    point(-3.0, 1.0),
-                    point(2.0, 4.0),
-                    point(2.0, 7.0),
-                ],
-                stroke,
-            ));
-            line((6.0, -2.0), (6.0, 4.0));
-            line((3.0, 1.0), (9.0, 1.0));
         }
         Icon::Settings => {
             // One connected gear outline, scaled with the icon rectangle.
@@ -218,7 +208,7 @@ pub fn menu_frame() -> egui::Frame {
     egui::Frame::new()
         .fill(pal().card)
         .stroke(egui::Stroke::new(1.0, pal().border))
-        .corner_radius(10)
+        .corner_radius(16)
         .inner_margin(egui::Margin::same(8))
         .shadow(egui::epaint::Shadow {
             offset: [0, 6],
@@ -251,7 +241,7 @@ pub fn help_label(ui: &mut egui::Ui, label: &str, help: &str) -> egui::Response 
 pub fn disclosure(ui: &mut egui::Ui, label: &str, expanded: &mut bool) -> egui::Response {
     let mut response = ui.add_sized(
         [ui.available_width(), 42.0],
-        egui::Button::new("").fill(pal().control).corner_radius(8),
+        egui::Button::new("").fill(pal().control).corner_radius(14),
     );
     if response.clicked()
         || (ui.is_enabled()

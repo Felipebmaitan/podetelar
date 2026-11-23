@@ -373,6 +373,8 @@ struct FixtureRequest {
     #[serde(default)]
     sample_rates: bool,
     #[serde(default)]
+    follow_stream_policy: bool,
+    #[serde(default)]
     source_audio: bool,
     #[serde(default)]
     upload_limit_bps: Option<u64>,
@@ -429,6 +431,8 @@ struct WatchRequest {
     output_switch_after_seconds: Option<u64>,
     #[serde(default)]
     continuous_watch: bool,
+    #[serde(default)]
+    watch_once_per_publisher: bool,
     #[serde(default)]
     watch_schedule: Vec<FixtureWatch>,
     #[serde(default)]
@@ -581,7 +585,8 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     let mut samples = Vec::new();
     let started = std::time::Instant::now();
     let mut next_sample = 0;
-    let mut watch_after = if request.wait_for_preview {
+    let mut requested_watches = std::collections::HashSet::new();
+    let mut watch_after = if request.wait_for_preview && !request.watch_once_per_publisher {
         None
     } else {
         Some(2)
@@ -621,7 +626,9 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                 if tile.watching { tile.presentation.request(); }
                 if request.diagnostics { tile.presentation.diagnostics.open.store(tile.watching, Ordering::Relaxed); }
                 let tile_watching = request.watch_schedule.iter().filter(|step| step.second <= elapsed && step.display_name == tile.name).max_by_key(|step| step.second).map_or(watching, |step| step.enabled);
-                if tile_watching != tile.watching { playback.watch(tile.id.clone(), tile_watching)?; }
+                if tile_watching != tile.watching
+                    && (!request.watch_once_per_publisher || tile_watching && requested_watches.insert(tile.id.clone()))
+                { playback.watch(tile.id.clone(), tile_watching)?; }
                 let requested_volume = request.volume_schedule.iter().filter(|step| step.second <= elapsed && step.display_name.as_ref().is_none_or(|name| name == &tile.name)).max_by_key(|step| step.second).map_or(100, |step| step.percent);
                 playback.set_volume(&tile.id, requested_volume);
             }
@@ -772,7 +779,7 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     };
     let result = async {
         let audio = if request.source_audio { audio::for_source(&source)? } else {request.audio};
-        let config=publisher::StreamConfig { source,encoder:encoder.clone(),quality:request.quality,audio,exclusions:request.exclusions };
+        let config=publisher::StreamConfig { source,encoder:encoder.clone(),quality:request.quality,policy:admission.stream_policy().await?,audio,exclusions:request.exclusions };
         ensure!(request.upload_limit_bps.is_none_or(|v|(64_000..=100_000_000).contains(&v)),"Invalid fixture upload ceiling.");
         let mut active = if request.upload_limit_bps.is_some() {
             publisher::Stream::start_with_upload_cap(&room, config.clone(), stop, request.upload_limit_bps).await?
@@ -807,16 +814,21 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             tokio::time::sleep(Duration::from_secs(after)).await;
             room.simulate_scenario(livekit::rtc_engine::SimulateScenario::FullReconnect).await.map_err(|_| anyhow::anyhow!("Could not request a local fixture reconnect."))?;
             tokio::time::sleep(Duration::from_secs(request.seconds - after)).await;
-        } else { active = serve_fixture(&room, &admission, active, request.seconds, cancellation.clone(), request.sample_rates).await?; }
+        } else { active = serve_fixture(&room, &admission, active, request.seconds, cancellation.clone(), request.sample_rates, request.follow_stream_policy).await?; }
         let preview_uploads = active.preview_uploads.clone(); let audio_metrics = active.audio_metrics.clone(); let delivery = active.delivery.clone();
         let preview_captures = active.preview_captures();
         let mode=active.mode;
         let encoder=active.encoder().clone();
         let final_sid=active.sid();
         let delivered=delivery.lock().map(|value|value.clone()).unwrap_or_default();
-        let metrics = active.stop(&room).await?;
+        let server_ended_video = active.video_muted();
+        let metrics = if server_ended_video {
+            active.stop_ended_publication(&room).await?
+        } else {
+            active.stop(&room).await?
+        };
         let audio = audio_metrics.lock().map(|value| value.clone()).unwrap_or_default();
-        println!("{}", serde_json::json!({"encoder": encoder.factory, "codec": encoder.codec, "initialSid":initial_sid,"finalSid":final_sid,"mode":mode,"delivery":delivered,"metrics": metrics, "audio": audio, "captureStopped": true, "republished": republished.load(Ordering::Relaxed), "previewUploads": preview_uploads.load(Ordering::Relaxed), "previewCaptures": preview_captures}));
+        println!("{}", serde_json::json!({"encoder": encoder.factory, "codec": encoder.codec, "initialSid":initial_sid,"finalSid":final_sid,"mode":mode,"delivery":delivered,"metrics": metrics, "audio": audio, "captureStopped": true,"serverEndedVideo":server_ended_video,"roomConnectedAfterStop":room.connection_state()==ConnectionState::Connected, "republished": republished.load(Ordering::Relaxed), "previewUploads": preview_uploads.load(Ordering::Relaxed), "previewCaptures": preview_captures}));
         tokio::time::sleep(Duration::from_secs(request.linger_seconds)).await;
         Ok::<_, anyhow::Error>(())
     }.await;
@@ -834,9 +846,11 @@ async fn serve_fixture(
     seconds: u64,
     cancellation: Arc<publisher::CaptureCancellation>,
     sample_rates: bool,
+    follow_stream_policy: bool,
 ) -> Result<publisher::Stream> {
     let started = std::time::Instant::now();
     let mut next_sample = 0;
+    let mut next_policy = 2;
     while started.elapsed().as_secs() < seconds {
         active.constrain_watchers(room);
         let second = started.elapsed().as_secs();
@@ -849,8 +863,18 @@ async fn serve_fixture(
             next_sample = second + 1;
         }
         let stop = cancellation.register();
-        if active.cancelled() {
+        if active.cancelled() || active.video_muted() {
             break;
+        }
+        if follow_stream_policy && second >= next_policy {
+            next_policy = second + 2;
+            let policy = admission.stream_policy().await?;
+            if active.policy() != &policy {
+                (active, _) = active
+                    .update_policy(room, admission.clone(), stop, policy)
+                    .await?;
+                continue;
+            }
         }
         if let Some(config) = active.compatible_config(room)? {
             active = active

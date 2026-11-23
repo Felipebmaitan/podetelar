@@ -7,6 +7,7 @@ import "./admin.css";
 import { AdminRooms } from "./AdminRooms";
 import { AdminProfiles } from "./AdminProfiles";
 import { AdminDiscord } from "./AdminDiscord";
+import { AdminStreamPolicy } from "./AdminStreamPolicy";
 import { BrandMark } from "./BrandMark";
 
 const periods: Period[] = [
@@ -30,7 +31,7 @@ export function Admin() {
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [section, setSection] = useState<
-    "usage" | "rooms" | "profiles" | "discord"
+    "usage" | "rooms" | "profiles" | "discord" | "stream-policy"
   >("rooms");
   const [retry, setRetry] = useState(0);
   useEffect(() => {
@@ -130,6 +131,12 @@ export function Admin() {
             >
               Usage
             </button>
+            <button
+              aria-pressed={section === "stream-policy"}
+              onClick={() => setSection("stream-policy")}
+            >
+              Stream quality
+            </button>
           </nav>
           {section === "discord" ? (
             <AdminDiscord
@@ -140,6 +147,13 @@ export function Admin() {
             />
           ) : section === "profiles" ? (
             <AdminProfiles
+              onExpired={() => {
+                setAuth("login");
+                setError("Your session expired. Sign in again.");
+              }}
+            />
+          ) : section === "stream-policy" ? (
+            <AdminStreamPolicy
               onExpired={() => {
                 setAuth("login");
                 setError("Your session expired. Sign in again.");

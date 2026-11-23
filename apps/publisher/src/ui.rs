@@ -889,9 +889,12 @@ impl PublisherUi {
         let source = state.sources.iter().find(|s| s.id == self.source_id);
         ui.add_enabled_ui(!state.busy, |ui| {
             self.source_selector(ui,state);
-            if let Some(encoder) = encoder { quality_controls(ui, &mut self.quality, source, encoder); }
+            if let Some(encoder) = encoder { quality_controls(ui, &mut self.quality, source, encoder, &state.stream_policy); }
             else { ui.colored_label(WARNING, tr("No supported hardware encoder was found. You can still watch compatible streams.")); }
         });
+        if !state.policy_notice.is_empty() {
+            ui.small(tr(state.policy_notice));
+        }
         ui.horizontal(|ui| {
             let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 22.0), egui::Sense::hover());
             skin::icon(ui.painter(), rect, Icon::Settings, MUTED);
@@ -919,8 +922,9 @@ impl PublisherUi {
             .find(|e| e.factory == self.encoder)
             .zip(state.sources.iter().find(|s| s.id == self.source_id))
             .is_some_and(|(e, s)| {
-                self.quality
-                    .resolve(s, e.codec)
+                state
+                    .stream_policy
+                    .resolve(self.quality, s, e.codec)
                     .is_ok_and(|mode| e.supports(mode))
             })
     }
@@ -2648,7 +2652,25 @@ fn quality_controls(
     settings: &mut Settings,
     source: Option<&crate::sources::SourceInfo>,
     encoder: &crate::encoding::Encoder,
+    policy: &quality::StreamPolicy,
 ) {
+    let mut caps = Vec::new();
+    if let Some(bps) = policy.max_bitrate_bps {
+        caps.push(format!("{} Mbps", bps as f64 / 1_000_000.0));
+    }
+    if let Some(resolution) = policy.max_resolution {
+        caps.push(if resolution == 2160 {
+            "4K".into()
+        } else {
+            format!("{resolution}p")
+        });
+    }
+    if let Some(fps) = policy.max_fps {
+        caps.push(format!("{fps} FPS"));
+    }
+    if !caps.is_empty() {
+        ui.small(format!("{} · {}", tr("Server limits"), caps.join(" · ")));
+    }
     let label = skin::field_label(ui, tr("Resolution"), Icon::Monitor);
     egui::ComboBox::from_id_salt("resolution")
         .width(ui.available_width())
@@ -2659,7 +2681,7 @@ fn quality_controls(
                     resolution,
                     ..*settings
                 };
-                let mode = source.and_then(|s| candidate.resolve(s, encoder.codec).ok());
+                let mode = source.and_then(|s| policy.resolve(candidate, s, encoder.codec).ok());
                 let text = mode
                     .map(|m| format!("{} · {}×{}", tr(resolution.label()), m.width, m.height))
                     .unwrap_or_else(|| resolution.label().into());
@@ -2707,9 +2729,15 @@ fn quality_controls(
         .response
         .labelled_by(label.id);
     if let Some(source) = source {
-        match settings.resolve(source, encoder.codec) {
+        match policy.resolve(*settings, source, encoder.codec) {
             Ok(mode) if encoder.supports(mode) => {
-                ui.small(format!("{}×{} · {} FPS", mode.width, mode.height, mode.fps));
+                ui.small(format!(
+                    "{}×{} · {} FPS · {} Mbps",
+                    mode.width,
+                    mode.height,
+                    mode.fps,
+                    mode.bitrate as f64 / 1_000_000.0
+                ));
             }
             _ => {
                 ui.colored_label(

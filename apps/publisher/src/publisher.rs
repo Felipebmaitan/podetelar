@@ -3,7 +3,7 @@ use crate::{
     audio, connection, delivery,
     encoding::{Codec, Encoder, Encoding, Metrics, Mode},
     preview::{self, Latest},
-    quality::{MAX_BITRATE, RateControl, Settings},
+    quality::{MAX_BITRATE, RateControl, Settings, StreamPolicy},
     sources::{self, Source, SourceInfo},
 };
 use anyhow::{Context, Result, bail};
@@ -30,6 +30,18 @@ use tokio::{
 
 const TRACK_NAME: &str = "PodeTelar screen";
 const AUDIO_TRACK_NAME: &str = "PodeTelar application audio";
+
+pub fn ended_video(event: &RoomEvent) -> Option<String> {
+    match event {
+        RoomEvent::LocalTrackUnpublished { publication, .. }
+        | RoomEvent::TrackMuted {
+            publication: TrackPublication::Local(publication),
+            ..
+        } if publication.kind() == TrackKind::Video => Some(publication.sid().to_string()),
+        _ => None,
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct CaptureCancellation(Mutex<Vec<Weak<AtomicBool>>>);
 
@@ -148,6 +160,8 @@ pub struct SharingSelection {
 #[derive(Clone)]
 pub struct Snapshot {
     pub profile_access: Option<Admission>,
+    pub stream_policy: StreamPolicy,
+    pub policy_notice: &'static str,
     pub connection: &'static str,
     pub room_name: String,
     pub error: String,
@@ -175,6 +189,8 @@ impl Default for Snapshot {
     fn default() -> Self {
         Self {
             profile_access: None,
+            stream_policy: StreamPolicy::default(),
+            policy_notice: "",
             connection: "disconnected",
             room_name: String::new(),
             error: String::new(),
@@ -452,6 +468,7 @@ pub struct StreamConfig {
     pub source: Source,
     pub encoder: Encoder,
     pub quality: Settings,
+    pub policy: StreamPolicy,
     pub audio: audio::Choice,
     pub exclusions: Vec<String>,
 }
@@ -468,15 +485,15 @@ impl StreamConfig {
         available: &[Encoder],
     ) -> Result<()> {
         let codec = shared.best(preferred.codec, |codec| available.iter().any(|encoder| {
-            encoder.codec == codec && self.quality.resolve(&self.source.info, codec).is_ok_and(|mode| encoder.supports(mode))
+            encoder.codec == codec && self.policy.resolve(self.quality, &self.source.info, codec).is_ok_and(|mode| encoder.supports(mode))
         })).context("No codec can be hardware encoded at this resolution/frame rate and hardware decoded by every room member.")?;
         self.encoder = available
             .iter()
             .filter(|encoder| {
                 encoder.codec == codec
                     && self
-                        .quality
-                        .resolve(&self.source.info, codec)
+                        .policy
+                        .resolve(self.quality, &self.source.info, codec)
                         .is_ok_and(|mode| encoder.supports(mode))
             })
             .min_by_key(|encoder| encoder.factory != preferred.factory)
@@ -493,6 +510,7 @@ impl StreamConfig {
             || current.exclusions != self.exclusions
             || current.quality.resolution != self.quality.resolution
             || current.quality.fps != self.quality.fps
+            || !self.policy.allows_geometry(mode)
         {
             return Ok(None);
         }
@@ -504,17 +522,14 @@ impl StreamConfig {
                 && self.source.info.height >= mode.height,
             "Source is smaller than the active resolution. Stop and choose a smaller mode."
         );
-        Ok(Some(Mode {
-            bitrate: self
-                .quality
-                .bitrate_for(mode.width, mode.height, self.encoder.codec)?,
-            ..mode
-        }))
+        self.policy
+            .with_bitrate(self.quality, self.encoder.codec, mode)
+            .map(Some)
     }
     pub fn mode(&self) -> Result<Mode> {
         let mode = self
-            .quality
-            .resolve(&self.source.info, self.encoder.codec)?;
+            .policy
+            .resolve(self.quality, &self.source.info, self.encoder.codec)?;
         anyhow::ensure!(
             self.encoder.supports(mode),
             "This resolution/frame rate is unavailable on the selected hardware encoder."
@@ -572,11 +587,57 @@ impl Drop for StopOnDrop {
 }
 
 impl Stream {
+    pub async fn update_policy(
+        mut self,
+        room: &Room,
+        admission: Admission,
+        stop: Arc<AtomicBool>,
+        policy: StreamPolicy,
+    ) -> Result<(Self, &'static str)> {
+        let mut config = self.config.clone();
+        config.policy = policy;
+        let before = self.mode;
+        if config.policy.allows_geometry(before) {
+            let next = config
+                .policy
+                .with_bitrate(config.quality, config.encoder.codec, before)?;
+            self.rate.set(next.bitrate)?;
+            self.mode = next;
+            self.config = config;
+            let notice = if before.bitrate != next.bitrate {
+                "The server updated this stream’s video bitrate."
+            } else {
+                ""
+            };
+            return Ok((self, notice));
+        }
+        if let Err(error) = config.mode() {
+            let _ = self.stop(room).await;
+            return Err(error);
+        }
+        Box::pin(self.fallback(room, admission, stop, config))
+            .await
+            .map(|active| {
+                (
+                    active,
+                    "The server reduced this stream’s resolution or frame rate.",
+                )
+            })
+    }
+
+    pub fn policy(&self) -> &StreamPolicy {
+        &self.config.policy
+    }
+
     pub fn sid(&self) -> String {
         self.video.sid().to_string()
     }
     pub fn cancelled(&self) -> bool {
         self.stop.flag.load(Ordering::Acquire)
+    }
+
+    pub fn video_muted(&self) -> bool {
+        self.video.is_muted()
     }
 
     pub fn constrain_watchers(&self, room: &Room) {
@@ -862,7 +923,15 @@ impl Stream {
                 .is_some_and(|(task, _)| task.is_finished())
     }
 
-    pub async fn stop(self, room: &Room) -> Result<Metrics> {
+    pub fn stop(self, room: &Room) -> impl Future<Output = Result<Metrics>> {
+        self.stop_publication(room, false)
+    }
+
+    pub fn stop_ended_publication(self, room: &Room) -> impl Future<Output = Result<Metrics>> {
+        self.stop_publication(room, true)
+    }
+
+    async fn stop_publication(self, room: &Room, already_ended: bool) -> Result<Metrics> {
         self.stop.cancel();
         if let Some(task) = self.diagnostic_task {
             task.abort();
@@ -883,7 +952,15 @@ impl Stream {
             };
             publication_ids.push(track.sid());
         }
-        publication_ids.push(self.video.sid());
+        let video_sid = self.video.sid();
+        if !already_ended
+            || room
+                .local_participant()
+                .track_publications()
+                .contains_key(&video_sid)
+        {
+            publication_ids.push(video_sid);
+        }
         let owned_ids: Vec<_> = self
             .stop
             .tracks
@@ -954,6 +1031,9 @@ struct Session {
     admission: Admission,
     room: Arc<Room>,
     events: JoinHandle<()>,
+    policy: watch::Receiver<StreamPolicy>,
+    policy_updates: JoinHandle<()>,
+    ended_video: mpsc::Receiver<String>,
     expected_audio: Arc<AtomicBool>,
 }
 
@@ -987,8 +1067,11 @@ impl Session {
         };
         let mut pending_admission = PendingAdmission(Some(admission.clone()));
         let client = admission.clone();
-        let Some(access) = ticket
-            .run(async move { client.media_access().await }, |_| async {})
+        let Some((access, stream_policy)) = ticket
+            .run(
+                async move { tokio::try_join!(client.media_access(), client.stream_policy()) },
+                |_| async {},
+            )
             .await?
         else {
             return Ok(None);
@@ -1017,8 +1100,12 @@ impl Session {
         let media_room = room.clone();
         let expected_audio = Arc::new(AtomicBool::new(false));
         let audio_expected = expected_audio.clone();
+        let (ended_tx, ended_video) = mpsc::channel(16);
         let events = tokio::spawn(async move {
             while let Some(event) = events.recv().await {
+                if let Some(sid) = crate::publisher::ended_video(&event) {
+                    let _ = ended_tx.try_send(sid);
+                }
                 match event {
                     RoomEvent::LocalTrackPublished {
                         publication, track, ..
@@ -1067,15 +1154,35 @@ impl Session {
                 }
             }
         });
+        let (publish_policy, policy) = watch::channel(stream_policy);
+        let policy_admission = admission.clone();
+        let policy_updates = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                if let Ok(next) = policy_admission.stream_policy().await {
+                    publish_policy.send_if_modified(|current| {
+                        if current == &next {
+                            return false;
+                        }
+                        *current = next;
+                        true
+                    });
+                }
+            }
+        });
         Ok(Some(Self {
             admission: pending_admission.0.take().expect("Accepted room admission"),
             room,
             events,
+            policy,
+            policy_updates,
+            ended_video,
             expected_audio,
         }))
     }
 
     async fn close(self) {
+        self.policy_updates.abort();
         let _ = self.room.close().await;
         self.events.abort();
         let _ = self.events.await;
@@ -1146,7 +1253,28 @@ async fn worker(
                         if download_budget.is_none(){playback.set_budget(capacity.watching_allowance());}
                         update(&snapshot,|state|{state.capacity=capacity.clone();state.testing_connection=false;});
                 }
-                if let Some(joined) = &session {
+                if let Some(joined) = &mut session {
+                    let active_sid = stream.as_ref().map(Stream::sid);
+                    let externally_ended = std::iter::from_fn(|| joined.ended_video.try_recv().ok())
+                        .any(|sid| active_sid.as_deref() == Some(sid.as_str()));
+                    if externally_ended && let Some(active) = stream.take() {
+                        let _ = active.stop_ended_publication(&joined.room).await;
+                        update(&snapshot, |state| {
+                            state.sharing = false;
+                            state.self_preview = Arc::default();
+                            state.mode = None;
+                            state.active_selection = None;
+                            state.policy_notice = "";
+                            state.error = "Sharing stopped because the media server ended the video publication.".into();
+                        });
+                    }
+                    let policy = joined.policy.borrow().clone();
+                    update(&snapshot, |state| {
+                        if state.stream_policy != policy {
+                            state.stream_policy = policy.clone();
+                            state.policy_notice = "";
+                        }
+                    });
                     let mut ids:Vec<_>=joined.room.remote_participants().values().map(|p|{
                         let name=p.name();(p.identity().to_string(),if name.is_empty(){"Participant".to_owned()}else{name})
                     }).collect();
@@ -1165,6 +1293,24 @@ async fn worker(
                     // Register before observing the old token: a concurrent
                     // Stop must either cancel this replacement or the old
                     // token that prevents entering the replacement path.
+                    let policy_stop = cancellation.register();
+                    if joined.room.connection_state() == ConnectionState::Connected
+                        && stream.as_ref().is_some_and(|s| !s.cancelled() && s.config.policy != policy) {
+                        let active = stream.take().unwrap();
+                        match active.update_policy(&joined.room, joined.admission.clone(), policy_stop, policy).await {
+                            Ok((active, notice)) => {
+                                stream = Some(active);
+                                update(&snapshot, |state| state.policy_notice = notice);
+                            }
+                            Err(_) => update(&snapshot, |state| {
+                                state.sharing = false;
+                                state.self_preview = Arc::default();
+                                state.mode = None;
+                                state.active_selection = None;
+                                state.error = "Sharing stopped because the stream could not meet the server’s updated limits.".into();
+                            }),
+                        }
+                    }
                     let replacement_stop = cancellation.register();
                     if joined.room.connection_state() == ConnectionState::Connected
                         && stream.as_ref().is_some_and(|s| !s.cancelled()) {
@@ -1259,6 +1405,8 @@ async fn worker(
                         update(&snapshot, |state| {
                             state.connection = "connected";
                             state.profile_access = Some(joined.admission.clone());
+                            state.stream_policy = joined.policy.borrow().clone();
+                            state.policy_notice = "";
                             state.room_name = joined.admission.room_name.clone();
                             state.testing_connection = true;
                         });
@@ -1307,6 +1455,7 @@ async fn worker(
                         source,
                         encoder,
                         quality,
+                        policy: joined.policy.borrow().clone(),
                         audio: audio.clone(),
                         exclusions,
                     };
@@ -1383,6 +1532,8 @@ async fn worker(
                     playback.set_budget(download_budget);
                     update(&snapshot, |state| {
                         state.connection = "disconnected";
+                        state.stream_policy = StreamPolicy::default();
+                        state.policy_notice = "";
                         state.sharing = false;
                         state.self_preview = Arc::default();
                         state.room_name.clear();
@@ -1628,6 +1779,7 @@ mod tests {
                 codec: Codec::H265,
             },
             quality: Settings::default(),
+            policy: StreamPolicy::default(),
             audio: audio::Choice::Off,
             exclusions: Vec::new(),
         };

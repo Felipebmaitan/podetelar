@@ -13,7 +13,7 @@ import {
   deviceIdSchema,
 } from "@podetelar/contracts";
 import type { Config } from "./config.js";
-import { Rooms, SESSION_TTL_MS } from "./rooms.js";
+import { Rooms, SESSION_TTL_MS, secretsEqual } from "./rooms.js";
 import {
   LivekitDirectory,
   mediaRoomName,
@@ -45,6 +45,7 @@ import { Identities } from "./identities.js";
 import { discordAuthRoutes } from "./auth.js";
 import { VoiceFollowing } from "./voice-following.js";
 import { z } from "zod";
+import { hasStreamCaps, StreamPolicies } from "./stream-policy.js";
 
 const COOKIE = "podetelar_session";
 const MEDIA_TOKEN_TTL_SECONDS = 120;
@@ -68,6 +69,7 @@ export async function buildApp(
     trustProxy: config.trustedProxy ?? false,
   });
   const rooms = new Rooms(config.databasePath, options.now, config.adminToken);
+  const streamPolicies = new StreamPolicies(config.databasePath);
   const profiles = new GuestProfiles(config.databasePath, options.now);
   const accounts = new Accounts(
     config.databasePath,
@@ -140,6 +142,7 @@ export async function buildApp(
     following.close();
     await profiles.close();
     accounts.close();
+    streamPolicies.close();
     rooms.close();
   });
   await app.register(cookie);
@@ -236,6 +239,7 @@ export async function buildApp(
     rooms,
     access,
     lifecycle,
+    streamPolicies,
     options.now,
     profiles,
     discordVoice,
@@ -480,6 +484,32 @@ export async function buildApp(
     },
   );
 
+  app.get<{ Params: { roomId: string } }>(
+    "/api/rooms/:roomId/stream-policy",
+    {
+      config: {
+        rateLimit: {
+          max: 60,
+          timeWindow: "1 minute",
+          keyGenerator: (request) =>
+            rooms.session(
+              (request.params as { roomId: string }).roomId,
+              request.cookies[COOKIE],
+            )?.participant.id ?? request.ip,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!rooms.session(request.params.roomId, request.cookies[COOKIE]))
+        return reply
+          .code(401)
+          .send({ error: "Open your room invitation to join." });
+      return reply
+        .header("Cache-Control", "no-store")
+        .send(streamPolicies.current());
+    },
+  );
+
   app.post<{ Params: { roomId: string } }>(
     "/api/rooms/:roomId/leave",
     async (request, reply) => {
@@ -524,6 +554,17 @@ export async function buildApp(
           return reply
             .code(401)
             .send({ error: "Open your room invitation to join." });
+        const streamCapsConfigured =
+          native && hasStreamCaps(streamPolicies.current());
+        if (
+          streamCapsConfigured &&
+          config.streamPolicyEnforcement &&
+          !streamPolicies.enforcementReady()
+        )
+          return reply.header("Retry-After", "2").code(503).send({
+            error:
+              "The media server is synchronizing stream limits. Try joining again in a moment.",
+          });
         const capabilities =
           native && request.body !== undefined
             ? nativeMediaCapabilitiesSchema.safeParse(request.body)
@@ -554,7 +595,9 @@ export async function buildApp(
         access.addGrant({
           roomJoin: true,
           room: mediaRoomName(session.room.id),
-          canPublish: native,
+          canPublish:
+            native &&
+            (!streamCapsConfigured || Boolean(config.streamPolicyEnforcement)),
           canSubscribe: native,
           canUpdateOwnMetadata: native,
           canPublishData: false,
@@ -566,6 +609,21 @@ export async function buildApp(
         };
       },
     );
+
+  if (config.streamPolicyEnforcement)
+    app.get("/api/internal/sfu/stream-policy", async (request, reply) => {
+      const authorization = request.headers.authorization;
+      if (
+        !authorization ||
+        !secretsEqual(authorization, `Bearer ${config.livekitApiSecret}`)
+      )
+        return reply
+          .code(401)
+          .send({ error: "Media server credentials required." });
+      return reply
+        .header("Cache-Control", "no-store")
+        .send(streamPolicies.mediaCaps());
+    });
 
   await previewRoutes(app, rooms, previews);
   await networkTestRoutes(app, rooms);

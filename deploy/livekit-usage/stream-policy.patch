@@ -1,0 +1,98 @@
+diff --git a/pkg/rtc/mediatrack.go b/pkg/rtc/mediatrack.go
+index 895216f..97cd3e1 100644
+--- a/pkg/rtc/mediatrack.go
++++ b/pkg/rtc/mediatrack.go
+@@ -49,6 +49,7 @@ type MediaTrack struct {
+ 	params         MediaTrackParams
+ 	buffer         atomic.Pointer[buffer.Buffer]
+ 	everSubscribed atomic.Bool
++	streamPolicy   *buffer.StreamPolicyGuard
+ 
+ 	*MediaTrackReceiver
+ 	*MediaLossProxy
+@@ -89,6 +90,7 @@ type MediaTrackParams struct {
+ 	Reporter                         roomobs.TrackReporter
+ 	SimTracks                        map[uint32]interceptor.SimulcastTrackInfo
+ 	OnRTCP                           func([]rtcp.Packet)
++	OnStreamPolicyViolation          func(*MediaTrack)
+ 	ForwardStats                     *sfu.ForwardStats
+ 	OnTrackEverSubscribed            func(livekit.TrackID)
+ 	ShouldRegressCodec               func() bool
+@@ -114,6 +116,9 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
+ 		params:            params,
+ 		backupCodecPolicy: ti.BackupCodecPolicy,
+ 	}
++	if params.OnStreamPolicyViolation != nil {
++		t.streamPolicy = buffer.NewStreamPolicyGuard(func() { params.OnStreamPolicyViolation(t) })
++	}
+ 
+ 	if t.params.ForceBackupCodecPolicySimulcast {
+ 		t.backupCodecPolicy = livekit.BackupCodecPolicy_SIMULCAST
+@@ -546,6 +551,9 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
+ 	}
+ 
+ 	var expectedBitrate int
++	if track.Kind() == webrtc.RTPCodecTypeVideo {
++		buff.SetStreamPolicy(t.streamPolicy)
++	}
+ 	layers := buffer.GetVideoLayersForMimeType(mimeType, ti)
+ 	if layer >= 0 && len(layers) > int(layer) {
+ 		expectedBitrate = int(layers[layer].GetBitrate())
+diff --git a/pkg/rtc/participant.go b/pkg/rtc/participant.go
+index 63376ed..46b95dc 100644
+--- a/pkg/rtc/participant.go
++++ b/pkg/rtc/participant.go
+@@ -3717,8 +3717,19 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
+ 		PLIThrottleConfig:      p.params.PLIThrottleConfig,
+ 		SimTracks:              p.params.SimTracks,
+ 		OnRTCP:                 p.postRtcp,
+-		ForwardStats:           p.params.ForwardStats,
+-		OnTrackEverSubscribed:  p.sendTrackHasBeenSubscribed,
++		OnStreamPolicyViolation: func(track *MediaTrack) {
++			sid := track.ID()
++			if p.GetPublishedTrack(sid) == track {
++				// The pinned native SDK handles mute even when the client protocol
++				// advertises the newer unpublish signal.
++				if p.ProtocolVersion().SupportsUnpublish() {
++					p.sendTrackMuted(sid, true)
++				}
++				p.removePublishedTrack(track)
++			}
++		},
++		ForwardStats:          p.params.ForwardStats,
++		OnTrackEverSubscribed: p.sendTrackHasBeenSubscribed,
+ 		ShouldRegressCodec: func() bool {
+ 			return p.helper().ShouldRegressCodec()
+ 		},
+diff --git a/pkg/sfu/buffer/buffer_base.go b/pkg/sfu/buffer/buffer_base.go
+index 03cf77e..c75c2a8 100644
+--- a/pkg/sfu/buffer/buffer_base.go
++++ b/pkg/sfu/buffer/buffer_base.go
+@@ -181,10 +181,12 @@ type BufferBase struct {
+ 
+ 	extPackets deque.Deque[*ExtPacket]
+ 
+-	codecType webrtc.RTPCodecType
+-	closeOnce sync.Once
+-	clockRate uint32
+-	mime      mime.MimeType
++	codecType    webrtc.RTPCodecType
++	closeOnce    sync.Once
++	clockRate    uint32
++	mime         mime.MimeType
++	streamPolicy *StreamPolicyGuard
++	policyBuffer *streamPolicyBuffer
+ 
+ 	rtpParameters  webrtc.RTPParameters
+ 	payloadType    uint8
+@@ -887,6 +889,10 @@ func (b *BufferBase) HandleIncomingPacketLocked(
+ 		b.handleCodecChange(rtpPacket.PayloadType)
+ 	}
+ 
++	if b.streamPolicy != nil && (flowState.IsDuplicate || !b.acceptsStreamPolicy(rtpPacket, flowState.ExtTimestamp)) {
++		return 0, errStreamPolicy
++	}
++
+ 	// add to RTX buffer using sequence number after accounting for dropped padding only packets
+ 	snAdjustment, err := b.snRangeMap.GetValue(flowState.ExtSequenceNumber)
+ 	if err != nil {

@@ -19,7 +19,7 @@ sudo -n docker run --rm --network none --read-only \
   --mount "type=bind,source=$state/publisher,target=/publisher,readonly" \
   "$app" node --input-type=module -e \
   "import { loadPublisher } from './apps/server/dist/distribution.js'; await loadPublisher('/publisher');"
-sfu_hash=$(cat "$release"/deploy/livekit-usage/{Dockerfile,stats.patch,usage_metrics.go} | sha256sum | cut -c1-40)
+sfu_hash=$(cat "$release"/deploy/livekit-usage/{Dockerfile,stats.patch,usage_metrics.go,stream-policy.patch,stream_policy*.go} | sha256sum | cut -c1-40)
 sfu=podetelar/livekit-usage:$sfu_hash
 if ! sudo -n docker image inspect "$sfu" >/dev/null 2>&1; then
   build 1536m -f "$release/deploy/livekit-usage/Dockerfile" -t "$sfu" "$release"

@@ -33,6 +33,15 @@ and `PODETELAR_SMOKE_SFU_PORT` to unused ports. The SFU also uses the next
 two ports. Defaults remain 3010 and 17880–17882. Do not stop another test run's
 services to free these ports.
 
+Run `npm run native:e2e -- stream-policy.spec.ts` with
+`PODETELAR_TEST_STREAM_POLICY=1` and `PODETELAR_NATIVE_EXE` pointing at the
+built publisher. Use an isolated local API and policy-enabled SFU because the
+test changes the server's stream limits. It exercises real encoding and
+decoding across live bitrate, resolution and FPS changes. The SFU image also
+runs the packet-budget and observed-resolution unit tests during its build.
+With the same local configuration, `npm run test:admin -- stream-policy.spec.ts`
+checks dashboard saves and enforcement against a publisher that ignores the policy.
+
 ## Coverage retained outside browser participant flows
 
 - Server tests protect invitation secrecy, room-scoped sessions, persistence,

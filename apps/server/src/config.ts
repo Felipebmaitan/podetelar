@@ -24,6 +24,7 @@ export type Config = {
   trustedProxy?: string;
   publisherDirectory?: string;
   usageMetricsUrl?: string;
+  streamPolicyEnforcement?: boolean;
 };
 
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
@@ -159,6 +160,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     livekitApiKey: required("LIVEKIT_API_KEY", 8),
     livekitApiSecret: required("LIVEKIT_API_SECRET", 32),
     webRoot: fileURLToPath(new URL("../../web/dist", import.meta.url)),
+    streamPolicyEnforcement: env.STREAM_POLICY_ENFORCEMENT === "1",
     ...(env.TRUSTED_PROXY ? { trustedProxy: env.TRUSTED_PROXY } : {}),
     ...(env.PUBLISHER_DIRECTORY
       ? { publisherDirectory: resolve(env.PUBLISHER_DIRECTORY) }

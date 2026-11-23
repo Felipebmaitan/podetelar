@@ -544,6 +544,25 @@ impl Admission {
             .await
     }
 
+    pub async fn stream_policy(&self) -> Result<crate::quality::StreamPolicy> {
+        let response = self
+            .client
+            .get(
+                self.origin
+                    .join(&format!("api/rooms/{}/stream-policy", self.room_id))?,
+            )
+            .timeout(Duration::from_secs(2))
+            .send()
+            .await
+            .map_err(|_| anyhow::anyhow!("Could not refresh server stream limits."))?;
+        if response.status().as_u16() == 404 {
+            return Ok(crate::quality::StreamPolicy::default());
+        }
+        let policy: crate::quality::StreamPolicy = read_response(response).await?;
+        policy.validate()?;
+        Ok(policy)
+    }
+
     pub async fn media_access_with_decoders(
         &self,
         decoders: crate::codec_policy::Codecs,
@@ -562,6 +581,10 @@ impl Admission {
         ensure!(
             response.status().as_u16() != 404,
             "This room server needs an update before native playback can be used."
+        );
+        ensure!(
+            response.status().as_u16() != 503,
+            "The media server is synchronizing stream limits. Try joining again in a moment."
         );
         let access: MediaAccess = read_response(response).await?;
         let media_url = Url::parse(&access.server_url)

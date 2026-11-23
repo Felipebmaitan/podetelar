@@ -65,30 +65,49 @@ impl Resolution {
         }
     }
     pub fn dimensions(self, source: &SourceInfo) -> Result<(u32, u32)> {
+        self.fit(source.width, source.height, self != Self::Source)
+    }
+
+    fn fit(self, width: u32, height: u32, require_full_size: bool) -> Result<(u32, u32)> {
         let (long, short) = self.bounds();
-        let (bound_w, bound_h) = if source.height > source.width {
+        let (bound_w, bound_h) = if height > width {
             (short, long)
         } else {
             (long, short)
         };
         ensure!(
-            source.width > 0 && source.height > 0,
+            width > 0 && height > 0,
             "Refresh and select an available source."
         );
         ensure!(
-            self == Self::Source || (source.width >= bound_w && source.height >= bound_h),
+            !require_full_size || (width >= bound_w && height >= bound_h),
             "The selected resolution exceeds this source. Choose a smaller resolution or Source."
         );
-        let scale = (bound_w as f64 / source.width as f64)
-            .min(bound_h as f64 / source.height as f64)
+        let scale = (bound_w as f64 / width as f64)
+            .min(bound_h as f64 / height as f64)
             .min(1.0);
-        let width = (source.width as f64 * scale) as u32 / 2 * 2;
-        let height = (source.height as f64 * scale) as u32 / 2 * 2;
+        let width = (width as f64 * scale) as u32 / 2 * 2;
+        let height = (height as f64 * scale) as u32 / 2 * 2;
         ensure!(
             width >= 144 && height >= 128,
             "Choose a larger source window."
         );
         Ok((width, height))
+    }
+
+    fn from_height(height: u32) -> Option<Self> {
+        match height {
+            720 => Some(Self::P720),
+            1080 => Some(Self::P1080),
+            1440 => Some(Self::P1440),
+            2160 => Some(Self::P2160),
+            _ => None,
+        }
+    }
+
+    fn fits(self, width: u32, height: u32) -> bool {
+        let (long, short) = self.bounds();
+        width.max(height) <= long && width.min(height) <= short
     }
 }
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -145,16 +164,108 @@ pub struct Mode {
     pub fps: u32,
     pub bitrate: u64,
 }
-impl Settings {
-    pub fn resolve(self, source: &SourceInfo, codec: Codec) -> Result<Mode> {
-        let (width, height) = self.resolution.dimensions(source)?;
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct StreamPolicy {
+    pub max_bitrate_bps: Option<u64>,
+    pub max_resolution: Option<u32>,
+    pub max_fps: Option<u32>,
+    automatic_targets: Vec<AutomaticTarget>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct AutomaticTarget {
+    resolution: u32,
+    fps: u32,
+    bitrate_bps: u64,
+}
+
+impl StreamPolicy {
+    pub fn validate(&self) -> Result<()> {
+        let valid_bitrate = |bps: u64| (MIN_BITRATE..=MAX_BITRATE).contains(&bps);
+        ensure!(
+            self.max_bitrate_bps.is_none_or(valid_bitrate)
+                && self
+                    .max_resolution
+                    .is_none_or(|height| Resolution::from_height(height).is_some())
+                && self.max_fps.is_none_or(|fps| FRAME_RATES.contains(&fps))
+                && self.automatic_targets.len() <= 24
+                && self.automatic_targets.iter().all(|target| {
+                    Resolution::from_height(target.resolution).is_some()
+                        && FRAME_RATES.contains(&target.fps)
+                        && valid_bitrate(target.bitrate_bps)
+                }),
+            "The room server returned invalid stream quality settings."
+        );
+        Ok(())
+    }
+
+    pub fn resolve(&self, settings: Settings, source: &SourceInfo, codec: Codec) -> Result<Mode> {
+        ensure!(
+            FRAME_RATES.contains(&settings.fps),
+            "Choose a supported frame rate up to 120 fps."
+        );
+        let (mut width, mut height) = settings.resolution.dimensions(source)?;
+        if let Some(cap) = self.resolution_cap()
+            && !cap.fits(width, height)
+        {
+            (width, height) = cap.fit(width, height, false)?;
+        }
+        let fps = settings.fps.min(self.max_fps.unwrap_or(settings.fps));
+        self.with_bitrate(
+            settings,
+            codec,
+            Mode {
+                width,
+                height,
+                fps,
+                bitrate: 0,
+            },
+        )
+    }
+
+    fn resolution_cap(&self) -> Option<Resolution> {
+        self.max_resolution.and_then(Resolution::from_height)
+    }
+
+    pub fn allows_geometry(&self, mode: Mode) -> bool {
+        self.max_fps.is_none_or(|cap| mode.fps <= cap)
+            && self
+                .resolution_cap()
+                .is_none_or(|cap| cap.fits(mode.width, mode.height))
+    }
+
+    pub fn with_bitrate(&self, settings: Settings, codec: Codec, mode: Mode) -> Result<Mode> {
+        let target = (settings.bitrate == Bitrate::Auto)
+            .then(|| {
+                [720, 1080, 1440, 2160].into_iter().find(|height| {
+                    Resolution::from_height(*height)
+                        .is_some_and(|resolution| resolution.fits(mode.width, mode.height))
+                })
+            })
+            .flatten()
+            .and_then(|resolution| {
+                self.automatic_targets
+                    .iter()
+                    .find(|target| target.resolution == resolution && target.fps == mode.fps)
+            });
+        let bitrate = match target {
+            Some(target) => target.bitrate_bps,
+            None => Settings {
+                fps: mode.fps,
+                ..settings
+            }
+            .bitrate_for(mode.width, mode.height, codec)?,
+        };
         Ok(Mode {
-            width,
-            height,
-            fps: self.fps,
-            bitrate: self.bitrate_for(width, height, codec)?,
+            bitrate: bitrate.min(self.max_bitrate_bps.unwrap_or(MAX_BITRATE)),
+            ..mode
         })
     }
+}
+impl Settings {
     pub fn bitrate_for(self, width: u32, height: u32, codec: Codec) -> Result<u64> {
         ensure!(
             FRAME_RATES.contains(&self.fps),
@@ -512,25 +623,101 @@ mod tests {
             ..Settings::default()
         };
         let display = source(1920, 1080);
-        let initial = settings.resolve(&display, Codec::H265).unwrap();
+        let policy = StreamPolicy::default();
+        let initial = policy.resolve(settings, &display, Codec::H265).unwrap();
         settings.fps = 90;
-        let faster = settings.resolve(&display, Codec::H265).unwrap();
+        let faster = policy.resolve(settings, &display, Codec::H265).unwrap();
         assert!(faster.bitrate > initial.bitrate);
-        assert!(settings.resolve(&display, Codec::H264).unwrap().bitrate > faster.bitrate);
+        assert!(
+            policy
+                .resolve(settings, &display, Codec::H264)
+                .unwrap()
+                .bitrate
+                > faster.bitrate
+        );
         settings.profile = Profile::Detail;
-        assert!(settings.resolve(&display, Codec::H265).unwrap().bitrate < faster.bitrate);
+        assert!(
+            policy
+                .resolve(settings, &display, Codec::H265)
+                .unwrap()
+                .bitrate
+                < faster.bitrate
+        );
         settings.bitrate = Bitrate::Manual(100_000_000);
-        let manual = settings.resolve(&display, Codec::H265).unwrap();
+        let manual = policy.resolve(settings, &display, Codec::H265).unwrap();
         assert_eq!(
             (manual.width, manual.height, manual.fps),
             (faster.width, faster.height, faster.fps)
         );
         assert_eq!(manual.bitrate, MAX_BITRATE);
         settings.bitrate = Bitrate::Manual(0);
-        assert!(settings.resolve(&display, Codec::H265).is_err());
+        assert!(policy.resolve(settings, &display, Codec::H265).is_err());
         settings.fps = 121;
-        assert!(settings.resolve(&display, Codec::H265).is_err());
+        assert!(policy.resolve(settings, &display, Codec::H265).is_err());
     }
+    #[test]
+    fn server_targets_and_caps_use_effective_output_geometry_and_fps() {
+        let policy = StreamPolicy {
+            max_bitrate_bps: Some(10_000_000),
+            max_resolution: Some(1080),
+            max_fps: Some(60),
+            automatic_targets: vec![
+                AutomaticTarget {
+                    resolution: 720,
+                    fps: 30,
+                    bitrate_bps: 4_000_000,
+                },
+                AutomaticTarget {
+                    resolution: 1080,
+                    fps: 60,
+                    bitrate_bps: 6_000_000,
+                },
+            ],
+        };
+        let settings = Settings {
+            fps: 120,
+            ..Settings::default()
+        };
+        assert_eq!(
+            policy
+                .resolve(settings, &source(2160, 3840), Codec::H264)
+                .unwrap(),
+            Mode {
+                width: 1080,
+                height: 1920,
+                fps: 60,
+                bitrate: 6_000_000
+            }
+        );
+        let manual = Settings {
+            bitrate: Bitrate::Manual(25_000_000),
+            ..settings
+        };
+        assert_eq!(
+            policy
+                .resolve(manual, &source(3440, 1440), Codec::H265)
+                .unwrap(),
+            Mode {
+                width: 1920,
+                height: 802,
+                fps: 60,
+                bitrate: 10_000_000
+            }
+        );
+        let hd = Settings {
+            fps: 30,
+            resolution: Resolution::P720,
+            ..settings
+        };
+        assert_eq!(
+            policy
+                .resolve(hd, &source(1920, 1080), Codec::Av1)
+                .unwrap()
+                .bitrate,
+            4_000_000
+        );
+    }
+
     #[test]
     fn congestion_caps_both_auto_and_manual_and_live_edits_do_not_rewrite_request() {
         let rate = RateControl::new(12_000_000);

@@ -145,6 +145,35 @@ test("admins set a durable stream policy, and only admitted publishers and the S
       ).json(),
       expected,
     );
+    await app.close();
+    app = await buildApp(
+      { ...config, streamPolicyEnforcement: false },
+      options,
+    );
+    const secondLogin = await app.inject({
+      method: "POST",
+      url: "/api/admin/login",
+      headers: { origin },
+      payload: { password },
+    });
+    const secondAdmin = String(secondLogin.headers["set-cookie"]).split(
+      ";",
+    )[0]!;
+    const headers = { origin, cookie: secondAdmin };
+    assert.equal(
+      (await save({ ...expected, maxFps: 30 }, headers)).statusCode,
+      409,
+    );
+    const defaultsOnly = await save(
+      { ...expected, automaticTargets: [] },
+      headers,
+    );
+    assert.equal(defaultsOnly.statusCode, 200);
+    assert.deepEqual(defaultsOnly.json().policy, {
+      ...expected,
+      revision: 2,
+      automaticTargets: [],
+    });
   } finally {
     await app.close();
     rmSync(directory, { recursive: true, force: true });

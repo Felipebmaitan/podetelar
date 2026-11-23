@@ -62,12 +62,21 @@ type policySnapshot struct {
 	expires                  time.Time
 }
 
-func (p policySnapshot) refresh(caps streamCaps, now time.Time) *policySnapshot {
-	p.bitrate = p.bitrate.update(caps.MaxBitrate, now)
-	p.resolution = p.resolution.update(caps.MaxResolution, now)
-	p.fps = p.fps.update(caps.MaxFPS, now)
-	p.expires = now.Add(policyTTL)
-	return &p
+func (p *policySnapshot) refresh(caps streamCaps, now time.Time) *policySnapshot {
+	if p == nil {
+		return &policySnapshot{
+			bitrate:    policyLimit{current: caps.MaxBitrate},
+			resolution: policyLimit{current: caps.MaxResolution},
+			fps:        policyLimit{current: caps.MaxFPS},
+			expires:    now.Add(policyTTL),
+		}
+	}
+	return &policySnapshot{
+		bitrate:    p.bitrate.update(caps.MaxBitrate, now),
+		resolution: p.resolution.update(caps.MaxResolution, now),
+		fps:        p.fps.update(caps.MaxFPS, now),
+		expires:    now.Add(policyTTL),
+	}
 }
 
 func (p *policySnapshot) forPublication(started, now time.Time) streamCaps {
@@ -100,11 +109,7 @@ func init() {
 	go func() {
 		for {
 			if caps, err := readStreamCaps(client, policyURL, token); err == nil {
-				latest := currentStreamCaps.Load()
-				if latest == nil {
-					latest = &policySnapshot{}
-				}
-				currentStreamCaps.Store(latest.refresh(caps, time.Now()))
+				currentStreamCaps.Store(currentStreamCaps.Load().refresh(caps, time.Now()))
 			}
 			time.Sleep(policyRefresh)
 		}

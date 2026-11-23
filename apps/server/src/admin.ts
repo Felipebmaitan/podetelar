@@ -70,12 +70,18 @@ export async function adminRoutes(
         return reply.code(400).send({
           error: "Choose valid stream limits and bitrate targets (1–100 Mbps).",
         });
-      if (!config.streamPolicyEnforcement && hasStreamCaps(policy.data))
+      const current = streamPolicies.current();
+      const changesCaps =
+        policy.data.maxBitrateBps !== current.maxBitrateBps ||
+        policy.data.maxResolution !== current.maxResolution ||
+        policy.data.maxFps !== current.maxFps;
+      const requiresEnforcement = changesCaps && hasStreamCaps(policy.data);
+      if (requiresEnforcement && !config.streamPolicyEnforcement)
         return reply.code(409).send({
           error:
             "Configure a policy-enabled media server before setting limits.",
         });
-      if (hasStreamCaps(policy.data) && !streamPolicies.enforcementReady())
+      if (requiresEnforcement && !streamPolicies.enforcementReady())
         return reply.code(409).send({
           error:
             "Wait for the media server to synchronize stream policy, then try again.",

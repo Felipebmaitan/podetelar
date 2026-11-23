@@ -83,13 +83,24 @@ func TestPodeTelarStreamPolicySeparatedBursts(t *testing.T) {
 	}
 }
 
+func TestPodeTelarStreamPolicyFirstSnapshotHasNoGrace(t *testing.T) {
+	now := time.Now()
+	persisted := streamCaps{MaxBitrate: 10_000_000, MaxResolution: 1080, MaxFPS: 60}
+	var unknown *policySnapshot
+	first := unknown.refresh(persisted, now)
+	if first.forPublication(now.Add(-time.Second), now) != persisted {
+		t.Fatal("a track created before policy synchronization must respect the first known caps")
+	}
+}
+
 func TestPodeTelarStreamPolicyChangesLive(t *testing.T) {
 	start := time.Now()
 	video := &rtp.Packet{Payload: []byte{1}}
 	buffer := &streamPolicyBuffer{geometry: streamPolicyGeometry{long: 2560, short: 1440, known: true}}
 	active := &StreamPolicyGuard{}
 	previous := streamCaps{MaxFPS: 60, MaxResolution: 1440, MaxBitrate: 10_000_000}
-	before := (policySnapshot{}).refresh(previous, start.Add(-time.Second))
+	var initial *policySnapshot
+	before := initial.refresh(previous, start.Add(-time.Second))
 	if !active.accept(buffer, video, 1, start, before.forPublication(start, start)) {
 		t.Fatal("existing caps should allow matching media")
 	}

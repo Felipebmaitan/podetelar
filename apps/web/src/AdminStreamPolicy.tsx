@@ -46,9 +46,13 @@ export function AdminStreamPolicy({ onExpired }: { onExpired: () => void }) {
     };
     const policy = streamPolicySchema.safeParse({
       revision: data.policy.revision,
-      maxBitrateBps: bitrate("maxBitrate"),
-      maxResolution: number("maxResolution"),
-      maxFps: number("maxFps"),
+      maxBitrateBps: data.enforcement
+        ? bitrate("maxBitrate")
+        : data.policy.maxBitrateBps,
+      maxResolution: data.enforcement
+        ? number("maxResolution")
+        : data.policy.maxResolution,
+      maxFps: data.enforcement ? number("maxFps") : data.policy.maxFps,
       automaticTargets: streamResolutions.flatMap((resolution) =>
         streamFrameRates.flatMap((fps) => {
           const bitrateBps = bitrate(`target-${resolution}-${fps}`);
@@ -103,7 +107,7 @@ export function AdminStreamPolicy({ onExpired }: { onExpired: () => void }) {
                   type="number"
                   min="1"
                   max="100"
-                  step="0.01"
+                  step="any"
                   placeholder="No limit"
                   defaultValue={toMbps(policy.maxBitrateBps)}
                 />
@@ -165,7 +169,7 @@ export function AdminStreamPolicy({ onExpired }: { onExpired: () => void }) {
                             type="number"
                             min="1"
                             max="100"
-                            step="0.01"
+                            step="any"
                             defaultValue={toMbps(
                               policy.automaticTargets.find(
                                 (target) =>

@@ -18,6 +18,7 @@ services:
       PUBLISHER_DIRECTORY: /app/publisher
       ADMIN_TOKEN: ${ADMIN_TOKEN:?Private server access key}
       LIVEKIT_INTERNAL_URL: http://livekit:7880
+      STREAM_POLICY_ENFORCEMENT: "1"
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?Private SFU key}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?Private SFU secret}
       NODE_OPTIONS: --max-old-space-size=320
@@ -63,7 +64,10 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    environment: { GOMEMLIMIT: 384MiB }
+    environment:
+      GOMEMLIMIT: 384MiB
+      PODETELAR_STREAM_POLICY_URL: http://app:3000/api/internal/sfu/stream-policy
+      PODETELAR_STREAM_POLICY_TOKEN: ${LIVEKIT_API_SECRET:?Private SFU secret}
     tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
     restart: unless-stopped
     logging: { driver: none }

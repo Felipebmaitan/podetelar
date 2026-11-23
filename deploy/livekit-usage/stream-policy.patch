@@ -1,0 +1,62 @@
+diff --git a/pkg/rtc/mediatrack.go b/pkg/rtc/mediatrack.go
+index 895216f..9d37391 100644
+--- a/pkg/rtc/mediatrack.go
++++ b/pkg/rtc/mediatrack.go
+@@ -49,6 +49,7 @@ type MediaTrack struct {
+ 	params         MediaTrackParams
+ 	buffer         atomic.Pointer[buffer.Buffer]
+ 	everSubscribed atomic.Bool
++	streamPolicy   *buffer.StreamPolicyGuard
+ 
+ 	*MediaTrackReceiver
+ 	*MediaLossProxy
+@@ -114,6 +115,7 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
+ 		params:            params,
+ 		backupCodecPolicy: ti.BackupCodecPolicy,
+ 	}
++	t.streamPolicy = buffer.NewStreamPolicyGuard(func() { t.Close(false) })
+ 
+ 	if t.params.ForceBackupCodecPolicySimulcast {
+ 		t.backupCodecPolicy = livekit.BackupCodecPolicy_SIMULCAST
+@@ -546,6 +548,9 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
+ 	}
+ 
+ 	var expectedBitrate int
++	if track.Kind() == webrtc.RTPCodecTypeVideo {
++		buff.SetStreamPolicy(t.streamPolicy)
++	}
+ 	layers := buffer.GetVideoLayersForMimeType(mimeType, ti)
+ 	if layer >= 0 && len(layers) > int(layer) {
+ 		expectedBitrate = int(layers[layer].GetBitrate())
+diff --git a/pkg/sfu/buffer/buffer_base.go b/pkg/sfu/buffer/buffer_base.go
+index 03cf77e..c75c2a8 100644
+--- a/pkg/sfu/buffer/buffer_base.go
++++ b/pkg/sfu/buffer/buffer_base.go
+@@ -181,10 +181,12 @@ type BufferBase struct {
+ 
+ 	extPackets deque.Deque[*ExtPacket]
+ 
+-	codecType webrtc.RTPCodecType
+-	closeOnce sync.Once
+-	clockRate uint32
+-	mime      mime.MimeType
++	codecType    webrtc.RTPCodecType
++	closeOnce    sync.Once
++	clockRate    uint32
++	mime         mime.MimeType
++	streamPolicy *StreamPolicyGuard
++	policyBuffer *streamPolicyBuffer
+ 
+ 	rtpParameters  webrtc.RTPParameters
+ 	payloadType    uint8
+@@ -887,6 +889,10 @@ func (b *BufferBase) HandleIncomingPacketLocked(
+ 		b.handleCodecChange(rtpPacket.PayloadType)
+ 	}
+ 
++	if b.streamPolicy != nil && (flowState.IsDuplicate || !b.acceptsStreamPolicy(rtpPacket, flowState.ExtTimestamp)) {
++		return 0, errStreamPolicy
++	}
++
+ 	// add to RTX buffer using sequence number after accounting for dropped padding only packets
+ 	snAdjustment, err := b.snRangeMap.GetValue(flowState.ExtSequenceNumber)
+ 	if err != nil {

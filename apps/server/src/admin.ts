@@ -1,7 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Config } from "./config.js";
-import { adminCreateRoomSchema, roomIdSchema } from "@podetelar/contracts";
+import {
+  adminCreateRoomSchema,
+  roomIdSchema,
+  streamPolicySchema,
+} from "@podetelar/contracts";
 import { Rooms, secretsEqual } from "./rooms.js";
 import type { Usage } from "./usage.js";
 import type { Access } from "./access.js";
@@ -13,6 +17,7 @@ import { channelParams } from "./channels.js";
 import type { Accounts } from "./accounts.js";
 import type { Identities } from "./identities.js";
 import type { VoiceFollowing } from "./voice-following.js";
+import { hasStreamCaps, type StreamPolicies } from "./stream-policy.js";
 
 const COOKIE = "podetelar_admin";
 const TTL = 8 * 60 * 60 * 1000;
@@ -27,6 +32,7 @@ export async function adminRoutes(
   rooms: Rooms,
   access: Access,
   lifecycle: RoomLifecycle,
+  streamPolicies: StreamPolicies,
   now = Date.now,
   profiles?: GuestProfiles,
   discordVoice?: DiscordVoice,
@@ -49,6 +55,42 @@ export async function adminRoutes(
       (sessions.get(hash(token)) ?? 0) > now(),
     );
   };
+  await app.register(async (scope) => {
+    scope.addHook("preHandler", async (request, reply) => {
+      if (!authenticated(request))
+        return reply.code(401).send({ error: "Sign in as administrator." });
+    });
+    scope.get("/api/admin/stream-policy", async () => ({
+      policy: streamPolicies.current(),
+      enforcement: Boolean(config.streamPolicyEnforcement),
+    }));
+    scope.put("/api/admin/stream-policy", async (request, reply) => {
+      const policy = streamPolicySchema.safeParse(request.body);
+      if (!policy.success)
+        return reply.code(400).send({
+          error: "Choose valid stream limits and bitrate targets (1–100 Mbps).",
+        });
+      if (!config.streamPolicyEnforcement && hasStreamCaps(policy.data))
+        return reply.code(409).send({
+          error:
+            "Configure a policy-enabled media server before setting limits.",
+        });
+      if (hasStreamCaps(policy.data) && !streamPolicies.enforcementReady())
+        return reply.code(409).send({
+          error:
+            "Wait for the media server to synchronize stream policy, then try again.",
+        });
+      const saved = streamPolicies.save(policy.data);
+      if (!saved)
+        return reply.code(409).send({
+          error: "The policy changed. Reload this section before editing.",
+        });
+      return {
+        policy: saved,
+        enforcement: Boolean(config.streamPolicyEnforcement),
+      };
+    });
+  });
   if (accounts)
     await app.register(async (scope) => {
       scope.addHook("preHandler", async (request, reply) => {

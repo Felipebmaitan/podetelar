@@ -6,6 +6,10 @@ WORKDIR /src
 COPY deploy/livekit-usage/stats.patch /tmp/stats.patch
 RUN git apply --check /tmp/stats.patch && git apply /tmp/stats.patch
 COPY deploy/livekit-usage/usage_metrics.go pkg/telemetry/usage_metrics.go
+COPY deploy/livekit-usage/stream-policy.patch /tmp/stream-policy.patch
+RUN git apply --check /tmp/stream-policy.patch && git apply /tmp/stream-policy.patch
+COPY deploy/livekit-usage/stream_policy*.go pkg/sfu/buffer/
+RUN CGO_ENABLED=0 go test ./pkg/sfu/buffer -run TestPodeTelarStreamPolicy
 RUN CGO_ENABLED=0 go build -trimpath -o /livekit-server ./cmd/server
 
 FROM livekit/livekit-server:v1.13.11

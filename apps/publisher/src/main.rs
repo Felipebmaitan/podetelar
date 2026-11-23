@@ -373,6 +373,8 @@ struct FixtureRequest {
     #[serde(default)]
     sample_rates: bool,
     #[serde(default)]
+    follow_stream_policy: bool,
+    #[serde(default)]
     source_audio: bool,
     #[serde(default)]
     upload_limit_bps: Option<u64>,
@@ -772,7 +774,7 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     };
     let result = async {
         let audio = if request.source_audio { audio::for_source(&source)? } else {request.audio};
-        let config=publisher::StreamConfig { source,encoder:encoder.clone(),quality:request.quality,audio,exclusions:request.exclusions };
+        let config=publisher::StreamConfig { source,encoder:encoder.clone(),quality:request.quality,policy:admission.stream_policy().await?,audio,exclusions:request.exclusions };
         ensure!(request.upload_limit_bps.is_none_or(|v|(64_000..=100_000_000).contains(&v)),"Invalid fixture upload ceiling.");
         let mut active = if request.upload_limit_bps.is_some() {
             publisher::Stream::start_with_upload_cap(&room, config.clone(), stop, request.upload_limit_bps).await?
@@ -807,7 +809,7 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             tokio::time::sleep(Duration::from_secs(after)).await;
             room.simulate_scenario(livekit::rtc_engine::SimulateScenario::FullReconnect).await.map_err(|_| anyhow::anyhow!("Could not request a local fixture reconnect."))?;
             tokio::time::sleep(Duration::from_secs(request.seconds - after)).await;
-        } else { active = serve_fixture(&room, &admission, active, request.seconds, cancellation.clone(), request.sample_rates).await?; }
+        } else { active = serve_fixture(&room, &admission, active, request.seconds, cancellation.clone(), request.sample_rates, request.follow_stream_policy).await?; }
         let preview_uploads = active.preview_uploads.clone(); let audio_metrics = active.audio_metrics.clone(); let delivery = active.delivery.clone();
         let preview_captures = active.preview_captures();
         let mode=active.mode;
@@ -834,9 +836,11 @@ async fn serve_fixture(
     seconds: u64,
     cancellation: Arc<publisher::CaptureCancellation>,
     sample_rates: bool,
+    follow_stream_policy: bool,
 ) -> Result<publisher::Stream> {
     let started = std::time::Instant::now();
     let mut next_sample = 0;
+    let mut next_policy = 2;
     while started.elapsed().as_secs() < seconds {
         active.constrain_watchers(room);
         let second = started.elapsed().as_secs();
@@ -851,6 +855,16 @@ async fn serve_fixture(
         let stop = cancellation.register();
         if active.cancelled() {
             break;
+        }
+        if follow_stream_policy && second >= next_policy {
+            next_policy = second + 2;
+            let policy = admission.stream_policy().await?;
+            if active.policy() != &policy {
+                (active, _) = active
+                    .update_policy(room, admission.clone(), stop, policy)
+                    .await?;
+                continue;
+            }
         }
         if let Some(config) = active.compatible_config(room)? {
             active = active

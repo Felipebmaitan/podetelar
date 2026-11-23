@@ -51,6 +51,41 @@ quality at 4K120. Manual 100 Mbps remains available. Twenty subscriptions at
 100 Mbps would exceed the VPS's 1 Gbps port; these per-publication controls do not
 provide a deployment-wide shaper.
 
+## Server stream policy
+
+In **Admin → Stream quality**, the owner can set independent per-stream video
+bitrate, resolution, and FPS ceilings. For example, a public deployment could
+choose 10 Mbps, 1080p, and 60 FPS. The same page sets the starting **Automatic**
+video bitrate for each resolution and FPS combination. A blank target uses the
+built-in codec and profile guidance. Manual bitrate and Automatic targets are
+bounded by the server ceiling, sender feedback, and viewer allowances.
+The saved policy covers every room on the server and survives restarts.
+
+The publisher loads the policy when it joins and refreshes it every two seconds.
+Resolution caps fit the output inside the selected landscape or portrait
+envelope. For Source and other nonstandard sizes, the Automatic target uses the
+smallest standard envelope that fits the actual output at its effective FPS.
+An active stream applies bitrate changes on its current encoder. If the new
+resolution or FPS ceiling requires a restart, the publisher fits to the new
+limit and tells the person sharing. Watch intent and the preview clock carry
+over to the replacement publication. If capture cannot meet the limit, sharing
+stops and shows the reason.
+
+The policy-enabled LiveKit image retrieves the saved caps over the private
+Compose network. It observes video RTP payload bytes, frame timestamps and
+markers, and dimensions from the encoded video headers. The bitrate budget
+allows two seconds' worth of payload in a burst, and the frame budget allows
+half a second's worth of frames. When limits change, existing publications have
+four seconds to adapt after the SFU receives the new caps. New publications are
+checked immediately. The SFU drops over-budget media and stops a publication
+after a sustained violation. Video with unverified dimensions is blocked under
+a resolution cap. The SFU stops forwarding video after ten seconds without a
+valid policy refresh. Stream limits require the policy-enabled SFU image.
+
+Per-stream limits apply to video payload for each publication. Plan total SFU
+egress around the number of subscriptions, audio, retransmission and transport
+overhead. The owner decides when to adjust policy as demand changes.
+
 ## Watching on slower connections
 
 Advanced offers a watching allowance shared across actual subscriptions. Automatic
@@ -67,7 +102,7 @@ Each watcher advertises its per-stream video cap. The publisher uses the lowest
 active watcher cap alongside its own sender feedback and requested target.
 This single-layer publication is shared, so a slow watcher can lower quality for
 everyone watching it. Independent per-viewer qualities are not supported.
-Resolution/FPS are never silently reduced. Very slow
+Viewer budgets only lower bitrate. Very slow
 connections may need an explicitly smaller source mode, fewer watches, or Data
 saver. Local tests do not establish performance on constrained networks.
 

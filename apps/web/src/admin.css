@@ -1079,3 +1079,46 @@
   flex-wrap: wrap;
   gap: 10px;
 }
+.admin-stream-policy {
+  display: grid;
+  gap: 1.25rem;
+  max-width: 62rem;
+}
+
+.admin-stream-policy fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.admin-stream-policy legend {
+  font-weight: 650;
+}
+
+.admin-stream-limits {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+}
+
+.admin-stream-limits label {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.admin-stream-targets {
+  overflow-x: auto;
+}
+
+.admin-stream-targets th {
+  white-space: nowrap;
+}
+
+.admin-stream-targets input {
+  width: 5rem;
+}
+
+.admin-stream-policy > button {
+  justify-self: start;
+}

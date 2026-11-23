@@ -1,4 +1,14 @@
 use serde::Serialize;
+#[cfg(all(windows, any(debug_assertions, feature = "media-qualification")))]
+use std::sync::atomic::{AtomicBool, Ordering};
+
+#[cfg(all(windows, any(debug_assertions, feature = "media-qualification")))]
+static FIXTURE_SOURCES_ONLY: AtomicBool = AtomicBool::new(false);
+
+#[cfg(all(windows, any(debug_assertions, feature = "media-qualification")))]
+pub(crate) fn restrict_to_fixture() {
+    FIXTURE_SOURCES_ONLY.store(true, Ordering::Release);
+}
 
 #[derive(Clone, Serialize)]
 pub struct SourceInfo {
@@ -27,6 +37,10 @@ pub struct Source {
 mod windows;
 
 pub fn enumerate() -> Vec<Source> {
+    #[cfg(all(windows, any(debug_assertions, feature = "media-qualification")))]
+    if FIXTURE_SOURCES_ONLY.load(Ordering::Acquire) {
+        return vec![fixture()];
+    }
     #[cfg(windows)]
     {
         let sources = windows::enumerate();

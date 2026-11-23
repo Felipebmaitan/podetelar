@@ -13,6 +13,14 @@ The server retains only the latest image for each publisher/source in RAM. Nothi
 
 ## Access and notifications
 
+Native private invitations encrypt the JPEG before HTTP upload. The server
+accepts a bounded `application/vnd.freedomstream.preview-v1` envelope, stores
+its opaque bytes and serves the same content type to authorized clients. The
+client authenticates the room, sender and stream before inspecting image
+dimensions or decoding. Capture cadence and publication checks also apply to
+encrypted previews. Both HTTPS listeners have a route-specific 260 KiB envelope
+limit, and the API retains the 256 KiB maximum for ordinary JPEGs.
+
 - POST `/api/rooms/:roomId/previews/:kind` sends `image/jpeg` plus `X-Track-Sid`. The authenticated cookie fixes the publisher identity. Exact Origin validation and the API rate limit apply. A privileged SFU lookup must confirm that identity's current, unmuted screen/camera track matches the SID.
 - A successful upload announces a bounded descriptor in the publisher's `podetelar.preview.screen` or `.camera` participant attribute. This uses a server-side administrative RPC, not participant data-publish permission. Independent attribute keys avoid read/modify/write races between camera and screen. The descriptor is a notification, never image access authority.
 - GET `/api/rooms/:roomId/previews/:publisherId/:kind/:revision` requires an admitted same-room session and rechecks the active, unmuted SFU publication. Stopped, muted, replaced or expired publications return no image. Responses are private and `no-store`; clients use short-lived blob URLs and revoke them on replacement/unmount.

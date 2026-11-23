@@ -1,3 +1,4 @@
+import { copyEncryptionSourceNotices } from "./native-encryption-notices.mjs";
 import { execFileSync } from "node:child_process";
 import {
   copyFileSync,
@@ -73,6 +74,8 @@ writeFileSync(
   join(mediaApp, "Contents/Info.plist"),
   `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleName</key><string>PodeTelar</string><key>CFBundleIdentifier</key><string>app.podetelar.media</string><key>CFBundleExecutable</key><string>PodeTelar</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>${version}</string><key>CFBundleVersion</key><string>${build}</string><key>LSMinimumSystemVersion</key><string>14.0</string><key>CFBundleIconFile</key><string>PodeTelar.icns</string><key>NSHighResolutionCapable</key><true/><key>NSLocalNetworkUsageDescription</key><string>PodeTelar connects to your room's media server.</string><key>NSScreenCaptureUsageDescription</key><string>PodeTelar shares the display or window you choose with your room.</string><key>NSAudioCaptureUsageDescription</key><string>PodeTelar shares audio from the applications you choose.</string></dict></plist>`,
 );
+await import("./setup-native-sdk.mjs");
+await import("./setup-native-decoder.mjs");
 run("cargo", ["build", "--locked", "--release", "-p", "podetelar-publisher"]);
 run(
   "cargo",
@@ -223,6 +226,7 @@ copyFileSync(
 );
 const notices = join(contents, "Resources/notices");
 await macosNotices(notices, env);
+copyEncryptionSourceNotices(root, notices);
 // Source and patch provenance ships offline, alongside third-party source archives.
 run("git", [
   "archive",

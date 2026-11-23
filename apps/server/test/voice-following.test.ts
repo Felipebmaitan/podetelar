@@ -89,9 +89,17 @@ test("voice admission follows confirmed membership, preserves outage sessions, a
     const room = first.json().room.id,
       participant = first.json().participant.id,
       cookie = String(first.headers["set-cookie"]).split(";")[0]!;
-    const same = await auto();
-    assert.equal(same.json().room.id, room, "one canonical channel room");
-    const invitation = rooms.invitation(room)!;
+    const scopedUrl = new URL(first.json().roomInvitationUrl);
+    assert.equal(scopedUrl.origin, origin);
+    assert.equal(scopedUrl.pathname, `/r/${room}`);
+    const invitation = new URLSearchParams(scopedUrl.hash.slice(1)).get(
+      "invite",
+    );
+    assert.ok(invitation);
+    assert.ok(
+      invitation !== rooms.invitation(room),
+      "channel guests receive the revocable handoff",
+    );
     const guest = await app.inject({
       method: "POST",
       url: `/api/rooms/${room}/join`,
@@ -100,6 +108,18 @@ test("voice admission follows confirmed membership, preserves outage sessions, a
     });
     assert.equal(guest.statusCode, 200);
     const guestCookie = String(guest.headers["set-cookie"]).split(";")[0]!;
+    rooms.manageChannel(guild, a, "disable");
+    const guestsDisabled = await auto();
+    assert.equal(guestsDisabled.statusCode, 200);
+    assert.equal(
+      guestsDisabled.json().room.id,
+      room,
+      "one canonical channel room",
+    );
+    assert.equal(guestsDisabled.json().roomInvitationUrl, null);
+    assert.equal(guestsDisabled.json().invitationUrl, null);
+    assert.equal(rooms.join(room, invitation, "Guest"), null);
+    rooms.manageChannel(guild, a, "enable");
     voice.index.disconnected();
     assert.equal((await status(room, cookie)).statusCode, 200);
     assert.equal((await auto()).statusCode, 409);

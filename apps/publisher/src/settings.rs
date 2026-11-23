@@ -66,6 +66,58 @@ pub fn save_guest_name(name: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+// Only an explicit Remember action writes this credential. Desktop account and
+// ordinary guest preferences are stored separately and never contain a room key.
+pub struct PrivateStore(keyring::Entry);
+
+impl PrivateStore {
+    pub fn open() -> anyhow::Result<Self> {
+        Self::entry("current")
+    }
+
+    fn entry(name: &str) -> anyhow::Result<Self> {
+        keyring::Entry::new("PodeTelar native private invitation v1", name)
+            .map(Self)
+            .map_err(|_| anyhow::anyhow!("Private invitation storage is unavailable."))
+    }
+
+    pub fn load(&self) -> anyhow::Result<Option<String>> {
+        match self.0.get_secret() {
+            Ok(raw) => {
+                let bytes = zeroize::Zeroizing::new(raw);
+                let value = std::str::from_utf8(&bytes)
+                    .map_err(|_| anyhow::anyhow!("Invalid saved private invitation."))?;
+                anyhow::ensure!(valid_private(value), "Invalid saved private invitation.");
+                Ok(Some(value.to_owned()))
+            }
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(_) => anyhow::bail!("Could not read the saved private invitation."),
+        }
+    }
+
+    pub fn save(&self, value: &str) -> anyhow::Result<()> {
+        anyhow::ensure!(valid_private(value), "Invalid private invitation.");
+        self.0
+            .set_secret(value.as_bytes())
+            .map_err(|_| anyhow::anyhow!("Could not remember the private invitation."))
+    }
+
+    pub fn forget(&self) -> anyhow::Result<()> {
+        match self.0.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(_) => anyhow::bail!("Could not forget the private invitation."),
+        }
+    }
+}
+
+pub fn valid_private(value: &str) -> bool {
+    if value.starts_with(crate::admission::voice_code::PREFIX) {
+        crate::admission::voice_code::parse(value).is_ok()
+    } else {
+        value.starts_with(crate::protection::PREFIX) && crate::admission::valid_invitation(value)
+    }
+}
+
 pub fn remove_legacy() {
     if let Some(root) = std::env::var_os("LOCALAPPDATA") {
         let root = std::path::PathBuf::from(root);
@@ -84,6 +136,44 @@ fn remove_at(root: &std::path::Path) {
 
 #[cfg(test)]
 mod tests {
+
+    #[cfg(windows)]
+    #[test]
+    fn os_vault_only_remembers_valid_private_invitations_and_forgets() -> anyhow::Result<()> {
+        let store = super::PrivateStore::entry(&format!("fixture-{}", rand::random::<u64>()))?;
+        let room = format!(
+            "https://room.invalid/r/{}#invite={}",
+            "r".repeat(22),
+            "s".repeat(43)
+        );
+        let private = crate::protection::protect_invitation(&room)?;
+        let checked = (|| -> anyhow::Result<()> {
+            assert!(store.load()?.is_none());
+            assert!(store.save(&room).is_err());
+            store.save(&private)?;
+            assert!(store.load()?.as_deref() == Some(&private));
+            let changed = crate::protection::replace_invitation(&private)?;
+            store.save(&changed)?;
+            assert!(store.load()?.as_deref() == Some(&changed));
+            let voice =
+                crate::admission::voice_code::create(&crate::admission::voice_code::Scope {
+                    origin: "https://room.invalid".into(),
+                    guild_id: "1".repeat(17),
+                    channel_id: "2".repeat(17),
+                    room_id: "r".repeat(22),
+                })?;
+            store.save(&voice)?;
+            assert!(store.load()?.as_deref() == Some(&voice));
+            store.0.set_secret(b"invalid")?;
+            assert!(store.load().is_err());
+            Ok(())
+        })();
+        store.forget()?;
+        store.forget()?;
+        assert!(store.load()?.is_none());
+        checked
+    }
+
     #[test]
     fn removes_only_legacy_preferences_without_parsing_them() {
         let directory = tempfile::tempdir().unwrap();

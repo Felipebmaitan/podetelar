@@ -38,6 +38,8 @@ mod playback;
 mod preview;
 #[path = "../src/profile.rs"]
 mod profile;
+#[path = "../src/protection.rs"]
+mod protection;
 #[path = "../src/publisher.rs"]
 mod publisher;
 #[path = "../src/quality.rs"]
@@ -71,6 +73,16 @@ mod native_output;
 
 #[path = "../src/av_qualification.rs"]
 mod av_qualification;
+
+#[cfg(target_os = "macos")]
+#[path = "../src/macos.rs"]
+mod macos;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/planar_experiment.rs"]
+mod planar_experiment;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/resource_experiment.rs"]
+mod resource_experiment;
 
 fn main() -> anyhow::Result<()> {
     gstreamer::init()?;

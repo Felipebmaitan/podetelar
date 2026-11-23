@@ -45,6 +45,9 @@ mod playback;
 #[path = "../src/preview.rs"]
 mod preview;
 #[cfg(feature = "performance-experiments")]
+#[path = "../src/protection.rs"]
+mod protection;
+#[cfg(feature = "performance-experiments")]
 #[path = "../src/publisher.rs"]
 mod publisher;
 #[cfg(feature = "performance-experiments")]
@@ -86,6 +89,31 @@ mod win32;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/worker.rs"]
 mod worker;
+
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/account.rs"]
+mod account;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/av_qualification.rs"]
+mod av_qualification;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/codec_policy.rs"]
+mod codec_policy;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/device.rs"]
+mod device;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/following.rs"]
+mod following;
+#[cfg(all(target_os = "macos", feature = "performance-experiments"))]
+#[path = "../src/macos.rs"]
+mod macos;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/native_output.rs"]
+mod native_output;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/profile.rs"]
+mod profile;
 
 #[cfg(feature = "performance-experiments")]
 fn main() -> anyhow::Result<()> {

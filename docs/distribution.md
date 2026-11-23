@@ -109,6 +109,10 @@ archiving and generate final hashes after signing. See
 
 ## Qualification limits
 
+Native private invitations use the modified LiveKit SDK and WebRTC frame
+cryptor. Their pinned sources and transformations accompany the native runtime.
+See [private invitations](native-e2ee.md) for the security boundary.
+
 Portable checks cover cache extraction/reuse, source hashes, runtime probes,
 concurrent launches and damaged-payload rejection on the development Windows PC.
 They do not establish fresh-PC/offline startup. Windows media checks use NVIDIA

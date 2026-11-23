@@ -69,6 +69,9 @@ recording permission. It uses the newest locally packaged app by default. Set
 `MACOS_TEST_SOURCE_KIND=window` to exercise a window. Pass the local `.env` using
 Node's `--env-file=.env`; invitations remain in memory and child stdin. It verifies
 native H.264/HEVC hardware decode, publication, Stop watching traffic and rewatch.
+Set `MACOS_TEST_PRIVATE_ROOM=1` to exercise a native private invitation on the
+same path. This mode also requires an authenticated preview before Watch, the
+requested sender codec, and matching decoded frames before Stop and after rewatch.
 Window checks use the actual source resolution instead of assuming a display
 scale. `MACOS_TEST_SOURCE_KIND=pattern` explicitly tests hardware codecs without
 screen capture, for example when the display is asleep; it does not qualify

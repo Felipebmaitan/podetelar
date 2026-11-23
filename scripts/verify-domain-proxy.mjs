@@ -11,6 +11,11 @@ import { request } from "node:https";
 import { productionConfiguration } from "./prepare-production.mjs";
 import { buildApp } from "../apps/server/dist/app.js";
 import { loadConfig } from "../apps/server/dist/config.js";
+import {
+  PREVIEW_MAX_BYTES,
+  PROTECTED_PREVIEW_MAX_BYTES,
+  PROTECTED_PREVIEW_TYPE,
+} from "@podetelar/contracts";
 
 const exec = promisify(execFile);
 const docker = (...args) =>
@@ -157,6 +162,61 @@ try {
   assert.equal(created.status, 201);
   const room = JSON.parse(created.body).room.id;
   const cookie = created.headers["set-cookie"][0].split(";")[0];
+  const envelope = Buffer.alloc(PROTECTED_PREVIEW_MAX_BYTES);
+  envelope.write("FSP1");
+  const previewPath = `/api/rooms/${room}/previews/screen`;
+  for (const direct of [false, true]) {
+    const headers = {
+      cookie,
+      "content-type": PROTECTED_PREVIEW_TYPE,
+      "x-track-sid": "TR_preview",
+      "content-length": envelope.length,
+    };
+    const forwarded = await send(
+      direct,
+      "POST",
+      previewPath,
+      headers,
+      envelope,
+    );
+    // The fixture has no published track. A JSON 404 proves the full body
+    // reached publication authorization on this listener.
+    assert.equal(forwarded.status, 404);
+    assert.equal(
+      JSON.parse(forwarded.body).error,
+      "This stream is no longer available.",
+    );
+    const tooLarge = Buffer.alloc(PROTECTED_PREVIEW_MAX_BYTES + 1);
+    assert.equal(
+      (
+        await send(
+          direct,
+          "POST",
+          previewPath,
+          { ...headers, "content-length": tooLarge.length },
+          tooLarge,
+        )
+      ).status,
+      413,
+    );
+    const oversizedJpeg = Buffer.alloc(PREVIEW_MAX_BYTES + 1);
+    assert.equal(
+      (
+        await send(
+          direct,
+          "POST",
+          previewPath,
+          {
+            ...headers,
+            "content-type": "image/jpeg",
+            "content-length": oversizedJpeg.length,
+          },
+          oversizedJpeg,
+        )
+      ).status,
+      413,
+    );
+  }
   const path = `/api/rooms/${room}/network-test`;
   assert.equal((await send(false, "POST", path, { cookie })).status, 421);
   const probe = await send(true, "POST", path, { cookie });

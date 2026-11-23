@@ -12,6 +12,8 @@ mod connection;
 mod delivery;
 mod device;
 mod diagnostics;
+#[cfg(any(debug_assertions, feature = "media-qualification"))]
+mod discord_protection_fixture;
 #[cfg(feature = "media-qualification")]
 mod encoded_fixture;
 mod encoding;
@@ -28,8 +30,11 @@ mod playback;
 mod playback_qualification;
 mod preview;
 mod profile;
+mod protection;
 mod publisher;
 mod quality;
+#[cfg(all(windows, any(debug_assertions, feature = "media-qualification")))]
+mod recovery_fixture;
 #[cfg(feature = "performance-experiments")]
 #[allow(dead_code)]
 mod resource_experiment;
@@ -104,6 +109,37 @@ fn run() -> Result<()> {
     gstreamer::init()
         .context("GStreamer could not initialize. Check the native runtime installation.")?;
     match std::env::args().nth(1).as_deref() {
+        Some("--protect-invitation") => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Request {
+                invitation_url: String,
+            }
+            let mut input = String::new();
+            std::io::stdin().take(4097).read_to_string(&mut input)?;
+            ensure!(
+                input.len() <= 4096,
+                "Protected invitation input is too large."
+            );
+            let request: Request = serde_json::from_str(&input)
+                .map_err(|_| anyhow::anyhow!("Invalid protected invitation input."))?;
+            println!(
+                "{}",
+                serde_json::json!({"invitationUrl":protection::protect_invitation(&request.invitation_url)?})
+            );
+        }
+        #[cfg(any(debug_assertions, feature = "media-qualification"))]
+        Some("--protect-discord-fixture") => {
+            let mut input = String::new();
+            std::io::stdin().take(8193).read_to_string(&mut input)?;
+            ensure!(input.len() <= 8192, "Discord fixture input is too large.");
+            let voice = serde_json::from_str(&input)
+                .map_err(|_| anyhow::anyhow!("Invalid Discord fixture input."))?;
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(discord_protection_fixture::create(voice))?;
+        }
         Some("--profile-fixture") => {
             let mut input = String::new();
             std::io::stdin().take(8193).read_to_string(&mut input)?;
@@ -295,6 +331,8 @@ fn run() -> Result<()> {
                 );
             }
         }
+        #[cfg(all(windows, any(debug_assertions, feature = "media-qualification")))]
+        Some("--controller-recovery-fixture") => recovery_fixture::run()?,
         Some("--watch-fixture") => {
             let mut input = String::new();
             std::io::stdin().take(8193).read_to_string(&mut input)?;
@@ -370,6 +408,10 @@ fn run() -> Result<()> {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FixtureRequest {
+    #[cfg(any(debug_assertions, feature = "media-qualification"))]
+    discord: Option<discord_protection_fixture::Voice>,
+    #[serde(default)]
+    exercise_encryption_disable: bool,
     #[serde(default)]
     sample_rates: bool,
     #[serde(default)]
@@ -421,6 +463,15 @@ struct AudioRequest {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct WatchRequest {
+    #[cfg(any(debug_assertions, feature = "media-qualification"))]
+    discord: Option<discord_protection_fixture::Voice>,
+    sample_audio: Option<bool>,
+    #[serde(default)]
+    report_playback: bool,
+    #[serde(default)]
+    sample_rates: bool,
+    #[serde(default)]
+    exercise_encryption_disable: bool,
     #[serde(default)]
     soak: bool,
     #[serde(default)]
@@ -529,6 +580,18 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
             && (!request.soak || request.audiovisual_timing && request.continuous_watch),
         "Invalid watcher qualification duration."
     );
+    #[cfg(any(debug_assertions, feature = "media-qualification"))]
+    let admission = match request.discord {
+        Some(voice) => {
+            voice
+                .join(&request.invitation_url, "Native playback check")
+                .await?
+        }
+        None => {
+            admission::Admission::join(&request.invitation_url, "Native playback check").await?
+        }
+    };
+    #[cfg(not(any(debug_assertions, feature = "media-qualification")))]
     let admission =
         admission::Admission::join(&request.invitation_url, "Native playback check").await?;
     let mut playback = playback::Playback::new();
@@ -542,7 +605,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     let (room, mut events) = Room::connect(
         &access.server_url,
         &access.token,
-        connection::options(connection::Route::Auto),
+        admission.room_options(connection::Route::Auto),
     )
     .await
     .map_err(|error| {
@@ -551,6 +614,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
             admission::media_diagnostic(error)
         )
     })?;
+    admission.announce_protection(&room).await?;
     let recovery = playback.recovery_signal();
     let events_recovery = recovery.clone();
     let event_task = tokio::spawn(async move {
@@ -560,7 +624,9 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
             }
         }
     });
-    playback.measure_audio();
+    if request.sample_audio.unwrap_or(true) {
+        playback.measure_audio();
+    }
     let timing = (request.audiovisual_timing || request.measure_output_audio)
         .then(av_qualification::Events::new);
     if let Some(timing) = &timing {
@@ -579,6 +645,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     );
     playback.set_budget(request.download_limit_mbps.map(|mbps| mbps * 1_000_000));
     let mut samples = Vec::new();
+    let mut playback_reported = false;
     let started = std::time::Instant::now();
     let mut next_sample = 0;
     let mut watch_after = if request.wait_for_preview {
@@ -588,6 +655,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     };
     let mut preview_before_watching = false;
     let mut reconnected = false;
+    let mut disable_exercised = false;
     let mut output_paused = false;
     let mut output_switched = false;
     let mut alternate_output_available = false;
@@ -610,6 +678,15 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                 output_switched = true;
             }
             let tiles = playback.reconcile(&room, &admission).await?;
+            if request.exercise_encryption_disable && !disable_exercised {
+                ensure!(admission.protection.is_some(), "Protected fixture required.");
+                let cryptors = room.e2ee_manager().frame_cryptors();
+                if !cryptors.is_empty() {
+                    for cryptor in cryptors.values() { cryptor.set_enabled(false); }
+                    ensure!(cryptors.values().all(|c| c.enabled()), "Receiver encryption could be disabled.");
+                    disable_exercised = true;
+                }
+            }
             ensure!(!request.audiovisual_timing || tiles.len() <= 1, "A/V timing qualification requires one isolated publisher.");
             if watch_after.is_none() {
                 let preview_ready = tiles.iter().any(|tile| !tile.watching && tile.picture.lock().is_ok_and(|picture| picture.is_some()));
@@ -664,6 +741,18 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                     }
                 }
                 samples.push(serde_json::json!({"second": elapsed, "nativeAudio":native_output::audit(),"syncGroups":fixture_sync_groups(&room), "mediaTiming":media_timing, "recoveries": recovery.load(Ordering::Acquire), "connected": room.connection_state() == ConnectionState::Connected, "phaseSecond": phase, "watching": watching,"receivedBytes":byte_totals.values().sum::<u64>(), "decoders":decoders, "streams": tiles.iter().map(|tile| serde_json::json!({"diagnosticRates":tile.presentation.diagnostics.rates.lock().ok().and_then(|v|*v),"diagnosticAttempts":tile.presentation.diagnostics.attempts.load(Ordering::Relaxed),"diagnosticSuccesses":tile.presentation.diagnostics.successes.load(Ordering::Relaxed),"diagnosticSender":tile.presentation.diagnostics.sender.lock().ok().and_then(|value|value.as_ref().map(|(_,value)|value.clone())),"status":tile.status,"codec":tile.codec,"frames":tile.frames.load(Ordering::Relaxed),"watching":tile.watching,"pictureSize":tile.picture.lock().ok().and_then(|p|p.as_ref().map(|image|image.size)),"audio":tile.audio.lock().map(|m|m.clone()).unwrap_or_default()})).collect::<Vec<_>>() }));
+                if request.report_playback && !playback_reported
+                    && let Some(tile) = tiles.iter().find(|tile| tile.watching && tile.frames.load(Ordering::Relaxed) > 5) {
+                        let codec = ["video/h264", "video/h265", "video/av1"].into_iter()
+                            .find(|known| tile.codec.eq_ignore_ascii_case(known)).unwrap_or("unknown");
+                        println!("{}", serde_json::json!({"decoded":true, "codec":codec, "second":elapsed}));
+                    playback_reported = true;
+                }
+                if request.sample_rates {
+                    let sample = samples.last_mut().expect("just pushed sample");
+                    let millis = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis();
+                    sample["measurementTimeMs"] = u64::try_from(millis)?.into();
+                }
                 if request.consume_pictures { for tile in &tiles { if let Ok(mut picture) = tile.picture.lock() { picture.take(); } } }
                 if request.soak {
                     eprintln!("soak-progress second={} video={} audio={} rendering={}",elapsed,
@@ -685,7 +774,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     result?;
     println!(
         "{}",
-        serde_json::json!({"samples":samples,"closed":true,"outputPauseApplied":output_paused,"alternateOutputAvailable":alternate_output_available,"nativeAudioAfterClose":native_output::audit(),"previewBeforeWatching":preview_before_watching,"audiovisualTiming":timing.as_ref().map(|timing|timing.report())})
+        serde_json::json!({"samples":samples,"cryptorDisableRejected":disable_exercised,"closed":true,"outputPauseApplied":output_paused,"alternateOutputAvailable":alternate_output_available,"nativeAudioAfterClose":native_output::audit(),"previewBeforeWatching":preview_before_watching,"audiovisualTiming":timing.as_ref().map(|timing|timing.report())})
     );
     drop(observer);
     Ok(())
@@ -717,10 +806,20 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             && request.reconfigure_after_seconds.is_some() == request.next_quality.is_some(),
         "Choose one complete fixture transition."
     );
+    #[cfg(any(debug_assertions, feature = "media-qualification"))]
+    let admission = match request.discord {
+        Some(voice) => {
+            voice
+                .join(&request.invitation_url, &request.display_name)
+                .await?
+        }
+        None => admission::Admission::join(&request.invitation_url, &request.display_name).await?,
+    };
+    #[cfg(not(any(debug_assertions, feature = "media-qualification")))]
     let admission =
         admission::Admission::join(&request.invitation_url, &request.display_name).await?;
     let access = admission.media_access().await?;
-    let options = connection::options(request.route);
+    let options = admission.room_options(request.route);
     let (room, mut events) = tokio::time::timeout(
         Duration::from_secs(15),
         Room::connect(&access.server_url, &access.token, options),
@@ -733,6 +832,7 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             admission::media_diagnostic(error)
         )
     })?;
+    admission.announce_protection(&room).await?;
     let cancellation = Arc::new(publisher::CaptureCancellation::default());
     // The publisher fixture is a room member even when it does not watch.
     let mut capabilities = playback::Playback::new();
@@ -772,14 +872,22 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
     };
     let result = async {
         let audio = if request.source_audio { audio::for_source(&source)? } else {request.audio};
-        let config=publisher::StreamConfig { source,encoder:encoder.clone(),quality:request.quality,audio,exclusions:request.exclusions };
+        let config=publisher::StreamConfig { protected: admission.protection.is_some(), source,encoder:encoder.clone(),quality:request.quality,audio,exclusions:request.exclusions };
         ensure!(request.upload_limit_bps.is_none_or(|v|(64_000..=100_000_000).contains(&v)),"Invalid fixture upload ceiling.");
+        let votes = playback::RoomVotes::read(&room, &admission);
         let mut active = if request.upload_limit_bps.is_some() {
-            publisher::Stream::start_with_upload_cap(&room, config.clone(), stop, request.upload_limit_bps).await?
+            publisher::Stream::start_with_upload_cap(&room, config.clone(), stop, request.upload_limit_bps, votes).await?
         } else {
-            publisher::Stream::start(&room, config.clone(), stop).await?
+            publisher::Stream::start(&room, config.clone(), stop, votes).await?
         };
         let initial_sid=active.sid();
+        if request.exercise_encryption_disable {
+            ensure!(admission.protection.is_some(), "Protected fixture required.");
+            let cryptors = room.e2ee_manager().frame_cryptors();
+            ensure!(!cryptors.is_empty(), "Protected sender cryptor missing.");
+            for cryptor in cryptors.values() { cryptor.set_enabled(false); }
+            ensure!(cryptors.values().all(|c| c.enabled()), "Sender encryption could be disabled.");
+        }
         println!("{}", serde_json::json!({"published":true}));
         active.start_previews(admission.clone());
 
@@ -799,7 +907,8 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             next.mode()?;
             ensure!(!active.apply_live(&next)?,"Source/codec/mode fixture unexpectedly avoided a restart.");
             active.stop(&room).await?;
-            active=publisher::Stream::start_with_upload_cap(&room,next,cancellation.register(),request.upload_limit_bps).await?;
+            let votes = playback::RoomVotes::read(&room, &admission);
+            active=publisher::Stream::start_with_upload_cap(&room,next,cancellation.register(),request.upload_limit_bps,votes).await?;
             active.start_previews(admission.clone());
 
             tokio::time::sleep(Duration::from_secs(request.seconds-after)).await;
@@ -838,13 +947,19 @@ async fn serve_fixture(
     let started = std::time::Instant::now();
     let mut next_sample = 0;
     while started.elapsed().as_secs() < seconds {
-        active.constrain_watchers(room);
+        let votes = playback::RoomVotes::read(room, admission);
+        active.constrain_watchers(votes);
         let second = started.elapsed().as_secs();
         if sample_rates && second >= next_sample {
             let metrics = active.metrics.lock().map(|m| m.clone()).unwrap_or_default();
+            let delivered = active
+                .delivery
+                .lock()
+                .map(|m| m.clone())
+                .unwrap_or_default();
             println!(
                 "{}",
-                serde_json::json!({"rateSample":true,"second":second,"encoderBps":metrics.encoder_bitrate,"fps":metrics.fps,"watcherCap":playback::requested_cap(room)})
+                serde_json::json!({"rateSample":true,"second":second,"encoderBps":metrics.encoder_bitrate,"encodedBps":metrics.encoded_bps,"deliveryBps":delivered.bitrate_bps,"retransmitBps":delivered.retransmit_bps,"lossFraction":delivered.loss_fraction,"sentFps":delivered.sent_fps,"fps":metrics.fps,"watcherCap":votes.watcher_cap})
             );
             next_sample = second + 1;
         }
@@ -852,7 +967,7 @@ async fn serve_fixture(
         if active.cancelled() {
             break;
         }
-        if let Some(config) = active.compatible_config(room)? {
+        if let Some(config) = active.compatible_config(votes)? {
             active = active
                 .fallback(room, admission.clone(), stop, config)
                 .await?;

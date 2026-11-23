@@ -105,6 +105,13 @@ export function nativeRequest(
     for (const [hint, label] of [
       ["Audio transport stalled", "audio-transport"],
       ["Audio publication failed", "audio-publication"],
+      ["Media publication failed", "media-publication"],
+      ["hardware encoder did not produce", "encoder-no-frame"],
+      ["Hardware capture could not start", "capture-start"],
+      ["No codec can be hardware encoded", "encoder-capability"],
+      ["No hardware encoder supports", "encoder-unavailable"],
+      ["Session finalization", "session-finalization"],
+      ["Could not commit", "publication-commit"],
       ["Fixture media connection", "media-connection"],
       ["Application audio capture failed", "audio-capture"],
       ["Room access was denied", "admission"],

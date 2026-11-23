@@ -1,3 +1,4 @@
+import { copyEncryptionSourceNotices } from "./native-encryption-notices.mjs";
 import { execFileSync as runFile } from "node:child_process";
 const execFileSync = (file, args, options = {}) =>
   runFile(file, args, { ...options, windowsHide: true });
@@ -84,8 +85,9 @@ for (const file of [
 }
 writeFileSync(
   join(decoderPatch, "README.txt"),
-  "PodeTelar modifies webrtc-sys 0.3.53 (Apache-2.0) for native Direct3D11 decoders through dynamically linked GStreamer, expired weak track pruning, output-only Windows audio, remote track gain and output delay qualification. The five adapter/helper headers and patch script are MIT licensed. The included headers, setup/patch scripts and checksum pins reproduce the adapters from the original crates. libwebrtc 0.4.0 exposes a typed audio handle; LiveKit 0.10.1 adds read-only negotiated stream association accessors for qualification. Existing WebRTC runtime and third-party licenses still apply. No browser runtime is included.\n",
+  "PodeTelar modifies webrtc-sys 0.3.53 (Apache-2.0) for native Direct3D11 decoders through dynamically linked GStreamer, expired weak track pruning, output-only Windows audio, remote track gain and output delay qualification. The PodeTelar adapter headers and patch scripts are MIT licensed. The included headers, setup/patch scripts and checksum pins reproduce the adapters from the original crates. libwebrtc 0.4.0 exposes a typed audio handle; LiveKit 0.10.1 adds read-only negotiated stream association accessors for qualification. Existing WebRTC runtime and third-party licenses still apply. No browser runtime is included.\n",
 );
+copyEncryptionSourceNotices(root, notices);
 const { dumpbin } = await preparePortableRuntime(root, output, notices);
 const sha256 = (path) =>
   createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -213,7 +215,7 @@ for (const pkg of metadata.packages
     }
     if (pkg.name === "livekit")
       index.push(
-        "Local SDK change: advertise TF_STEREO for two-channel AddTrackRequest. See scripts/setup-native-sdk.mjs and deploy/native-sdk.json for the pinned original and patch.",
+        "Local SDK changes: advertise TF_STEREO for two-channel AddTrackRequest; reject SFU track encryption downgrades before sender activation; require receiver cryptors independently of mutable signaling labels; close protected full reconnects before RTP cryptor state can reset under retained keys. See scripts/setup-native-sdk.mjs and deploy/native-sdk.json for pinned originals and patches.",
         "",
       );
     continue;

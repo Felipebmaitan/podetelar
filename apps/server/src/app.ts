@@ -456,10 +456,16 @@ export async function buildApp(
       const secret = rooms.channelGuestEnabled(guildId, channelId)
         ? rooms.channelInvitation(guildId, channelId, channel.channelName)
         : null;
+      const guestHandoff = secret && rooms.channelGuestRoomInvitation(room);
       return {
         ...issued.snapshot,
         invitationUrl: secret
           ? `${config.publicUrl}/c/${guildId}/${channelId}#invite=${secret}`
+          : null,
+        // The same revocable guest credential obtained by resolving /c. A
+        // native private invitation can bind it to this particular room.
+        roomInvitationUrl: guestHandoff
+          ? `${config.publicUrl}/r/${room}#invite=${guestHandoff}`
           : null,
       };
     },

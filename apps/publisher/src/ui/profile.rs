@@ -10,8 +10,8 @@ fn surface_card(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
     let width = ui.available_width();
     let compact = ui.ctx().content_rect().height() <= 600.0;
     egui::Frame::new()
-        .fill(PANEL)
-        .stroke(egui::Stroke::new(1.0, BORDER))
+        .fill(palette().panel)
+        .stroke(egui::Stroke::new(1.0, palette().border))
         .corner_radius(14)
         .inner_margin(egui::Margin::symmetric(20, if compact { 12 } else { 20 }))
         .show(ui, |ui| {
@@ -27,7 +27,7 @@ fn labeled_divider(ui: &mut egui::Ui, text: &str) {
     let galley = ui.painter().layout_no_wrap(
         text.to_owned(),
         egui::FontId::proportional(11.5),
-        skin::TERTIARY,
+        palette().muted,
     );
     let text_w = galley.size().x;
     let gap = 12.0;
@@ -37,7 +37,7 @@ fn labeled_divider(ui: &mut egui::Ui, text: &str) {
     if left_end > rect.left() {
         ui.painter().line_segment(
             [egui::pos2(rect.left(), mid_y), egui::pos2(left_end, mid_y)],
-            egui::Stroke::new(1.0, skin::DIVIDER),
+            egui::Stroke::new(1.0, palette().divider),
         );
     }
     if right_start < rect.right() {
@@ -46,7 +46,7 @@ fn labeled_divider(ui: &mut egui::Ui, text: &str) {
                 egui::pos2(right_start, mid_y),
                 egui::pos2(rect.right(), mid_y),
             ],
-            egui::Stroke::new(1.0, skin::DIVIDER),
+            egui::Stroke::new(1.0, palette().divider),
         );
     }
     ui.painter().galley(
@@ -55,7 +55,7 @@ fn labeled_divider(ui: &mut egui::Ui, text: &str) {
             mid_y - galley.size().y / 2.0,
         ),
         galley,
-        skin::TERTIARY,
+        palette().muted,
     );
 }
 
@@ -69,9 +69,12 @@ fn joining_status(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
 
 fn detail_row(ui: &mut egui::Ui, label: &str, value: &str) {
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(label).size(12.0).color(MUTED));
+        ui.label(egui::RichText::new(label).size(12.0).color(palette().muted));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.add(egui::Label::new(egui::RichText::new(value).size(12.0).color(TEXT)).truncate());
+            ui.add(
+                egui::Label::new(egui::RichText::new(value).size(12.0).color(palette().text))
+                    .truncate(),
+            );
         });
     });
 }
@@ -155,7 +158,7 @@ impl PublisherUi {
                     ui.add_space(offset);
                     ui.vertical(|ui| {
                         ui.set_width(width);
-                        ui.heading(skin::strong(tr("Join a room"), 26.0).color(TEXT));
+                        ui.heading(skin::strong(tr("Join a room"), 26.0).color(palette().text));
                         ui.add_space(if compact { 4.0 } else { 12.0 });
 
                         // Option 1 (Primary): Discord voice / sign-in
@@ -170,9 +173,13 @@ impl PublisherUi {
                                     avatar(ui, &display_name, 34.0, None);
                                     ui.vertical(|ui| {
                                         ui.spacing_mut().item_spacing.y = 1.0;
-                                        ui.label(skin::strong(&display_name, 14.5).color(TEXT));
                                         ui.label(
-                                            egui::RichText::new("Discord").size(11.5).color(MUTED),
+                                            skin::strong(&display_name, 14.5).color(palette().text),
+                                        );
+                                        ui.label(
+                                            egui::RichText::new("Discord")
+                                                .size(11.5)
+                                                .color(palette().muted),
                                         );
                                     });
                                     ui.with_layout(
@@ -194,7 +201,9 @@ impl PublisherUi {
                                 ui.separator();
                                 self.discord_following(ui);
                             } else {
-                                ui.label(skin::strong(tr("Discord voice"), 15.0).color(TEXT));
+                                ui.label(
+                                    skin::strong(tr("Discord voice"), 15.0).color(palette().text),
+                                );
                                 self.discord_sign_in(ui);
                             }
                         });
@@ -210,14 +219,16 @@ impl PublisherUi {
                         // Option 2 (Secondary): Join via room invitation without signing in
                         surface_card(ui, |ui| {
                             ui.horizontal(|ui| {
-                                ui.label(skin::strong(tr("Room invitation"), 15.0).color(TEXT));
+                                ui.label(
+                                    skin::strong(tr("Room invitation"), 15.0).color(palette().text),
+                                );
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
                                         ui.label(
                                             egui::RichText::new(tr("No login required"))
                                                 .size(11.5)
-                                                .color(skin::TERTIARY),
+                                                .color(palette().muted),
                                         );
                                     },
                                 );
@@ -240,14 +251,14 @@ impl PublisherUi {
                 ui.add_space(4.0);
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
-                    ui.label(skin::strong(&display_name, 15.5).color(TEXT));
+                    ui.label(skin::strong(&display_name, 15.5).color(palette().text));
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 5.0;
-                        ui.colored_label(SAGE, "●");
+                        ui.colored_label(palette().success, "●");
                         ui.label(
                             egui::RichText::new(tr("Connected"))
                                 .size(12.0)
-                                .color(MUTED),
+                                .color(palette().muted),
                         );
                     });
                 });
@@ -255,11 +266,11 @@ impl PublisherUi {
                     let disconnect = ui
                         .add(
                             egui::Button::new(
-                                skin::strong(tr("Disconnect Discord"), 12.5).color(skin::DANGER_INK),
+                                skin::strong(tr("Disconnect Discord"), 12.5).color(palette().error),
                             )
                             .corner_radius(8)
-                            .fill(ERROR.gamma_multiply(0.10))
-                            .stroke(egui::Stroke::new(1.0, ERROR.gamma_multiply(0.35)))
+                            .fill(palette().danger.gamma_multiply(0.10))
+                            .stroke(egui::Stroke::new(1.0, palette().danger.gamma_multiply(0.35)))
                             .min_size(egui::vec2(0.0, 32.0)),
                         )
                         .on_hover_text(tr(
@@ -274,7 +285,7 @@ impl PublisherUi {
             egui::CollapsingHeader::new(
                 egui::RichText::new(tr("Account details"))
                     .size(12.5)
-                    .color(MUTED),
+                    .color(palette().muted),
             )
             .id_salt("discord-account-details")
             .show(ui, |ui| {
@@ -296,7 +307,7 @@ impl PublisherUi {
                 }
             });
             if !self.account_state.error.is_empty() {
-                ui.colored_label(skin::DANGER_INK, tr(&self.account_state.error));
+                ui.colored_label(palette().error, tr(&self.account_state.error));
             }
         } else {
             self.discord_sign_in(ui);
@@ -335,14 +346,14 @@ impl PublisherUi {
             egui::CollapsingHeader::new(
                 egui::RichText::new(tr("Server settings"))
                     .size(12.0)
-                    .color(MUTED),
+                    .color(palette().muted),
             )
             .id_salt("discord-server-settings")
             .show(ui, |ui| {
                 let label = ui.label(
                     egui::RichText::new(tr("PodeTelar server"))
                         .size(12.0)
-                        .color(MUTED),
+                        .color(palette().muted),
                 );
                 ui.add(
                     egui::TextEdit::singleline(&mut self.account_server)
@@ -351,7 +362,10 @@ impl PublisherUi {
                 )
                 .labelled_by(label.id);
                 if !valid {
-                    ui.colored_label(WARNING, tr("Use an HTTPS server or a local test address."));
+                    ui.colored_label(
+                        palette().warning,
+                        tr("Use an HTTPS server or a local test address."),
+                    );
                 } else if !self.account_state.available
                     && self.account_state.server == self.account_server.trim()
                 {
@@ -360,19 +374,19 @@ impl PublisherUi {
                             "Discord sign-in may need to be enabled on this server.",
                         ))
                         .size(12.0)
-                        .color(MUTED),
+                        .color(palette().muted),
                     );
                 }
             });
         }
         if !self.account_state.error.is_empty() {
-            ui.colored_label(skin::DANGER_INK, tr(&self.account_state.error));
+            ui.colored_label(palette().error, tr(&self.account_state.error));
         }
     }
 
     fn automatic_joining_card(&mut self, ui: &mut egui::Ui) {
         surface_card(ui, |ui| {
-            ui.label(skin::strong(tr("Automatic joining"), 14.5).color(TEXT));
+            ui.label(skin::strong(tr("Automatic joining"), 14.5).color(palette().text));
             self.discord_following(ui);
         });
     }
@@ -381,7 +395,7 @@ impl PublisherUi {
         let voice = self.following_client.state();
         if self.following.paused || self.following.independent {
             ui.horizontal(|ui| {
-                joining_status(ui, "Automatic joining paused", WARNING);
+                joining_status(ui, "Automatic joining paused", palette().warning);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
                         .add(egui::Button::new(tr("Resume automatic joining")).corner_radius(7))
@@ -395,12 +409,16 @@ impl PublisherUi {
             joining_status(
                 ui,
                 "Checking Discord voice status. Retrying automatically.",
-                MUTED,
+                palette().muted,
             );
         } else if !voice.enabled {
-            joining_status(ui, "Automatic joining disabled", WARNING);
+            joining_status(ui, "Automatic joining disabled", palette().warning);
         } else if voice.locations.is_empty() {
-            joining_status(ui, "Join a Discord voice channel to continue.", MUTED);
+            joining_status(
+                ui,
+                "Join a Discord voice channel to continue.",
+                palette().muted,
+            );
         } else {
             for channel in &voice.locations {
                 let current = self
@@ -409,13 +427,13 @@ impl PublisherUi {
                     .as_ref()
                     .is_some_and(|location| location.key() == channel.key());
                 egui::Frame::new()
-                    .fill(CARD)
+                    .fill(palette().card)
                     .stroke(egui::Stroke::new(
                         1.0,
                         if current {
-                            ACCENT.gamma_multiply(0.45)
+                            palette().accent.gamma_multiply(0.45)
                         } else {
-                            BORDER
+                            palette().border
                         },
                     ))
                     .corner_radius(10)
@@ -424,20 +442,22 @@ impl PublisherUi {
                         ui.horizontal(|ui| {
                             ui.vertical(|ui| {
                                 ui.spacing_mut().item_spacing.y = 1.0;
-                                ui.label(skin::strong(&channel.channel_name, 13.5).color(TEXT));
+                                ui.label(
+                                    skin::strong(&channel.channel_name, 13.5).color(palette().text),
+                                );
                                 ui.label(
                                     egui::RichText::new(&channel.guild_name)
                                         .size(11.5)
-                                        .color(MUTED),
+                                        .color(palette().muted),
                                 );
                             });
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
                                     if !channel.enabled {
-                                        badge(ui, tr("Disabled"), WARNING);
+                                        badge(ui, tr("Disabled"), palette().warning);
                                     } else if current {
-                                        badge(ui, tr("Following"), ACCENT);
+                                        badge(ui, tr("Following"), palette().accent);
                                     } else if voice.locations.len() > 1
                                         && ui
                                             .button(tr("Follow channel"))
@@ -608,7 +628,7 @@ impl PublisherUi {
         let label = ui.label(
             egui::RichText::new(tr("Guest nickname"))
                 .size(12.0)
-                .color(MUTED),
+                .color(palette().muted),
         );
         let busy = self.profile_state.busy;
         let saved = if self.profile_client.is_some() {
@@ -640,11 +660,15 @@ impl PublisherUi {
                 .add_enabled(
                     valid,
                     egui::Button::new(skin::strong(save_label, 12.5).color(if valid {
-                        AMBER_INK
+                        palette().on_accent
                     } else {
-                        MUTED
+                        palette().muted
                     }))
-                    .fill(if valid { ACCENT } else { CARD })
+                    .fill(if valid {
+                        palette().accent
+                    } else {
+                        palette().card
+                    })
                     .corner_radius(8)
                     .min_size(egui::vec2(save_w, 34.0)),
                 )
@@ -688,11 +712,15 @@ impl PublisherUi {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 5.0;
                     ui.horizontal(|ui| {
-                        ui.label(skin::strong(&self.name, 16.0).color(TEXT));
+                        ui.label(skin::strong(&self.name, 16.0).color(palette().text));
                         badge(
                             ui,
                             if is_discord { "Discord" } else { tr("Guest") },
-                            if is_discord { ACCENT } else { MUTED },
+                            if is_discord {
+                                palette().accent
+                            } else {
+                                palette().muted
+                            },
                         );
                     });
                     if is_discord {
@@ -739,12 +767,12 @@ impl PublisherUi {
                                 "Join a room to manage your profile picture."
                             }))
                             .size(12.0)
-                            .color(MUTED),
+                            .color(palette().muted),
                         );
                     }
                     if own.as_ref().is_some_and(|p| p.uploads_blocked) {
                         ui.colored_label(
-                            WARNING,
+                            palette().warning,
                             tr("Profile picture uploads are disabled for this PC."),
                         );
                     }
@@ -761,7 +789,7 @@ impl PublisherUi {
 
         if !self.profile_state.error.is_empty() {
             ui.add_space(6.0);
-            ui.colored_label(skin::DANGER_INK, tr(&self.profile_state.error));
+            ui.colored_label(palette().error, tr(&self.profile_state.error));
         }
     }
 
@@ -784,14 +812,14 @@ impl PublisherUi {
             .backdrop_color(egui::Color32::from_black_alpha(175))
             .frame(
                 skin::menu_frame()
-                    .fill(CANVAS)
+                    .fill(palette().canvas)
                     .corner_radius(16)
                     .inner_margin(egui::Margin::same(22)),
             )
             .show(ctx, |ui| {
                 ui.set_width(width);
                 ui.horizontal(|ui| {
-                    ui.label(skin::strong(tr("User settings"), 20.0).color(TEXT));
+                    ui.label(skin::strong(tr("User settings"), 20.0).color(palette().text));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if skin::icon_button(ui, Icon::Close, tr("Close")).clicked() {
                             close = true;
@@ -809,9 +837,9 @@ impl PublisherUi {
                     ] {
                         let selected = self.profile_page == page;
                         let text = skin::strong(tr(label), 13.5).color(if selected {
-                            TEXT
+                            palette().text
                         } else {
-                            MUTED
+                            palette().muted
                         });
                         let response = ui.add(
                             egui::Button::new(text)
@@ -825,7 +853,7 @@ impl PublisherUi {
                                     egui::pos2(r.left(), r.bottom() + 2.0),
                                     egui::pos2(r.right(), r.bottom() + 2.0),
                                 ],
-                                egui::Stroke::new(2.0, ACCENT),
+                                egui::Stroke::new(2.0, palette().accent),
                             );
                         }
                         response.widget_info(|| {

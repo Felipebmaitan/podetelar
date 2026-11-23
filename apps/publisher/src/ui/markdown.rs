@@ -1,5 +1,5 @@
 //! Minimal zero-dependency Markdown renderer for release notes and changelogs.
-use super::{ACCENT, BORDER, CANVAS, MUTED, TEXT, skin};
+use super::{palette, skin};
 use eframe::egui::{self, Color32, FontFamily, FontId, TextFormat, text::LayoutJob};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -55,7 +55,7 @@ pub(super) fn render(ui: &mut egui::Ui, markdown: &str) {
                     3 => 13.5,
                     _ => 13.0,
                 };
-                render_inline(ui, text, size, true, TEXT);
+                render_inline(ui, text, size, true, palette().text);
             }
             Block::Bullet { indent, text } => {
                 ui.horizontal_top(|ui| {
@@ -63,9 +63,9 @@ pub(super) fn render(ui: &mut egui::Ui, markdown: &str) {
                     if *indent > 0 {
                         ui.add_space((*indent as f32) * 14.0);
                     }
-                    ui.label(egui::RichText::new("•").size(13.0).color(ACCENT));
+                    ui.label(egui::RichText::new("•").size(13.0).color(palette().accent));
                     ui.vertical(|ui| {
-                        render_inline(ui, text, 13.0, false, MUTED);
+                        render_inline(ui, text, 13.0, false, palette().muted);
                     });
                 });
             }
@@ -79,15 +79,15 @@ pub(super) fn render(ui: &mut egui::Ui, markdown: &str) {
                     if *indent > 0 {
                         ui.add_space((*indent as f32) * 14.0);
                     }
-                    ui.label(skin::strong(format!("{number}."), 12.5).color(ACCENT));
+                    ui.label(skin::strong(format!("{number}."), 12.5).color(palette().accent));
                     ui.vertical(|ui| {
-                        render_inline(ui, text, 13.0, false, MUTED);
+                        render_inline(ui, text, 13.0, false, palette().muted);
                     });
                 });
             }
             Block::Quote(text) => {
                 egui::Frame::new()
-                    .fill(CANVAS.gamma_multiply(0.6))
+                    .fill(palette().canvas.gamma_multiply(0.6))
                     .inner_margin(egui::Margin {
                         left: 10,
                         right: 10,
@@ -102,15 +102,15 @@ pub(super) fn render(ui: &mut egui::Ui, markdown: &str) {
                                 egui::pos2(rect.left() - 10.0, rect.top() - 4.0),
                                 egui::pos2(rect.left() - 10.0, rect.bottom() + 4.0),
                             ],
-                            egui::Stroke::new(2.5, ACCENT.gamma_multiply(0.7)),
+                            egui::Stroke::new(2.5, palette().accent.gamma_multiply(0.7)),
                         );
-                        render_inline(ui, text, 12.5, false, MUTED);
+                        render_inline(ui, text, 12.5, false, palette().muted);
                     });
             }
             Block::Code(code) => {
                 egui::Frame::new()
-                    .fill(CANVAS)
-                    .stroke(egui::Stroke::new(1.0, BORDER))
+                    .fill(palette().canvas)
+                    .stroke(egui::Stroke::new(1.0, palette().border))
                     .corner_radius(7)
                     .inner_margin(egui::Margin::symmetric(10, 8))
                     .show(ui, |ui| {
@@ -119,7 +119,7 @@ pub(super) fn render(ui: &mut egui::Ui, markdown: &str) {
                             egui::Label::new(
                                 egui::RichText::new(code)
                                     .font(FontId::monospace(12.0))
-                                    .color(TEXT),
+                                    .color(palette().text),
                             )
                             .wrap(),
                         );
@@ -129,7 +129,7 @@ pub(super) fn render(ui: &mut egui::Ui, markdown: &str) {
                 ui.separator();
             }
             Block::Paragraph(text) => {
-                render_inline(ui, text, 13.0, false, MUTED);
+                render_inline(ui, text, 13.0, false, palette().muted);
             }
         }
         prev_was_list = is_list;
@@ -205,7 +205,7 @@ fn append_span(job: &mut LayoutJob, span: &Span, size: f32, heading: bool, base_
             0.0,
             TextFormat {
                 font_id: skin::semibold(size),
-                color: TEXT,
+                color: palette().text,
                 ..Default::default()
             },
         ),
@@ -214,7 +214,7 @@ fn append_span(job: &mut LayoutJob, span: &Span, size: f32, heading: bool, base_
             0.0,
             TextFormat {
                 font_id: base_font,
-                color: TEXT.gamma_multiply(0.92),
+                color: palette().text.gamma_multiply(0.92),
                 italics: true,
                 ..Default::default()
             },
@@ -224,8 +224,8 @@ fn append_span(job: &mut LayoutJob, span: &Span, size: f32, heading: bool, base_
             0.0,
             TextFormat {
                 font_id: FontId::new((size - 1.0).max(11.0), FontFamily::Monospace),
-                color: TEXT,
-                background: skin::SURFACE_3,
+                color: palette().text,
+                background: palette().control_hover,
                 ..Default::default()
             },
         ),
@@ -234,8 +234,8 @@ fn append_span(job: &mut LayoutJob, span: &Span, size: f32, heading: bool, base_
             0.0,
             TextFormat {
                 font_id: base_font,
-                color: ACCENT,
-                underline: egui::Stroke::new(1.0, ACCENT),
+                color: palette().accent,
+                underline: egui::Stroke::new(1.0, palette().accent),
                 ..Default::default()
             },
         ),

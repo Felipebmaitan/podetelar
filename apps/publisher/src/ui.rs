@@ -2,6 +2,9 @@
 mod markdown;
 #[path = "ui/profile.rs"]
 mod profile;
+#[path = "ui/stage.rs"]
+mod stage;
+use stage::SELF_PREVIEW;
 #[cfg(feature = "ui-review")]
 #[path = "ui/review.rs"]
 pub mod review;
@@ -10,6 +13,7 @@ use crate::locale::tr;
 #[allow(dead_code)]
 #[path = "ui/experiment.rs"]
 pub mod experiment;
+use crate::theme::{self, Appearance, Theme, palette};
 use crate::ui_style::{self as skin, Icon};
 use crate::{
     connection::Route,
@@ -24,33 +28,34 @@ use std::{
     time::{Duration, Instant},
 };
 
-const ACCENT: egui::Color32 = skin::AMBER;
-const AMBER_INK: egui::Color32 = skin::AMBER_INK;
-const TEXT: egui::Color32 = skin::INK;
-const MUTED: egui::Color32 = skin::SECONDARY;
-const PANEL: egui::Color32 = skin::SURFACE;
-const CANVAS: egui::Color32 = skin::STAGE;
-const CARD: egui::Color32 = skin::SURFACE_2;
-const BORDER: egui::Color32 = skin::BORDER;
-const WARNING: egui::Color32 = skin::WARN;
-const ERROR: egui::Color32 = skin::DANGER;
-const SAGE: egui::Color32 = skin::SAGE;
-
 pub fn configure_theme(ctx: &egui::Context) {
     skin::install_fonts(ctx);
-    ctx.set_theme(egui::ThemePreference::Dark);
+    apply_palette(ctx, Theme::Amber);
+}
+
+fn apply_palette(ctx: &egui::Context, effective: Theme) {
+    theme::activate(effective);
+    let p = effective.palette();
     let mut style = (*ctx.style_of(egui::Theme::Dark)).clone();
-    style.visuals = egui::Visuals::dark();
-    style.visuals.override_text_color = Some(TEXT);
-    style.visuals.weak_text_color = Some(MUTED);
+    style.visuals = if p.dark {
+        egui::Visuals::dark()
+    } else {
+        egui::Visuals::light()
+    };
+    style.visuals.override_text_color = Some(p.text);
+    style.visuals.weak_text_color = Some(p.muted);
     style.visuals.disabled_alpha = 0.84;
-    style.visuals.panel_fill = PANEL;
-    style.visuals.window_fill = CARD;
-    style.visuals.extreme_bg_color = CANVAS;
-    style.visuals.faint_bg_color = CARD;
+    style.visuals.panel_fill = p.panel;
+    style.visuals.window_fill = p.card;
+    style.visuals.extreme_bg_color = p.canvas;
+    style.visuals.faint_bg_color = p.card;
     style.visuals.window_corner_radius = egui::CornerRadius::same(12);
-    style.visuals.selection.bg_fill = ACCENT;
-    style.visuals.selection.stroke.color = AMBER_INK;
+    style.visuals.selection.bg_fill = p.accent;
+    style.visuals.selection.stroke.color = p.on_accent;
+    style.visuals.hyperlink_color = p.accent;
+    style.visuals.error_fg_color = p.error;
+    style.visuals.warn_fg_color = p.warning;
+    style.visuals.window_stroke = egui::Stroke::new(1.0, p.border);
     style.visuals.handle_shape = egui::style::HandleShape::Circle;
     style.visuals.slider_trailing_fill = true;
     style.visuals.popup_shadow = skin::menu_frame().shadow;
@@ -61,23 +66,25 @@ pub fn configure_theme(ctx: &egui::Context) {
         &mut style.visuals.widgets.inactive,
         &mut style.visuals.widgets.hovered,
         &mut style.visuals.widgets.active,
+        &mut style.visuals.widgets.open,
     ] {
         widget.corner_radius = egui::CornerRadius::same(8);
-        widget.fg_stroke.color = TEXT;
-        widget.bg_stroke = egui::Stroke::new(1.0, BORDER);
+        widget.fg_stroke.color = p.text;
+        widget.bg_stroke = egui::Stroke::new(1.0, p.border);
     }
-    style.visuals.widgets.noninteractive.bg_fill = PANEL;
-    style.visuals.widgets.noninteractive.weak_bg_fill = PANEL;
-    style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, skin::DIVIDER);
-    style.visuals.widgets.open.weak_bg_fill = CARD;
-    style.visuals.widgets.inactive.bg_fill = CARD;
-    style.visuals.widgets.inactive.weak_bg_fill = CARD;
-    style.visuals.widgets.hovered.bg_fill = skin::SURFACE_3;
-    style.visuals.widgets.hovered.weak_bg_fill = skin::SURFACE_3;
-    style.visuals.widgets.hovered.bg_stroke =
-        egui::Stroke::new(1.0, egui::Color32::from_rgb(76, 72, 66));
-    style.visuals.widgets.active.bg_fill = ACCENT.gamma_multiply(0.24);
-    style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, ACCENT.gamma_multiply(0.7));
+    style.visuals.widgets.noninteractive.bg_fill = p.panel;
+    style.visuals.widgets.noninteractive.weak_bg_fill = p.panel;
+    style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, p.divider);
+    style.visuals.widgets.open.bg_fill = p.control_active;
+    style.visuals.widgets.open.weak_bg_fill = p.control_active;
+    style.visuals.widgets.inactive.bg_fill = p.control;
+    style.visuals.widgets.inactive.weak_bg_fill = p.control;
+    style.visuals.widgets.hovered.bg_fill = p.control_hover;
+    style.visuals.widgets.hovered.weak_bg_fill = p.control_hover;
+    style.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, p.hover_stroke);
+    style.visuals.widgets.active.bg_fill = p.control_active;
+    style.visuals.widgets.active.weak_bg_fill = p.control_active;
+    style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, p.accent);
     style.spacing.item_spacing = egui::vec2(8.0, 6.0);
     style.spacing.button_padding = egui::vec2(12.0, 6.0);
     style.spacing.interact_size.y = 32.0;
@@ -96,7 +103,11 @@ pub fn configure_theme(ctx: &egui::Context) {
     style
         .text_styles
         .insert(egui::TextStyle::Small, egui::FontId::proportional(12.0));
-    ctx.set_style_of(egui::Theme::Dark, style);
+    // Leave egui in System mode so the integration keeps receiving OS changes.
+    // Both style slots use the app's effective palette, including manual overrides.
+    ctx.set_style_of(egui::Theme::Dark, style.clone());
+    ctx.set_style_of(egui::Theme::Light, style);
+    ctx.data_mut(|data| data.insert_temp(egui::Id::unique("studio-palette"), effective));
 }
 
 pub struct PublisherUi {
@@ -133,12 +144,15 @@ pub struct PublisherUi {
     download_budget: Option<u64>,
     textures: HashMap<String, egui::TextureHandle>,
     focused: Option<String>,
+    spotlight: Option<String>,
+    self_preview_hidden: bool,
     fullscreen: Option<String>,
     fullscreen_controls_until: Instant,
     settings_error: String,
     auto_join_ready: bool,
     copied_until: Option<Instant>,
     remembered_volume: HashMap<String, u32>,
+    appearance: Appearance,
     advanced_open: bool,
     diagnostics_open: bool,
     setup_open: bool,
@@ -199,7 +213,12 @@ impl PublisherUi {
         }
     }
     pub fn with_browser_link(browser_link: Option<String>) -> Self {
-        Self::with_account_client(browser_link, crate::account::Client::new())
+        let mut app = Self::with_account_client(browser_link, crate::account::Client::new());
+        app.appearance = Appearance::load();
+        if let Some(portuguese) = app.appearance.portuguese {
+            crate::locale::select(portuguese);
+        }
+        app
     }
 
     fn with_account_client(
@@ -253,12 +272,18 @@ impl PublisherUi {
             download_budget: None,
             textures: HashMap::new(),
             focused: None,
+            spotlight: None,
+            self_preview_hidden: false,
             fullscreen: None,
             fullscreen_controls_until: Instant::now(),
             settings_error,
             auto_join_ready: false,
             copied_until: None,
             remembered_volume: HashMap::new(),
+            appearance: Appearance {
+                theme: Theme::Amber,
+                ..Appearance::default()
+            },
             advanced_open: false,
             diagnostics_open: false,
             setup_open: false,
@@ -302,54 +327,14 @@ impl PublisherUi {
         let connected = matches!(state.connection, "connected" | "reconnecting");
         ui.horizontal(|ui| {
             brand_mark(ui);
-            ui.label(skin::strong("PodeTelar", 18.0).color(TEXT));
+            ui.label(skin::strong("PodeTelar", 18.0).color(palette().text));
             if connected {
                 ui.add_space(4.0);
                 let (sep, _) = ui.allocate_exact_size(egui::vec2(1.0, 18.0), egui::Sense::hover());
                 ui.painter()
-                    .line_segment([sep.center_top(), sep.center_bottom()], (1.0, BORDER));
+                    .line_segment([sep.center_top(), sep.center_bottom()], (1.0, palette().border));
                 ui.add_space(4.0);
-                let (dot, _) = ui.allocate_exact_size(egui::vec2(8.0, 18.0), egui::Sense::hover());
-                ui.painter().circle_filled(
-                    dot.center(),
-                    3.5,
-                    if state.connection == "connected" {
-                        SAGE
-                    } else {
-                        WARNING
-                    },
-                );
-                let room_label = format!(
-                    "{}  ·  {} {}",
-                    if state.room_name.is_empty() {
-                        tr("Your private room")
-                    } else if state.room_name == "Friends" {
-                        tr("Friends")
-                    } else {
-                        &state.room_name
-                    },
-                    state.participants.len() + 1,
-                    tr("in room")
-                );
-                let room_button = ui
-                    .add_sized(
-                        [(ui.available_width() - 375.0).clamp(80.0, 240.0), 32.0],
-                        egui::Button::new("")
-                            .left_text(skin::strong(&room_label, 13.5).color(TEXT))
-                            .truncate()
-                            .frame(false),
-                    )
-                    .on_hover_text(&room_label);
-                egui::Popup::menu(&room_button)
-                    .frame(skin::menu_frame())
-                    .show(|ui| {
-                        ui.label(skin::strong(tr("People in this room"), 13.0).color(MUTED));
-                        ui.add_space(4.0);
-                        ui.label(format!("{} ({})", self.name, tr("you")));
-                        for name in &state.participants {
-                            ui.label(name);
-                        }
-                    });
+                self.room_capsule(ui, state);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 self.update_badge(ui);
@@ -370,6 +355,8 @@ impl PublisherUi {
                     .on_hover_text(tr("Language"));
                 if pt != crate::locale::portuguese() {
                     crate::locale::select(pt);
+                    self.appearance.portuguese = Some(pt);
+                    self.save_appearance();
                 }
                 if state.connection == "connecting" {
                     if ui.button(tr("Cancel join")).clicked() {
@@ -382,6 +369,9 @@ impl PublisherUi {
                     self.textures.clear();
                     self.setup_open = false;
                     self.roster_open = false;
+                    self.focused = None;
+                    self.spotlight = None;
+                    self.self_preview_hidden = false;
                 }
                 let room_options = if connected {
                     skin::icon_button(ui, Icon::More, tr("Room options"))
@@ -399,6 +389,7 @@ impl PublisherUi {
                             self.advanced_open = true;
                             ui.close();
                         }
+                        ui.menu_button(tr("Theme"), |ui| self.theme_options(ui));
                         ui.separator();
                         if std::env::var_os(crate::activation_protocol::INSTALLED).is_some() {
                             ui.label(tr(if self.browser_links_enabled {
@@ -485,8 +476,8 @@ impl PublisherUi {
             .backdrop_color(egui::Color32::from_black_alpha(175))
             .frame(
                 egui::Frame::new()
-                    .fill(PANEL)
-                    .stroke(egui::Stroke::new(1.0, BORDER))
+                    .fill(palette().panel)
+                    .stroke(egui::Stroke::new(1.0, palette().border))
                     .corner_radius(16)
                     .inner_margin(24)
                     .shadow(skin::menu_frame().shadow),
@@ -495,7 +486,10 @@ impl PublisherUi {
                 ui.set_width(width);
                 ui.spacing_mut().item_spacing.y = 12.0;
                 ui.horizontal(|ui| {
-                    ui.label(skin::strong(tr("Invitation from your browser"), 19.0).color(TEXT));
+                    ui.label(
+                        skin::strong(tr("Invitation from your browser"), 19.0)
+                            .color(palette().text),
+                    );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         dismiss |= skin::icon_button(ui, Icon::Close, tr("Close")).clicked();
                     });
@@ -509,14 +503,14 @@ impl PublisherUi {
                 } else if !self.invitation.is_empty() {
                     if matches!(state.connection, "connected" | "reconnecting") {
                         ui.colored_label(
-                            WARNING,
+                            palette().warning,
                             tr("Joining this room will end your current sharing and watching."),
                         );
                     }
                     self.join_form(ui, state);
                 }
                 if !self.settings_error.is_empty() {
-                    ui.colored_label(skin::DANGER_INK, tr(&self.settings_error));
+                    ui.colored_label(palette().error, tr(&self.settings_error));
                 }
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -525,7 +519,7 @@ impl PublisherUi {
                                 egui::Button::new(
                                     egui::RichText::new(tr("Dismiss browser invitation"))
                                         .size(12.5)
-                                        .color(MUTED),
+                                        .color(palette().muted),
                                 )
                                 .frame(false),
                             )
@@ -541,9 +535,17 @@ impl PublisherUi {
     fn join_form(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
         if self.browser_invitation_open {
             if let Ok(invitation) = url::Url::parse(&self.invitation) {
-                badge(ui, &invitation.origin().ascii_serialization(), MUTED);
+                badge(
+                    ui,
+                    &invitation.origin().ascii_serialization(),
+                    palette().muted,
+                );
             }
-            let label = ui.label(egui::RichText::new(tr("Your name")).size(12.0).color(MUTED));
+            let label = ui.label(
+                egui::RichText::new(tr("Your name"))
+                    .size(12.0)
+                    .color(palette().muted),
+            );
             let name = ui
                 .add(
                     egui::TextEdit::singleline(&mut self.name)
@@ -573,7 +575,7 @@ impl PublisherUi {
                 let label = ui.label(
                     egui::RichText::new(tr("Invitation link"))
                         .size(12.0)
-                        .color(MUTED),
+                        .color(palette().muted),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
@@ -586,7 +588,7 @@ impl PublisherUi {
                                     tr("Show")
                                 })
                                 .size(11.5)
-                                .color(ACCENT),
+                                .color(palette().accent),
                             )
                             .frame(false),
                         )
@@ -614,7 +616,11 @@ impl PublisherUi {
             )
             .labelled_by(invitation_label.id);
         ui.add_space(4.0);
-        let name_label = ui.label(egui::RichText::new(tr("Your name")).size(12.0).color(MUTED));
+        let name_label = ui.label(
+            egui::RichText::new(tr("Your name"))
+                .size(12.0)
+                .color(palette().muted),
+        );
         let name = ui
             .add(
                 egui::TextEdit::singleline(&mut self.name)
@@ -641,16 +647,20 @@ impl PublisherUi {
                 valid,
                 egui::Button::new((
                     egui::Atom::grow(),
-                    skin::strong(tr("Join room"), 13.5).color(TEXT),
+                    skin::strong(tr("Join room"), 13.5).color(palette().text),
                     egui::Atom::grow(),
                 ))
-                .fill(if valid { skin::SURFACE_3 } else { CARD })
+                .fill(if valid {
+                    palette().control_hover
+                } else {
+                    palette().card
+                })
                 .stroke(egui::Stroke::new(
                     1.0,
                     if valid {
-                        ACCENT.gamma_multiply(0.55)
+                        palette().accent.gamma_multiply(0.55)
                     } else {
-                        BORDER
+                        palette().border
                     },
                 ))
                 .corner_radius(8)
@@ -672,85 +682,13 @@ impl PublisherUi {
     }
 
     fn source_preview(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
-        let own_tile = if state.sharing {
-            // Retain the Arc, not just an address: a later source can reuse
-            // a freed allocation and restart its sequence at one.
-            let same_source = self
-                .self_preview_revision
-                .as_ref()
-                .is_some_and(|(cache, _)| std::sync::Arc::ptr_eq(cache, &state.self_preview));
-            if !same_source {
-                self.textures.remove("__self_preview");
-            }
-            let frame = state.self_preview.lock().ok().and_then(|frame| {
-                frame
-                    .as_ref()
-                    .filter(|frame| {
-                        self.self_preview_revision
-                            .as_ref()
-                            .is_none_or(|(cache, sequence)| {
-                                !std::sync::Arc::ptr_eq(cache, &state.self_preview)
-                                    || *sequence != frame.sequence
-                            })
-                            || !self.textures.contains_key("__self_preview")
-                    })
-                    .cloned()
-            });
-            let picture: crate::playback::Picture = std::sync::Arc::default();
-            if let Some(frame) = frame
-                && (self
-                    .self_preview_revision
-                    .as_ref()
-                    .is_none_or(|(cache, sequence)| {
-                        !std::sync::Arc::ptr_eq(cache, &state.self_preview)
-                            || *sequence != frame.sequence
-                    })
-                    || !self.textures.contains_key("__self_preview"))
-                && let Ok(image) =
-                    image::load_from_memory_with_format(&frame.bytes, image::ImageFormat::Jpeg)
-            {
-                let rgba = image.into_rgba8();
-                if let Ok(mut slot) = picture.lock() {
-                    *slot = Some(std::sync::Arc::new(
-                        egui::ColorImage::from_rgba_unmultiplied(
-                            [rgba.width() as usize, rgba.height() as usize],
-                            rgba.as_raw(),
-                        ),
-                    ));
-                }
-                self.self_preview_revision = Some((state.self_preview.clone(), frame.sequence));
-            }
-            Some(Tile {
-                id: "__self_preview".into(),
-                name: state
-                    .active_selection
-                    .as_ref()
-                    .and_then(|a| state.sources.iter().find(|s| s.id == a.source_id))
-                    .map(|s| s.label.clone())
-                    .unwrap_or_else(|| tr("Your screen").into()),
-                codec: String::new(),
-                watching: false,
-                picture,
-                presentation: std::sync::Arc::default(),
-                frames: std::sync::Arc::default(),
-                received_bps: std::sync::Arc::default(),
-                volume: std::sync::Arc::default(),
-                audio: std::sync::Arc::default(),
-                status: String::new(),
-            })
-        } else {
-            self.self_preview_revision = None;
-            None
-        };
-        if let Some(tile) = own_tile {
-            self.update_picture(ui.ctx(), &tile);
-        }
+        self.refresh_self_preview(ui.ctx(), state);
         let width = ui.available_width();
         let (rect, _) =
             ui.allocate_exact_size(egui::vec2(width, width * 9.0 / 16.0), egui::Sense::hover());
-        ui.painter().rect_filled(rect, 6.0, CANVAS);
+        ui.painter().rect_filled(rect, 6.0, palette().canvas);
         if state.sharing
-            && let Some(texture) = self.textures.get("__self_preview")
+            && let Some(texture) = self.textures.get(SELF_PREVIEW)
         {
             let target = fit_picture(rect, texture.aspect_ratio());
             ui.painter()
@@ -761,7 +699,7 @@ impl PublisherUi {
                 egui::Align2::CENTER_CENTER,
                 tr("Your screen"),
                 egui::FontId::proportional(14.0),
-                MUTED,
+                palette().muted,
             );
         }
         ui.interact(
@@ -956,7 +894,7 @@ impl PublisherUi {
                         } else {
                             Icon::Monitor
                         };
-                        skin::icon(ui.painter(), icon, symbol, TEXT);
+                        skin::icon(ui.painter(), icon, symbol, palette().text);
                         ui.vertical(|ui| {
                             ui.add(
                                 egui::Label::new(skin::strong(source_name(source), 14.0))
@@ -968,7 +906,7 @@ impl PublisherUi {
                                     source.width, source.height
                                 ))
                                 .size(12.0)
-                                .color(MUTED),
+                                .color(palette().muted),
                             );
                         });
                     });
@@ -976,7 +914,7 @@ impl PublisherUi {
                         egui::vec2(width, width * 9.0 / 16.0),
                         egui::Sense::hover(),
                     );
-                    ui.painter().rect_filled(rect, 6.0, CANVAS);
+                    ui.painter().rect_filled(rect, 6.0, palette().canvas);
                     if let Some((_, texture)) = &self.picker_texture {
                         egui::Image::new((texture.id(), texture.size_vec2()))
                             .corner_radius(6)
@@ -990,11 +928,14 @@ impl PublisherUi {
                         let text = ui.painter().layout(
                             message.to_owned(),
                             egui::FontId::proportional(12.0),
-                            MUTED,
+                            palette().muted,
                             rect.width() - 32.0,
                         );
-                        ui.painter()
-                            .galley(rect.center() - text.size() / 2.0, text, MUTED);
+                        ui.painter().galley(
+                            rect.center() - text.size() / 2.0,
+                            text,
+                            palette().muted,
+                        );
                         if self.picker_failed.as_deref() != Some(&source.id) {
                             ctx.request_repaint_after(Duration::from_millis(40));
                         }
@@ -1006,7 +947,7 @@ impl PublisherUi {
                             "Local preview · not broadcasting"
                         }))
                         .size(12.0)
-                        .color(MUTED),
+                        .color(palette().muted),
                     );
                 });
             });
@@ -1022,7 +963,7 @@ impl PublisherUi {
                 quality_controls(ui, &mut self.quality, source, encoder);
             } else {
                 ui.colored_label(
-                    WARNING,
+                    palette().warning,
                     tr("No supported hardware encoder was found. You can still watch compatible streams."),
                 );
             }
@@ -1063,11 +1004,18 @@ impl PublisherUi {
             } else {
                 tr("No changes to apply")
             };
-            let label =
-                skin::strong(apply_label, 13.5).color(if dirty { AMBER_INK } else { MUTED });
+            let label = skin::strong(apply_label, 13.5).color(if dirty {
+                palette().on_accent
+            } else {
+                palette().muted
+            });
             let apply = egui::Button::new((egui::Atom::grow(), label, egui::Atom::grow()))
                 .corner_radius(8)
-                .fill(if dirty { ACCENT } else { CARD })
+                .fill(if dirty {
+                    palette().accent
+                } else {
+                    palette().card
+                })
                 .min_size(egui::vec2(width, 36.0));
             if ui
                 .add_enabled(state.sharing && !state.busy && valid && dirty, apply)
@@ -1083,7 +1031,7 @@ impl PublisherUi {
                         && a.quality.fps == selection.quality.fps
                 });
                 ui.colored_label(
-                    WARNING,
+                    palette().warning,
                     if live {
                         tr("Changes pending · applies live")
                     } else {
@@ -1109,7 +1057,7 @@ impl PublisherUi {
         } else {
             10.0
         };
-        ui.label(skin::strong(tr("Video"), 17.5).color(ACCENT));
+        ui.label(skin::strong(tr("Video"), 17.5).color(palette().accent));
         ui.add_space(2.0);
         ui.add_enabled_ui(!state.busy, |ui| {
             ui.columns(2, |columns| {
@@ -1145,7 +1093,7 @@ impl PublisherUi {
             });
         });
         settings_divider(ui);
-        ui.label(skin::strong(tr("Reception"), 17.5).color(ACCENT));
+        ui.label(skin::strong(tr("Reception"), 17.5).color(palette().accent));
         ui.add_space(2.0);
         ui.add_enabled_ui(!state.busy, |ui| {
             let label = skin::help_label(
@@ -1194,7 +1142,7 @@ impl PublisherUi {
         ui.horizontal(|ui| {
             let failed = !state.capacity.error.is_empty();
             ui.vertical(|ui| {
-                ui.label(skin::strong(tr("Connection"), 17.5).color(ACCENT));
+                ui.label(skin::strong(tr("Connection"), 17.5).color(palette().accent));
                 ui.horizontal(|ui| {
                     if state.testing_connection {
                         ui.spinner();
@@ -1208,7 +1156,14 @@ impl PublisherUi {
                     } else {
                         tr("Not measured")
                     };
-                    ui.colored_label(if failed { WARNING } else { MUTED }, status);
+                    ui.colored_label(
+                        if failed {
+                            palette().warning
+                        } else {
+                            palette().muted
+                        },
+                        status,
+                    );
                 });
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1236,6 +1191,55 @@ impl PublisherUi {
         }
     }
 
+    fn save_appearance(&mut self) {
+        if self.appearance.save().is_err() {
+            self.settings_error = "Could not save appearance preferences.".into();
+        } else if self.settings_error == "Could not save appearance preferences." {
+            self.settings_error.clear();
+        }
+    }
+
+    fn appearance_picker(&mut self, ui: &mut egui::Ui) {
+        egui::ComboBox::from_label(tr("Theme"))
+            .selected_text(tr(self.appearance.theme.label()))
+            .width(156.0)
+            .show_ui(ui, |ui| self.theme_options(ui));
+    }
+
+    fn theme_options(&mut self, ui: &mut egui::Ui) {
+        let previous = self.appearance.theme;
+        let system = ui.ctx().system_theme();
+        for theme in Theme::ALL {
+            ui.horizontal(|ui| {
+                let p = theme.resolve(system).palette();
+                let (swatch, _) =
+                    ui.allocate_exact_size(egui::vec2(26.0, 16.0), egui::Sense::hover());
+                ui.painter().rect_filled(swatch, 4.0, p.canvas);
+                ui.painter().rect_stroke(
+                    swatch,
+                    4.0,
+                    (1.0, palette().hover_stroke),
+                    egui::StrokeKind::Inside,
+                );
+                ui.painter().circle_filled(
+                    swatch.right_center() - egui::vec2(7.0, 0.0),
+                    3.0,
+                    p.accent,
+                );
+                if ui
+                    .selectable_value(&mut self.appearance.theme, theme, tr(theme.label()))
+                    .clicked()
+                {
+                    ui.close();
+                }
+            });
+        }
+        if self.appearance.theme != previous {
+            self.save_appearance();
+            ui.ctx().request_repaint();
+        }
+    }
+
     fn advanced_modal(&mut self, ctx: &egui::Context, state: &Snapshot) {
         if self.advanced_open && !self.browser_invitation_open {
             self.clear_picker();
@@ -1246,8 +1250,8 @@ impl PublisherUi {
                 .backdrop_color(egui::Color32::from_black_alpha(170))
                 .frame(
                     egui::Frame::new()
-                        .fill(PANEL)
-                        .stroke(egui::Stroke::new(1.0, BORDER))
+                        .fill(palette().panel)
+                        .stroke(egui::Stroke::new(1.0, palette().border))
                         .corner_radius(16)
                         .inner_margin(if compact { 16 } else { 24 })
                         .shadow(skin::menu_frame().shadow),
@@ -1256,7 +1260,7 @@ impl PublisherUi {
                     ui.set_width(width);
                     ui.spacing_mut().item_spacing.y = if compact { 6.0 } else { 12.0 };
                     ui.horizontal(|ui| {
-                        ui.label(skin::strong(tr("Advanced settings"), 22.0).color(TEXT));
+                        ui.label(skin::strong(tr("Advanced settings"), 22.0).color(palette().text));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if skin::icon_button(ui, Icon::Close, tr("Close")).clicked() {
                                 done = true;
@@ -1270,7 +1274,11 @@ impl PublisherUi {
                             (ctx.viewport_rect().height() - if compact { 170.0 } else { 230.0 })
                                 .clamp(180.0, 560.0),
                         )
-                        .show(ui, |ui| self.advanced(ui, state));
+                        .show(ui, |ui| {
+                            self.advanced(ui, state);
+                            settings_divider(ui);
+                            self.appearance_picker(ui);
+                        });
                     settings_divider(ui);
                     ui.horizontal(|ui| {
                         let dirty = state.sharing
@@ -1290,7 +1298,7 @@ impl PublisherUi {
                                         "Ready for your next stream."
                                     }))
                                     .size(12.0)
-                                    .color(MUTED),
+                                    .color(palette().muted),
                                 );
                             },
                         );
@@ -1324,7 +1332,7 @@ impl PublisherUi {
         ui.label(
             egui::RichText::new(tr("Capacity to this server · payload capped at 200 Mbps"))
                 .size(12.0)
-                .color(MUTED),
+                .color(palette().muted),
         );
         for (name, value) in [
             ("Download", state.capacity.download_bps),
@@ -1343,12 +1351,12 @@ impl PublisherUi {
             }
         }
         if !state.capacity.error.is_empty() {
-            ui.colored_label(WARNING, tr(&state.capacity.error));
+            ui.colored_label(palette().warning, tr(&state.capacity.error));
             if state.capacity.download_bps.is_some() || state.capacity.upload_bps.is_some() {
                 ui.small(tr("Incomplete test; showing last available measurements."));
             }
         }
-        ui.label(egui::RichText::new(tr("A slower watcher's limit can reduce the one shared stream for everyone watching it.")).size(12.0).color(MUTED));
+        ui.label(egui::RichText::new(tr("A slower watcher's limit can reduce the one shared stream for everyone watching it.")).size(12.0).color(palette().muted));
         if ui
             .add_enabled(
                 matches!(state.connection, "connected" | "reconnecting") && !state.busy,
@@ -1476,17 +1484,22 @@ impl PublisherUi {
 
     fn stream_metrics(ui: &mut egui::Ui, rect: egui::Rect, tile: &Tile) {
         let text = stream_metrics_text(&tile.codec, tile.received_bps.load(Ordering::Relaxed));
-        let galley = ui
-            .painter()
-            .layout_no_wrap(text, egui::FontId::proportional(12.0), TEXT);
+        let galley = ui.painter().layout_no_wrap(
+            text,
+            egui::FontId::proportional(12.0),
+            egui::Color32::WHITE,
+        );
         let background = egui::Rect::from_min_size(
-            rect.right_bottom() - galley.size() - egui::vec2(18.0, 16.0),
+            rect.right_bottom() - galley.size() - egui::vec2(18.0, 58.0),
             galley.size() + egui::vec2(12.0, 8.0),
         );
         ui.painter()
             .rect_filled(background, 4.0, egui::Color32::from_black_alpha(195));
-        ui.painter()
-            .galley(background.min + egui::vec2(6.0, 4.0), galley, TEXT);
+        ui.painter().galley(
+            background.min + egui::vec2(6.0, 4.0),
+            galley,
+            egui::Color32::WHITE,
+        );
     }
 
     fn watch_menu(&mut self, ui: &mut egui::Ui, tile: &Tile) {
@@ -1496,7 +1509,7 @@ impl PublisherUi {
         ui.add_space(3.0);
         ui.horizontal(|ui| {
             ui.add_space(10.0);
-            ui.label(skin::strong(&tile.name, 12.0).color(MUTED));
+            ui.label(skin::strong(&tile.name, 12.0).color(palette().muted));
         });
         ui.add_space(5.0);
         if !tile.watching {
@@ -1527,7 +1540,7 @@ impl PublisherUi {
         ui.horizontal(|ui| {
             ui.add_space(10.0);
             let (rect, _) = ui.allocate_exact_size(egui::vec2(17.0, 24.0), egui::Sense::hover());
-            skin::icon(ui.painter(), rect, Icon::Volume, TEXT);
+            skin::icon(ui.painter(), rect, Icon::Volume, palette().text);
             ui.spacing_mut().slider_width = ui.available_width() - 10.0;
             // Keep egui's slider focus, keyboard, drag and range semantics.
             if skin::mint_slider(ui, &mut volume, 0..=100)
@@ -1560,6 +1573,7 @@ impl PublisherUi {
             } else {
                 Some(tile.id.clone())
             };
+            self.spotlight = None;
             if self.fullscreen.is_some() {
                 self.set_fullscreen(ui.ctx(), None);
             }
@@ -1636,6 +1650,20 @@ impl PublisherUi {
         if skin::icon_button(ui, if muted { Icon::Muted } else { Icon::Volume }, &label).clicked() {
             self.toggle_volume(tile);
         }
+    }
+
+    fn inline_volume(ui: &mut egui::Ui, tile: &Tile) {
+        let mut volume = tile.volume.load(Ordering::Relaxed);
+        let label = format!("{} · {}", tr("Volume"), tile.name);
+        ui.scope(|ui| {
+            ui.spacing_mut().slider_width = 80.0;
+            let slider = skin::mint_slider(ui, &mut volume, 0..=100)
+                .accessible_name(&label)
+                .on_hover_text(format!("{label} · {volume}%"));
+            if slider.changed() {
+                tile.volume.store(volume, Ordering::Relaxed);
+            }
+        });
     }
 
     fn stream_options(&mut self, ui: &mut egui::Ui, tile: &Tile) -> bool {
@@ -1717,7 +1745,7 @@ impl PublisherUi {
                         .show(&ctx, |ui| {
                             skin::dock_frame().show(ui, |ui| {
                                 ui.horizontal(|ui| {
-                                    ui.label(skin::strong(&tile.name, 13.5).color(TEXT));
+                                    ui.label(skin::strong(&tile.name, 13.5).color(palette().text));
                                     ui.add_space(6.0);
                                     self.volume_button(ui, tile);
                                     let mut volume = tile.volume.load(Ordering::Relaxed);
@@ -1744,11 +1772,14 @@ impl PublisherUi {
                                         .add(
                                             egui::Button::new(
                                                 skin::strong(tr("Stop watching"), 13.0)
-                                                    .color(skin::DANGER_INK),
+                                                    .color(palette().error),
                                             )
-                                            .fill(ERROR.gamma_multiply(0.14))
+                                            .fill(palette().danger.gamma_multiply(0.14))
                                             .stroke(
-                                                egui::Stroke::new(1.0, ERROR.gamma_multiply(0.45)),
+                                                egui::Stroke::new(
+                                                    1.0,
+                                                    palette().danger.gamma_multiply(0.45),
+                                                ),
                                             ),
                                         )
                                         .clicked()
@@ -1765,7 +1796,7 @@ impl PublisherUi {
                         egui::Align2::CENTER_TOP,
                         tr(&tile.status),
                         egui::FontId::proportional(16.0),
-                        WARNING,
+                        palette().warning,
                     );
                 }
             });
@@ -1775,9 +1806,19 @@ impl PublisherUi {
     }
 
     fn stream_tile(&mut self, ui: &mut egui::Ui, tile: &Tile, width: f32) {
+        self.stream_tile_with_layout(ui, tile, width, false);
+    }
+
+    fn stream_tile_with_layout(
+        &mut self,
+        ui: &mut egui::Ui,
+        tile: &Tile,
+        width: f32,
+        compact: bool,
+    ) {
         ui.push_id(&tile.id, |ui| {
             let (rect, response) =
-                ui.allocate_exact_size(egui::vec2(width, width * 9.0 / 16.0), egui::Sense::click());
+                ui.allocate_exact_size(egui::vec2(width, width * 9.0 / 16.0), egui::Sense::CLICK);
             #[cfg(feature = "performance-experiments")]
             let present = {
                 use std::sync::OnceLock;
@@ -1822,7 +1863,7 @@ impl PublisherUi {
                         tr("Loading preview…")
                     },
                     egui::FontId::proportional(13.5),
-                    MUTED,
+                    egui::Color32::LIGHT_GRAY,
                 );
             }
             ui.painter().rect_stroke(
@@ -1830,10 +1871,10 @@ impl PublisherUi {
                 12.0,
                 egui::Stroke::new(
                     1.0,
-                    if tile.watching && hovered {
-                        ACCENT.gamma_multiply(0.55)
+                    if tile.watching && hovered && !compact {
+                        palette().accent.gamma_multiply(0.55)
                     } else {
-                        BORDER
+                        palette().border
                     },
                 ),
                 egui::StrokeKind::Inside,
@@ -1845,54 +1886,89 @@ impl PublisherUi {
                 ui.painter()
                     .rect_filled(rect, 12.0, egui::Color32::from_black_alpha(68));
             }
-            let overlay = skin::STAGE;
-            let name_width = ui
-                .painter()
-                .layout_no_wrap(tile.name.clone(), skin::semibold(13.5), TEXT)
-                .size()
-                .x
-                .min(160.0);
-            let identity = egui::Rect::from_min_size(
-                rect.min + egui::vec2(12.0, 12.0),
-                egui::vec2((width - 24.0).min(name_width + 140.0), 32.0),
-            );
-            let mut header = ui.new_child(
-                egui::UiBuilder::new()
-                    .id_salt("identity")
-                    .max_rect(identity),
-            );
-            egui::Frame::new()
-                .fill(overlay)
-                .stroke(egui::Stroke::new(1.0, BORDER))
-                .corner_radius(10)
-                .inner_margin(egui::Margin::symmetric(8, 5))
-                .show(&mut header, |ui| {
-                    ui.horizontal(|ui| {
-                        avatar(ui, &tile.name, 24.0);
-                        ui.add_sized(
-                            [name_width.max(24.0), 24.0],
-                            egui::Label::new(skin::strong(&tile.name, 13.5).color(TEXT))
+            let overlay = palette().canvas;
+            if compact {
+                let title_bounds = egui::Rect::from_min_size(
+                    rect.min + egui::vec2(6.0, 6.0),
+                    egui::vec2(width - 12.0, 25.0),
+                );
+                let title = ui.put(
+                    title_bounds,
+                    egui::Button::new(skin::strong(&tile.name, 12.5))
+                        .truncate()
+                        .fill(overlay),
+                );
+                if title
+                    .accessible_name(format!("{} · {}", tr("Spotlight stream"), tile.name))
+                    .on_hover_text(&tile.name)
+                    .clicked()
+                    || response.clicked()
+                {
+                    self.spotlight = Some(tile.id.clone());
+                }
+            } else {
+                let name_width = ui
+                    .painter()
+                    .layout_no_wrap(tile.name.clone(), skin::semibold(13.5), palette().text)
+                    .size()
+                    .x
+                    .min(160.0);
+                let identity = egui::Rect::from_min_size(
+                    rect.min + egui::vec2(12.0, 12.0),
+                    egui::vec2((width - 24.0).min(name_width + 140.0), 32.0),
+                );
+                let mut header = ui.new_child(
+                    egui::UiBuilder::new()
+                        .id_salt("identity")
+                        .max_rect(identity),
+                );
+                egui::Frame::new()
+                    .fill(overlay)
+                    .stroke(egui::Stroke::new(1.0, palette().border))
+                    .corner_radius(10)
+                    .inner_margin(egui::Margin::symmetric(8, 5))
+                    .show(&mut header, |ui| {
+                        ui.horizontal(|ui| {
+                            avatar(ui, &tile.name, 24.0);
+                            ui.add_sized(
+                                [name_width.max(24.0), 24.0],
+                                egui::Label::new(
+                                    skin::strong(&tile.name, 13.5).color(palette().text),
+                                )
                                 .truncate()
                                 .halign(egui::Align::Min),
-                        )
-                        .on_hover_text(&tile.name);
-                        badge(
-                            ui,
-                            if !tile.watching {
-                                tr("Preview")
-                            } else if tile.frames.load(Ordering::Relaxed) > 0 {
-                                tr("Watching")
-                            } else {
-                                tr("Connecting")
-                            },
-                            if tile.watching { ACCENT } else { MUTED },
-                        );
+                            )
+                            .on_hover_text(&tile.name);
+                            badge(
+                                ui,
+                                if !tile.watching {
+                                    tr("Preview")
+                                } else if tile.frames.load(Ordering::Relaxed) > 0 {
+                                    tr("Watching")
+                                } else {
+                                    tr("Connecting")
+                                },
+                                if tile.watching {
+                                    palette().accent
+                                } else {
+                                    palette().muted
+                                },
+                            );
+                        });
                     });
-                });
+            }
             if !tile.watching {
-                let target = egui::Rect::from_center_size(rect.center(), egui::vec2(132.0, 40.0));
+                let watch_width = if compact {
+                    width.min(120.0) - 12.0
+                } else {
+                    132.0
+                };
+                let target = egui::Rect::from_center_size(
+                    rect.center() + egui::vec2(0.0, if compact { 10.0 } else { 0.0 }),
+                    egui::vec2(watch_width, 38.0),
+                );
                 if ui
-                    .put(target, primary(tr("Watch"), 132.0))
+                    .put(target, primary(tr("Watch"), watch_width))
                     .accessible_name(format!("{} · {}", tr("Watch"), tile.name))
                     .clicked()
                 {
@@ -1902,7 +1978,7 @@ impl PublisherUi {
                     });
                 }
             }
-            if tile.watching && hovered {
+            if tile.watching && hovered && !compact {
                 Self::stream_metrics(ui, rect, tile);
             }
             if tile.watching {
@@ -1917,7 +1993,7 @@ impl PublisherUi {
                 );
                 egui::Frame::new()
                     .fill(overlay)
-                    .stroke(egui::Stroke::new(1.0, BORDER))
+                    .stroke(egui::Stroke::new(1.0, palette().border))
                     .corner_radius(10)
                     .inner_margin(egui::Margin::symmetric(4, 2))
                     .show(&mut hud, |ui| {
@@ -1942,17 +2018,21 @@ impl PublisherUi {
                             if stop.clicked() {
                                 self.stop_watching(ui.ctx(), tile);
                             }
-                            if skin::icon_button(
-                                ui,
-                                Icon::Fullscreen,
-                                &format!("{} · {}", tr("Full screen"), tile.name),
-                            )
-                            .clicked()
+                            if !compact
+                                && skin::icon_button(
+                                    ui,
+                                    Icon::Fullscreen,
+                                    &format!("{} · {}", tr("Full screen"), tile.name),
+                                )
+                                .clicked()
                             {
                                 self.set_fullscreen(ui.ctx(), Some(tile.id.clone()));
                             }
                             self.volume_button(ui, tile);
                             self.stream_options(ui, tile);
+                            if !compact && width >= 360.0 {
+                                Self::inline_volume(ui, tile);
+                            }
                         });
                     });
             }
@@ -1960,7 +2040,7 @@ impl PublisherUi {
                 .frame(skin::menu_frame())
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                 .show(|ui| self.watch_menu(ui, tile));
-            if !tile.status.is_empty() {
+            if !compact && !tile.status.is_empty() {
                 let notice = egui::Rect::from_min_max(
                     rect.min + egui::vec2(12.0, 54.0),
                     egui::pos2(rect.right() - 12.0, rect.top() + 98.0),
@@ -1974,7 +2054,7 @@ impl PublisherUi {
                 notice_ui.label(
                     egui::RichText::new(tr(&tile.status))
                         .size(12.0)
-                        .color(WARNING),
+                        .color(palette().warning),
                 );
             }
             ui.advance_cursor_after_rect(rect);
@@ -2003,22 +2083,22 @@ impl PublisherUi {
         let response = ui.add_sized(
             [32.0, 32.0],
             egui::Button::new(egui::RichText::new("↻").color(if attention {
-                ACCENT
+                palette().accent
             } else {
-                TEXT
+                palette().text
             }))
             .corner_radius(8)
             .fill(if attention {
-                ACCENT.gamma_multiply(0.15)
+                palette().accent.gamma_multiply(0.15)
             } else {
-                CARD
+                palette().card
             })
             .stroke(egui::Stroke::new(
                 1.0,
                 if attention {
-                    ACCENT.gamma_multiply(0.60)
+                    palette().accent.gamma_multiply(0.60)
                 } else {
-                    BORDER
+                    palette().border
                 },
             )),
         );
@@ -2068,8 +2148,8 @@ impl PublisherUi {
             .backdrop_color(egui::Color32::from_black_alpha(170))
             .frame(
                 egui::Frame::new()
-                    .fill(PANEL)
-                    .stroke(egui::Stroke::new(1.0, BORDER))
+                    .fill(palette().panel)
+                    .stroke(egui::Stroke::new(1.0, palette().border))
                     .corner_radius(16)
                     .inner_margin(24)
                     .shadow(skin::menu_frame().shadow),
@@ -2078,7 +2158,7 @@ impl PublisherUi {
                 ui.set_width(width);
                 ui.spacing_mut().item_spacing.y = 12.0;
                 ui.horizontal(|ui| {
-                    ui.label(skin::strong(tr("App updates"), 22.0).color(TEXT));
+                    ui.label(skin::strong(tr("App updates"), 22.0).color(palette().text));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         dismiss |= skin::icon_button(ui, Icon::Close, tr("Close")).clicked();
                     });
@@ -2094,17 +2174,17 @@ impl PublisherUi {
                     Phase::Disabled => unreachable!(),
                 };
                 ui.horizontal(|ui| {
-                    badge(ui, tr(label), ACCENT);
+                    badge(ui, tr(label), palette().accent);
                     if !status.version.is_empty() {
                         ui.label(
                             skin::strong(format!("{} {}", tr("New version"), status.version), 13.0)
-                                .color(MUTED),
+                                .color(palette().muted),
                         );
                     }
                 });
                 egui::Frame::new()
-                    .fill(CARD)
-                    .stroke(egui::Stroke::new(1.0, BORDER))
+                    .fill(palette().card)
+                    .stroke(egui::Stroke::new(1.0, palette().border))
                     .corner_radius(10)
                     .inner_margin(egui::Margin::same(16))
                     .show(ui, |ui| {
@@ -2117,7 +2197,7 @@ impl PublisherUi {
                                     ui.add(
                                         egui::Label::new(
                                             egui::RichText::new(tr("No release notes provided."))
-                                                .color(MUTED),
+                                                .color(palette().muted),
                                         )
                                         .wrap(),
                                     );
@@ -2138,7 +2218,7 @@ impl PublisherUi {
                 if status.phase == Phase::Ready {
                     ui.label(
                         egui::RichText::new(tr("Restarting ends sharing and watching."))
-                            .color(WARNING),
+                            .color(palette().warning),
                     );
                 }
                 ui.separator();
@@ -2197,8 +2277,8 @@ impl PublisherUi {
             .backdrop_color(egui::Color32::from_black_alpha(175))
             .frame(
                 egui::Frame::new()
-                    .fill(PANEL)
-                    .stroke(egui::Stroke::new(1.0, BORDER))
+                    .fill(palette().panel)
+                    .stroke(egui::Stroke::new(1.0, palette().border))
                     .corner_radius(16)
                     .inner_margin(24)
                     .shadow(skin::menu_frame().shadow),
@@ -2206,13 +2286,13 @@ impl PublisherUi {
             .show(ctx, |ui| {
                 ui.set_max_width(380.0);
                 ui.spacing_mut().item_spacing.y = 10.0;
-                ui.label(skin::strong(tr("Restart to update"), 20.0).color(TEXT));
+                ui.label(skin::strong(tr("Restart to update"), 20.0).color(palette().text));
                 ui.label(tr("Restarting ends sharing and watching."));
                 ui.label(
                     egui::RichText::new(tr(
                         "After restart, open a fresh invitation. Your guest nickname is remembered.",
                     ))
-                    .color(MUTED),
+                    .color(palette().muted),
                 );
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
@@ -2340,6 +2420,15 @@ impl PublisherUi {
     }
 
     fn render(&mut self, root: &mut egui::Ui, frame: &mut eframe::Frame) {
+        let ctx = root.ctx();
+        let effective = self.appearance.theme.resolve(ctx.system_theme());
+        let applied = ctx.data(|data| data.get_temp::<Theme>(egui::Id::unique("studio-palette")));
+        if applied != Some(effective) {
+            apply_palette(ctx, effective);
+            root.set_style(ctx.style_of(egui::Theme::Dark));
+        } else {
+            theme::activate(effective);
+        }
         self.render_contents(root, frame);
         skin::paint_keyboard_focus(root.ctx());
     }
@@ -2399,6 +2488,7 @@ impl PublisherUi {
                     self.roster_open = false;
                 } else {
                     self.focused = None;
+                    self.spotlight = None;
                 }
             }
         }
@@ -2417,11 +2507,13 @@ impl PublisherUi {
         // Fullscreen returns early below; retired stream/source textures must
         // still be released when another participant stops or leaves.
         self.textures.retain(|id, _| {
-            (state.sharing && id == "__self_preview") || state.tiles.iter().any(|t| &t.id == id)
+            (state.sharing && id == SELF_PREVIEW) || state.tiles.iter().any(|t| &t.id == id)
         });
         if !state.sharing {
             self.self_preview_revision = None;
+            self.self_preview_hidden = false;
         }
+        self.reconcile_spotlight(&state);
         let hidden = ctx.input(|i| {
             i.viewport().visible() == Some(false) || i.viewport().minimized == Some(true)
         });
@@ -2453,7 +2545,9 @@ impl PublisherUi {
             } else if let Some(tile) = state
                 .tiles
                 .iter()
-                .find(|t| t.watching && self.focused.as_ref() == Some(&t.id))
+                .find(|t| {
+                    t.watching && self.focused.as_ref().or(self.spotlight.as_ref()) == Some(&t.id)
+                })
                 .or_else(|| state.tiles.iter().find(|t| t.watching))
             {
                 self.set_fullscreen(&ctx, Some(tile.id.clone()));
@@ -2508,8 +2602,8 @@ impl PublisherUi {
             .exact_size(52.0)
             .frame(
                 egui::Frame::new()
-                    .fill(PANEL)
-                    .stroke(egui::Stroke::new(1.0, skin::DIVIDER))
+                    .fill(palette().panel)
+                    .stroke(egui::Stroke::new(1.0, palette().divider))
                     .inner_margin(egui::Margin::symmetric(16, 8)),
             )
             .show(root, |ui| self.room_header(ui, &state));
@@ -2521,16 +2615,16 @@ impl PublisherUi {
             egui::Panel::top("action-feedback")
                 .frame(
                     egui::Frame::new()
-                        .fill(CARD)
-                        .stroke(egui::Stroke::new(1.0, skin::DIVIDER))
+                        .fill(palette().card)
+                        .stroke(egui::Stroke::new(1.0, palette().divider))
                         .inner_margin(egui::Margin::symmetric(16, 8)),
                 )
                 .show(root, |ui| {
                     if !state.error.is_empty() {
-                        ui.colored_label(skin::DANGER_INK, tr(&state.error));
+                        ui.colored_label(palette().error, tr(&state.error));
                     }
                     if !self.settings_error.is_empty() {
-                        ui.colored_label(skin::DANGER_INK, tr(&self.settings_error));
+                        ui.colored_label(palette().error, tr(&self.settings_error));
                     }
                     if state.busy {
                         ui.horizontal(|ui| {
@@ -2548,17 +2642,17 @@ impl PublisherUi {
                 });
         }
         let connected = matches!(state.connection, "connected" | "reconnecting");
-        if connected && self.roster_open {
-            self.roster_drawer(root, &state);
-        }
         if connected {
             self.studio_dock(root, &state);
+            if self.roster_open {
+                self.roster_drawer(root, &state);
+            }
         }
         let stage_bounds = root.available_rect_before_wrap();
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
-                    .fill(CANVAS)
+                    .fill(palette().canvas)
                     .inner_margin(egui::Margin::symmetric(18, 14)),
             )
             .show(root, |ui| {
@@ -2569,22 +2663,27 @@ impl PublisherUi {
                     self.join_landing(ui, &state);
                     return;
                 }
+                if state.tiles.is_empty() && state.sharing {
+                    self.only_stream_stage(ui, &state);
+                    return;
+                }
                 if state.tiles.is_empty() {
                     ui.vertical_centered(|ui| {
                         ui.add_space((ui.available_height() * 0.28).max(24.0));
                         let (emblem, _) =
                             ui.allocate_exact_size(egui::vec2(52.0, 52.0), egui::Sense::hover());
-                        ui.painter().circle_filled(emblem.center(), 26.0, PANEL);
+                        ui.painter()
+                            .circle_filled(emblem.center(), 26.0, palette().panel);
                         ui.painter().circle_stroke(
                             emblem.center(),
                             26.0,
-                            egui::Stroke::new(1.0, BORDER),
+                            egui::Stroke::new(1.0, palette().border),
                         );
                         skin::icon(
                             ui.painter(),
                             egui::Rect::from_center_size(emblem.center(), egui::vec2(22.0, 22.0)),
                             Icon::Monitor,
-                            ACCENT,
+                            palette().accent,
                         );
                         ui.add_space(14.0);
                         ui.label(
@@ -2596,7 +2695,7 @@ impl PublisherUi {
                                 },
                                 19.0,
                             )
-                            .color(TEXT),
+                            .color(palette().text),
                         );
                     });
                     return;
@@ -2606,12 +2705,14 @@ impl PublisherUi {
                         skin::strong(
                             if self.focused.is_some() {
                                 tr("Focused stream")
+                            } else if self.spotlight.is_some() {
+                                tr("Spotlight")
                             } else {
                                 tr("Streams")
                             },
                             15.0,
                         )
-                        .color(TEXT),
+                        .color(palette().text),
                     );
                     ui.add_space(6.0);
                     ui.label(
@@ -2623,81 +2724,23 @@ impl PublisherUi {
                             tr("watching")
                         ))
                         .size(12.5)
-                        .color(MUTED),
+                        .color(palette().muted),
                     );
+                    if state.sharing
+                        && self.self_preview_hidden
+                        && state.tiles.iter().any(|tile| tile.watching)
+                    {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if skin::outline_button(ui, tr("Show my preview"), Icon::Monitor)
+                                .clicked()
+                            {
+                                self.self_preview_hidden = false;
+                            }
+                        });
+                    }
                 });
                 ui.add_space(10.0);
-                let tiles: Vec<_> = state
-                    .tiles
-                    .iter()
-                    .filter(|t| self.focused.as_ref().is_none_or(|id| id == &t.id))
-                    .collect();
-                let columns = if tiles.len() > 1 && ui.available_width() >= 640.0 {
-                    2
-                } else {
-                    1
-                };
-                let gap = 14.0;
-                let rows = tiles.len().div_ceil(columns).min(2);
-                let scroll_space = if columns == 1 && tiles.len() > 1 {
-                    ui.spacing().scroll.bar_width
-                        + ui.spacing().scroll.bar_inner_margin
-                        + ui.spacing().scroll.bar_outer_margin
-                } else {
-                    0.0
-                };
-                if scroll_space > 0.0 {
-                    ui.label(
-                        egui::RichText::new(tr("Scroll to see all streams"))
-                            .size(12.0)
-                            .color(MUTED),
-                    );
-                }
-                let max_width = (ui.available_width() - scroll_space - gap * (columns - 1) as f32)
-                    / columns as f32;
-                let row_height = (ui.available_height() - gap * (rows - 1) as f32) / rows as f32;
-                let width = if columns == 1 && tiles.len() > 1 {
-                    max_width
-                } else {
-                    max_width.min(row_height.max(90.0) * 16.0 / 9.0)
-                };
-                let inset =
-                    ((ui.available_width() - width * columns as f32 - gap * (columns - 1) as f32)
-                        / 2.0)
-                        .max(0.0);
-                let scroll = egui::ScrollArea::vertical()
-                    .id_salt("streams-scroll")
-                    .scroll_bar_visibility(if columns == 1 && tiles.len() > 1 {
-                        egui::scroll_area::ScrollBarVisibility::AlwaysVisible
-                    } else {
-                        egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
-                    })
-                    .auto_shrink([false, false]);
-                #[cfg(feature = "performance-experiments")]
-                let scroll = if let Some(offset) = ui
-                    .ctx()
-                    .data(|data| data.get_temp::<f32>(egui::Id::unique("deep-scroll-offset")))
-                {
-                    scroll.vertical_scroll_offset(offset)
-                } else {
-                    scroll
-                };
-                scroll.show(ui, |ui| {
-                    ui.horizontal_top(|ui| {
-                        ui.add_space(inset);
-                        egui::Grid::new("stream-grid")
-                            .num_columns(columns)
-                            .spacing(egui::vec2(gap, gap))
-                            .show(ui, |ui| {
-                                for (index, tile) in tiles.iter().enumerate() {
-                                    self.stream_tile(ui, tile, width);
-                                    if (index + 1) % columns == 0 {
-                                        ui.end_row();
-                                    }
-                                }
-                            });
-                    });
-                });
+                self.room_stage(ui, &state);
             });
         if connected
             && self.setup_open
@@ -2726,8 +2769,8 @@ impl PublisherUi {
             .resizable(true)
             .frame(
                 egui::Frame::new()
-                    .fill(PANEL)
-                    .stroke(egui::Stroke::new(1.0, skin::DIVIDER))
+                    .fill(palette().panel)
+                    .stroke(egui::Stroke::new(1.0, palette().divider))
                     .inner_margin(egui::Margin::symmetric(16, 12)),
             )
             .show(root, |ui| {
@@ -2737,7 +2780,7 @@ impl PublisherUi {
                             format!("{} · {}", tr("In room"), state.participants.len() + 1),
                             13.0,
                         )
-                        .color(TEXT),
+                        .color(palette().text),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if skin::icon_button(ui, Icon::Close, tr("Close")).clicked() {
@@ -2812,7 +2855,8 @@ impl PublisherUi {
                                     if ui
                                         .add(
                                             egui::Label::new(
-                                                skin::strong(&self.name, 13.5).color(TEXT),
+                                                skin::strong(&self.name, 13.5)
+                                                    .color(palette().text),
                                             )
                                             .truncate()
                                             .sense(egui::Sense::click()),
@@ -2832,9 +2876,9 @@ impl PublisherUi {
                                         .size(11.5)
                                         .color(
                                             if state.connection == "connected" {
-                                                SAGE
+                                                palette().success
                                             } else {
-                                                WARNING
+                                                palette().warning
                                             },
                                         ),
                                     );
@@ -2913,6 +2957,11 @@ impl PublisherUi {
                 self.quality.fps
             )
         };
+        let source_width = if root.available_width() < 800.0 {
+            166.0
+        } else {
+            228.0
+        };
         let dock_margin = egui::Margin {
             left: 16,
             right: 16,
@@ -2921,7 +2970,11 @@ impl PublisherUi {
         };
         egui::Panel::bottom("studio-dock")
             .exact_size(70.0)
-            .frame(egui::Frame::new().fill(CANVAS).inner_margin(dock_margin))
+            .frame(
+                egui::Frame::new()
+                    .fill(palette().canvas)
+                    .inner_margin(dock_margin),
+            )
             .show(root, |ui| {
                 egui::Area::new(egui::Id::unique("studio-controls"))
                     .accessibility_parent(ui.unique_id())
@@ -2937,19 +2990,19 @@ impl PublisherUi {
                                 // 1. Broadcast setup popover trigger pill
                                 let setup_btn = ui.add(
                                     egui::Button::new("")
-                                        .min_size(egui::vec2(228.0, 36.0))
+                                        .min_size(egui::vec2(source_width, 36.0))
                                         .corner_radius(10)
                                         .fill(if self.setup_open {
-                                            ACCENT.gamma_multiply(0.14)
+                                            palette().accent.gamma_multiply(0.14)
                                         } else {
-                                            CARD
+                                            palette().card
                                         })
                                         .stroke(egui::Stroke::new(
                                             1.0,
                                             if self.setup_open || dirty {
-                                                ACCENT.gamma_multiply(0.65)
+                                                palette().accent.gamma_multiply(0.65)
                                             } else {
-                                                BORDER
+                                                palette().border
                                             },
                                         )),
                                 );
@@ -2961,7 +3014,7 @@ impl PublisherUi {
                                     ui.painter().circle_filled(
                                         sr.left_center() + egui::vec2(14.0, 0.0),
                                         4.0,
-                                        ERROR,
+                                        palette().danger,
                                     );
                                 } else {
                                     skin::icon(
@@ -2975,13 +3028,17 @@ impl PublisherUi {
                                         } else {
                                             Icon::Monitor
                                         },
-                                        if self.setup_open { ACCENT } else { TEXT },
+                                        if self.setup_open {
+                                            palette().accent
+                                        } else {
+                                            palette().text
+                                        },
                                     );
                                 }
                                 let mut title_job = egui::text::LayoutJob::simple(
                                     source_label.to_owned(),
                                     skin::semibold(12.5),
-                                    TEXT,
+                                    palette().text,
                                     (sr.width() - 58.0).max(40.0),
                                 );
                                 title_job.wrap.max_rows = 1;
@@ -2991,12 +3048,16 @@ impl PublisherUi {
                                 ui.painter().galley(
                                     egui::pos2(sr.left() + 30.0, sr.top() + 4.0),
                                     title_galley,
-                                    TEXT,
+                                    palette().text,
                                 );
                                 let mut sub_job = egui::text::LayoutJob::simple(
                                     setup_summary,
                                     egui::FontId::proportional(12.0),
-                                    if dirty { WARNING } else { MUTED },
+                                    if dirty {
+                                        palette().warning
+                                    } else {
+                                        palette().muted
+                                    },
                                     (sr.width() - 58.0).max(40.0),
                                 );
                                 sub_job.wrap.max_rows = 1;
@@ -3006,7 +3067,11 @@ impl PublisherUi {
                                 ui.painter().galley(
                                     egui::pos2(sr.left() + 30.0, sr.top() + 19.5),
                                     sub_galley,
-                                    if dirty { WARNING } else { MUTED },
+                                    if dirty {
+                                        palette().warning
+                                    } else {
+                                        palette().muted
+                                    },
                                 );
                                 skin::icon(
                                     ui.painter(),
@@ -3015,7 +3080,11 @@ impl PublisherUi {
                                         egui::vec2(13.0, 13.0),
                                     ),
                                     Icon::ChevronUp,
-                                    if self.setup_open { ACCENT } else { MUTED },
+                                    if self.setup_open {
+                                        palette().accent
+                                    } else {
+                                        palette().muted
+                                    },
                                 );
                                 setup_btn.widget_info(|| {
                                     egui::WidgetInfo::selected(
@@ -3039,12 +3108,15 @@ impl PublisherUi {
                                             [button_width(ui, tr("Stop sharing")).max(96.0), 36.0],
                                             egui::Button::new(
                                                 skin::strong(tr("Stop sharing"), 13.5)
-                                                    .color(skin::DANGER_INK),
+                                                    .color(palette().error),
                                             )
                                             .corner_radius(10)
-                                            .fill(ERROR.gamma_multiply(0.14))
+                                            .fill(palette().danger.gamma_multiply(0.14))
                                             .stroke(
-                                                egui::Stroke::new(1.0, ERROR.gamma_multiply(0.45)),
+                                                egui::Stroke::new(
+                                                    1.0,
+                                                    palette().danger.gamma_multiply(0.45),
+                                                ),
                                             ),
                                         )
                                         .on_hover_text(tr("Stop sharing"))
@@ -3084,7 +3156,7 @@ impl PublisherUi {
                                 );
                                 ui.painter().line_segment(
                                     [sep.center_top(), sep.center_bottom()],
-                                    (1.0, BORDER),
+                                    (1.0, palette().border),
                                 );
 
                                 // 3. Layout switcher (Grid / Focus)
@@ -3093,12 +3165,29 @@ impl PublisherUi {
                                     Icon::Grid,
                                     tr("Grid"),
                                     tr("Back to grid"),
-                                    self.focused.is_none(),
+                                    self.focused.is_none() && self.spotlight.is_none(),
                                 )
                                 .clicked()
                                 {
                                     self.focused = None;
+                                    self.spotlight = None;
                                 }
+                                ui.add_enabled_ui(state.tiles.len() > 1, |ui| {
+                                    if skin::layout_button(
+                                        ui,
+                                        Icon::Spotlight,
+                                        tr("Spotlight"),
+                                        tr("Spotlight"),
+                                        self.spotlight.is_some(),
+                                    )
+                                    .clicked()
+                                    {
+                                        self.spotlight = self.focused.take().or_else(|| {
+                                            Self::default_spotlight(state)
+                                                .map(|tile| tile.id.clone())
+                                        });
+                                    }
+                                });
                                 let watched = state.tiles.iter().find(|tile| tile.watching);
                                 ui.add_enabled_ui(watched.is_some(), |ui| {
                                     if skin::layout_button(
@@ -3110,7 +3199,16 @@ impl PublisherUi {
                                     )
                                     .clicked()
                                     {
-                                        self.focused = watched.map(|tile| tile.id.clone());
+                                        self.focused = state
+                                            .tiles
+                                            .iter()
+                                            .find(|tile| {
+                                                tile.watching
+                                                    && self.spotlight.as_ref() == Some(&tile.id)
+                                            })
+                                            .or(watched)
+                                            .map(|tile| tile.id.clone());
+                                        self.spotlight = None;
                                     }
                                 });
 
@@ -3121,12 +3219,15 @@ impl PublisherUi {
                                         .min_size(egui::vec2(54.0, 32.0))
                                         .corner_radius(8)
                                         .fill(if self.roster_open {
-                                            ACCENT.gamma_multiply(0.14)
+                                            palette().accent.gamma_multiply(0.14)
                                         } else {
                                             egui::Color32::TRANSPARENT
                                         })
                                         .stroke(if self.roster_open {
-                                            egui::Stroke::new(1.0, ACCENT.gamma_multiply(0.65))
+                                            egui::Stroke::new(
+                                                1.0,
+                                                palette().accent.gamma_multiply(0.65),
+                                            )
                                         } else {
                                             egui::Stroke::NONE
                                         }),
@@ -3137,11 +3238,11 @@ impl PublisherUi {
                                     ui.painter().rect_filled(
                                         people_resp.rect,
                                         8.0,
-                                        skin::SURFACE_3,
+                                        palette().control_hover,
                                     );
                                 }
                                 let people_color = if self.roster_open {
-                                    ACCENT
+                                    palette().accent
                                 } else {
                                     secondary_or_ink(people_resp.hovered())
                                 };
@@ -3198,21 +3299,21 @@ impl PublisherUi {
                                     av_rect.right_bottom() - egui::vec2(4.0, 4.0),
                                     4.0,
                                     if state.connection == "connected" {
-                                        SAGE
+                                        palette().success
                                     } else {
-                                        WARNING
+                                        palette().warning
                                     },
                                 );
                                 ui.painter().circle_stroke(
                                     av_rect.right_bottom() - egui::vec2(4.0, 4.0),
                                     4.0,
-                                    egui::Stroke::new(1.5, PANEL),
+                                    egui::Stroke::new(1.5, palette().panel),
                                 );
                                 if av_resp.has_focus() || av_resp.hovered() {
                                     ui.painter().circle_stroke(
                                         av_rect.center(),
                                         16.0,
-                                        egui::Stroke::new(1.5, ACCENT),
+                                        egui::Stroke::new(1.5, palette().accent),
                                     );
                                 }
                                 av_resp.widget_info(|| {
@@ -3256,14 +3357,15 @@ impl PublisherUi {
             .interactable(true)
             .show(ctx, |ui| {
                 skin::menu_frame()
-                    .fill(PANEL)
+                    .fill(palette().panel)
                     .corner_radius(14)
                     .inner_margin(egui::Margin::same(16))
                     .show(ui, |ui| {
                         ui.set_width(332.0);
                         ui.horizontal(|ui| {
                             ui.label(
-                                skin::strong(Self::sharing_panel_title(state), 15.0).color(TEXT),
+                                skin::strong(Self::sharing_panel_title(state), 15.0)
+                                    .color(palette().text),
                             );
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
@@ -3314,7 +3416,11 @@ impl PublisherUi {
 }
 
 fn secondary_or_ink(hovered: bool) -> egui::Color32 {
-    if hovered { TEXT } else { MUTED }
+    if hovered {
+        palette().text
+    } else {
+        palette().muted
+    }
 }
 
 /// A small fixed kernel softens only this new window's onboarding paint. No
@@ -3361,18 +3467,18 @@ fn button_width(ui: &egui::Ui, label: &str) -> f32 {
     let text = ui.painter().layout_no_wrap(
         label.to_owned(),
         egui::TextStyle::Button.resolve(ui.style()),
-        TEXT,
+        palette().text,
     );
     (text.size().x + ui.spacing().button_padding.x * 2.0).max(ui.spacing().interact_size.x)
 }
 
 fn primary(label: &str, width: f32) -> egui::Button<'_> {
-    let text = skin::strong(label, 14.0).color(skin::AMBER_INK);
+    let text = skin::strong(label, 14.0).color(palette().on_accent);
     let atoms = if label == tr("Watch") || label == tr("Start sharing") {
         egui::Atoms::new((
             egui::Atom::grow(),
             egui::Atom::paint(egui::vec2(16.0, 16.0), |ui, args| {
-                skin::icon(ui.painter(), args.rect, Icon::Play, skin::AMBER_INK)
+                skin::icon(ui.painter(), args.rect, Icon::Play, palette().on_accent)
             }),
             text,
             egui::Atom::grow(),
@@ -3381,7 +3487,7 @@ fn primary(label: &str, width: f32) -> egui::Button<'_> {
         egui::Atoms::new((egui::Atom::grow(), text, egui::Atom::grow()))
     };
     egui::Button::new(atoms)
-        .fill(ACCENT)
+        .fill(palette().accent)
         .corner_radius(8)
         .min_size(egui::vec2(width, 38.0))
 }
@@ -3428,7 +3534,7 @@ fn quality_controls(
         let label = ui.label(
             egui::RichText::new(tr("Resolution"))
                 .size(12.0)
-                .color(MUTED),
+                .color(palette().muted),
         );
         egui::ComboBox::from_id_salt("resolution")
             .width(ui.available_width())
@@ -3455,7 +3561,7 @@ fn quality_controls(
         let label = ui.label(
             egui::RichText::new(tr("Quality preset"))
                 .size(12.0)
-                .color(MUTED),
+                .color(palette().muted),
         );
         egui::ComboBox::from_id_salt("quality-preset")
             .width(ui.available_width())
@@ -3479,7 +3585,7 @@ fn quality_controls(
     }
     let label = ui
         .horizontal(|ui| {
-            let label = ui.label(egui::RichText::new("FPS").size(12.0).color(MUTED));
+            let label = ui.label(egui::RichText::new("FPS").size(12.0).color(palette().muted));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let mut value = format!("{} FPS", settings.fps);
                 if compact
@@ -3517,7 +3623,7 @@ fn quality_controls(
             }
             _ => {
                 ui.colored_label(
-                    WARNING,
+                    palette().warning,
                     tr("This source / encoder cannot use that resolution and frame rate."),
                 );
             }
@@ -3624,8 +3730,13 @@ fn brand_mark(ui: &mut egui::Ui) {
                 .data_mut(|data| data.insert_temp(id, texture.clone()));
             texture
         });
-    ui.add(egui::Image::new((texture.id(), egui::vec2(28.0, 28.0))))
-        .on_hover_text("PodeTelar");
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
+    if !palette().dark {
+        ui.painter()
+            .rect_filled(rect, 6.0, egui::Color32::from_rgb(17, 23, 34));
+    }
+    egui::Image::new((texture.id(), rect.size())).paint_at(ui, rect);
+    response.on_hover_text("PodeTelar");
 }
 
 fn fit_picture(rect: egui::Rect, aspect: f32) -> egui::Rect {
@@ -3675,7 +3786,7 @@ fn paint_avatar_circle(painter: &egui::Painter, rect: egui::Rect, name: &str) {
             .to_uppercase()
             .to_string(),
         skin::semibold(size * 0.43),
-        TEXT,
+        egui::Color32::WHITE,
     );
 }
 
@@ -3705,10 +3816,18 @@ fn participant(
                 };
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if sharing {
-                        badge(ui, tr(if own { "Sharing" } else { "Live" }), ACCENT);
+                        badge(
+                            ui,
+                            tr(if own { "Sharing" } else { "Live" }),
+                            palette().accent,
+                        );
                     }
                     if discord {
-                        ui.label(egui::RichText::new("Discord").size(12.0).color(MUTED));
+                        ui.label(
+                            egui::RichText::new("Discord")
+                                .size(12.0)
+                                .color(palette().muted),
+                        );
                     }
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         ui.add(egui::Label::new(egui::RichText::new(label).size(12.0)).truncate())
@@ -3731,7 +3850,7 @@ fn participant(
             ui.painter().rect_stroke(
                 response.rect,
                 4.0,
-                egui::Stroke::new(1.5, ACCENT),
+                egui::Stroke::new(1.5, palette().accent),
                 egui::StrokeKind::Inside,
             );
         }
@@ -4393,12 +4512,18 @@ mod tests {
             download_budget: None,
             textures: HashMap::new(),
             focused: None,
+            spotlight: None,
+            self_preview_hidden: false,
             fullscreen: None,
             fullscreen_controls_until: Instant::now(),
             settings_error: String::new(),
             auto_join_ready: false,
             copied_until: None,
             remembered_volume: HashMap::new(),
+            appearance: Appearance {
+                theme: Theme::Amber,
+                ..Appearance::default()
+            },
             advanced_open: false,
             setup_open: false,
             roster_open: false,
@@ -4432,6 +4557,108 @@ mod tests {
             }
             _ => {}
         }
+    }
+
+    #[test]
+    fn rendering_updates_system_colors_and_respects_a_fixed_theme() {
+        let mut app = app();
+        let ctx = egui::Context::default();
+        configure_theme(&ctx);
+        let mut frame = eframe::Frame::_new_kittest();
+        for (preference, system, expected) in [
+            (Theme::System, egui::Theme::Light, Theme::Light),
+            (Theme::System, egui::Theme::Dark, Theme::Black),
+            (Theme::Amber, egui::Theme::Light, Theme::Amber),
+        ] {
+            app.appearance.theme = preference;
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    system_theme: Some(system),
+                    ..Default::default()
+                },
+                |root| {
+                    app.render(root, &mut frame);
+                    assert_eq!(root.visuals().panel_fill, expected.palette().panel);
+                    assert_eq!(palette().canvas, expected.palette().canvas);
+                },
+            );
+            output.textures_delta.clear();
+        }
+    }
+
+    #[test]
+    fn spotlight_selection_keeps_watch_as_an_explicit_command() {
+        let mut app = app();
+        let template = Tile {
+            id: "main".into(),
+            name: "Main".into(),
+            codec: String::new(),
+            watching: true,
+            picture: Default::default(),
+            presentation: Default::default(),
+            frames: Default::default(),
+            received_bps: Default::default(),
+            volume: Default::default(),
+            audio: Default::default(),
+            status: String::new(),
+        };
+        let preview = Tile {
+            id: "preview".into(),
+            name: "Preview participant".into(),
+            watching: false,
+            ..template.clone()
+        };
+        let mut state = Snapshot {
+            tiles: vec![template, preview],
+            ..Default::default()
+        };
+        let (controller, mut next_command) = Controller::recording_for_test(Snapshot::default());
+        app.controller = controller;
+        app.spotlight = Some("main".into());
+        let ctx = egui::Context::default();
+        configure_theme(&ctx);
+        let draw = |app: &mut PublisherUi, events| {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(640.0, 350.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |root| {
+                    egui::CentralPanel::default().show(root, |ui| app.room_stage(ui, &state));
+                },
+            );
+            output.textures_delta.clear();
+            output.platform_output.events
+        };
+        let key = |key, pressed| egui::Event::Key {
+            key,
+            pressed,
+            physical_key: None,
+            repeat: false,
+            modifiers: Default::default(),
+        };
+        let label = "Preview participant";
+        draw(&mut app, vec![]);
+        for _ in 0..20 {
+            let events = draw(&mut app, vec![key(egui::Key::Tab, true)]);
+            draw(&mut app, vec![key(egui::Key::Tab, false)]);
+            if events.iter().any(|event| matches!(event,
+                egui::output::OutputEvent::FocusGained(info) if info.label.as_deref() == Some(label)
+            )) {
+                draw(&mut app, vec![key(egui::Key::Enter, true)]);
+                draw(&mut app, vec![key(egui::Key::Enter, false)]);
+                break;
+            }
+        }
+        assert_eq!(app.spotlight.as_deref(), Some("preview"));
+        assert!(next_command().is_none());
+        state.tiles.remove(1);
+        app.reconcile_spotlight(&state);
+        assert!(app.spotlight.is_none());
     }
 
     #[test]
@@ -4708,7 +4935,7 @@ mod tests {
             let mut output = ctx.run_ui(egui::RawInput::default(), |root| {
                 egui::CentralPanel::default().show(root, |ui| app.source_preview(ui, state));
             });
-            let id = app.textures["__self_preview"].id();
+            let id = app.textures[SELF_PREVIEW].id();
             let changed = output
                 .textures_delta
                 .set

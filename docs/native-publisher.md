@@ -35,17 +35,24 @@ enter your nickname. Each invitation selects its backend; the last successful gu
 nickname is remembered locally. Discord sign-in defaults to the hosted backend and
 uses the system browser. The selected login backend is remembered separately;
 its credential uses OS credential storage scoped to that exact public origin.
-No room or language preference is saved. See [Discord accounts](discord-accounts.md).
+The theme follows the operating system by default, using Black for dark
+appearance and Light for light appearance. Choose a fixed theme in Settings or
+Advanced settings. Theme and interface language are saved locally in
+\`appearance.json\` under the PodeTelar application data folder. Room invitations
+are kept in memory. See [Discord accounts](discord-accounts.md).
 Guest pictures and live nickname editing are described in [guest profiles](guest-profiles.md).
 Later links may reuse the nickname
 and join when idle while the app remains open. An active room requires confirmation
 before switching. Sharing and watching remain explicit. See
 [launch and firewall behavior](distribution.md#invitations-and-launch-behavior).
 
-The initial 1280×720 viewport has sharing controls on the left and larger native
-stream tiles on the right. Watch sits in the center of each still preview. Stop
-watching actually unsubscribes video and audio; focus/hiding does not. Each stream
-has independent volume. Preview capture occurs initially and at most once/minute.
+The room dock offers Grid, Spotlight and Focus. Spotlight keeps one stream large
+and the others in a scrollable strip. Highlighting a stream changes the layout.
+Watch subscribes to video and audio, and Stop watching unsubscribes. Each stream
+has independent volume. When only you are live, the stage shows your most recent
+preview. While you share and watch someone else, you can hide or restore the small
+local preview beside the streams. Preview capture occurs initially and at most
+once per minute.
 
 Source resolution defaults to the monitor/window bounded to 4K, at 60 FPS. The
 visible slider offers 15–120 FPS; codec/bitrate live in Advanced. Auto starts around

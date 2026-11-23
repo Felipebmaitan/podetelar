@@ -1,4 +1,5 @@
 //! On-demand aggregates. No persistence, media contents or raw SDK stats.
+use crate::theme::palette;
 use crate::{
     admission::Admission,
     delivery,
@@ -349,13 +350,13 @@ pub fn panel(ctx: &eframe::egui::Context, tile: &crate::playback::Tile) {
         ))
         .frame(
             skin::menu_frame()
-                .fill(skin::SURFACE)
+                .fill(palette().panel)
                 .corner_radius(14)
                 .inner_margin(egui::Margin::same(18)),
         )
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label(skin::strong(tr("Advanced information"), 20.0).color(skin::INK));
+                ui.label(skin::strong(tr("Advanced information"), 20.0).color(palette().text));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if skin::icon_button(ui, skin::Icon::Close, tr("Close")).clicked() {
                         open = false;
@@ -375,11 +376,11 @@ fn measurements(ui: &mut eframe::egui::Ui, tile: &crate::playback::Tile) {
     use eframe::egui;
     let state = &tile.presentation.diagnostics;
     ui.spacing_mut().item_spacing.y = 8.0;
-    ui.label(skin::strong(&tile.name, 19.0).color(skin::INK));
+    ui.label(skin::strong(&tile.name, 19.0).color(palette().text));
     ui.label(
         egui::RichText::new(tr("Live measurements · refresh every 3 seconds"))
             .size(12.0)
-            .color(skin::SECONDARY),
+            .color(palette().muted),
     );
     section(ui, "Reception");
     metric(ui, "Codec", &tile.codec);
@@ -575,7 +576,7 @@ fn section(ui: &mut eframe::egui::Ui, label: &str) {
     ui.add_space(4.0);
     ui.label(
         crate::ui_style::strong(crate::locale::tr(label).to_uppercase(), 11.5)
-            .color(crate::ui_style::AMBER),
+            .color(palette().accent),
     );
 }
 
@@ -583,7 +584,7 @@ fn note(ui: &mut eframe::egui::Ui, text: &str) {
     ui.label(
         eframe::egui::RichText::new(crate::locale::tr(text))
             .size(12.0)
-            .color(crate::ui_style::SECONDARY),
+            .color(palette().muted),
     );
 }
 
@@ -602,7 +603,7 @@ fn metric(ui: &mut eframe::egui::Ui, label: &str, value: &str) {
                         egui::Label::new(
                             egui::RichText::new(crate::locale::tr(label))
                                 .size(12.0)
-                                .color(crate::ui_style::SECONDARY),
+                                .color(palette().muted),
                         )
                         .wrap(),
                     );

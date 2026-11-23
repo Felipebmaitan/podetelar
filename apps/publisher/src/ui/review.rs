@@ -77,6 +77,9 @@ pub fn run() -> Result<()> {
         [
             "room",
             "room-streams",
+            "spotlight",
+            "only-self",
+            "self-preview",
             "setup",
             "roster",
             "join",
@@ -89,7 +92,7 @@ pub fn run() -> Result<()> {
             "fullscreen",
         ]
         .contains(&mode.as_str()),
-        "Choose room, room-streams, setup, roster, join, settings, profile, discord, information, update, invitation or fullscreen."
+        "Choose room, room-streams, spotlight, only-self, self-preview, setup, roster, join, settings, profile, discord, information, update, invitation or fullscreen."
     );
     let output = PathBuf::from(
         std::env::args()
@@ -110,6 +113,12 @@ pub fn run() -> Result<()> {
     };
     let english = std::env::args().any(|arg| arg == "--english");
     crate::locale::select(!english);
+    let mut theme = Theme::Amber;
+    if let Some(arg) =
+        std::env::args().find_map(|arg| arg.strip_prefix("--theme=").map(str::to_owned))
+    {
+        theme = serde_json::from_value(serde_json::Value::String(arg))?;
+    }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size(if narrow {
             [960.0 * zoom, 540.0 * zoom]
@@ -129,6 +138,7 @@ pub fn run() -> Result<()> {
             expires_at: 0,
         });
         let mut inner = PublisherUi::with_account_client(None, crate::account::Client::fixture(account));
+        inner.appearance.theme = theme;
         if mode == "discord" && std::env::args().any(|arg| arg == "--signed-in") {
             inner.account_state = inner.account_client.state();
             inner.poll_following(&cc.egui_ctx);
@@ -163,7 +173,7 @@ pub fn run() -> Result<()> {
             presentation: Arc::default(),
             frames: Arc::new(120.into()),
             received_bps: Arc::new(13_800_000.into()),
-            volume: Arc::default(),
+            volume: Arc::new(70.into()),
             audio: Arc::default(),
             status: String::new(),
         };
@@ -191,10 +201,10 @@ pub fn run() -> Result<()> {
         *diagnostics.sender.lock().unwrap() = Some((Instant::now(), serde_json::json!({ "stale": false, "age_ms": 180, "sample": { "window_ms": 3000, "sequence": 24, "codec": "AV1", "encoder": "NVIDIA NVENC AV1", "metrics": { "requested_bps": 20_000_000, "effective_bps": 20_000_000, "sent_bps": 13_800_000, "requested_fps": 60, "encoded_fps": 59.9, "sent_fps": 59.9 } } })));
         let mut tiles = match mode.as_str() {
             "information" | "fullscreen" => vec![tile.clone()],
-            "room-streams" | "setup" | "roster" => vec![tile.clone(), preview_tile],
+            "room-streams" | "setup" | "roster" | "spotlight" | "self-preview" => vec![tile.clone(), preview_tile],
             _ => vec![],
         };
-        let four_streams = mode == "room-streams" && std::env::args().any(|arg| arg == "--four-streams");
+        let four_streams = mode == "spotlight" || (mode == "room-streams" && std::env::args().any(|arg| arg == "--four-streams"));
         if four_streams {
             for (index, name) in ["Lucas", "Sam"].iter().enumerate() {
                 let mut extra = tiles[index].clone();
@@ -212,7 +222,7 @@ pub fn run() -> Result<()> {
                 room_name: "Friday Screening".into(),
                 sources: vec![source, second_source],
                 encoders: vec![encoder],
-                sharing: mode != "room",
+                sharing: !matches!(mode.as_str(), "room" | "spotlight"),
                 mode: Some(crate::quality::Mode { width: 1920, height: 1080, fps: 60, bitrate: 20_000_000 }),
                 active_selection: Some(active_selection),
                 participants: vec!["Felipe".into(), "Marina".into(), "Lucas".into()],
@@ -228,6 +238,15 @@ pub fn run() -> Result<()> {
         if state.sharing {
             state.metrics.fps = 59.9;
             state.delivery.bitrate_bps = 13_800_000;
+            if matches!(mode.as_str(), "only-self" | "self-preview") {
+                let picture = synth_stream_frame(640, 360, 1);
+                let rgb: Vec<_> = picture.pixels.iter().flat_map(|pixel| [pixel.r(), pixel.g(), pixel.b()]).collect();
+                let mut bytes = Vec::new();
+                image::codecs::jpeg::JpegEncoder::new(&mut bytes).encode(
+                    &rgb, 640, 360, image::ExtendedColorType::Rgb8
+                )?;
+                *state.self_preview.lock().unwrap() = Some(crate::preview::Frame { sequence: 1, bytes });
+            }
         }
         if four_streams {
             state.participants.push("Sam".into());
@@ -238,7 +257,10 @@ pub fn run() -> Result<()> {
         inner.controller = controller;
         inner.advanced_open = mode == "settings";
         inner.setup_open = mode == "setup";
-        inner.roster_open = mode == "roster";
+        inner.roster_open = mode == "roster" || std::env::args().any(|arg| arg == "--roster");
+        if mode == "spotlight" {
+            inner.spotlight = Some("layout-fixture".into());
+        }
         if mode == "fullscreen" {
             inner.fullscreen = Some("layout-fixture".into());
             inner.fullscreen_controls_until = Instant::now() + Duration::from_secs(30);

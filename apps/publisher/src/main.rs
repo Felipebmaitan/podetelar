@@ -37,6 +37,7 @@ mod settings;
 mod source_picker;
 mod sources;
 mod stream_diagnostics;
+mod theme;
 mod ui;
 mod ui_style;
 #[path = "../../update_protocol.rs"]

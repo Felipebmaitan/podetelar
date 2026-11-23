@@ -551,17 +551,10 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
               label="Server traffic"
             />
           </section>
-          <div className="admin-summary">
-            <Metric label="Uploaded to server" bytes={data.uploadedBytes} />
-            <Metric
-              label="Downloaded from server"
-              bytes={data.downloadedBytes}
-            />
-            <Metric
-              label="Total transfer"
-              bytes={data.uploadedBytes + data.downloadedBytes}
-            />
-          </div>
+          <TransferSummary
+            up={data.uploadedBytes}
+            down={data.downloadedBytes}
+          />
           <section className="admin-users">
             <div className="admin-section-heading">
               <h2>Usage by PC</h2>
@@ -593,6 +586,10 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
                         bytes={user.uploadedBytes + user.downloadedBytes}
                       />
                     </div>
+                    <TransferShare
+                      bytes={user.uploadedBytes + user.downloadedBytes}
+                      total={data.uploadedBytes + data.downloadedBytes}
+                    />
                     <Legend />
                     <TrafficChart
                       points={user.points}
@@ -683,6 +680,46 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
         </>
       )}
     </main>
+  );
+}
+
+function TransferSummary({ up, down }: { up: number; down: number }) {
+  const total = up + down;
+  return (
+    <section
+      className="admin-panel admin-transfer"
+      aria-label="Transfer summary"
+    >
+      <Metric label="Total transfer" bytes={total} />
+      {total > 0 && (
+        <div className="admin-transfer-bar" aria-hidden="true">
+          <span style={{ flexGrow: up / total }} />
+          <span style={{ flexGrow: down / total }} />
+        </div>
+      )}
+      <div className="admin-summary">
+        <Metric label="Uploaded to server" bytes={up} />
+        <Metric label="Downloaded from server" bytes={down} />
+      </div>
+    </section>
+  );
+}
+
+const percent = new Intl.NumberFormat("en", {
+  style: "percent",
+  maximumFractionDigits: 1,
+});
+
+function TransferShare({ bytes, total }: { bytes: number; total: number }) {
+  if (total <= 0) return null;
+  const share = Math.min(1, bytes / total);
+  return (
+    <div className="admin-transfer-share">
+      <span>{percent.format(share)} of total transfer</span>
+      <div className="admin-transfer-bar" aria-hidden="true">
+        <span style={{ flexGrow: share }} />
+      </div>
+    </div>
   );
 }
 

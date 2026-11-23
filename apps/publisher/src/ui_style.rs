@@ -1,23 +1,6 @@
 //! Shared native visual language ("Private Screening Room"). Icons are drawn locally; no font glyph dependency.
+use crate::theme::palette;
 use eframe::egui::{self, Color32, FontFamily, FontId, RichText};
-
-// Private Screening Room tokens
-pub const STAGE: Color32 = Color32::from_rgb(14, 14, 16); // #0E0E10 matte cinema obsidian
-pub const SURFACE: Color32 = Color32::from_rgb(22, 22, 25); // #161619 architectural rail / dock
-pub const SURFACE_2: Color32 = Color32::from_rgb(30, 30, 35); // #1E1E23 elevated cards & controls
-pub const SURFACE_3: Color32 = Color32::from_rgb(40, 40, 47); // #28282F hovered controls
-pub const BORDER: Color32 = Color32::from_rgb(43, 43, 51); // #2B2B33 crisp hairline border
-pub const DIVIDER: Color32 = Color32::from_rgb(35, 35, 42); // #23232A subtle divider
-
-pub const AMBER: Color32 = Color32::from_rgb(229, 169, 60); // #E5A93C signature Tungsten Amber
-pub const AMBER_INK: Color32 = Color32::from_rgb(18, 16, 11); // #12100B ink on amber
-pub const INK: Color32 = Color32::from_rgb(242, 240, 235); // #F2F0EB warm linen ink
-pub const SECONDARY: Color32 = Color32::from_rgb(166, 163, 155); // #A6A39B warm stone secondary
-pub const TERTIARY: Color32 = Color32::from_rgb(154, 151, 143); // muted caption
-pub const DANGER: Color32 = Color32::from_rgb(229, 72, 77); // #E5484D tally crimson
-pub const DANGER_INK: Color32 = Color32::from_rgb(255, 154, 158);
-pub const SAGE: Color32 = Color32::from_rgb(92, 184, 122); // #5CB87A quiet connected sage
-pub const WARN: Color32 = Color32::from_rgb(242, 201, 125); // #F2C97D warm amber warning
 
 pub fn semibold(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name("Inter SemiBold".into()))
@@ -59,6 +42,7 @@ pub enum Icon {
     Info,
     Window,
     Focus,
+    Spotlight,
     Fullscreen,
     Stop,
     Play,
@@ -110,6 +94,11 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
             for (x, y) in [(-7.0, -7.0), (1.0, -7.0), (-7.0, 1.0), (1.0, 1.0)] {
                 box_at(x, y, 6.0, 6.0);
             }
+        }
+        Icon::Spotlight => {
+            box_at(-8.0, -6.0, 10.0, 12.0);
+            box_at(5.0, -6.0, 3.0, 4.0);
+            box_at(5.0, 2.0, 3.0, 4.0);
         }
         Icon::Fullscreen | Icon::Focus => {
             for (x, y, dx, dy) in [
@@ -237,7 +226,7 @@ pub(super) fn paint_keyboard_focus(ctx: &egui::Context) {
         .layer_painter(response.layer_id)
         .with_clip_rect(response.interact_rect);
     // The dark and light borders keep the indicator visible on both accent and neutral fills.
-    for (inset, color) in [(0.0, AMBER), (2.0, AMBER_INK)] {
+    for (inset, color) in [(0.0, palette().accent), (2.0, palette().on_accent)] {
         painter.rect_stroke(
             response.rect.shrink(inset),
             6.0 - inset,
@@ -250,13 +239,18 @@ pub(super) fn paint_keyboard_focus(ctx: &egui::Context) {
 pub fn icon_button(ui: &mut egui::Ui, symbol: Icon, label: &str) -> egui::Response {
     let response = ui.add_sized([32.0, 32.0], egui::Button::new("").frame(false));
     if response.hovered() || response.has_focus() {
-        ui.painter().rect_filled(response.rect, 8.0, SURFACE_3);
+        ui.painter()
+            .rect_filled(response.rect, 8.0, palette().control_hover);
     }
     icon(
         ui.painter(),
         egui::Rect::from_center_size(response.rect.center(), egui::vec2(17.0, 17.0)),
         symbol,
-        if ui.is_enabled() { INK } else { TERTIARY },
+        if ui.is_enabled() {
+            palette().text
+        } else {
+            palette().muted
+        },
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     response.on_hover_text(label)
@@ -269,26 +263,31 @@ pub fn layout_button(
     label: &str,
     selected: bool,
 ) -> egui::Response {
+    let ink = if selected {
+        palette().accent
+    } else {
+        palette().muted
+    };
     let text = ui
         .painter()
-        .layout_no_wrap(caption.to_owned(), semibold(12.5), SECONDARY);
+        .layout_no_wrap(caption.to_owned(), semibold(12.5), ink);
     let response = ui.add_sized(
         [text.size().x + 38.0, 32.0],
         egui::Button::new("").frame(false),
     );
     if selected {
         ui.painter()
-            .rect_filled(response.rect, 8.0, AMBER.gamma_multiply(0.14));
+            .rect_filled(response.rect, 8.0, palette().accent.gamma_multiply(0.14));
         ui.painter().rect_stroke(
             response.rect,
             8.0,
-            egui::Stroke::new(1.0, AMBER.gamma_multiply(0.65)),
+            egui::Stroke::new(1.0, palette().accent.gamma_multiply(0.65)),
             egui::StrokeKind::Inside,
         );
     } else if response.hovered() || response.has_focus() {
-        ui.painter().rect_filled(response.rect, 8.0, SURFACE_3);
+        ui.painter()
+            .rect_filled(response.rect, 8.0, palette().control_hover);
     }
-    let ink = if selected { AMBER } else { SECONDARY };
     let center = response.rect.left_center() + egui::vec2(15.0, 0.0);
     icon(
         ui.painter(),
@@ -306,8 +305,8 @@ pub fn layout_button(
 
 pub fn menu_frame() -> egui::Frame {
     egui::Frame::new()
-        .fill(SURFACE_2)
-        .stroke(egui::Stroke::new(1.0, BORDER))
+        .fill(palette().card)
+        .stroke(egui::Stroke::new(1.0, palette().border))
         .corner_radius(12)
         .inner_margin(egui::Margin::same(8))
         .shadow(egui::epaint::Shadow {
@@ -320,8 +319,8 @@ pub fn menu_frame() -> egui::Frame {
 
 pub fn dock_frame() -> egui::Frame {
     egui::Frame::new()
-        .fill(SURFACE)
-        .stroke(egui::Stroke::new(1.0, BORDER))
+        .fill(palette().panel)
+        .stroke(egui::Stroke::new(1.0, palette().border))
         .corner_radius(14)
         .inner_margin(egui::Margin::symmetric(10, 7))
         .shadow(egui::epaint::Shadow {
@@ -334,11 +333,14 @@ pub fn dock_frame() -> egui::Frame {
 
 pub fn outline_button(ui: &mut egui::Ui, label: &str, symbol: Icon) -> egui::Response {
     let response = ui.add(
-        egui::Button::new(strong(format!("    {label}"), 13.0).color(AMBER))
+        egui::Button::new(strong(format!("    {label}"), 13.0).color(palette().accent))
             .min_size(egui::vec2(102.0, 32.0))
             .corner_radius(8)
-            .stroke(egui::Stroke::new(1.0, AMBER.gamma_multiply(0.55)))
-            .fill(AMBER.gamma_multiply(0.08)),
+            .stroke(egui::Stroke::new(
+                1.0,
+                palette().accent.gamma_multiply(0.55),
+            ))
+            .fill(palette().accent.gamma_multiply(0.08)),
     );
     icon(
         ui.painter(),
@@ -347,7 +349,7 @@ pub fn outline_button(ui: &mut egui::Ui, label: &str, symbol: Icon) -> egui::Res
             egui::vec2(16.0, 16.0),
         ),
         symbol,
-        AMBER,
+        palette().accent,
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     response
@@ -355,13 +357,17 @@ pub fn outline_button(ui: &mut egui::Ui, label: &str, symbol: Icon) -> egui::Res
 
 pub fn help_label(ui: &mut egui::Ui, label: &str, help: &str) -> egui::Response {
     ui.horizontal(|ui| {
-        let response = ui.label(strong(label, 13.0).color(INK));
+        let response = ui.label(strong(label, 13.0).color(palette().text));
         let (rect, info) = ui.allocate_exact_size(egui::vec2(18.0, 20.0), egui::Sense::click());
         icon(
             ui.painter(),
             rect,
             Icon::Info,
-            if info.has_focus() { AMBER } else { SECONDARY },
+            if info.has_focus() {
+                palette().accent
+            } else {
+                palette().muted
+            },
         );
         info.widget_info(|| {
             egui::WidgetInfo::labeled(
@@ -384,8 +390,8 @@ pub fn disclosure(ui: &mut egui::Ui, label: &str, expanded: &mut bool) -> egui::
     let mut response = ui.add_sized(
         [ui.available_width(), 42.0],
         egui::Button::new("")
-            .fill(SURFACE_2)
-            .stroke(egui::Stroke::new(1.0, BORDER))
+            .fill(palette().card)
+            .stroke(egui::Stroke::new(1.0, palette().border))
             .corner_radius(10),
     );
     if response.clicked()
@@ -405,14 +411,18 @@ pub fn disclosure(ui: &mut egui::Ui, label: &str, expanded: &mut bool) -> egui::
             egui::vec2(18.0, 18.0),
         ),
         Icon::Settings,
-        if *expanded { AMBER } else { SECONDARY },
+        if *expanded {
+            palette().accent
+        } else {
+            palette().muted
+        },
     );
     ui.painter().text(
         rect.left_center() + egui::vec2(44.0, 0.0),
         egui::Align2::LEFT_CENTER,
         label,
         semibold(14.5),
-        INK,
+        palette().text,
     );
     let c = rect.right_center() - egui::vec2(20.0, 0.0);
     let points = if *expanded {
@@ -428,8 +438,10 @@ pub fn disclosure(ui: &mut egui::Ui, label: &str, expanded: &mut bool) -> egui::
             c + egui::vec2(-2.0, 4.0),
         ]
     };
-    ui.painter()
-        .add(egui::Shape::line(points, egui::Stroke::new(1.7, SECONDARY)));
+    ui.painter().add(egui::Shape::line(
+        points,
+        egui::Stroke::new(1.7, palette().muted),
+    ));
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), *expanded, label)
     });
@@ -447,9 +459,9 @@ pub fn source_row(ui: &mut egui::Ui, label: &str, selected: bool, window: bool) 
             rect,
             8.0,
             if response.hovered() || response.has_focus() {
-                SURFACE_3
+                palette().control_hover
             } else {
-                AMBER.gamma_multiply(0.12)
+                palette().accent.gamma_multiply(0.12)
             },
         );
     }
@@ -460,12 +472,16 @@ pub fn source_row(ui: &mut egui::Ui, label: &str, selected: bool, window: bool) 
             egui::vec2(18.0, 18.0),
         ),
         if window { Icon::Window } else { Icon::Monitor },
-        if selected { AMBER } else { INK },
+        if selected {
+            palette().accent
+        } else {
+            palette().text
+        },
     );
     let mut job = egui::text::LayoutJob::simple(
         label.to_owned(),
         FontId::proportional(13.0),
-        INK,
+        palette().text,
         (rect.width() - 76.0).max(20.0),
     );
     job.wrap.max_rows = 1;
@@ -475,7 +491,7 @@ pub fn source_row(ui: &mut egui::Ui, label: &str, selected: bool, window: bool) 
     ui.painter().galley(
         rect.left_center() + egui::vec2(42.0, -galley.size().y / 2.0),
         galley,
-        INK,
+        palette().text,
     );
     if selected {
         let c = rect.right_center() - egui::vec2(17.0, 0.0);
@@ -485,7 +501,7 @@ pub fn source_row(ui: &mut egui::Ui, label: &str, selected: bool, window: bool) 
                 c + egui::vec2(-1.0, 3.0),
                 c + egui::vec2(5.0, -4.0),
             ],
-            egui::Stroke::new(1.8, AMBER),
+            egui::Stroke::new(1.8, palette().accent),
         ));
     }
     response.widget_info(|| {
@@ -509,13 +525,17 @@ pub fn menu_row(
             rect,
             7.0,
             if danger {
-                DANGER.gamma_multiply(0.16)
+                palette().danger.gamma_multiply(0.16)
             } else {
-                SURFACE_3
+                palette().control_hover
             },
         );
     }
-    let color = if danger { DANGER_INK } else { INK };
+    let color = if danger {
+        palette().error
+    } else {
+        palette().text
+    };
     if let Some(symbol) = symbol {
         icon(
             ui.painter(),
@@ -539,7 +559,7 @@ pub fn menu_row(
         egui::Align2::RIGHT_CENTER,
         shortcut,
         FontId::proportional(11.5),
-        SECONDARY,
+        palette().muted,
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     response
@@ -564,7 +584,7 @@ pub fn mute_switch(ui: &mut egui::Ui, label: &str, muted: &mut bool) -> egui::Re
         track,
         9.0,
         if *muted {
-            AMBER
+            palette().accent
         } else {
             Color32::from_rgb(60, 60, 68)
         },
@@ -579,7 +599,11 @@ pub fn mute_switch(ui: &mut egui::Ui, label: &str, muted: &mut bool) -> egui::Re
             track.center().y,
         ),
         6.0,
-        if *muted { AMBER_INK } else { INK },
+        if *muted {
+            palette().on_accent
+        } else {
+            palette().text
+        },
     );
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::Switch, ui.is_enabled(), *muted, label)
@@ -596,7 +620,7 @@ pub fn menu_separator(ui: &mut egui::Ui) {
             rect.left_center() + egui::vec2(6.0, 0.0),
             rect.right_center() - egui::vec2(6.0, 0.0),
         ],
-        egui::Stroke::new(1.0, BORDER),
+        egui::Stroke::new(1.0, palette().border),
     );
     ui.add_space(4.0);
 }
@@ -627,12 +651,16 @@ pub fn mint_slider<N: egui::emath::Numeric>(
     ui.painter().circle_filled(
         egui::pos2(x, response.rect.center().y),
         radius,
-        if ui.is_enabled() { INK } else { SECONDARY },
+        if ui.is_enabled() {
+            palette().text
+        } else {
+            palette().muted
+        },
     );
     ui.painter().circle_stroke(
         egui::pos2(x, response.rect.center().y),
         radius,
-        egui::Stroke::new(1.2, AMBER),
+        egui::Stroke::new(1.2, palette().accent),
     );
     response
 }
@@ -712,9 +740,10 @@ mod focus_tests {
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                 rects.clear();
                 for (index, button) in [
-                    egui::Button::new("Sign in").fill(AMBER),
+                    egui::Button::new("Sign in").fill(palette().accent),
                     egui::Button::new("Show").frame(false),
-                    egui::Button::new("Disconnect").stroke(egui::Stroke::new(1.0, DANGER)),
+                    egui::Button::new("Disconnect")
+                        .stroke(egui::Stroke::new(1.0, palette().danger)),
                 ]
                 .into_iter()
                 .enumerate()
@@ -729,7 +758,7 @@ mod focus_tests {
             });
             output.textures_delta.clear();
             for (index, rect) in rects.iter().enumerate() {
-                for (inset, color) in [(0.0, AMBER), (2.0, AMBER_INK)] {
+                for (inset, color) in [(0.0, palette().accent), (2.0, palette().on_accent)] {
                     let outlined = output.shapes.iter().any(|shape| {
                         matches!(&shape.shape,
                         egui::Shape::Rect(painted) if painted.rect == rect.shrink(inset)

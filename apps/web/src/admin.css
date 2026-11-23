@@ -817,18 +817,58 @@
   font-size: 0.84rem;
 }
 
-.admin-summary {
+.admin-transfer {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  gap: 12px;
   margin-block: 16px 18px;
 }
 
-.admin-summary > .admin-metric {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  padding: 18px 20px;
+.admin-transfer > .admin-metric strong {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+}
+
+.admin-transfer-bar {
+  display: flex;
+  overflow: hidden;
+  height: 6px;
+  border-radius: 4px;
+  background: var(--surface-3);
+}
+
+.admin-transfer-bar > span {
+  flex-basis: 0;
+  background: var(--amber);
+}
+
+.admin-transfer-bar > span + span {
+  background: var(--ice);
+}
+
+.admin-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-summary .admin-metric > span {
+  border-inline-start: 3px solid var(--amber);
+  padding-inline-start: 7px;
+}
+
+.admin-summary .admin-metric + .admin-metric > span {
+  border-inline-start-color: var(--ice);
+}
+
+.admin-summary .admin-metric strong {
+  font-size: 1.15rem;
+}
+
+.admin-transfer-share {
+  display: grid;
+  gap: 4px;
+  margin-block: 10px 14px;
+  font-size: 0.78rem;
+  color: var(--ink-2);
 }
 
 .admin-metric {
@@ -1371,17 +1411,12 @@
   }
   .admin-summary {
     grid-template-columns: 1fr;
-    gap: 0;
-    border-block: 1px solid var(--line);
-    padding-block: 4px;
+    gap: 6px;
   }
   .admin-summary > .admin-metric {
     flex-direction: row;
     justify-content: space-between;
     align-items: baseline;
-    padding: 5px 0;
-    border: 0;
-    background: transparent;
   }
   .admin-summary .admin-metric strong {
     font-size: 1rem;

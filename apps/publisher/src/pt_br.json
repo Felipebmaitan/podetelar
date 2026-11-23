@@ -403,5 +403,22 @@
   "Expires within a day": "Expira em até um dia",
   "days remaining": "dias restantes",
   "Remembered login": "Login lembrado",
-  "Connected to room": "Conectado à sala"
+  "Connected to room": "Conectado à sala",
+  "Theme": "Tema",
+  "Follow system": "Usar tema do sistema",
+  "Light": "Claro",
+  "Black": "Preto",
+  "Amber": "Âmbar",
+  "Classic": "Clássico",
+  "Ruby": "Rubi",
+  "Emerald": "Esmeralda",
+  "Could not save appearance preferences.": "Não foi possível salvar as preferências de aparência.",
+  "Spotlight": "Destaque",
+  "Spotlight stream": "Destacar transmissão",
+  "You're live": "Você está ao vivo",
+  "My preview": "Minha prévia",
+  "Hide my preview": "Ocultar minha prévia",
+  "Show my preview": "Mostrar minha prévia",
+  "Your preview updates at most once a minute.": "Sua prévia é atualizada no máximo uma vez por minuto.",
+  "Live now": "Ao vivo agora"
 }

@@ -59,6 +59,22 @@ pub fn qualify_planar_transitions(
     use livekit::webrtc::video_frame::{I420Buffer, NV12Buffer};
     use std::sync::Arc;
     let mut app = PublisherUi {
+        following_client: crate::following::Client::new(),
+        following: Default::default(),
+        following_key: None,
+        next_follow_attempt: Instant::now(),
+        account_client: crate::account::Client::new(),
+        account_state: Default::default(),
+        account_server: String::new(),
+        profile_connection_key: None,
+        profile_client: None,
+        profile_state: Default::default(),
+        profile_textures: HashMap::new(),
+        profile_started: Instant::now(),
+        profile_open: false,
+        profile_page: profile::SettingsPage::Profile,
+        profile_name: String::new(),
+        saved_guest_name: String::new(),
         activation: crate::activation::Inbox::new(),
         prior_room: None,
         updates: crate::updates::Client::new(),
@@ -76,14 +92,21 @@ pub fn qualify_planar_transitions(
         download_budget: None,
         textures: HashMap::new(),
         focused: None,
-        stream_menu: None,
+        spotlight: None,
+        self_preview_hidden: false,
         fullscreen: None,
         fullscreen_controls_until: Instant::now(),
         settings_error: String::new(),
         auto_join_ready: false,
         copied_until: None,
         remembered_volume: HashMap::new(),
+        appearance: Appearance {
+            theme: Theme::Amber,
+            ..Appearance::default()
+        },
         advanced_open: false,
+        setup_open: false,
+        roster_open: false,
         diagnostics_open: false,
         show_invitation: false,
         browser_invitation_open: false,
@@ -223,7 +246,6 @@ pub fn run(request: Request) -> Result<()> {
         Box::new(move |context| {
             configure_theme(&context.egui_ctx);
             let mut inner = PublisherUi::with_browser_link(None);
-            inner.store = None;
             inner.invitation = request.invitation_url.clone();
             inner.name = "Local benchmark".into();
             if !request.disconnected {
@@ -231,6 +253,8 @@ pub fn run(request: Request) -> Result<()> {
                     invitation: request.invitation_url.clone(),
                     name: inner.name.clone(),
                     route: Route::Auto,
+                    account: None,
+                    voice: None,
                 });
             }
             inner.download_budget = Some(200_000_000);
@@ -407,6 +431,8 @@ impl BenchmarkUi {
                                 invitation: self.request.invitation_url.clone(),
                                 name: "Local benchmark".into(),
                                 route: Route::Auto,
+                                account: None,
+                                voice: None,
                             });
                         }
                     }

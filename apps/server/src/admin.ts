@@ -125,7 +125,22 @@ export async function adminRoutes(
         if (!authenticated(request))
           return reply.code(401).send({ error: "Sign in as administrator." });
       });
-      scope.get("/api/admin/discord", async () => discordVoice.status());
+      const installation = config.discord
+        ? {
+            url: `https://discord.com/oauth2/authorize?${new URLSearchParams({
+              client_id: config.discord.applicationId,
+              integration_type: "0",
+              scope: "bot applications.commands",
+              // View Channels and Send Messages for room announcements.
+              permissions: "3072",
+            })}`,
+            guildsRestricted: !config.discord.guildIds.includes("*"),
+          }
+        : null;
+      scope.get("/api/admin/discord", async () => ({
+        ...discordVoice.status(),
+        installation,
+      }));
       if (following) {
         scope.get("/api/admin/discord/following", async () =>
           following.directory(),

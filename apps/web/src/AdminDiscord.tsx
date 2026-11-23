@@ -13,6 +13,7 @@ type Status = {
   online: boolean;
   error: string | null;
   revision: number;
+  installation: { url: string; guildsRestricted: boolean } | null;
   guilds: {
     id: string;
     name: string;
@@ -142,6 +143,24 @@ export function AdminDiscord({ onExpired }: { onExpired: () => void }) {
               <p className="discord-feedback">
                 Set the bot token in the server environment to enable voice
                 discovery.
+              </p>
+            )}
+            {data?.installation && (
+              <p className="discord-feedback">
+                <a
+                  href={data.installation.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Add bot to a Discord server
+                </a>
+                {data.installation.guildsRestricted && (
+                  <>
+                    {" "}
+                    Add the new server’s ID to <code>DISCORD_GUILD_IDS</code> in
+                    the deployment configuration to enable PodeTelar there.
+                  </>
+                )}
               </p>
             )}
             {data?.configured && (

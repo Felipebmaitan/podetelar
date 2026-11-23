@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -47,6 +47,54 @@ test("Discord configuration fails closed", () => {
     }).discord,
     undefined,
   );
+});
+
+test("admin Discord installation link is based on application configuration", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "podetelar-discord-install-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  for (const guildIds of [undefined, "*", guild]) {
+    const config = loadConfig({
+      ...env,
+      DATABASE_PATH: join(directory, "rooms.db"),
+      DISCORD_APPLICATION_ID: guildIds ? application : "",
+      DISCORD_PUBLIC_KEY: guildIds ? publicKey : "",
+      DISCORD_GUILD_IDS: guildIds,
+    });
+    const app = await buildApp(config, { usagePolling: false });
+    try {
+      const url = "/api/admin/discord";
+      assert.equal((await app.inject({ url })).statusCode, 401);
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/admin/login",
+        headers: { origin: env.PUBLIC_URL },
+        payload: { password: env.ADMIN_TOKEN },
+      });
+      const cookie = String(login.headers["set-cookie"]).split(";")[0]!;
+      const response = await app.inject({ url, headers: { cookie } });
+      assert.equal(response.statusCode, 200);
+      const { installation, online } = response.json();
+      assert.equal(online, false);
+      if (!guildIds) {
+        assert.equal(installation, null);
+        continue;
+      }
+      assert.equal(installation.guildsRestricted, guildIds !== "*");
+      const installUrl = new URL(installation.url);
+      assert.equal(
+        installUrl.origin + installUrl.pathname,
+        "https://discord.com/oauth2/authorize",
+      );
+      assert.deepEqual(Object.fromEntries(installUrl.searchParams), {
+        client_id: application,
+        integration_type: "0",
+        scope: "bot applications.commands",
+        permissions: "3072",
+      });
+    } finally {
+      await app.close();
+    }
+  }
 });
 
 test("signed Discord interactions create independent, admitted rooms without browser Origin bypass", async (t) => {

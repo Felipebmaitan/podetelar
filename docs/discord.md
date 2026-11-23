@@ -64,6 +64,12 @@ application/signature/timestamp/replay and per-guild/user quotas still apply.
 Adding the bot to another server needs no server configuration change in this
 mode. An explicit ID list retains the earlier restricted behavior.
 
+Open **Admin → Discord → Overview** and select **Add bot to a Discord server**.
+PodeTelar generates the Discord install link from the configured application ID.
+The link requests server installation, slash commands, and View Channels and
+Send Messages permissions for room announcements. With an explicit guild list,
+add the new server's ID to `DISCORD_GUILD_IDS` and restart the app.
+
 Global commands can take time to refresh in Discord clients. Legacy guild-scoped
 commands may shadow the global commands in servers used for earlier testing; they
 use the same handler. Remove only PodeTelar's own legacy commands when retiring

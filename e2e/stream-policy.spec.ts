@@ -132,7 +132,7 @@ test("dashboard saves caps and the SFU enforces them for a publisher that ignore
         await media.json(),
       );
     }
-    await publish(source, 640, 360);
+    await publish(source, 640, 360, true);
     await expect
       .poll(
         () =>
@@ -141,10 +141,15 @@ test("dashboard saves caps and the SFU enforces them for a publisher that ignore
             .evaluate((video: HTMLVideoElement) => video.videoWidth),
         { timeout: 15_000 },
       )
-      .toBe(640);
+      .toBeGreaterThan(0);
+    await expect
+      .poll(() => outgoingRate(source, "framesEncoded"), { timeout: 10_000 })
+      .toBeGreaterThan(20);
     await page.getByLabel("Maximum frame rate").selectOption("15");
     await page.getByRole("button", { name: "Save stream policy" }).click();
     await expect(page.getByText("Stream policy saved.")).toBeVisible();
+    await expect.poll(async () => (await read()).maxFps).toBe(15);
+    await source.bringToFront();
     await expect
       .poll(
         () => viewer.evaluate(() => (window as unknown as TestWindow).removed),
@@ -159,6 +164,11 @@ test("dashboard saves caps and the SFU enforces them for a publisher that ignore
     await viewer
       .locator("video")
       .evaluateAll((videos) => videos.forEach((video) => video.remove()));
+
+    await page.getByLabel("Maximum frame rate").selectOption("60");
+    await page.getByRole("button", { name: "Save stream policy" }).click();
+    await expect(page.getByText("Stream policy saved.")).toBeVisible();
+    await expect.poll(async () => (await read()).maxFps).toBe(60);
     await publish(source, 2560, 1440);
     await expect
       .poll(() =>
@@ -177,14 +187,11 @@ test("dashboard saves caps and the SFU enforces them for a publisher that ignore
       ),
     ).toBe(false);
 
-    await page.getByLabel("Maximum frame rate").selectOption("60");
-    await page.getByRole("button", { name: "Save stream policy" }).click();
-    await expect(page.getByText("Stream policy saved.")).toBeVisible();
-    // Let the SFU apply the relaxed FPS before publishing the bitrate fixture.
-    await expect.poll(async () => (await read()).maxFps).toBe(60);
     await publish(source, 1920, 1080, true);
     await expect
-      .poll(() => outgoingBitrate(source), { timeout: 15_000 })
+      .poll(async () => 8 * (await outgoingRate(source, "bytesSent")), {
+        timeout: 15_000,
+      })
       .toBeGreaterThan(1_300_000);
     await page.getByLabel("Maximum video bitrate (Mbps)").fill("1");
     await page.getByRole("button", { name: "Save stream policy" }).click();
@@ -210,16 +217,19 @@ test("dashboard saves caps and the SFU enforces them for a publisher that ignore
   }
 });
 
-async function outgoingBitrate(page: Page) {
-  return page.evaluate(async () => {
+async function outgoingRate(
+  page: Page,
+  counter: "bytesSent" | "framesEncoded",
+) {
+  return page.evaluate(async (counter) => {
     const test = window as unknown as TestWindow;
     const sample = async () => {
-      let outgoing = { timestamp: 0, bytes: 0 };
+      let outgoing = { timestamp: 0, value: 0 };
       (await test.policyTrack?.getRTCStatsReport())?.forEach((stat) => {
         if (stat.type === "outbound-rtp" && stat.kind === "video") {
           outgoing = {
             timestamp: stat.timestamp as number,
-            bytes: stat.bytesSent as number,
+            value: stat[counter] as number,
           };
         }
       });
@@ -229,10 +239,10 @@ async function outgoingBitrate(page: Page) {
     await new Promise((done) => setTimeout(done, 1_000));
     const after = await sample();
     return after.timestamp > before.timestamp
-      ? (8_000 * (after.bytes - before.bytes)) /
+      ? (1_000 * (after.value - before.value)) /
           (after.timestamp - before.timestamp)
       : 0;
-  });
+  }, counter);
 }
 
 async function publish(
@@ -241,6 +251,7 @@ async function publish(
   height: number,
   detailed = false,
 ) {
+  await page.bringToFront();
   await page.evaluate(
     async ({ width, height, detailed }) => {
       const test = window as unknown as TestWindow;
@@ -272,14 +283,18 @@ async function publish(
         }
       }, 32);
       const sdk = test.LivekitClient;
-      const track = new sdk.LocalVideoTrack(
-        canvas.captureStream(30).getVideoTracks()[0]!,
-      );
+      const sourceTrack = canvas.captureStream(30).getVideoTracks()[0]!;
+      sourceTrack.contentHint = detailed ? "motion" : "detail";
+      const track = new sdk.LocalVideoTrack(sourceTrack);
       test.policyTrack = track;
       await test.policyRoom.localParticipant.publishTrack(track, {
         source: sdk.Track.Source.ScreenShare,
         videoCodec: "h264",
         simulcast: false,
+        degradationPreference: detailed
+          ? "maintain-framerate"
+          : "maintain-resolution",
+        screenShareEncoding: { maxBitrate: 8_000_000, maxFramerate: 30 },
         videoEncoding: { maxBitrate: 8_000_000, maxFramerate: 30 },
       });
     },

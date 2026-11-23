@@ -615,7 +615,7 @@ impl Stream {
             let _ = self.stop(room).await;
             return Err(error);
         }
-        self.fallback(room, admission, stop, config)
+        Box::pin(self.fallback(room, admission, stop, config))
             .await
             .map(|active| {
                 (
@@ -923,12 +923,12 @@ impl Stream {
                 .is_some_and(|(task, _)| task.is_finished())
     }
 
-    pub async fn stop(self, room: &Room) -> Result<Metrics> {
-        self.stop_publication(room, false).await
+    pub fn stop(self, room: &Room) -> impl Future<Output = Result<Metrics>> {
+        self.stop_publication(room, false)
     }
 
-    pub async fn stop_ended_publication(self, room: &Room) -> Result<Metrics> {
-        self.stop_publication(room, true).await
+    pub fn stop_ended_publication(self, room: &Room) -> impl Future<Output = Result<Metrics>> {
+        self.stop_publication(room, true)
     }
 
     async fn stop_publication(self, room: &Room, already_ended: bool) -> Result<Metrics> {

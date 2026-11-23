@@ -127,6 +127,18 @@ test("admins set a durable stream policy, and only admitted publishers and the S
     });
     await app.close();
     app = await buildApp(config, options);
+    const mediaUrl = `/api/rooms/${room.id}/native-media-token`;
+    const mediaRequest = {
+      method: "POST" as const,
+      url: mediaUrl,
+      headers: { origin, cookie: participant },
+    };
+    assert.equal((await app.inject(mediaRequest)).statusCode, 503);
+    assert.equal(
+      (await app.inject({ url: sfuUrl, headers: sfuHeaders })).statusCode,
+      200,
+    );
+    assert.equal((await app.inject(mediaRequest)).statusCode, 200);
     assert.deepEqual(
       (
         await app.inject({ url: sessionUrl, headers: { cookie: participant } })

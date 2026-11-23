@@ -76,9 +76,10 @@ Compose network. It observes video RTP payload bytes, frame timestamps and
 markers, and dimensions from the encoded video headers. The bitrate budget
 allows two seconds' worth of payload in a burst, and the frame budget allows
 half a second's worth of frames. When limits change, existing publications have
-four seconds to adapt after the SFU receives the new caps. New publications are
-checked immediately. The SFU drops over-budget media and stops a publication
-after a sustained violation. Video with unverified dimensions is blocked under
+four seconds to adapt after the SFU receives a stricter cap. The previous cap
+still applies during that window. New publications use the current caps
+immediately. The SFU drops over-budget media and stops a publication after
+five seconds of sustained violations. Video with unverified dimensions is blocked under
 a resolution cap. The SFU stops forwarding video after ten seconds without a
 valid policy refresh. Stream limits require the policy-enabled SFU image.
 

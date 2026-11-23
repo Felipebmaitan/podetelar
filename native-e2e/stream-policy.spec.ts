@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 import { defaultStreamPolicy, type StreamPolicy } from "@podetelar/contracts";
 import { setTimeout as delay } from "node:timers/promises";
 import { createTestRoom } from "../scripts/test-room.js";
@@ -14,34 +14,20 @@ for (const codec of ["h264", "h265", "av1"] as const) {
     request,
     baseURL,
   }) => {
-    expect(new URL(baseURL!).hostname).toMatch(
-      /^(localhost|127\.0\.0\.1|\[::1\])$/,
-    );
-    const headers = { Origin: baseURL! };
-    const login = await request.post("/api/admin/login", {
-      headers,
-      data: { password: process.env.ADMIN_TOKEN },
-    });
-    expect(login.status()).toBe(200);
-    const endpoint = "/api/admin/stream-policy";
-    const read = async () =>
-      (await (await request.get(endpoint)).json()).policy as StreamPolicy;
-    const write = async (policy: StreamPolicy) => {
-      const response = await request.put(endpoint, { headers, data: policy });
-      expect(response.status()).toBe(200);
-    };
-    const initial = await read();
-    const created = await createTestRoom(
+    const { read, write, restore } = await policyAdministrator(
       request,
       baseURL!,
-      `Policy acceptance ${codec}`,
     );
-    expect(created.status()).toBe(201);
-    const { invitationUrl } = await created.json();
-    await write({ ...defaultStreamPolicy, revision: initial.revision });
     let sender: ReturnType<typeof nativeRequest> | undefined;
     let receiver: ReturnType<typeof nativeRequest> | undefined;
     try {
+      const created = await createTestRoom(
+        request,
+        baseURL!,
+        `Policy acceptance ${codec}`,
+      );
+      expect(created.status()).toBe(201);
+      const { invitationUrl } = await created.json();
       sender = nativeRequest("--publish-fixture", {
         invitationUrl,
         displayName: "Policy publisher",
@@ -61,6 +47,7 @@ for (const codec of ["h264", "h265", "av1"] as const) {
         invitationUrl,
         seconds: 20,
         continuousWatch: true,
+        watchOncePerPublisher: true,
       });
       await delay(4_000);
       await write({ ...(await read()), maxBitrateBps: 10_000_000 });
@@ -116,7 +103,73 @@ for (const codec of ["h264", "h265", "av1"] as const) {
     } finally {
       sender?.child.kill();
       receiver?.child.kill();
-      await write({ ...initial, revision: (await read()).revision });
+      await restore();
     }
   });
+}
+
+test("the enforced removal reaches a native publisher that ignores a new cap", async ({
+  request,
+  baseURL,
+}) => {
+  const { read, write, restore } = await policyAdministrator(request, baseURL!);
+  let sender: ReturnType<typeof nativeRequest> | undefined;
+  try {
+    const created = await createTestRoom(
+      request,
+      baseURL!,
+      "Native stream removal",
+    );
+    expect(created.status()).toBe(201);
+    const { invitationUrl } = await created.json();
+    sender = nativeRequest("--publish-fixture", {
+      invitationUrl,
+      displayName: "Noncompliant native publisher",
+      codec: "h264",
+      seconds: 20,
+      quality: {
+        resolution: "p1080",
+        fps: 30,
+        bitrate: { mode: "auto" },
+        profile: "motion",
+      },
+    });
+    await sender.reported;
+    await write({ ...(await read()), maxResolution: 720 });
+    expect(await sender.result).toMatchObject({
+      serverEndedVideo: true,
+      captureStopped: true,
+      roomConnectedAfterStop: true,
+    });
+  } finally {
+    sender?.child.kill();
+    await restore();
+  }
+});
+
+async function policyAdministrator(request: APIRequestContext, origin: string) {
+  expect(new URL(origin).hostname).toMatch(
+    /^(localhost|127\.0\.0\.1|\[::1\])$/,
+  );
+  const headers = { Origin: origin };
+  const login = await request.post("/api/admin/login", {
+    headers,
+    data: { password: process.env.ADMIN_TOKEN },
+  });
+  expect(login.status()).toBe(200);
+  const endpoint = "/api/admin/stream-policy";
+  const read = async () => {
+    const response = await request.get(endpoint);
+    expect(response.status()).toBe(200);
+    return (await response.json()).policy as StreamPolicy;
+  };
+  const write = async (policy: StreamPolicy) => {
+    const response = await request.put(endpoint, { headers, data: policy });
+    expect(response.status()).toBe(200);
+  };
+  const initial = await read();
+  await write({ ...defaultStreamPolicy, revision: initial.revision });
+  const restore = async () =>
+    write({ ...initial, revision: (await read()).revision });
+  return { read, write, restore };
 }

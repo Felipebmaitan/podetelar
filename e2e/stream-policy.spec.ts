@@ -12,6 +12,8 @@ type TestWindow = Window & {
   paintTimer?: number;
   published: number;
   removed: number;
+  localRemoved: number;
+  decodedOversize: boolean;
 };
 
 test.skip(
@@ -26,7 +28,7 @@ test("dashboard saves caps and the SFU enforces them for a publisher that ignore
   request,
   baseURL,
 }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const origin = new URL(baseURL!).origin;
   expect(new URL(origin).hostname).toMatch(
     /^(localhost|127\.0\.0\.1|\[::1\])$/,
@@ -103,18 +105,28 @@ test("dashboard saves caps and the SFU enforces them for a publisher that ignore
           const sdk = test.LivekitClient;
           const room = new sdk.Room({ dynacast: false, adaptiveStream: false });
           test.policyRoom = room;
-          test.published = test.removed = 0;
+          test.published = test.removed = test.localRemoved = 0;
+          test.decodedOversize = false;
           room.on(sdk.RoomEvent.TrackPublished, (publication) => {
             ++test.published;
             publication.setSubscribed(true);
           });
           room.on(sdk.RoomEvent.TrackSubscribed, (track) => {
             if (track.kind !== sdk.Track.Kind.Video) return;
-            const video = track.attach();
+            const video = document.createElement("video");
+            track.attach(video);
             video.autoplay = video.muted = true;
+            video.addEventListener("resize", () => {
+              test.decodedOversize ||=
+                video.videoWidth > 1920 || video.videoHeight > 1080;
+            });
             document.body.append(video);
           });
           room.on(sdk.RoomEvent.TrackUnpublished, () => ++test.removed);
+          room.on(
+            sdk.RoomEvent.LocalTrackUnpublished,
+            () => ++test.localRemoved,
+          );
           await room.connect(serverUrl, token, { autoSubscribe: false });
         },
         await media.json(),
@@ -139,6 +151,11 @@ test("dashboard saves caps and the SFU enforces them for a publisher that ignore
         { timeout: 22_000 },
       )
       .toBe(1);
+    await expect
+      .poll(() =>
+        source.evaluate(() => (window as unknown as TestWindow).localRemoved),
+      )
+      .toBe(1);
     await viewer
       .locator("video")
       .evaluateAll((videos) => videos.forEach((video) => video.remove()));
@@ -155,12 +172,29 @@ test("dashboard saves caps and the SFU enforces them for a publisher that ignore
       )
       .toBe(2);
     expect(
-      await viewer
-        .locator("video")
-        .evaluateAll((videos: HTMLVideoElement[]) =>
-          videos.some((video) => video.videoWidth > 0),
-        ),
+      await viewer.evaluate(
+        () => (window as unknown as TestWindow).decodedOversize,
+      ),
     ).toBe(false);
+
+    await page.getByLabel("Maximum frame rate").selectOption("60");
+    await page.getByRole("button", { name: "Save stream policy" }).click();
+    await expect(page.getByText("Stream policy saved.")).toBeVisible();
+    // Let the SFU apply the relaxed FPS before publishing the bitrate fixture.
+    await expect.poll(async () => (await read()).maxFps).toBe(60);
+    await publish(source, 1920, 1080, true);
+    await expect
+      .poll(() => outgoingBitrate(source), { timeout: 15_000 })
+      .toBeGreaterThan(1_300_000);
+    await page.getByLabel("Maximum video bitrate (Mbps)").fill("1");
+    await page.getByRole("button", { name: "Save stream policy" }).click();
+    await expect(page.getByText("Stream policy saved.")).toBeVisible();
+    await expect
+      .poll(
+        () => viewer.evaluate(() => (window as unknown as TestWindow).removed),
+        { timeout: 30_000 },
+      )
+      .toBe(3);
   } finally {
     await Promise.all([
       source.close(),
@@ -176,9 +210,39 @@ test("dashboard saves caps and the SFU enforces them for a publisher that ignore
   }
 });
 
-async function publish(page: Page, width: number, height: number) {
+async function outgoingBitrate(page: Page) {
+  return page.evaluate(async () => {
+    const test = window as unknown as TestWindow;
+    const sample = async () => {
+      let outgoing = { timestamp: 0, bytes: 0 };
+      (await test.policyTrack?.getRTCStatsReport())?.forEach((stat) => {
+        if (stat.type === "outbound-rtp" && stat.kind === "video") {
+          outgoing = {
+            timestamp: stat.timestamp as number,
+            bytes: stat.bytesSent as number,
+          };
+        }
+      });
+      return outgoing;
+    };
+    const before = await sample();
+    await new Promise((done) => setTimeout(done, 1_000));
+    const after = await sample();
+    return after.timestamp > before.timestamp
+      ? (8_000 * (after.bytes - before.bytes)) /
+          (after.timestamp - before.timestamp)
+      : 0;
+  });
+}
+
+async function publish(
+  page: Page,
+  width: number,
+  height: number,
+  detailed = false,
+) {
   await page.evaluate(
-    async ({ width, height }) => {
+    async ({ width, height, detailed }) => {
       const test = window as unknown as TestWindow;
       if (test.policyTrack) {
         await test.policyRoom.localParticipant.unpublishTrack(test.policyTrack);
@@ -188,10 +252,24 @@ async function publish(page: Page, width: number, height: number) {
       canvas.width = width;
       canvas.height = height;
       const drawing = canvas.getContext("2d")!;
+      const noise = document.createElement("canvas");
+      noise.width = 120;
+      noise.height = 68;
+      const pixels = noise.getContext("2d")!;
+      const image = pixels.createImageData(noise.width, noise.height);
+      drawing.imageSmoothingEnabled = false;
       let frame = 0;
       test.paintTimer = window.setInterval(() => {
-        drawing.fillStyle = `hsl(${(frame++ * 11) % 360}, 60%, 40%)`;
-        drawing.fillRect(0, 0, width, height);
+        if (detailed) {
+          crypto.getRandomValues(image.data);
+          for (let alpha = 3; alpha < image.data.length; alpha += 4)
+            image.data[alpha] = 255;
+          pixels.putImageData(image, 0, 0);
+          drawing.drawImage(noise, 0, 0, width, height);
+        } else {
+          drawing.fillStyle = `hsl(${(frame++ * 11) % 360}, 60%, 40%)`;
+          drawing.fillRect(0, 0, width, height);
+        }
       }, 32);
       const sdk = test.LivekitClient;
       const track = new sdk.LocalVideoTrack(
@@ -205,6 +283,6 @@ async function publish(page: Page, width: number, height: number) {
         videoEncoding: { maxBitrate: 8_000_000, maxFramerate: 30 },
       });
     },
-    { width, height },
+    { width, height, detailed },
   );
 }

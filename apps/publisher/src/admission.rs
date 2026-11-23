@@ -582,6 +582,10 @@ impl Admission {
             response.status().as_u16() != 404,
             "This room server needs an update before native playback can be used."
         );
+        ensure!(
+            response.status().as_u16() != 503,
+            "The media server is synchronizing stream limits. Try joining again in a moment."
+        );
         let access: MediaAccess = read_response(response).await?;
         let media_url = Url::parse(&access.server_url)
             .context("Room server returned an invalid media address.")?;

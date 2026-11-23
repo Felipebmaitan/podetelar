@@ -20,6 +20,7 @@ const (
 	policyTTL             = 10 * time.Second
 	policyChangeGrace     = 4 * time.Second
 	policyViolationWindow = 5 * time.Second
+	policyViolationGap    = 1500 * time.Millisecond
 	policyBitrateBurst    = 2.0 // seconds of video RTP payload
 	policyFrameBurst      = 0.5 // seconds of frames
 )
@@ -36,9 +37,45 @@ func (c streamCaps) valid() bool {
 		(c.MaxFPS == 0 || c.MaxFPS == 15 || c.MaxFPS == 24 || c.MaxFPS == 30 || c.MaxFPS == 60 || c.MaxFPS == 90 || c.MaxFPS == 120)
 }
 
+type policyLimit struct {
+	previous, current int
+	changedAt         time.Time
+}
+
+func (l policyLimit) update(value int, now time.Time) policyLimit {
+	if l.current != value {
+		return policyLimit{previous: l.current, current: value, changedAt: now}
+	}
+	return l
+}
+
+func (l policyLimit) forPublication(started, now time.Time) int {
+	tightened := l.current > 0 && (l.previous == 0 || l.current < l.previous)
+	if tightened && started.Before(l.changedAt) && now.Before(l.changedAt.Add(policyChangeGrace)) {
+		return l.previous
+	}
+	return l.current
+}
+
 type policySnapshot struct {
-	caps    streamCaps
-	expires time.Time
+	bitrate, resolution, fps policyLimit
+	expires                  time.Time
+}
+
+func (p policySnapshot) refresh(caps streamCaps, now time.Time) *policySnapshot {
+	p.bitrate = p.bitrate.update(caps.MaxBitrate, now)
+	p.resolution = p.resolution.update(caps.MaxResolution, now)
+	p.fps = p.fps.update(caps.MaxFPS, now)
+	p.expires = now.Add(policyTTL)
+	return &p
+}
+
+func (p *policySnapshot) forPublication(started, now time.Time) streamCaps {
+	return streamCaps{
+		MaxBitrate:    p.bitrate.forPublication(started, now),
+		MaxResolution: p.resolution.forPublication(started, now),
+		MaxFPS:        p.fps.forPublication(started, now),
+	}
 }
 
 var (
@@ -63,7 +100,11 @@ func init() {
 	go func() {
 		for {
 			if caps, err := readStreamCaps(client, policyURL, token); err == nil {
-				currentStreamCaps.Store(&policySnapshot{caps: caps, expires: time.Now().Add(policyTTL)})
+				latest := currentStreamCaps.Load()
+				if latest == nil {
+					latest = &policySnapshot{}
+				}
+				currentStreamCaps.Store(latest.refresh(caps, time.Now()))
 			}
 			time.Sleep(policyRefresh)
 		}
@@ -102,17 +143,17 @@ type StreamPolicyGuard struct {
 	closed                           bool
 	started                          bool
 	caps                             streamCaps
-	graceUntil                       time.Time
+	created                          time.Time
 	updated                          time.Time
 	bits, frames                     float64
-	bitrateViolation, frameViolation time.Time
+	bitrateViolation, frameViolation policyOverage
 }
 
 func NewStreamPolicyGuard(closeTrack func()) *StreamPolicyGuard {
 	if policyURL == "" {
 		return nil
 	}
-	return &StreamPolicyGuard{close: closeTrack}
+	return &StreamPolicyGuard{close: closeTrack, created: time.Now()}
 }
 
 // SetStreamPolicy is called once on the publisher buffer before it is bound.
@@ -123,9 +164,9 @@ func (b *BufferBase) SetStreamPolicy(guard *StreamPolicyGuard) {
 }
 
 type streamPolicyBuffer struct {
-	geometry        streamPolicyGeometry
-	unverifiedSince time.Time
-	frameDecisions  [256]streamFrameDecision
+	geometry       streamPolicyGeometry
+	unverified     policyOverage
+	frameDecisions [256]streamFrameDecision
 }
 
 type streamFrameDecision struct {
@@ -147,32 +188,42 @@ func timestampHash(value uint64) uint8 {
 	return uint8(value >> 56)
 }
 
-func (g *StreamPolicyGuard) accept(p *streamPolicyBuffer, packet *rtp.Packet, timestamp uint64, now time.Time, caps streamCaps) bool {
+func (g *StreamPolicyGuard) acceptCurrent(p *streamPolicyBuffer, packet *rtp.Packet, timestamp uint64) bool {
 	g.Lock()
 	defer g.Unlock()
+	now := time.Now()
+	policy := currentStreamCaps.Load()
+	if policy == nil || !now.Before(policy.expires) {
+		return false
+	}
+	return g.accept(p, packet, timestamp, now, policy.forPublication(g.created, now))
+}
+
+func (g *StreamPolicyGuard) accept(p *streamPolicyBuffer, packet *rtp.Packet, timestamp uint64, now time.Time, caps streamCaps) bool {
 	if g.closed {
 		return false
 	}
-	if !g.started || g.caps != caps {
-		if g.started {
-			g.graceUntil = now.Add(policyChangeGrace)
-		}
-		g.started = true
-		g.caps = caps
+	if !g.started {
 		g.updated = now
+	}
+	if !g.started || g.caps.MaxBitrate == 0 {
 		g.bits = float64(caps.MaxBitrate) * policyBitrateBurst
+	}
+	if !g.started || g.caps.MaxFPS == 0 {
 		g.frames = float64(caps.MaxFPS) * policyFrameBurst
-		g.bitrateViolation, g.frameViolation = time.Time{}, time.Time{}
 	}
-	if now.Before(g.graceUntil) {
-		p.unverifiedSince = time.Time{}
-		return true
+	if g.caps.MaxBitrate != caps.MaxBitrate {
+		g.bitrateViolation = policyOverage{}
 	}
+	if g.caps.MaxFPS != caps.MaxFPS {
+		g.frameViolation = policyOverage{}
+	}
+	g.started, g.caps = true, caps
 	if caps.MaxResolution > 0 && !p.geometry.fits(caps.MaxResolution) {
-		g.noteViolation(now, &p.unverifiedSince)
+		g.noteViolation(now, &p.unverified)
 		return false
 	}
-	p.unverifiedSince = time.Time{}
+	p.unverified = policyOverage{}
 
 	seconds := max(0.0, now.Sub(g.updated).Seconds())
 	g.updated = now
@@ -194,9 +245,6 @@ func (g *StreamPolicyGuard) accept(p *streamPolicyBuffer, packet *rtp.Packet, ti
 		if !decision.allowed {
 			return false
 		}
-		if g.frames >= rate*policyFrameBurst/2 {
-			g.frameViolation = time.Time{}
-		}
 	}
 	if caps.MaxBitrate > 0 {
 		charge := float64(len(packet.Payload) * 8)
@@ -205,17 +253,20 @@ func (g *StreamPolicyGuard) accept(p *streamPolicyBuffer, packet *rtp.Packet, ti
 			return false
 		}
 		g.bits -= charge
-		if g.bits >= bitrate*policyBitrateBurst/2 {
-			g.bitrateViolation = time.Time{}
-		}
 	}
 	return true
 }
 
-func (g *StreamPolicyGuard) noteViolation(now time.Time, first *time.Time) {
-	if first.IsZero() {
-		*first = now
-	} else if now.Sub(*first) >= policyViolationWindow {
+type policyOverage struct {
+	first, last time.Time
+}
+
+func (g *StreamPolicyGuard) noteViolation(now time.Time, overage *policyOverage) {
+	if overage.last.IsZero() || now.Sub(overage.last) > policyViolationGap {
+		overage.first = now
+	}
+	overage.last = now
+	if now.Sub(overage.first) >= policyViolationWindow {
 		g.closed = true
 		if g.close != nil {
 			go g.close()
@@ -227,14 +278,9 @@ func (b *BufferBase) acceptsStreamPolicy(packet *rtp.Packet, timestamp uint64) b
 	if b.streamPolicy == nil || len(packet.Payload) == 0 {
 		return true
 	}
-	now := time.Now()
-	policy := currentStreamCaps.Load()
-	if policy == nil || !now.Before(policy.expires) {
-		return false
-	}
 	if b.policyBuffer == nil {
 		b.policyBuffer = &streamPolicyBuffer{}
 	}
 	b.policyBuffer.geometry.observe(b.mime, packet.Payload)
-	return b.streamPolicy.accept(b.policyBuffer, packet, timestamp, now, policy.caps)
+	return b.streamPolicy.acceptCurrent(b.policyBuffer, packet, timestamp)
 }

@@ -432,6 +432,8 @@ struct WatchRequest {
     #[serde(default)]
     continuous_watch: bool,
     #[serde(default)]
+    watch_once_per_publisher: bool,
+    #[serde(default)]
     watch_schedule: Vec<FixtureWatch>,
     #[serde(default)]
     measure_output_audio: bool,
@@ -583,7 +585,8 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     let mut samples = Vec::new();
     let started = std::time::Instant::now();
     let mut next_sample = 0;
-    let mut watch_after = if request.wait_for_preview {
+    let mut requested_watches = std::collections::HashSet::new();
+    let mut watch_after = if request.wait_for_preview && !request.watch_once_per_publisher {
         None
     } else {
         Some(2)
@@ -623,7 +626,9 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                 if tile.watching { tile.presentation.request(); }
                 if request.diagnostics { tile.presentation.diagnostics.open.store(tile.watching, Ordering::Relaxed); }
                 let tile_watching = request.watch_schedule.iter().filter(|step| step.second <= elapsed && step.display_name == tile.name).max_by_key(|step| step.second).map_or(watching, |step| step.enabled);
-                if tile_watching != tile.watching { playback.watch(tile.id.clone(), tile_watching)?; }
+                if tile_watching != tile.watching
+                    && (!request.watch_once_per_publisher || tile_watching && requested_watches.insert(tile.id.clone()))
+                { playback.watch(tile.id.clone(), tile_watching)?; }
                 let requested_volume = request.volume_schedule.iter().filter(|step| step.second <= elapsed && step.display_name.as_ref().is_none_or(|name| name == &tile.name)).max_by_key(|step| step.second).map_or(100, |step| step.percent);
                 playback.set_volume(&tile.id, requested_volume);
             }
@@ -816,9 +821,14 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
         let encoder=active.encoder().clone();
         let final_sid=active.sid();
         let delivered=delivery.lock().map(|value|value.clone()).unwrap_or_default();
-        let metrics = active.stop(&room).await?;
+        let server_ended_video = active.video_muted();
+        let metrics = if server_ended_video {
+            active.stop_ended_publication(&room).await?
+        } else {
+            active.stop(&room).await?
+        };
         let audio = audio_metrics.lock().map(|value| value.clone()).unwrap_or_default();
-        println!("{}", serde_json::json!({"encoder": encoder.factory, "codec": encoder.codec, "initialSid":initial_sid,"finalSid":final_sid,"mode":mode,"delivery":delivered,"metrics": metrics, "audio": audio, "captureStopped": true, "republished": republished.load(Ordering::Relaxed), "previewUploads": preview_uploads.load(Ordering::Relaxed), "previewCaptures": preview_captures}));
+        println!("{}", serde_json::json!({"encoder": encoder.factory, "codec": encoder.codec, "initialSid":initial_sid,"finalSid":final_sid,"mode":mode,"delivery":delivered,"metrics": metrics, "audio": audio, "captureStopped": true,"serverEndedVideo":server_ended_video,"roomConnectedAfterStop":room.connection_state()==ConnectionState::Connected, "republished": republished.load(Ordering::Relaxed), "previewUploads": preview_uploads.load(Ordering::Relaxed), "previewCaptures": preview_captures}));
         tokio::time::sleep(Duration::from_secs(request.linger_seconds)).await;
         Ok::<_, anyhow::Error>(())
     }.await;
@@ -853,7 +863,7 @@ async fn serve_fixture(
             next_sample = second + 1;
         }
         let stop = cancellation.register();
-        if active.cancelled() {
+        if active.cancelled() || active.video_muted() {
             break;
         }
         if follow_stream_policy && second >= next_policy {

@@ -30,6 +30,18 @@ use tokio::{
 
 const TRACK_NAME: &str = "PodeTelar screen";
 const AUDIO_TRACK_NAME: &str = "PodeTelar application audio";
+
+pub fn ended_video(event: &RoomEvent) -> Option<String> {
+    match event {
+        RoomEvent::LocalTrackUnpublished { publication, .. }
+        | RoomEvent::TrackMuted {
+            publication: TrackPublication::Local(publication),
+            ..
+        } if publication.kind() == TrackKind::Video => Some(publication.sid().to_string()),
+        _ => None,
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct CaptureCancellation(Mutex<Vec<Weak<AtomicBool>>>);
 
@@ -624,6 +636,10 @@ impl Stream {
         self.stop.flag.load(Ordering::Acquire)
     }
 
+    pub fn video_muted(&self) -> bool {
+        self.video.is_muted()
+    }
+
     pub fn constrain_watchers(&self, room: &Room) {
         self.rate
             .set_viewer_cap(crate::playback::requested_cap(room));
@@ -908,6 +924,14 @@ impl Stream {
     }
 
     pub async fn stop(self, room: &Room) -> Result<Metrics> {
+        self.stop_publication(room, false).await
+    }
+
+    pub async fn stop_ended_publication(self, room: &Room) -> Result<Metrics> {
+        self.stop_publication(room, true).await
+    }
+
+    async fn stop_publication(self, room: &Room, already_ended: bool) -> Result<Metrics> {
         self.stop.cancel();
         if let Some(task) = self.diagnostic_task {
             task.abort();
@@ -928,7 +952,15 @@ impl Stream {
             };
             publication_ids.push(track.sid());
         }
-        publication_ids.push(self.video.sid());
+        let video_sid = self.video.sid();
+        if !already_ended
+            || room
+                .local_participant()
+                .track_publications()
+                .contains_key(&video_sid)
+        {
+            publication_ids.push(video_sid);
+        }
         let owned_ids: Vec<_> = self
             .stop
             .tracks
@@ -1001,6 +1033,7 @@ struct Session {
     events: JoinHandle<()>,
     policy: watch::Receiver<StreamPolicy>,
     policy_updates: JoinHandle<()>,
+    ended_video: mpsc::Receiver<String>,
     expected_audio: Arc<AtomicBool>,
 }
 
@@ -1067,8 +1100,12 @@ impl Session {
         let media_room = room.clone();
         let expected_audio = Arc::new(AtomicBool::new(false));
         let audio_expected = expected_audio.clone();
+        let (ended_tx, ended_video) = mpsc::channel(16);
         let events = tokio::spawn(async move {
             while let Some(event) = events.recv().await {
+                if let Some(sid) = crate::publisher::ended_video(&event) {
+                    let _ = ended_tx.try_send(sid);
+                }
                 match event {
                     RoomEvent::LocalTrackPublished {
                         publication, track, ..
@@ -1139,6 +1176,7 @@ impl Session {
             events,
             policy,
             policy_updates,
+            ended_video,
             expected_audio,
         }))
     }
@@ -1215,7 +1253,21 @@ async fn worker(
                         if download_budget.is_none(){playback.set_budget(capacity.watching_allowance());}
                         update(&snapshot,|state|{state.capacity=capacity.clone();state.testing_connection=false;});
                 }
-                if let Some(joined) = &session {
+                if let Some(joined) = &mut session {
+                    let active_sid = stream.as_ref().map(Stream::sid);
+                    let externally_ended = std::iter::from_fn(|| joined.ended_video.try_recv().ok())
+                        .any(|sid| active_sid.as_deref() == Some(sid.as_str()));
+                    if externally_ended && let Some(active) = stream.take() {
+                        let _ = active.stop_ended_publication(&joined.room).await;
+                        update(&snapshot, |state| {
+                            state.sharing = false;
+                            state.self_preview = Arc::default();
+                            state.mode = None;
+                            state.active_selection = None;
+                            state.policy_notice = "";
+                            state.error = "Sharing stopped because the media server ended the video publication.".into();
+                        });
+                    }
                     let policy = joined.policy.borrow().clone();
                     update(&snapshot, |state| {
                         if state.stream_policy != policy {

@@ -554,6 +554,17 @@ export async function buildApp(
           return reply
             .code(401)
             .send({ error: "Open your room invitation to join." });
+        const streamCapsConfigured =
+          native && hasStreamCaps(streamPolicies.current());
+        if (
+          streamCapsConfigured &&
+          config.streamPolicyEnforcement &&
+          !streamPolicies.enforcementReady()
+        )
+          return reply.header("Retry-After", "2").code(503).send({
+            error:
+              "The media server is synchronizing stream limits. Try joining again in a moment.",
+          });
         const capabilities =
           native && request.body !== undefined
             ? nativeMediaCapabilitiesSchema.safeParse(request.body)
@@ -586,9 +597,7 @@ export async function buildApp(
           room: mediaRoomName(session.room.id),
           canPublish:
             native &&
-            (!hasStreamCaps(streamPolicies.current()) ||
-              (Boolean(config.streamPolicyEnforcement) &&
-                streamPolicies.enforcementReady())),
+            (!streamCapsConfigured || Boolean(config.streamPolicyEnforcement)),
           canSubscribe: native,
           canUpdateOwnMetadata: native,
           canPublishData: false,

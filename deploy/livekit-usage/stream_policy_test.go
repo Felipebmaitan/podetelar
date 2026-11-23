@@ -72,23 +72,46 @@ func TestPodeTelarStreamPolicyChargesPerPublication(t *testing.T) {
 	}
 }
 
+func TestPodeTelarStreamPolicySeparatedBursts(t *testing.T) {
+	now := time.Now()
+	guard := &StreamPolicyGuard{}
+	overage := &guard.bitrateViolation
+	guard.noteViolation(now, overage)
+	guard.noteViolation(now.Add(policyViolationWindow+time.Second), overage)
+	if guard.closed {
+		t.Fatal("separate overflows must not be treated as a sustained violation")
+	}
+}
+
 func TestPodeTelarStreamPolicyChangesLive(t *testing.T) {
 	start := time.Now()
 	video := &rtp.Packet{Payload: []byte{1}}
 	buffer := &streamPolicyBuffer{geometry: streamPolicyGeometry{long: 2560, short: 1440, known: true}}
 	active := &StreamPolicyGuard{}
-	if !active.accept(buffer, video, 1, start, streamCaps{}) {
-		t.Fatal("the default policy allows existing clients")
+	previous := streamCaps{MaxFPS: 60, MaxResolution: 1440, MaxBitrate: 10_000_000}
+	before := (policySnapshot{}).refresh(previous, start.Add(-time.Second))
+	if !active.accept(buffer, video, 1, start, before.forPublication(start, start)) {
+		t.Fatal("existing caps should allow matching media")
 	}
-	tighter := streamCaps{MaxResolution: 1080}
-	if !active.accept(buffer, video, 2, start.Add(time.Second), tighter) {
+	tighter := streamCaps{MaxFPS: 60, MaxResolution: 1080, MaxBitrate: 12_000_000}
+	updated := start.Add(time.Second)
+	after := before.refresh(tighter, updated)
+	grace := after.forPublication(start, updated)
+	if grace != (streamCaps{MaxFPS: 60, MaxResolution: 1440, MaxBitrate: 12_000_000}) {
+		t.Fatalf("grace must keep the previous resolution and the enforceable FPS and bitrate limits: %+v", grace)
+	}
+	if !active.accept(buffer, video, 2, updated, grace) {
 		t.Fatal("existing streams have a bounded reconfiguration window")
 	}
-	if active.accept(buffer, video, 3, start.Add(5*time.Second), tighter) {
+	refresh := after.refresh(tighter, updated.Add(2*time.Second))
+	if active.accept(buffer, video, 3, updated.Add(policyChangeGrace), refresh.forPublication(start, updated.Add(policyChangeGrace))) {
 		t.Fatal("oversized active stream exceeded its reconfiguration window")
 	}
+	if refresh.forPublication(start, updated.Add(time.Minute)) != tighter {
+		t.Fatal("a paused track must not start a new grace window after resuming")
+	}
 	newTrack := &StreamPolicyGuard{}
-	if newTrack.accept(buffer, video, 1, start, tighter) {
+	if newTrack.accept(buffer, video, 1, updated, refresh.forPublication(updated, updated)) {
 		t.Fatal("a new oversized stream must be blocked immediately")
 	}
 }

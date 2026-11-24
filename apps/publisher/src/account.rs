@@ -13,6 +13,9 @@ use std::{
     time::{Duration, Instant},
 };
 pub const DEFAULT_SERVER: &str = "https://stream.maitan.me";
+pub const USER_AGENT: &str = concat!("PodeTelar/", env!("CARGO_PKG_VERSION"));
+const CONFIG_REFRESH_INTERVAL: Duration = Duration::from_secs(120);
+const SESSION_REFRESH_INTERVAL: Duration = Duration::from_secs(20);
 #[derive(Clone)]
 pub struct Credential {
     pub server: String,
@@ -84,8 +87,9 @@ impl Client {
         std::thread::Builder::new().name("podetelar-discord".into()).spawn(move||{
             let Ok(runtime)=tokio::runtime::Builder::new_current_thread().enable_all().build()else{return;};
             runtime.block_on(async move{
-                let Ok(http)=Http::builder().redirect(Policy::none()).timeout(Duration::from_secs(8)).build()else{return;};
+                let Ok(http)=Http::builder().user_agent(USER_AGENT).redirect(Policy::none()).timeout(Duration::from_secs(8)).build()else{return;};
                 let mut server=server;let mut credential=match load(&server){Ok(value)=>value,Err(_)=>{set_error(&shared,"Could not read remembered Discord login from OS credential storage.");None}};let mut pending:Option<(String,String,Instant,u64)>=None;let mut next=Instant::now();
+                let mut next_config = Instant::now();
                 while !stopped.load(Ordering::Acquire){
                     if let Ok(command)=rx.try_recv(){
                         match command{
@@ -93,8 +97,15 @@ impl Client {
                                 if !shared.lock().is_ok_and(|s| s.attempt_generation == generation) { continue; }
                                 if !crate::admission::valid_server(&target)||target.len()>2048{set_error(&shared,"Choose a valid HTTPS PodeTelar server.");continue;}
                                 if credential.as_ref().is_some_and(|c|c.server!=target){set_error(&shared,"Disconnect the current Discord account before changing servers.");continue;}
+                                let changed_server = server != target;
                                 server=target;pending=None;let _=crate::settings::save_login_server(&server);
-                                update(&shared,|s|{s.server=server.clone();s.busy=true;s.error.clear();});
+                                if changed_server {
+                                    next_config = Instant::now();
+                                }
+                                update(&shared,|s|{
+                                    s.server=server.clone();s.busy=true;s.error.clear();
+                                    if changed_server { s.available = false; }
+                                });
                                 let proof=base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(rand::random::<[u8;32]>());let challenge=format!("{:x}",Sha256::digest(proof.as_bytes()));
                                 let result=async{
                                     let response=http.post(format!("{server}/api/auth/discord/start")).header("Origin",&server).json(&serde_json::json!({"challenge":challenge})).send().await?;
@@ -164,12 +175,27 @@ impl Client {
                             }
                             next=Instant::now()+Duration::from_secs(2);
                         }else{
-                            if let Ok(response)=http.get(format!("{server}/api/auth/config")).send().await&&let Ok(bytes)=checked(response).await{let available=serde_json::from_slice::<serde_json::Value>(&bytes).ok().and_then(|v|v["discord"].as_bool()).unwrap_or(false);update(&shared,|s|s.available=available);}
+                            if Instant::now() >= next_config {
+                                let available = async {
+                                    let response = http.get(format!("{server}/api/auth/config")).send().await?;
+                                    let bytes = checked(response).await?;
+                                    let config: serde_json::Value = serde_json::from_slice(&bytes)?;
+                                    config["discord"].as_bool().context("Missing Discord availability.")
+                                }.await;
+                                let interval = match available {
+                                    Ok(available) => {
+                                        update(&shared, |s| s.available = available);
+                                        CONFIG_REFRESH_INTERVAL
+                                    }
+                                    Err(_) => SESSION_REFRESH_INTERVAL,
+                                };
+                                next_config = Instant::now() + interval;
+                            }
                             if let Some(c)=&credential&&let Ok(response)=c.authorize(http.get(format!("{server}/api/auth/session"))).send().await{
                                 if response.status()==reqwest::StatusCode::UNAUTHORIZED{let _=remove(&server);credential=None;update(&shared,|s|{s.account=None;s.credential=None;});}
                                 else if let Ok(bytes)=checked(response).await&&let Ok(account)=serde_json::from_slice::<Account>(&bytes){update(&shared,|s|{s.account=Some(account);s.credential=credential.clone();});}
                             }
-                            next=Instant::now()+Duration::from_secs(20);
+                            next=Instant::now()+SESSION_REFRESH_INTERVAL;
                         }
                     }
                     tokio::time::sleep(Duration::from_millis(100)).await;

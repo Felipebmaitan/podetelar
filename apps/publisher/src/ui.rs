@@ -2968,7 +2968,16 @@ impl PublisherUi {
             .map(source_name)
             .unwrap_or(Self::sharing_panel_title(state));
         let setup_summary = dock_stream_summary(state, displayed_source.as_ref(), self.quality);
-        let source_width = (root.available_width() - 395.0).clamp(116.0, 244.0);
+        let available_width = root.available_width();
+        let camera_label = tr("Share camera");
+        let labeled_camera_width = button_width(root, camera_label) + 24.0;
+        let compact_camera = available_width - 395.0 - labeled_camera_width - 8.0 < 180.0;
+        let camera_width = if compact_camera {
+            40.0
+        } else {
+            labeled_camera_width
+        };
+        let source_width = (available_width - 395.0 - camera_width - 8.0).clamp(116.0, 244.0);
         egui::Panel::bottom("studio-dock")
             .exact_size(94.0)
             .show_separator_line(false)
@@ -3163,6 +3172,35 @@ impl PublisherUi {
                                     self.send_settings(false);
                                     self.setup_open = false;
                                 }
+
+                                let camera_icon =
+                                    egui::Atom::paint(egui::vec2(16.0, 16.0), |ui, args| {
+                                        skin::icon(
+                                            ui.painter(),
+                                            args.rect,
+                                            Icon::Camera,
+                                            palette().muted,
+                                        );
+                                    });
+                                let camera = if compact_camera {
+                                    egui::Atoms::new(camera_icon)
+                                } else {
+                                    egui::Atoms::new((
+                                        camera_icon,
+                                        skin::strong(camera_label, 13.5).color(palette().muted),
+                                    ))
+                                };
+                                ui.add_enabled(
+                                    false,
+                                    egui::Button::new(camera)
+                                        .gap(6.0)
+                                        .min_size(egui::vec2(camera_width, 36.0))
+                                        .corner_radius(8)
+                                        .fill(palette().card)
+                                        .stroke((1.0, palette().border)),
+                                )
+                                .accessible_name(camera_label)
+                                .on_disabled_hover_text(tr("Camera sharing is coming soon."));
 
                                 // Subtle vertical divider
                                 let (sep, _) = ui.allocate_exact_size(
@@ -5442,6 +5480,7 @@ mod tests {
         for (width, height, sharing, roster) in [
             (960.0, 540.0, false, false),
             (960.0, 540.0, false, true),
+            (820.0, 480.0, false, true),
             (820.0, 480.0, true, true),
         ] {
             state.sharing = sharing;

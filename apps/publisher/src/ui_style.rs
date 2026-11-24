@@ -51,6 +51,7 @@ pub enum Icon {
     More,
     Grid,
     Monitor,
+    Camera,
     People,
     ChevronUp,
 }
@@ -81,6 +82,18 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
                 vec![point(-4.0, -7.0), point(7.0, 0.0), point(-4.0, 7.0)],
                 color,
                 egui::Stroke::NONE,
+            ));
+        }
+        Icon::Camera => {
+            box_at(-9.0, -6.0, 12.0, 12.0);
+            p.add(egui::Shape::line(
+                vec![
+                    point(3.0, -2.5),
+                    point(8.0, -5.0),
+                    point(8.0, 5.0),
+                    point(3.0, 2.5),
+                ],
+                stroke,
             ));
         }
         Icon::Stop => {

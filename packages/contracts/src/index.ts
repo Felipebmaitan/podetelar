@@ -2,30 +2,51 @@ import { z } from "zod";
 
 export const streamResolutions = [720, 1080, 1440, 2160] as const;
 export const streamFrameRates = [15, 24, 30, 60, 90, 120] as const;
+export const cameraResolutions = [480, 720, 1080, 1440, 2160] as const;
+export const cameraFrameRates = [15, 24, 30, 60] as const;
 const videoBitrate = z.number().int().min(1_000_000).max(100_000_000);
-const automaticTargets = z
-  .array(
-    z
-      .object({
-        resolution: z.literal(streamResolutions),
-        fps: z.literal(streamFrameRates),
-        bitrateBps: videoBitrate,
-      })
-      .strict(),
-  )
-  .max(streamResolutions.length * streamFrameRates.length)
-  .refine(
-    (rows) =>
-      new Set(rows.map(({ resolution, fps }) => `${resolution}:${fps}`))
-        .size === rows.length,
-  );
+const cameraBitrate = z.number().int().min(500_000).max(8_000_000);
+const automaticTargets = <
+  const Resolution extends number,
+  const Fps extends number,
+>(
+  resolutions: readonly Resolution[],
+  frameRates: readonly Fps[],
+  bitrate: typeof videoBitrate,
+) =>
+  z
+    .array(
+      z
+        .object({
+          resolution: z.literal(resolutions),
+          fps: z.literal(frameRates),
+          bitrateBps: bitrate,
+        })
+        .strict(),
+    )
+    .max(resolutions.length * frameRates.length)
+    .refine(
+      (rows) =>
+        new Set(rows.map(({ resolution, fps }) => `${resolution}:${fps}`))
+          .size === rows.length,
+    );
 export const streamPolicySchema = z
   .object({
     revision: z.number().int().nonnegative(),
     maxBitrateBps: videoBitrate.nullable(),
     maxResolution: z.literal(streamResolutions).nullable(),
     maxFps: z.literal(streamFrameRates).nullable(),
-    automaticTargets,
+    automaticTargets: automaticTargets(
+      streamResolutions,
+      streamFrameRates,
+      videoBitrate,
+    ),
+    maxCameraBitrateBps: cameraBitrate.nullable().optional(),
+    cameraAutomaticTargets: automaticTargets(
+      cameraResolutions,
+      cameraFrameRates,
+      cameraBitrate,
+    ).optional(),
   })
   .strict();
 export type StreamPolicy = z.infer<typeof streamPolicySchema>;

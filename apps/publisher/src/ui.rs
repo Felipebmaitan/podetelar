@@ -97,6 +97,7 @@ struct CameraSettings {
     resolution: quality::Resolution,
     fps: u32,
     bitrate_mbps: f32,
+    automatic_bitrate: bool,
 }
 
 impl Default for CameraSettings {
@@ -106,6 +107,7 @@ impl Default for CameraSettings {
             resolution: quality::Resolution::P720,
             fps: 30,
             bitrate_mbps: 2.0,
+            automatic_bitrate: true,
         }
     }
 }
@@ -115,7 +117,11 @@ impl CameraSettings {
         Settings {
             resolution: self.resolution,
             fps: self.fps,
-            bitrate: Bitrate::Manual((self.bitrate_mbps * 1_000_000.0).round() as u64),
+            bitrate: if self.automatic_bitrate {
+                Bitrate::Auto
+            } else {
+                Bitrate::Manual((self.bitrate_mbps * 1_000_000.0).round() as u64)
+            },
             profile: Profile::Motion,
         }
     }
@@ -1002,6 +1008,13 @@ impl PublisherUi {
         }
         if self.camera_settings_open {
             self.camera_setup_fields(ui, state);
+            if let Some(cap) = state.stream_policy.camera_cap() {
+                ui.small(format!(
+                    "{} · {} Mbps",
+                    tr("Server limits"),
+                    cap as f64 / 1_000_000.0
+                ));
+            }
         }
 
         if let Some(mode) = state.camera_mode {
@@ -1148,6 +1161,10 @@ impl PublisherUi {
                 .response
                 .labelled_by(fps.id);
         });
+        ui.checkbox(&mut settings.automatic_bitrate, tr("Automatic"));
+        if settings.automatic_bitrate {
+            return;
+        }
         let bitrate = ui
             .horizontal(|ui| {
                 let label = ui.label(tr("Bitrate"));

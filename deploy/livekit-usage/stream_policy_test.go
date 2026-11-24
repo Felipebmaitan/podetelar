@@ -10,6 +10,24 @@ import (
 	"github.com/pion/rtp"
 )
 
+func TestPodeTelarStreamPolicyCameraBitrate(t *testing.T) {
+	now := time.Now()
+	var initial *policySnapshot
+	before := initial.refresh(streamCaps{MaxBitrate: 1_000_000, MaxCameraBitrate: 4_000_000}, now)
+	started := now.Add(time.Second)
+	update := started.Add(time.Second)
+	after := before.refresh(streamCaps{MaxBitrate: 1_000_000, MaxCameraBitrate: 500_000}, update)
+	if after.forPublication(started, update, true).MaxBitrate != 1_000_000 ||
+		after.forPublication(update, update, true).MaxBitrate != 500_000 ||
+		after.forPublication(started, update.Add(policyChangeGrace), true).MaxBitrate != 500_000 ||
+		after.forPublication(started, update.Add(policyChangeGrace), false).MaxBitrate != 1_000_000 {
+		t.Fatal("camera and screen budgets must apply independently")
+	}
+	if !((streamCaps{MaxCameraBitrate: 500_000}).valid()) || (streamCaps{MaxCameraBitrate: 499_999}).valid() {
+		t.Fatal("camera bitrate limits must respect the supported range")
+	}
+}
+
 func TestPodeTelarStreamPolicyGeometry(t *testing.T) {
 	// Reduced AV1 sequence headers for 1080x1920 and 2560x1440.
 	portrait, _ := hex.DecodeString("1808182aa1bf7f")
@@ -88,7 +106,7 @@ func TestPodeTelarStreamPolicyFirstSnapshotHasNoGrace(t *testing.T) {
 	persisted := streamCaps{MaxBitrate: 10_000_000, MaxResolution: 1080, MaxFPS: 60}
 	var unknown *policySnapshot
 	first := unknown.refresh(persisted, now)
-	if first.forPublication(now.Add(-time.Second), now) != persisted {
+	if first.forPublication(now.Add(-time.Second), now, false) != persisted {
 		t.Fatal("a track created before policy synchronization must respect the first known caps")
 	}
 }
@@ -101,13 +119,13 @@ func TestPodeTelarStreamPolicyChangesLive(t *testing.T) {
 	previous := streamCaps{MaxFPS: 60, MaxResolution: 1440, MaxBitrate: 10_000_000}
 	var initial *policySnapshot
 	before := initial.refresh(previous, start.Add(-time.Second))
-	if !active.accept(buffer, video, 1, start, before.forPublication(start, start)) {
+	if !active.accept(buffer, video, 1, start, before.forPublication(start, start, false)) {
 		t.Fatal("existing caps should allow matching media")
 	}
 	tighter := streamCaps{MaxFPS: 60, MaxResolution: 1080, MaxBitrate: 12_000_000}
 	updated := start.Add(time.Second)
 	after := before.refresh(tighter, updated)
-	grace := after.forPublication(start, updated)
+	grace := after.forPublication(start, updated, false)
 	if grace != (streamCaps{MaxFPS: 60, MaxResolution: 1440, MaxBitrate: 12_000_000}) {
 		t.Fatalf("grace must keep the previous resolution and the enforceable FPS and bitrate limits: %+v", grace)
 	}
@@ -115,14 +133,14 @@ func TestPodeTelarStreamPolicyChangesLive(t *testing.T) {
 		t.Fatal("existing streams have a bounded reconfiguration window")
 	}
 	refresh := after.refresh(tighter, updated.Add(2*time.Second))
-	if active.accept(buffer, video, 3, updated.Add(policyChangeGrace), refresh.forPublication(start, updated.Add(policyChangeGrace))) {
+	if active.accept(buffer, video, 3, updated.Add(policyChangeGrace), refresh.forPublication(start, updated.Add(policyChangeGrace), false)) {
 		t.Fatal("oversized active stream exceeded its reconfiguration window")
 	}
-	if refresh.forPublication(start, updated.Add(time.Minute)) != tighter {
+	if refresh.forPublication(start, updated.Add(time.Minute), false) != tighter {
 		t.Fatal("a paused track must not start a new grace window after resuming")
 	}
 	newTrack := &StreamPolicyGuard{}
-	if newTrack.accept(buffer, video, 1, updated, refresh.forPublication(updated, updated)) {
+	if newTrack.accept(buffer, video, 1, updated, refresh.forPublication(updated, updated, false)) {
 		t.Fatal("a new oversized stream must be blocked immediately")
 	}
 }

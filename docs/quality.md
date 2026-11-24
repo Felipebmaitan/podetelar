@@ -6,6 +6,21 @@ Automatic bitrate. Codec/hardware encoder and manual bitrate live in Advanced.
 The website handles invitations, access management and app downloads; it does not
 publish or play streams.
 
+Windows cameras default to 720p, 30 FPS and Automatic bitrate. Advanced camera
+settings also offer manual bitrates from 0.5 to 8 Mbps. Automatic uses the
+negotiated codec, output pixel count and effective frame rate.
+
+| Output up to | H.264 24 / 30 / 60 FPS | HEVC 24 / 30 / 60 FPS | AV1 24 / 30 / 60 FPS |
+| ------------ | ---------------------- | --------------------- | -------------------- |
+| 480p         | 0.6 / 0.8 / 1.2        | 0.5 / 0.6 / 1.0       | 0.5 / 0.5 / 0.8      |
+| 720p         | 1.0 / 1.4 / 2.2        | 0.8 / 1.1 / 1.8       | 0.7 / 0.9 / 1.4      |
+| 1080p        | 1.6 / 2.2 / 3.4        | 1.3 / 1.8 / 2.7       | 1.0 / 1.4 / 2.2      |
+| 1440p        | 2.5 / 3.3 / 5.0        | 2.0 / 2.6 / 4.0       | 1.6 / 2.1 / 3.3      |
+| 4K           | 4.0 / 5.0 / 7.0        | 3.2 / 4.0 / 5.6       | 2.6 / 3.3 / 4.6      |
+
+All targets are in Mbps. Camera outputs at 15 FPS use the 24 FPS defaults when
+no override is configured.
+
 ## Choosing a mode
 
 Resolution choices are 720p, 1080p, 1440p, 4K and Source. Each preserves source aspect ratio, rounds down to even dimensions, and never scales above its captured source. The 4K ceiling is 3840×2160, or 2160×3840 in portrait orientation. Ultrawide sources fit inside that envelope. Source means the bounded dimensions evaluated at capture start. A source resize does not silently change the active output; shrinking below its selected dimensions stops sharing with an explanation. The negotiated capture dimensions are checked before publication and during capture. Window enumeration uses visible DWM bounds instead of invisible resize margins, matching WGC capture.
@@ -83,10 +98,15 @@ five seconds of sustained violations. Video with unverified dimensions is blocke
 a resolution cap. The SFU stops forwarding video after ten seconds without a
 valid policy refresh. Stream limits require the policy-enabled SFU image.
 
-Per-stream limits apply separately to screen and camera video. Each native
-publication follows live changes to bitrate, resolution and FPS ceilings. Camera
-uses its own manual bitrate, so server Automatic targets apply only to screens
-using Automatic bitrate. Plan total SFU
+The **Camera** section offers a camera-specific ceiling and separate Automatic
+targets from 0.5 to 8 Mbps. Camera video uses the lower of the shared and
+camera-specific ceilings. The SFU applies it to video tracks published with the
+Camera source. The shared resolution and FPS limits apply to both sources.
+For Source and other nonstandard camera sizes, the Automatic override uses the
+smallest camera tier by output pixel count at the effective FPS. Blank camera
+targets use the codec-specific defaults above. Camera bitrate policy updates
+apply to the active camera encoder while a concurrent screen can keep sharing.
+Plan total SFU
 egress around the number of subscriptions, audio, retransmission and transport
 overhead. The owner decides when to adjust policy as demand changes.
 

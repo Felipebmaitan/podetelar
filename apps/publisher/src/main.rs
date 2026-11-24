@@ -455,6 +455,7 @@ struct DualSharingRequest {
     camera_codec: Option<Codec>,
     #[serde(default)]
     check_live_policy: bool,
+    camera_policy_bitrates: Option<[u64; 2]>,
 }
 
 async fn qualify_dual_sharing(request: DualSharingRequest) -> Result<()> {
@@ -526,14 +527,48 @@ async fn qualify_dual_sharing(request: DualSharingRequest) -> Result<()> {
                     quality::Resolution::P720
                 },
                 fps: 30,
-                bitrate: quality::Bitrate::Manual(2_000_000),
+                bitrate: if request.camera_policy_bitrates.is_some() {
+                    quality::Bitrate::Auto
+                } else {
+                    quality::Bitrate::Manual(2_000_000)
+                },
                 ..Default::default()
             },
         })
     };
     start_camera();
-    wait(&controller, |state| state.sharing && state.camera_sharing).await?;
+    let initial = wait(&controller, |state| state.sharing && state.camera_sharing).await?;
     println!("{}", serde_json::json!({"both":true}));
+    if let Some(expected) = request.camera_policy_bitrates {
+        for bitrate in expected {
+            wait(&controller, |state| {
+                state.sharing
+                    && state.camera_sharing
+                    && state.mode == initial.mode
+                    && state
+                        .camera_mode
+                        .is_some_and(|mode| mode.bitrate == bitrate)
+            })
+            .await?;
+            println!("{}", serde_json::json!({"cameraBitrate":bitrate}));
+        }
+        tokio::time::sleep(Duration::from_secs(4)).await;
+        let state = controller.snapshot();
+        ensure!(
+            state.mode == initial.mode && state.camera_sharing,
+            "Concurrent publication did not stay active."
+        );
+        controller.send(Command::Leave);
+        wait(&controller, |state| {
+            !state.any_sharing() && state.connection == "disconnected"
+        })
+        .await?;
+        println!(
+            "{}",
+            serde_json::json!({"screenMode":state.mode,"cameraMode":state.camera_mode})
+        );
+        return Ok(());
+    }
     if request.check_live_policy {
         let meets_cap = |mode: Option<quality::Mode>| {
             mode.is_some_and(|mode| mode.fps == 24 && mode.bitrate == 1_000_000)

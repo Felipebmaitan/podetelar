@@ -539,8 +539,7 @@ impl StreamConfig {
 
     fn resolve_mode(&self, codec: Codec) -> Result<Mode> {
         if self.source.is_camera() {
-            self.policy
-                .limit_video(camera::mode(&self.source.info, self.quality)?)
+            camera::mode(&self.source.info, self.quality, codec, &self.policy)
         } else {
             self.policy.resolve(self.quality, &self.source.info, codec)
         }
@@ -594,9 +593,22 @@ impl StreamConfig {
                 && self.source.info.height >= mode.height,
             "Source is smaller than the active resolution. Stop and choose a smaller mode."
         );
-        self.policy
-            .with_bitrate(self.quality, self.encoder.codec, mode)
-            .map(Some)
+        self.resolve_bitrate(mode).map(Some)
+    }
+
+    fn resolve_bitrate(&self, mode: Mode) -> Result<Mode> {
+        if self.source.is_camera() {
+            camera::validate_settings(self.quality)?;
+            Ok(camera::with_bitrate(
+                &self.policy,
+                self.quality,
+                self.encoder.codec,
+                mode,
+            ))
+        } else {
+            self.policy
+                .with_bitrate(self.quality, self.encoder.codec, mode)
+        }
     }
     pub fn mode(&self) -> Result<Mode> {
         let mode = self.resolve_mode(self.encoder.codec)?;
@@ -668,16 +680,7 @@ impl Stream {
         config.policy = policy;
         let before = self.mode;
         if config.policy.allows_geometry(before) {
-            let next = if config.kind() == Kind::Camera {
-                Mode {
-                    bitrate: config.resolve_mode(config.encoder.codec)?.bitrate,
-                    ..before
-                }
-            } else {
-                config
-                    .policy
-                    .with_bitrate(config.quality, config.encoder.codec, before)?
-            };
+            let next = config.resolve_bitrate(before)?;
             self.rate.set_resolved(next.bitrate);
             self.mode = next;
             self.config = config;

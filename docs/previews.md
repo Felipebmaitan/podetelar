@@ -2,6 +2,9 @@
 
 An unwatched screen tile receives a JPEG. Viewers subscribe to live cameras automatically when hardware and their watching allowance permit. Publishers generate one still per source when capture starts and no more than one every 60 seconds after that. Joining, Watch/Stop watching, HTTP retries and a media reconnect do not request a new capture. A late viewer can receive the latest available screen image immediately.
 
+A publisher's live camera view uses frames from the ongoing capture while the
+tile is visible. It does not use the shared JPEG or start a subscription.
+
 The native publisher letterboxes the source into 960×540, preserving aspect ratio,
 and encodes baseline JPEG at quality 85. Uploads cannot exceed 256 KiB. The minute
 gate runs before GPU scaling, download and JPEG encoding in a bounded branch of

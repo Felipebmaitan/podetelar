@@ -31,6 +31,7 @@ type Received = {
 
 async function cameraId(
   isolated = Boolean(process.env.PODETELAR_TEST_SFU_PID),
+  defaultIfSelected = false,
 ) {
   const name = process.env.PODETELAR_TEST_CAMERA;
   test.skip(
@@ -43,7 +44,7 @@ async function cameraId(
   }[];
   const selected = devices.filter((camera) => camera.name === name);
   expect(selected).toHaveLength(1);
-  return selected[0]!.id;
+  return defaultIfSelected && selected[0] === devices[0] ? "" : selected[0]!.id;
 }
 
 test("camera Automatic selects the target for the encoder codec", async ({
@@ -219,7 +220,7 @@ test("one participant shares a window and a camera concurrently with independent
   baseURL,
 }) => {
   test.setTimeout(115_000);
-  const id = await cameraId();
+  const id = await cameraId(undefined, true);
   const cameraCodec = process.env.PODETELAR_TEST_CAMERA_CODEC;
   const screen = timingSource();
   let viewer: ReturnType<typeof nativeRequest> | undefined;
@@ -264,6 +265,7 @@ test("one participant shares a window and a camera concurrently with independent
       sourceId,
       cameraId: id,
       cameraCodec,
+      checkCameraView: true,
     });
     expect(await sender.reported).toEqual({ both: true });
     const tracks = async () =>

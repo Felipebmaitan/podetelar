@@ -186,6 +186,7 @@ pub struct Snapshot {
     pub camera_sharing: bool,
     pub camera_pending: bool,
     pub camera_mode: Option<Mode>,
+    pub camera_feed: Option<Arc<crate::encoding::CameraFeed>>,
     pub sources: Vec<SourceInfo>,
     pub cameras: Vec<camera::Info>,
     pub refreshing_cameras: bool,
@@ -221,6 +222,7 @@ impl Default for Snapshot {
             camera_sharing: false,
             camera_pending: false,
             camera_mode: None,
+            camera_feed: None,
             sources: Vec::new(),
             cameras: Vec::new(),
             refreshing_cameras: false,
@@ -634,6 +636,7 @@ pub struct Stream {
     pub audio_metrics: Arc<Mutex<audio::Metrics>>,
     audio: Option<(JoinHandle<Result<audio::Metrics>>, LocalAudioTrack)>,
     previews: Latest,
+    camera_feed: Option<Arc<crate::encoding::CameraFeed>>,
     preview_task: Option<JoinHandle<()>>,
     pub preview_uploads: Arc<AtomicU64>,
     pub delivery: Arc<Mutex<delivery::Metrics>>,
@@ -785,6 +788,7 @@ impl Stream {
         let codec = encoder_codec(&encoding);
         let rate = encoding.rate();
         let previews = encoding.previews();
+        let camera_feed = encoding.camera_feed.clone();
         let rtc_source = NativeVideoSource::new_encoded(VideoResolution {
             width: mode.width,
             height: mode.height,
@@ -868,6 +872,7 @@ impl Stream {
             audio_metrics: Arc::new(Mutex::new(audio::Metrics::default())),
             audio: None,
             previews,
+            camera_feed,
             preview_task: None,
             preview_uploads: Arc::new(AtomicU64::new(0)),
             preferred_encoder: config.encoder.clone(),
@@ -1347,6 +1352,10 @@ impl Streams {
         state.sharing = self.screen.is_some();
         state.camera_sharing = self.camera.is_some();
         state.camera_mode = self.camera.as_ref().map(|stream| stream.mode);
+        state.camera_feed = self
+            .camera
+            .as_ref()
+            .and_then(|stream| stream.camera_feed.clone());
         if !state.sharing {
             state.active_selection = None;
         }
@@ -1505,12 +1514,19 @@ async fn worker(
     local_media_only: bool,
 ) {
     // Finish Media Foundation plugin initialization before opening any native
-    // encoder sessions. Camera device discovery still runs on explicit refresh.
+    // encoder sessions. Camera discovery runs when sharing or refreshing cameras.
     #[cfg(windows)]
     let _ = gstreamer::Plugin::load_by_name("mediafoundation");
     let mut sources = sources::enumerate();
     let mut cameras: Vec<camera::Device> = Vec::new();
     let mut camera_discovery: Option<JoinHandle<Vec<camera::Device>>> = None;
+    let publish_cameras = |cameras: &[camera::Device]| {
+        update(&snapshot, |state| {
+            state.cameras = cameras.iter().map(|device| device.info.clone()).collect();
+            state.refreshing_cameras = false;
+            state.cameras_ready = true;
+        });
+    };
     update(&snapshot, |state| {
         state.sources = sources.iter().map(|source| source.info.clone()).collect();
         state.encoders = crate::encoding::encoders();
@@ -1545,11 +1561,7 @@ async fn worker(
                     && let Some(job) = camera_discovery.take()
                 {
                     cameras = job.await.unwrap_or_default();
-                    update(&snapshot, |state| {
-                        state.cameras = cameras.iter().map(|device| device.info.clone()).collect();
-                        state.refreshing_cameras = false;
-                        state.cameras_ready = true;
-                    });
+                    publish_cameras(&cameras);
                 }
                 if probe.as_ref().is_some_and(|job|job.is_finished()) && let Some(job)=probe.take() {
                         let mut result=job.finish().await.unwrap_or_else(|_|crate::network::Capacity{error:"Connection measurement unavailable. Try again in Advanced.".into(),..Default::default()});
@@ -1716,11 +1728,31 @@ async fn worker(
                                 .or_else(|| encoders.first())
                                 .context("Choose an available hardware encoder.")?
                                 .clone();
-                            let source = cameras
-                                .iter()
-                                .find(|device| device.info.id == device_id)
-                                .context("Refresh cameras and select an available device.")?
-                                .source(quality)?;
+                            if camera_discovery.is_some()
+                                || device_id.is_empty()
+                                || !cameras.iter().any(|device| device.info.id == device_id)
+                            {
+                                let job = camera_discovery.take().unwrap_or_else(|| {
+                                    tokio::task::spawn_blocking(camera::enumerate)
+                                });
+                                cameras = job.await.unwrap_or_default();
+                                publish_cameras(&cameras);
+                            }
+                            anyhow::ensure!(
+                                !stop.load(Ordering::Acquire),
+                                "Capture request was cancelled."
+                            );
+                            let device = if device_id.is_empty() {
+                                cameras.first().context(
+                                    "No camera found. Check Windows camera permissions and refresh.",
+                                )?
+                            } else {
+                                cameras
+                                    .iter()
+                                    .find(|device| device.info.id == device_id)
+                                    .context("Refresh cameras and select an available device.")?
+                            };
+                            let source = device.source(quality)?;
                             (
                                 StreamConfig {
                                     source,

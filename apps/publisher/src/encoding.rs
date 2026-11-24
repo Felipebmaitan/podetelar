@@ -63,6 +63,43 @@ pub struct Metrics {
     pub encoder_queue_frames: Option<u32>,
 }
 
+/// A bounded local view of the existing camera capture. The presentation lease
+/// expires even if the window stops drawing frames without a visibility event.
+pub struct CameraFeed {
+    sink: AppSink,
+    requested_at: Arc<Mutex<Option<Instant>>>,
+}
+
+impl CameraFeed {
+    fn new(pipeline: &gst::Pipeline) -> Result<Self> {
+        let sink = pipeline
+            .by_name("camera_view")
+            .and_downcast::<AppSink>()
+            .context("Missing local camera sink.")?;
+        let requested_at = Arc::new(Mutex::new(None::<Instant>));
+        let requested = requested_at.clone();
+        pipeline
+            .by_name("camera_view_gate")
+            .and_then(|queue| queue.static_pad("sink"))
+            .context("Missing local camera gate.")?
+            .add_probe(gst::PadProbeType::BUFFER, move |_, _| {
+                if requested.lock().is_ok_and(|time| {
+                    time.is_some_and(|time| time.elapsed() < Duration::from_millis(200))
+                }) {
+                    gst::PadProbeReturn::Ok
+                } else {
+                    gst::PadProbeReturn::Drop
+                }
+            });
+        Ok(Self { sink, requested_at })
+    }
+
+    pub fn next_sample(&self) -> Option<gst::Sample> {
+        *self.requested_at.lock().ok()? = Some(Instant::now());
+        self.sink.try_pull_sample(gst::ClockTime::ZERO)
+    }
+}
+
 // Owns the native pipeline. Every return/error path transitions it to NULL.
 pub struct Encoding {
     #[cfg(target_os = "macos")]
@@ -77,6 +114,7 @@ pub struct Encoding {
     capture: Source,
     preview_sink: AppSink,
     previews: Latest,
+    pub camera_feed: Option<Arc<CameraFeed>>,
     rate: RateControl,
 }
 
@@ -188,8 +226,14 @@ impl Encoding {
             ""
         };
         #[cfg(not(target_os = "macos"))]
+        let camera_view = if source.is_camera() {
+            " raw. ! queue name=camera_view_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=RGBA,width=640,height=360 ! d3d11download ! video/x-raw,format=RGBA ! appsink name=camera_view max-buffers=1 drop=true sync=false async=false wait-on-eos=false enable-last-sample=false"
+        } else {
+            ""
+        };
+        #[cfg(not(target_os = "macos"))]
         let processing = format!(
-            "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! {camera_decode}{cadence}videorate drop-only=true max-rate={} ! {upload}d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width={},height={},framerate={}/1 ! clocksync ! tee name=raw raw. ! queue name=encoder_queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! {} name=hardware bitrate={} gop-size={} ! {media_type},profile={profile} ! {framing} ! appsink name=encoded max-buffers=2 sync=false raw. ! queue name=preview_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=NV12,width=960,height=540 ! d3d11download ! video/x-raw,format=NV12 ! videoconvert ! video/x-raw,format=I420 ! jpegenc quality=85 ! appsink name=preview max-buffers=1 drop=true sync=false async=false wait-on-eos=false",
+            "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! {camera_decode}{cadence}videorate drop-only=true max-rate={} ! {upload}d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width={},height={},framerate={}/1 ! clocksync ! tee name=raw raw. ! queue name=encoder_queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! {} name=hardware bitrate={} gop-size={} ! {media_type},profile={profile} ! {framing} ! appsink name=encoded max-buffers=2 sync=false raw. ! queue name=preview_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=NV12,width=960,height=540 ! d3d11download ! video/x-raw,format=NV12 ! videoconvert ! video/x-raw,format=I420 ! jpegenc quality=85 ! appsink name=preview max-buffers=1 drop=true sync=false async=false wait-on-eos=false{camera_view}",
             mode.fps,
             mode.width,
             mode.height,
@@ -339,6 +383,10 @@ impl Encoding {
             .context("Missing preview sink.")?
             .downcast::<AppSink>()
             .map_err(|_| anyhow::anyhow!("Invalid preview sink."))?;
+        let camera_feed = source
+            .is_camera()
+            .then(|| CameraFeed::new(&pipeline).map(Arc::new))
+            .transpose()?;
         let epoch_us = SystemTime::now()
             .duration_since(UNIX_EPOCH)?
             .as_micros()
@@ -358,6 +406,7 @@ impl Encoding {
             capture: source.clone(),
             preview_sink,
             previews: preview.latest,
+            camera_feed,
             rate,
         };
         ensure!(!stop.load(Ordering::Acquire), "Capture was cancelled.");
@@ -650,5 +699,54 @@ impl Encoder {
         factory.static_pad_templates().iter().any(|template| {
             template.direction() == gst::PadDirection::Sink && template.caps().can_intersect(&caps)
         })
+    }
+}
+
+#[cfg(test)]
+mod camera_view_tests {
+    use super::*;
+
+    #[test]
+    fn camera_view_stops_receiving_without_a_visible_consumer() -> Result<()> {
+        gst::init()?;
+        let pipeline = gst::parse::launch(
+            "videotestsrc is-live=true ! video/x-raw,format=RGBA,width=64,height=36,framerate=30/1 ! queue name=camera_view_gate max-size-buffers=1 leaky=downstream ! appsink name=camera_view max-buffers=1 drop=true sync=false async=false",
+        )?.downcast::<gst::Pipeline>().expect("camera view pipeline");
+        let feed = CameraFeed::new(&pipeline)?;
+        pipeline.set_state(gst::State::Playing)?;
+        let result = (|| -> Result<()> {
+            let timeout = gst::ClockTime::from_mseconds(150);
+            let wait_for_frame = || {
+                let deadline = Instant::now() + Duration::from_secs(3);
+                while Instant::now() < deadline {
+                    if let Some(sample) = feed.next_sample() {
+                        return Some(sample);
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                None
+            };
+            ensure!(
+                feed.sink.try_pull_sample(timeout).is_none(),
+                "Hidden camera view received a frame"
+            );
+            let sample = wait_for_frame().context("First camera view frame")?;
+            assert_eq!(
+                crate::video_image::camera_image(&sample).unwrap().size,
+                [64, 36]
+            );
+            // A closed view can leave one buffered frame, but it must stop
+            // receiving new frames after the presentation lease expires.
+            std::thread::sleep(Duration::from_millis(350));
+            feed.sink.try_pull_sample(gst::ClockTime::ZERO);
+            ensure!(
+                feed.sink.try_pull_sample(timeout).is_none(),
+                "Camera view kept receiving after the lease expired"
+            );
+            ensure!(wait_for_frame().is_some(), "Camera view did not resume");
+            Ok(())
+        })();
+        pipeline.set_state(gst::State::Null)?;
+        result
     }
 }

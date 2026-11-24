@@ -394,10 +394,6 @@ impl PublisherUi {
                         self.open_profile();
                         ui.close();
                     }
-                    if ui.button(tr("Advanced settings")).clicked() {
-                        self.advanced_open = true;
-                        ui.close();
-                    }
                     ui.menu_button(tr("Theme"), |ui| self.theme_options(ui));
                     ui.separator();
                     if std::env::var_os(crate::activation_protocol::INSTALLED).is_some() {

@@ -276,6 +276,7 @@ pub enum Command {
         device_id: String,
         quality: Settings,
         preferred_codec: Option<Codec>,
+        preview_release: Option<crate::source_picker::CameraRelease>,
     },
     DownloadBudget {
         bps: Option<u64>,
@@ -290,7 +291,9 @@ pub enum Command {
     StopCamera,
     Leave,
     RefreshSources,
-    RefreshCameras,
+    RefreshCameras {
+        preview_release: Option<crate::source_picker::CameraRelease>,
+    },
     Shutdown,
 }
 
@@ -388,13 +391,33 @@ impl Controller {
         if self.shutdown.requested.load(Ordering::Acquire) {
             return;
         }
-        if matches!(command, Command::RefreshSources | Command::RefreshCameras) {
-            // Metadata refresh is best-effort and must not disable/close the picker,
+        if matches!(
+            command,
+            Command::RefreshSources | Command::RefreshCameras { .. }
+        ) {
+            // Metadata refresh is best-effort and must not close the settings,
             // overwrite operation feedback, or allocate capture authority.
-            let _ = self.commands.try_send(QueuedCommand {
-                command,
-                capture: None,
-                join: None,
+            let cameras = matches!(command, Command::RefreshCameras { .. });
+            update(&self.snapshot, |state| {
+                if cameras
+                    && (state.refreshing_cameras || state.camera_pending || state.camera_sharing)
+                {
+                    return;
+                }
+                if self
+                    .commands
+                    .try_send(QueuedCommand {
+                        command,
+                        capture: None,
+                        join: None,
+                    })
+                    .is_ok()
+                    && cameras
+                {
+                    // The picker must stay closed even if the room worker has
+                    // not begun probing the device yet.
+                    state.refreshing_cameras = true;
+                }
             });
             return;
         }
@@ -413,7 +436,7 @@ impl Controller {
             Command::Leave => "Leaving the room…",
             Command::Shutdown => "Closing…",
             Command::RefreshSources => "Refreshing available sources…",
-            Command::RefreshCameras => "Refreshing cameras…",
+            Command::RefreshCameras { .. } => "Refreshing cameras…",
             Command::DownloadBudget { .. } => "Updating your watching allowance…",
             Command::MeasureConnection => "Measuring your connection…",
             Command::Watch { enabled: true, .. } => "Starting playback…",
@@ -454,6 +477,12 @@ impl Controller {
                 state.error.clear();
             }
         });
+    }
+
+    pub fn cameras_refreshing(&self) -> bool {
+        self.snapshot
+            .lock()
+            .is_ok_and(|state| state.refreshing_cameras)
     }
 
     fn cancel_capture(&self) {
@@ -1618,10 +1647,18 @@ async fn worker(
             });
             continue;
         }
-        if matches!(command, Command::RefreshCameras) {
+        if let Command::RefreshCameras { preview_release } = command {
             if camera::available() && camera_discovery.is_none() && streams.camera.is_none() {
-                camera_discovery = Some(tokio::task::spawn_blocking(camera::enumerate));
-                update(&snapshot, |state| state.refreshing_cameras = true);
+                camera_discovery = Some(tokio::task::spawn_blocking(move || {
+                    if let Some(release) = preview_release
+                        && release.wait(&AtomicBool::new(false)).is_err()
+                    {
+                        return Vec::new();
+                    }
+                    camera::enumerate()
+                }));
+            } else if camera_discovery.is_none() {
+                update(&snapshot, |state| state.refreshing_cameras = false);
             }
             continue;
         }
@@ -1715,11 +1752,18 @@ async fn worker(
                             device_id,
                             quality,
                             preferred_codec,
+                            preview_release,
                         } => {
                             anyhow::ensure!(
                                 streams.camera.is_none(),
                                 "Your camera is already sharing."
                             );
+                            if let Some(release) = preview_release {
+                                let cancelled = stop.clone();
+                                tokio::task::spawn_blocking(move || release.wait(&cancelled))
+                                    .await
+                                    .context("Camera preview worker stopped.")??;
+                            }
                             let encoder = encoders
                                 .iter()
                                 .find(|encoder| {
@@ -1893,7 +1937,7 @@ async fn worker(
                         }
                     });
                 }
-                Command::RefreshCameras => {
+                Command::RefreshCameras { .. } => {
                     unreachable!("Camera discovery is handled before room operations")
                 }
                 Command::DownloadBudget { bps } => {

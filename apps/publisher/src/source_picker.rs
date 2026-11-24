@@ -1,4 +1,4 @@
-//! Local, one-shot source confirmation. No admission, encoder, audio or upload path.
+//! Local screen confirmation and live camera selection preview.
 #[cfg(any(not(target_os = "macos"), test))]
 use crate::sources::Target;
 use crate::sources::{self, Source, SourceInfo};
@@ -8,7 +8,7 @@ use gstreamer::{self as gst, prelude::*};
 use gstreamer_app::AppSink;
 use std::sync::{
     Arc, Condvar, Mutex,
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use std::time::{Duration, Instant};
 
@@ -55,6 +55,30 @@ pub struct Preview {
     worker: Option<std::thread::JoinHandle<()>>,
 }
 
+pub struct CameraRelease(Arc<(Mutex<State>, Condvar)>);
+
+impl CameraRelease {
+    pub fn wait(self, cancelled: &AtomicBool) -> Result<()> {
+        let (lock, ready) = &*self.0;
+        let mut state = lock.lock().unwrap_or_else(|p| p.into_inner());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while state.capturing_camera && !cancelled.load(Ordering::Acquire) {
+            ensure!(
+                Instant::now() < deadline,
+                "Camera preview is still closing. Try sharing again."
+            );
+            (state, _) = ready
+                .wait_timeout(state, Duration::from_millis(25))
+                .unwrap_or_else(|p| p.into_inner());
+        }
+        ensure!(
+            !cancelled.load(Ordering::Acquire),
+            "Capture request was cancelled."
+        );
+        Ok(())
+    }
+}
+
 impl Preview {
     pub fn new() -> Self {
         Self::with_capture(|info, cancelled| {
@@ -67,6 +91,20 @@ impl Preview {
 
     pub(crate) fn with_capture(
         capture: impl Fn(&SourceInfo, &dyn Fn() -> bool) -> Option<ColorImage> + Send + 'static,
+    ) -> Self {
+        Self::with_captures(capture, capture_camera)
+    }
+
+    fn with_captures(
+        capture: impl Fn(&SourceInfo, &dyn Fn() -> bool) -> Option<ColorImage> + Send + 'static,
+        camera: impl Fn(
+            &str,
+            crate::quality::Settings,
+            &dyn Fn() -> bool,
+            &mut dyn FnMut(ColorImage),
+        ) -> bool
+        + Send
+        + 'static,
     ) -> Self {
         let shared = Arc::new((Mutex::new(State::default()), Condvar::new()));
         let generation = Arc::new(AtomicU64::new(0));
@@ -95,26 +133,39 @@ impl Preview {
                         .unwrap_or_else(|p| p.into_inner());
                     if guard.closed {
                         guard.capturing_camera = false;
+                        ready.notify_all();
                         break;
                     }
                     if epoch.load(Ordering::Acquire) != requested {
                         guard.capturing_camera = false;
+                        ready.notify_all();
                         continue;
                     }
                     drop(guard);
                     let cancelled = || epoch.load(Ordering::Acquire) != requested;
-                    let mut image = None;
+                    let mut publish = |image| {
+                        let mut guard = lock.lock().unwrap_or_else(|p| p.into_inner());
+                        if !guard.closed && !cancelled() {
+                            guard.result = Some(Frame {
+                                source_id: request.key().to_owned(),
+                                image: Some(image),
+                            });
+                        }
+                    };
+                    let mut completed = false;
                     for attempt in 0..CAPTURE_ATTEMPTS {
                         if cancelled() {
                             break;
                         }
-                        image = match &request {
-                            Request::Screen(info) => capture(info, &cancelled),
+                        completed = match &request {
+                            Request::Screen(info) => {
+                                capture(info, &cancelled).map(&mut publish).is_some()
+                            }
                             Request::Camera {
                                 device, quality, ..
-                            } => capture_camera(device, *quality, &cancelled),
+                            } => camera(device, *quality, &cancelled, &mut publish),
                         };
-                        if image.is_some() || cancelled() || attempt + 1 == CAPTURE_ATTEMPTS {
+                        if completed || cancelled() || attempt + 1 == CAPTURE_ATTEMPTS {
                             break;
                         }
                         // A quick source switch can leave a capture backend briefly busy.
@@ -131,10 +182,11 @@ impl Preview {
                     }
                     let mut guard = lock.lock().unwrap_or_else(|p| p.into_inner());
                     guard.capturing_camera = false;
-                    if !guard.closed && !cancelled() {
+                    ready.notify_all();
+                    if !completed && !guard.closed && !cancelled() {
                         guard.result = Some(Frame {
                             source_id: request.key().to_owned(),
-                            image,
+                            image: None,
                         });
                     }
                 }
@@ -161,9 +213,11 @@ impl Preview {
         });
     }
 
-    pub fn camera_capturing(&self) -> bool {
+    pub fn camera_release(&self) -> Option<CameraRelease> {
         let state = self.shared.0.lock().unwrap_or_else(|p| p.into_inner());
-        state.capturing_camera || matches!(&state.pending, Some((_, Request::Camera { .. })))
+        state
+            .capturing_camera
+            .then(|| CameraRelease(self.shared.clone()))
     }
 
     fn request_frame(&self, request: Request) {
@@ -182,7 +236,7 @@ impl Preview {
         } else {
             state.pending = Some((generation, request));
         }
-        self.shared.1.notify_one();
+        self.shared.1.notify_all();
     }
 
     pub fn take(&self) -> Option<Frame> {
@@ -200,7 +254,7 @@ impl Preview {
             self.generation.fetch_add(1, Ordering::AcqRel);
             state.pending = None;
             state.result = None;
-            self.shared.1.notify_one();
+            self.shared.1.notify_all();
         }
     }
 }
@@ -212,7 +266,7 @@ impl Preview {
         state.pending = None;
         state.result = None;
         self.generation.fetch_add(1, Ordering::AcqRel);
-        self.shared.1.notify_one();
+        self.shared.1.notify_all();
     }
 
     pub fn shutdown_finished(&self) -> bool {
@@ -240,16 +294,30 @@ fn capture_camera(
     device_id: &str,
     quality: crate::quality::Settings,
     cancelled: &dyn Fn() -> bool,
-) -> Option<ColorImage> {
-    gst::init().ok()?;
-    let device = sources::camera::enumerate()
-        .into_iter()
-        .find(|device| device.info.id == device_id)?;
-    let source = device.source(quality).ok()?;
-    capture(&source, cancelled).ok()
+    publish: &mut dyn FnMut(ColorImage),
+) -> bool {
+    (|| -> Result<()> {
+        gst::init()?;
+        let device = sources::camera::enumerate()
+            .into_iter()
+            .find(|device| device.info.id == device_id)
+            .context("Camera unavailable.")?;
+        capture_frames(&device.source(quality)?, cancelled, publish)
+    })()
+    .is_ok()
 }
 
 fn capture(source: &Source, cancelled: &dyn Fn() -> bool) -> Result<ColorImage> {
+    let mut image = None;
+    capture_frames(source, cancelled, &mut |frame| image = Some(frame))?;
+    image.context("Missing preview frame.")
+}
+
+fn capture_frames(
+    source: &Source,
+    cancelled: &dyn Fn() -> bool,
+    publish: &mut dyn FnMut(ColorImage),
+) -> Result<()> {
     ensure!(
         !cancelled() && sources::validate(source),
         "Source unavailable."
@@ -331,31 +399,18 @@ fn capture(source: &Source, cancelled: &dyn Fn() -> bool) -> Result<ColorImage> 
     #[cfg(target_os = "macos")]
     let _capture = crate::macos::video(&pipeline.0, source, 480, 270, 30)?;
     pipeline.0.set_state(gst::State::Playing)?;
-    let started = Instant::now();
-    while started.elapsed() < CAPTURE_TIMEOUT && !cancelled() {
+    let mut last_frame = Instant::now();
+    while last_frame.elapsed() < CAPTURE_TIMEOUT && !cancelled() {
         if let Some(sample) = sink.try_pull_sample(gst::ClockTime::from_mseconds(25)) {
             ensure!(!cancelled(), "Cancelled.");
-            let info = gstreamer_video::VideoInfo::from_caps(
-                sample.caps().context("Missing preview caps.")?,
-            )?;
-            ensure!(
-                info.width() == 480 && info.height() == 270,
-                "Invalid preview dimensions."
-            );
-            let buffer = sample
-                .buffer()
-                .context("Missing preview frame.")?
-                .map_readable()?;
-            let stride = usize::try_from(info.stride()[0])?;
-            ensure!(
-                stride >= 480 * 4 && buffer.len() >= (269 * stride + 480 * 4),
-                "Invalid preview stride."
-            );
-            let mut rgba = Vec::with_capacity(480 * 270 * 4);
-            for row in 0..270 {
-                rgba.extend_from_slice(&buffer[row * stride..row * stride + 480 * 4]);
+            let image =
+                crate::video_image::camera_image(&sample).context("Invalid preview frame.")?;
+            ensure!(image.size == [480, 270], "Invalid preview dimensions.");
+            publish(image);
+            if !source.is_camera() {
+                return Ok(());
             }
-            return Ok(ColorImage::from_rgba_unmultiplied([480, 270], &rgba));
+            last_frame = Instant::now();
         }
         if sink.is_eos() {
             break;
@@ -376,7 +431,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     #[ignore = "requires a named Windows camera"]
-    fn physical_camera_produces_a_local_frame_and_can_be_reopened() {
+    fn physical_camera_produces_live_local_frames_and_can_be_reopened() {
         let name = std::env::var("PODETELAR_TEST_CAMERA").expect("Name a local camera");
         gst::init().unwrap();
         let device = sources::camera::enumerate()
@@ -389,10 +444,16 @@ mod tests {
             bitrate: crate::quality::Bitrate::Auto,
             ..Default::default()
         };
+        let preview = Preview::new();
         for _ in 0..2 {
-            let image = capture_camera(&device.info.id, quality, &|| false)
-                .expect("Capture a frame and release the selected camera");
-            assert_eq!(image.size, [480, 270]);
+            preview.request_camera("camera".into(), device.info.id.clone(), quality);
+            for _ in 0..10 {
+                let image = wait(&preview).image.expect("Live camera frame");
+                assert_eq!(image.size, [480, 270]);
+            }
+            let handoff = preview.camera_release().expect("Preview still owns camera");
+            preview.clear();
+            handoff.wait(&AtomicBool::new(false)).unwrap();
         }
     }
 
@@ -413,6 +474,41 @@ mod tests {
             assert!(start.elapsed() < Duration::from_secs(3));
             std::thread::sleep(Duration::from_millis(5));
         }
+    }
+
+    #[test]
+    fn camera_selection_reuses_capture_until_it_hands_the_device_off() {
+        use eframe::egui::Color32;
+        let next = Arc::new(AtomicBool::new(false));
+        let open_count = Arc::new(AtomicU64::new(0));
+        let preview = Preview::with_captures(|_, _| None, {
+            let next = next.clone();
+            let open_count = open_count.clone();
+            move |_, _, cancelled, publish| {
+                open_count.fetch_add(1, Ordering::Relaxed);
+                publish(ColorImage::filled([2, 2], Color32::RED));
+                while !cancelled() && !next.load(Ordering::Acquire) {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                if !cancelled() {
+                    publish(ColorImage::filled([2, 2], Color32::BLUE));
+                }
+                while !cancelled() {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                false
+            }
+        });
+        preview.request_camera("choice".into(), "device".into(), Default::default());
+        assert_eq!(wait(&preview).image.unwrap().pixels[0], Color32::RED);
+        next.store(true, Ordering::Release);
+        assert_eq!(wait(&preview).image.unwrap().pixels[0], Color32::BLUE);
+        let handoff = preview.camera_release().expect("Preview still owns camera");
+        preview.clear();
+        handoff.wait(&AtomicBool::new(false)).unwrap();
+        assert!(preview.camera_release().is_none());
+        assert!(preview.take().is_none());
+        assert_eq!(open_count.load(Ordering::Relaxed), 1);
     }
 
     #[test]

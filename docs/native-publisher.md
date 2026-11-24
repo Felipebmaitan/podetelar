@@ -54,9 +54,9 @@ device. The arrow opens **Camera settings**, where you can choose another camera
 or switch back to **Default camera**. PodeTelar remembers an explicit selection.
 If it is disconnected, reconnect it or choose another device. Windows camera
 discovery includes OBS Virtual Camera when its driver is registered and usable.
-The camera settings show a one-shot local preview beside the device controls.
-The camera is released after the preview, and its bitrate is automatic unless you
-override it in **Advanced camera settings**.
+The camera settings show a live, mirrored preview beside the device controls.
+Closing the preview or starting to share releases the preview's camera capture.
+Bitrate is automatic unless you override it in **Advanced camera settings**.
 The server's shared bitrate, resolution, and FPS ceilings also apply to camera
 streams, including while sharing. Screen Automatic targets apply to screens.
 Camera streams publish only video and prefer compatible hardware H.264. A participant can share one screen and one
@@ -66,7 +66,8 @@ Watching cameras requires a native app version with camera playback support.
 Camera capture is currently Windows-only. The stage toolbar offers Grid, Spotlight and Focus.
 Spotlight keeps one stream large and the others in a scrollable strip. Highlighting a stream changes the layout.
 Camera tiles subscribe automatically when the watching allowance permits. Your
-own camera preview is live while visible and comes directly from capture.
+own camera preview is live and mirrored while visible. The orientation of the
+published camera stream stays the same for viewers.
 Use **Watch** to subscribe to a screen and its audio, and **Stop watching**
 to unsubscribe. Hover over a watched stream for controls and received codec and
 bitrate. The speaker opens a vertical volume slider for a screen. Click a stream

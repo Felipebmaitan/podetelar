@@ -111,7 +111,7 @@ test("an explicitly selected Windows camera publishes and starts playing automat
       quality: {
         ...configuration.quality,
         fps: 30,
-        bitrate: { mode: "manual", bps: 2_000_000 },
+        bitrate: { mode: "auto" },
       },
     });
     await restarted.reported;

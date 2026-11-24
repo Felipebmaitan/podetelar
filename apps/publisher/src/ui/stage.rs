@@ -28,6 +28,47 @@ fn monitor_glow(painter: &egui::Painter, screen: egui::Rect) {
     painter.add(egui::Shape::mesh(glow));
 }
 
+fn paint_presence_picture(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    name: &str,
+    texture: Option<egui::TextureId>,
+) {
+    if let Some(texture) = texture {
+        egui::Image::new((texture, rect.size()))
+            .corner_radius((rect.width() / 2.0).round() as u8)
+            .paint_at(ui, rect);
+    } else {
+        paint_avatar_circle(ui.painter(), rect, name);
+    }
+}
+
+fn paint_presence_name(ui: &egui::Ui, avatar: egui::Rect, name: &str) {
+    let p = palette();
+    let clip = ui.clip_rect().shrink2(egui::vec2(8.0, 0.0));
+    let max_width = (clip.width() - 20.0).clamp(12.0, 400.0);
+    let mut job =
+        egui::text::LayoutJob::simple(name.to_owned(), skin::semibold(12.5), p.text, max_width);
+    job.wrap.max_rows = 2;
+    job.wrap.break_anywhere = true;
+    let text = ui.fonts_mut(|fonts| fonts.layout_job(job));
+    let size = text.size() + egui::vec2(20.0, 10.0);
+    let center = avatar
+        .center()
+        .x
+        .max(clip.left() + size.x / 2.0)
+        .min(clip.right() - size.x / 2.0);
+    let label = egui::Rect::from_center_size(
+        egui::pos2(center, avatar.bottom() + 5.0 + size.y / 2.0),
+        size,
+    );
+    ui.painter().rect_filled(label, 8.0, p.card);
+    ui.painter()
+        .rect_stroke(label, 8.0, (1.0, p.border), egui::StrokeKind::Inside);
+    ui.painter()
+        .galley(label.center() - text.size() / 2.0, text, p.text);
+}
+
 impl PublisherUi {
     pub(super) fn room_capsule(&mut self, ui: &mut egui::Ui, state: &Snapshot, width: f32) {
         let name = if state.room_name.is_empty() {
@@ -82,13 +123,7 @@ impl PublisherUi {
                             args.rect.min + egui::vec2(index as f32 * 13.0, 0.0),
                             egui::vec2(20.0, 20.0),
                         );
-                        if let Some(texture) = texture {
-                            egui::Image::new((*texture, rect.size()))
-                                .corner_radius(10)
-                                .paint_at(ui, rect);
-                        } else {
-                            paint_avatar_circle(ui.painter(), rect, name);
-                        }
+                        paint_presence_picture(ui, rect, name, *texture);
                         ui.painter()
                             .circle_stroke(rect.center(), 10.0, (1.0, palette().panel));
                     }
@@ -228,8 +263,16 @@ impl PublisherUi {
 
     pub(super) fn empty_room_stage(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
         ui.vertical_centered(|ui| {
-            let art_height = (ui.available_height() * 0.42).clamp(92.0, 170.0);
-            ui.add_space((ui.available_height() * 0.16).max(8.0));
+            let height = ui.available_height();
+            let top = (height * 0.14).max(8.0);
+            let reserve = if state.participants.is_empty() {
+                56.0
+            } else {
+                180.0
+            };
+            let art_height =
+                (height * 0.42).clamp(60.0, (height - top - reserve).clamp(60.0, 170.0));
+            ui.add_space(top);
             let (art, _) =
                 ui.allocate_exact_size(egui::vec2(244.0, art_height), egui::Sense::hover());
             let p = palette();
@@ -264,21 +307,76 @@ impl PublisherUi {
             if !state.participants.is_empty() {
                 ui.add_space(4.0);
                 ui.label(egui::RichText::new(tr("Here now")).color(p.muted));
-                let names = state
-                    .participants
-                    .iter()
-                    .take(3)
-                    .map(String::as_str)
-                    .collect::<Vec<_>>();
-                let others = state.participants.len() - names.len();
-                let mut people = names.join(" · ");
-                if others > 0 {
-                    people.push_str(&format!(" · +{others}"));
-                }
-                ui.add(egui::Label::new(skin::strong(&people, 13.0)).truncate())
-                    .on_hover_text(people);
+                self.room_presence(ui, state);
             }
         });
+    }
+
+    fn room_presence(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+        const SLOT: f32 = 48.0;
+        const SPACING: f32 = 8.0;
+        let max_slots = ((ui.available_width() + SPACING) / (SLOT + SPACING)).floor() as usize;
+        if max_slots == 0 {
+            return;
+        }
+        let slots = state.participants.len().min(max_slots);
+        let overflow = state.participants.len() > max_slots;
+        let shown = slots - usize::from(overflow);
+        let width = slots as f32 * (SLOT + SPACING) - SPACING;
+        let (strip, _) = ui.allocate_exact_size(egui::vec2(width, 96.0), egui::Sense::hover());
+        let slot = |index: usize| {
+            egui::Rect::from_min_size(
+                strip.min + egui::vec2(index as f32 * (SLOT + SPACING), 0.0),
+                egui::vec2(SLOT, SLOT),
+            )
+        };
+        let pointer = ui.input(|input| input.pointer.hover_pos());
+        let mut hovered = None;
+        let mut focused = None;
+        for (index, name) in state.participants.iter().take(shown).enumerate() {
+            let id = state.participant_ids.get(index).map(|(id, _)| id.as_str());
+            let texture = id.and_then(|id| self.profile_texture(ui.ctx(), id));
+            let rect = slot(index);
+            let response = ui.interact(
+                rect,
+                ui.make_persistent_id(("room-presence-avatar", id, id.is_none().then_some(index))),
+                egui::Sense::focusable_noninteractive(),
+            );
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::Role::Image, ui.is_enabled(), name)
+            });
+            let is_hovered = response.hovered() && pointer.is_some_and(|pos| rect.contains(pos));
+            let highlighted = is_hovered || response.has_focus();
+            let picture = rect.shrink(if highlighted { 2.0 } else { 4.0 });
+            paint_presence_picture(ui, picture, name, texture);
+            let border = if highlighted {
+                palette().accent
+            } else {
+                palette().hover_stroke
+            };
+            ui.painter()
+                .circle_stroke(picture.center(), picture.width() / 2.0, (1.5, border));
+            if is_hovered {
+                hovered = Some((rect, name.as_str()));
+            } else if response.has_focus() {
+                focused = Some((rect, name.as_str()));
+            }
+        }
+        if overflow {
+            let more = ui
+                .put(
+                    slot(shown).shrink(4.0),
+                    egui::Button::new(format!("+{}", state.participants.len() - shown))
+                        .corner_radius(20),
+                )
+                .accessible_name(tr("People in this room"));
+            if more.clicked() {
+                self.roster_open = true;
+            }
+        }
+        if let Some((rect, name)) = hovered.or(focused) {
+            paint_presence_name(ui, rect, name);
+        }
     }
 
     pub(super) fn default_spotlight(state: &Snapshot) -> Option<&Tile> {

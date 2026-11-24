@@ -252,7 +252,7 @@ pub fn run() -> Result<()> {
             state.participants.push("Sam".into());
             state.participant_ids.push(("p-sam".into(), "Sam".into()));
         }
-        if mode == "setup" && std::env::args().any(|arg| arg == "--feedback") { state.busy = true; state.operation = "Refreshing available sources…"; }
+        if matches!(mode.as_str(), "setup" | "room") && std::env::args().any(|arg| arg == "--feedback") { state.busy = true; state.operation = "Refreshing available sources…"; }
         let (controller, commands) = Controller::recording_for_test(state);
         inner.controller = controller;
         inner.advanced_open = mode == "settings";

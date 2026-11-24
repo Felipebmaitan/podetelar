@@ -2727,10 +2727,10 @@ impl PublisherUi {
                     }
                 });
         }
-        let dock = connected.then(|| self.studio_dock(root, &state));
         if connected && self.roster_open {
             self.roster_drawer(root, &state);
         }
+        let dock = connected.then(|| self.studio_dock(root, &state));
         let stage_bounds = root.available_rect_before_wrap();
         egui::CentralPanel::default()
             .frame(
@@ -3004,29 +3004,14 @@ impl PublisherUi {
             .as_ref()
             .map(source_name)
             .unwrap_or(Self::sharing_panel_title(state));
-        let setup_summary = if dirty {
-            pending_note.to_owned()
-        } else if let Some(mode) = state.mode.filter(|_| state.sharing) {
-            format!(
-                "{}p · {:.0} FPS · {:.1} Mbps",
-                mode.height,
-                state.metrics.fps,
-                state.delivery.bitrate_bps as f64 / 1_000_000.0
-            )
-        } else {
-            format!(
-                "{} · {} FPS",
-                tr(self.quality.resolution.label()),
-                self.quality.fps
-            )
-        };
+        let setup_summary = dock_stream_summary(state, displayed_source.as_ref(), self.quality);
         let source_width = if root.available_width() < 800.0 {
-            166.0
+            (root.available_width() - 395.0).clamp(116.0, 166.0)
         } else {
-            228.0
+            244.0
         };
         egui::Panel::bottom("studio-dock")
-            .exact_size(86.0)
+            .exact_size(94.0)
             .show_separator_line(false)
             .frame(egui::Frame::new().fill(palette().canvas))
             .show(root, |ui| {
@@ -3046,7 +3031,7 @@ impl PublisherUi {
                                 // 1. Broadcast setup popover trigger pill
                                 let setup_btn = ui.add(
                                     egui::Button::new("")
-                                        .min_size(egui::vec2(source_width, 36.0))
+                                        .min_size(egui::vec2(source_width, 44.0))
                                         .corner_radius(10)
                                         .fill(if self.setup_open {
                                             palette().accent.gamma_multiply(0.14)
@@ -3101,13 +3086,8 @@ impl PublisherUi {
                                 title_job.wrap.break_anywhere = true;
                                 title_job.wrap.overflow_character = Some('\u{2026}');
                                 let title_galley = ui.fonts_mut(|f| f.layout_job(title_job));
-                                ui.painter().galley(
-                                    egui::pos2(sr.left() + 30.0, sr.top() + 4.0),
-                                    title_galley,
-                                    palette().text,
-                                );
                                 let mut sub_job = egui::text::LayoutJob::simple(
-                                    setup_summary,
+                                    setup_summary.clone(),
                                     egui::FontId::proportional(12.0),
                                     if dirty {
                                         palette().warning
@@ -3120,8 +3100,18 @@ impl PublisherUi {
                                 sub_job.wrap.break_anywhere = true;
                                 sub_job.wrap.overflow_character = Some('\u{2026}');
                                 let sub_galley = ui.fonts_mut(|f| f.layout_job(sub_job));
+                                let text_left = sr.left() + 30.0;
+                                let title_height = title_galley.size().y;
+                                let gap = 2.0;
+                                let text_top = sr.center().y
+                                    - (title_height + gap + sub_galley.size().y) / 2.0;
                                 ui.painter().galley(
-                                    egui::pos2(sr.left() + 30.0, sr.top() + 19.5),
+                                    egui::pos2(text_left, text_top),
+                                    title_galley,
+                                    palette().text,
+                                );
+                                ui.painter().galley(
+                                    egui::pos2(text_left, text_top + title_height + gap),
                                     sub_galley,
                                     if dirty {
                                         palette().warning
@@ -3151,7 +3141,17 @@ impl PublisherUi {
                                     )
                                 });
                                 if setup_btn
-                                    .on_hover_text(Self::sharing_panel_title(state))
+                                    .on_hover_text(if dirty {
+                                        format!(
+                                            "{}\n{setup_summary}\n{pending_note}",
+                                            Self::sharing_panel_title(state)
+                                        )
+                                    } else {
+                                        format!(
+                                            "{}\n{setup_summary}",
+                                            Self::sharing_panel_title(state)
+                                        )
+                                    })
                                     .clicked()
                                 {
                                     self.setup_open = !self.setup_open;
@@ -3401,14 +3401,12 @@ impl PublisherUi {
                         self.sharing_actions(ui, state);
                     });
             });
-        let dock_top = ctx.content_rect().bottom() - 70.0;
         if !egui::Popup::is_any_open(ctx)
             && ctx.input(|input| {
                 input.pointer.any_pressed()
-                    && input
-                        .pointer
-                        .interact_pos()
-                        .is_some_and(|pos| !panel.response.rect.contains(pos) && pos.y < dock_top)
+                    && input.pointer.interact_pos().is_some_and(|pos| {
+                        !panel.response.rect.contains(pos) && !dock.contains(pos)
+                    })
             })
         {
             self.setup_open = false;
@@ -3534,6 +3532,39 @@ fn open_notices_folder(path: &std::path::Path) -> std::io::Result<()> {
     Ok(())
 }
 
+fn dock_stream_summary(
+    state: &Snapshot,
+    source: Option<&crate::sources::SourceInfo>,
+    settings: Settings,
+) -> String {
+    if state.sharing {
+        let Some(mode) = state.mode else {
+            return tr("Live").into();
+        };
+        let fps = if state.metrics.fps > 0.0 {
+            state.metrics.fps
+        } else {
+            f64::from(mode.fps)
+        };
+        return format!(
+            "{}×{} · {fps:.0} FPS · {:.1} Mbps",
+            mode.width,
+            mode.height,
+            state.delivery.bitrate_bps as f64 / 1_000_000.0,
+        );
+    }
+    let fps = settings.fps;
+    if let Some((width, height)) =
+        source.and_then(|source| settings.resolution.dimensions(source).ok())
+    {
+        format!("{width}×{height} · {fps} FPS")
+    } else if settings.resolution == quality::Resolution::Source {
+        format!("{fps} FPS")
+    } else {
+        format!("{} · {fps} FPS", tr(settings.resolution.label()))
+    }
+}
+
 fn quality_controls(
     ui: &mut egui::Ui,
     settings: &mut Settings,
@@ -3556,9 +3587,11 @@ fn quality_controls(
                         ..*settings
                     };
                     let mode = source.and_then(|s| candidate.resolve(s, encoder.codec).ok());
-                    let text = mode
-                        .map(|m| format!("{} · {}×{}", tr(resolution.label()), m.width, m.height))
-                        .unwrap_or_else(|| resolution.label().into());
+                    let label = tr(resolution.label());
+                    let text = match (resolution, mode) {
+                        (quality::Resolution::Source, _) | (_, None) => label.to_owned(),
+                        (_, Some(mode)) => format!("{label} · {}×{}", mode.width, mode.height),
+                    };
                     ui.add_enabled_ui(mode.is_some_and(|m| encoder.supports(m)), |ui| {
                         ui.selectable_value(&mut settings.resolution, resolution, text);
                     });
@@ -5276,6 +5309,95 @@ mod tests {
     }
 
     #[test]
+    fn dock_summary_prefers_the_live_mode_and_uses_source_dimensions_while_idle() {
+        let source = crate::sources::SourceInfo {
+            id: "monitor:fixture".into(),
+            label: "Monitor".into(),
+            width: 5120,
+            height: 2880,
+        };
+        let settings = Settings {
+            fps: 60,
+            ..Default::default()
+        };
+        let mut state = Snapshot::default();
+        assert_eq!(
+            dock_stream_summary(&state, Some(&source), settings),
+            "3840×2160 · 60 FPS"
+        );
+        assert_eq!(dock_stream_summary(&state, None, settings), "60 FPS");
+        state.sharing = true;
+        state.mode = Some(quality::Mode {
+            width: 1440,
+            height: 1080,
+            fps: 30,
+            bitrate: 8_000_000,
+        });
+        state.delivery.bitrate_bps = 6_400_000;
+        assert_eq!(
+            dock_stream_summary(&state, Some(&source), settings),
+            "1440×1080 · 30 FPS · 6.4 Mbps"
+        );
+    }
+
+    #[test]
+    fn empty_room_avatar_displays_a_name_on_hover_and_keyboard_focus() {
+        let mut app = app();
+        let ctx = egui::Context::default();
+        configure_theme(&ctx);
+        let name = "Marina Silva";
+        let state = Snapshot {
+            participants: vec![name.into()],
+            ..Default::default()
+        };
+        let mut draw = |events| {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(640.0, 420.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |root| {
+                    egui::CentralPanel::default().show(root, |ui| app.empty_room_stage(ui, &state));
+                },
+            );
+            output.textures_delta.clear();
+            output
+        };
+        let contains_name = |output: egui::FullOutput| {
+            let mut rendered = String::new();
+            for shape in &output.shapes {
+                painted_text(&shape.shape, &mut rendered);
+            }
+            rendered.contains(name)
+        };
+        let idle = draw(vec![]);
+        let center = idle
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Circle(circle) if (circle.radius - 20.0).abs() < 0.1 => {
+                    Some(circle.center)
+                }
+                _ => None,
+            })
+            .expect("The presence avatar");
+        assert!(!contains_name(idle));
+        assert!(contains_name(draw(vec![egui::Event::PointerMoved(center)])));
+        assert!(!contains_name(draw(vec![egui::Event::PointerGone])));
+        assert!(contains_name(draw(vec![egui::Event::Key {
+            key: egui::Key::Tab,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Default::default(),
+        }])));
+    }
+
+    #[test]
     fn floating_dock_keeps_its_bottom_edge_and_shadow_inside_the_window() {
         let mut app = app();
         let ctx = egui::Context::default();
@@ -5286,19 +5408,31 @@ mod tests {
         };
         let frame = skin::dock_frame();
         let mut dock = egui::Rect::NOTHING;
-        for (width, height, sharing) in [(960.0, 540.0, false), (820.0, 480.0, true)] {
+        for (width, height, sharing, roster) in [
+            (960.0, 540.0, false, false),
+            (960.0, 540.0, false, true),
+            (820.0, 480.0, true, true),
+        ] {
             state.sharing = sharing;
             state.active_selection = sharing.then(|| app.selection());
             app.source_id.push('x');
             let window = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
             let mut painted_with_room_for_shadow = false;
+            let mut roster_reaches_bottom = false;
+            let mut stage = window;
             for _ in 0..3 {
                 let mut output = ctx.run_ui(
                     egui::RawInput {
                         screen_rect: Some(window),
                         ..Default::default()
                     },
-                    |root| dock = app.studio_dock(root, &state),
+                    |root| {
+                        if roster {
+                            app.roster_drawer(root, &state);
+                        }
+                        stage = root.available_rect_before_wrap();
+                        dock = app.studio_dock(root, &state);
+                    },
                 );
                 output.textures_delta.clear();
                 painted_with_room_for_shadow = output.shapes.iter().any(|shape| {
@@ -5306,13 +5440,20 @@ mod tests {
                         egui::Shape::Vec(parts) if parts.iter().any(|part| matches!(part,
                             egui::Shape::Rect(rect) if rect.corner_radius == frame.corner_radius
                                 && rect.fill == frame.fill && rect.stroke == frame.stroke))
-                            && parts.iter().all(|part| window.contains_rect(part.visual_bounding_rect()))
+                            && parts.iter().all(|part| stage.contains_rect(part.visual_bounding_rect()))
                     )
+                });
+                roster_reaches_bottom = output.shapes.iter().any(|shape| {
+                    matches!(&shape.shape, egui::Shape::Rect(rect)
+                        if rect.fill == palette().panel && rect.stroke.color == palette().divider
+                            && rect.rect.left() >= stage.right() - 1.0
+                            && (rect.rect.bottom() - window.bottom()).abs() <= 1.0)
                 });
             }
             assert!(painted_with_room_for_shadow);
-            assert!(window.contains_rect(dock));
-            assert!((dock.center().x - window.center().x).abs() <= 1.0);
+            assert_eq!(roster_reaches_bottom, roster);
+            assert!(stage.contains_rect(dock));
+            assert!((dock.center().x - stage.center().x).abs() <= 1.0);
             assert!((window.bottom() - dock.bottom() - 20.0).abs() <= 1.0);
         }
     }

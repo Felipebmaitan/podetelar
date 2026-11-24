@@ -84,6 +84,15 @@ pub enum Kind {
 }
 
 impl Kind {
+    pub const ALL: [Self; 2] = [Self::Screen, Self::Camera];
+
+    pub fn stream_id(self, owner: &str) -> String {
+        match self {
+            Self::Screen => owner.to_owned(),
+            Self::Camera => format!("{owner}.camera"),
+        }
+    }
+
     pub fn path(self) -> &'static str {
         match self {
             Self::Screen => "screen",

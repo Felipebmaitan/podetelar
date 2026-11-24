@@ -43,7 +43,7 @@ are kept in memory. See [Discord accounts](discord-accounts.md).
 Guest pictures and live nickname editing are described in [guest profiles](guest-profiles.md).
 Later links may reuse the nickname
 and join when idle while the app remains open. An active room requires confirmation
-before switching. Sharing and watching remain explicit. See
+before switching. Starting screen or camera sharing and watching a screen remain explicit. See
 [launch and firewall behavior](distribution.md#invitations-and-launch-behavior).
 
 The room dock groups screen and camera sharing separately. Open the arrow on
@@ -53,15 +53,18 @@ quality settings. Open **Camera settings** and select a Windows camera, then cli
 **Share camera**. The selected device is remembered locally. If it is disconnected,
 refresh the list and reconnect it or select another device explicitly. Windows camera
 discovery includes OBS Virtual Camera when its driver is registered and usable.
-Camera streams publish only video. Each participant can share one source at a time.
-Use **Stop camera** before changing camera settings or starting screen sharing.
+Camera streams publish only video and prefer compatible hardware H.264. A participant can share one screen and one
+camera together. Each stop control ends its own stream. Stop the camera before
+changing its settings.
 Watching cameras requires a native app version with camera playback support.
 Camera capture is currently Windows-only. The stage toolbar offers Grid, Spotlight and Focus.
 Spotlight keeps one stream large and the others in a scrollable strip. Highlighting a stream changes the layout.
-Watch subscribes to video and audio, and Stop watching unsubscribes. Each stream
-has independent volume. Switching between a participant's camera and screen
-requires selecting Watch again. When only you are live, the stage shows your most recent
-preview. While you share and watch someone else, you can hide or restore the small
+Camera tiles subscribe automatically as each camera comes online. Use **Watch**
+to subscribe to a screen and its audio, and **Stop watching** to unsubscribe.
+Screen streams have independent volume. Camera playback still needs a compatible
+hardware decoder and room in the watching allowance. The local preview and
+diagnostics follow the screen while both sources are live. While you share and
+watch someone else, you can hide or restore the small
 local preview beside the streams. Preview capture occurs initially and at most
 once per minute.
 

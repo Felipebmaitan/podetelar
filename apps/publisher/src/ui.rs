@@ -188,7 +188,6 @@ pub struct PublisherUi {
     custom_bitrate: bool,
     download_budget: Option<u64>,
     textures: HashMap<String, egui::TextureHandle>,
-    texture_kinds: HashMap<String, crate::preview::Kind>,
     focused: Option<String>,
     spotlight: Option<String>,
     self_preview_hidden: bool,
@@ -322,7 +321,6 @@ impl PublisherUi {
             custom_bitrate: false,
             download_budget: None,
             textures: HashMap::new(),
-            texture_kinds: HashMap::new(),
             focused: None,
             spotlight: None,
             self_preview_hidden: false,
@@ -1013,7 +1011,7 @@ impl PublisherUi {
                 );
             }
         });
-        if state.sharing && !state.camera_sharing {
+        if state.sharing {
             egui::CollapsingHeader::new(tr("Source preview"))
                 .default_open(ui.available_height() > 460.0)
                 .show(ui, |ui| self.source_preview(ui, state));
@@ -1037,9 +1035,7 @@ impl PublisherUi {
         let valid = self.valid_selection(state);
         ui.add_space(3.0);
         ui.separator();
-        if (state.sharing || state.capture_pending)
-            && !(state.camera_sharing || state.camera_pending)
-        {
+        if state.sharing || state.capture_pending {
             let selection = self.selection();
             let dirty = state
                 .active_selection
@@ -1469,7 +1465,7 @@ impl PublisherUi {
                 bps: self.download_budget,
             });
         }
-        if state.sharing {
+        if state.any_sharing() {
             ui.separator();
             ui.label(tr("Stream diagnostics"));
             if let Some(mode) = state.mode {
@@ -1533,15 +1529,6 @@ impl PublisherUi {
     }
 
     fn update_picture(&mut self, ctx: &egui::Context, tile: &Tile) {
-        if self
-            .texture_kinds
-            .insert(tile.id.clone(), tile.kind)
-            .is_some_and(|kind| kind != tile.kind)
-        {
-            self.textures.remove(&tile.id);
-            #[cfg(feature = "performance-experiments")]
-            self.planar.rgba(&tile.id);
-        }
         // Native platforms can still schedule UI work while minimizing. Keep
         // subscription/audio state independent, but leave video owners in their
         // bounded mailbox until the window is presented again.
@@ -1619,12 +1606,12 @@ impl PublisherUi {
         ui.add_space(3.0);
         ui.horizontal(|ui| {
             ui.add_space(10.0);
-            ui.label(skin::strong(&tile.name, 12.0).color(palette().muted));
+            ui.label(skin::strong(stream_name(tile).as_ref(), 12.0).color(palette().muted));
         });
         ui.add_space(5.0);
-        if !tile.watching {
+        if tile.kind == crate::preview::Kind::Screen && !tile.watching {
             if skin::menu_row(ui, tr("Watch"), Some(Icon::Play), "", false)
-                .accessible_name(format!("{} · {}", tr("Watch"), tile.name))
+                .accessible_name(format!("{} · {}", tr("Watch"), stream_name(tile)))
                 .clicked()
             {
                 self.controller.send(Command::Watch {
@@ -1636,36 +1623,39 @@ impl PublisherUi {
             }
             return;
         }
-        let mut volume = tile.volume.load(Ordering::Relaxed);
-        let label = ui
-            .horizontal(|ui| {
-                ui.add_space(10.0);
-                let label = ui.label(egui::RichText::new(tr("Volume")).size(13.0));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        if tile.kind == crate::preview::Kind::Screen {
+            let mut volume = tile.volume.load(Ordering::Relaxed);
+            let label = ui
+                .horizontal(|ui| {
                     ui.add_space(10.0);
-                    ui.label(skin::strong(format!("{volume}%"), 12.0));
-                });
-                label
-            })
-            .inner;
-        ui.horizontal(|ui| {
-            ui.add_space(10.0);
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(17.0, 24.0), egui::Sense::hover());
-            skin::icon(ui.painter(), rect, Icon::Volume, palette().text);
-            ui.spacing_mut().slider_width = ui.available_width() - 10.0;
-            // Keep egui's slider focus, keyboard, drag and range semantics.
-            if skin::mint_slider(ui, &mut volume, 0..=100)
-                .labelled_by(label.id)
-                .changed()
-            {
-                tile.volume.store(volume, Ordering::Relaxed);
+                    let label = ui.label(egui::RichText::new(tr("Volume")).size(13.0));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add_space(10.0);
+                        ui.label(skin::strong(format!("{volume}%"), 12.0));
+                    });
+                    label
+                })
+                .inner;
+            ui.horizontal(|ui| {
+                ui.add_space(10.0);
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(17.0, 24.0), egui::Sense::hover());
+                skin::icon(ui.painter(), rect, Icon::Volume, palette().text);
+                ui.spacing_mut().slider_width = ui.available_width() - 10.0;
+                // Keep egui's slider focus, keyboard, drag and range semantics.
+                if skin::mint_slider(ui, &mut volume, 0..=100)
+                    .labelled_by(label.id)
+                    .changed()
+                {
+                    tile.volume.store(volume, Ordering::Relaxed);
+                }
+            });
+            let mut muted = volume == 0;
+            if skin::mute_switch(ui, tr("Mute"), &mut muted).changed() {
+                self.toggle_volume(tile);
             }
-        });
-        let mut muted = volume == 0;
-        if skin::mute_switch(ui, tr("Mute"), &mut muted).changed() {
-            self.toggle_volume(tile);
+            skin::menu_separator(ui);
         }
-        skin::menu_separator(ui);
         if skin::menu_row(
             ui,
             if self.focused.as_ref() == Some(&tile.id) {
@@ -1722,8 +1712,9 @@ impl PublisherUi {
                 .store(true, Ordering::Relaxed);
             ui.close();
         }
-        skin::menu_separator(ui);
-        if skin::menu_row(ui, tr("Stop watching"), Some(Icon::Stop), "", true).clicked() {
+        if tile.kind == crate::preview::Kind::Screen
+            && skin::menu_row(ui, tr("Stop watching"), Some(Icon::Stop), "", true).clicked()
+        {
             self.stop_watching(ui.ctx(), tile);
             ui.close();
         }
@@ -1766,7 +1757,7 @@ impl PublisherUi {
 
     fn inline_volume(ui: &mut egui::Ui, tile: &Tile) {
         let mut volume = tile.volume.load(Ordering::Relaxed);
-        let label = format!("{} · {}", tr("Volume"), tile.name);
+        let label = format!("{} · {}", tr("Volume"), stream_name(tile));
         ui.scope(|ui| {
             ui.spacing_mut().slider_width = 80.0;
             let slider = skin::mint_slider(ui, &mut volume, 0..=100)
@@ -1779,7 +1770,7 @@ impl PublisherUi {
     }
 
     fn stream_options(&mut self, ui: &mut egui::Ui, tile: &Tile) -> bool {
-        let label = format!("{} · {}", tr("Stream options"), tile.name);
+        let label = format!("{} · {}", tr("Stream options"), stream_name(tile));
         let trigger = skin::icon_button(ui, Icon::More, &label);
         egui::Popup::menu(&trigger)
             .frame(skin::menu_frame())
@@ -1857,44 +1848,48 @@ impl PublisherUi {
                         .show(&ctx, |ui| {
                             skin::dock_frame().show(ui, |ui| {
                                 ui.horizontal(|ui| {
-                                    ui.label(skin::strong(&tile.name, 13.5).color(palette().text));
+                                    ui.label(
+                                        skin::strong(stream_name(tile).as_ref(), 13.5)
+                                            .color(palette().text),
+                                    );
                                     ui.add_space(6.0);
-                                    self.volume_button(ui, tile);
-                                    let mut volume = tile.volume.load(Ordering::Relaxed);
-                                    ui.spacing_mut().slider_width = 110.0;
-                                    let slider = skin::mint_slider(ui, &mut volume, 0..=100)
-                                        .on_hover_text(tr("This stream's volume"));
-                                    ui.label(format!("{volume}%"));
-                                    slider.widget_info(|| {
-                                        egui::WidgetInfo::slider(
-                                            ui.is_enabled(),
-                                            volume.into(),
-                                            tr("Volume"),
-                                        )
-                                    });
-                                    if slider.accessible_name(tr("Volume")).changed() {
-                                        tile.volume.store(volume, Ordering::Relaxed);
+                                    if tile.kind == crate::preview::Kind::Screen {
+                                        self.volume_button(ui, tile);
+                                        let mut volume = tile.volume.load(Ordering::Relaxed);
+                                        ui.spacing_mut().slider_width = 110.0;
+                                        let slider = skin::mint_slider(ui, &mut volume, 0..=100)
+                                            .on_hover_text(tr("This stream's volume"));
+                                        ui.label(format!("{volume}%"));
+                                        slider.widget_info(|| {
+                                            egui::WidgetInfo::slider(
+                                                ui.is_enabled(),
+                                                volume.into(),
+                                                tr("Volume"),
+                                            )
+                                        });
+                                        if slider.accessible_name(tr("Volume")).changed() {
+                                            tile.volume.store(volume, Ordering::Relaxed);
+                                        }
                                     }
                                     ui.add_space(4.0);
                                     menu_open |= self.stream_options(ui, tile);
                                     if ui.button(tr("Exit full screen")).clicked() {
                                         self.set_fullscreen(&ctx, None);
                                     }
-                                    if ui
-                                        .add(
-                                            egui::Button::new(
-                                                skin::strong(tr("Stop watching"), 13.0)
-                                                    .color(palette().error),
-                                            )
-                                            .fill(palette().danger.gamma_multiply(0.14))
-                                            .stroke(
-                                                egui::Stroke::new(
+                                    if tile.kind == crate::preview::Kind::Screen
+                                        && ui
+                                            .add(
+                                                egui::Button::new(
+                                                    skin::strong(tr("Stop watching"), 13.0)
+                                                        .color(palette().error),
+                                                )
+                                                .fill(palette().danger.gamma_multiply(0.14))
+                                                .stroke(egui::Stroke::new(
                                                     1.0,
                                                     palette().danger.gamma_multiply(0.45),
-                                                ),
-                                            ),
-                                        )
-                                        .clicked()
+                                                )),
+                                            )
+                                            .clicked()
                                     {
                                         self.stop_watching(&ctx, tile);
                                     }
@@ -2006,13 +2001,17 @@ impl PublisherUi {
                 );
                 let title = ui.put(
                     title_bounds,
-                    egui::Button::new(skin::strong(&tile.name, 12.5))
+                    egui::Button::new(skin::strong(stream_name(tile).as_ref(), 12.5))
                         .truncate()
                         .fill(overlay),
                 );
                 if title
-                    .accessible_name(format!("{} · {}", tr("Spotlight stream"), tile.name))
-                    .on_hover_text(&tile.name)
+                    .accessible_name(format!(
+                        "{} · {}",
+                        tr("Spotlight stream"),
+                        stream_name(tile)
+                    ))
+                    .on_hover_text(stream_name(tile).as_ref())
                     .clicked()
                     || response.clicked()
                 {
@@ -2021,7 +2020,11 @@ impl PublisherUi {
             } else {
                 let name_width = ui
                     .painter()
-                    .layout_no_wrap(tile.name.clone(), skin::semibold(13.5), palette().text)
+                    .layout_no_wrap(
+                        stream_name(tile).into_owned(),
+                        skin::semibold(13.5),
+                        palette().text,
+                    )
                     .size()
                     .x
                     .min(160.0);
@@ -2045,12 +2048,13 @@ impl PublisherUi {
                             ui.add_sized(
                                 [name_width.max(24.0), 24.0],
                                 egui::Label::new(
-                                    skin::strong(&tile.name, 13.5).color(palette().text),
+                                    skin::strong(stream_name(tile).as_ref(), 13.5)
+                                        .color(palette().text),
                                 )
                                 .truncate()
                                 .halign(egui::Align::Min),
                             )
-                            .on_hover_text(&tile.name);
+                            .on_hover_text(stream_name(tile).as_ref());
                             badge(
                                 ui,
                                 if !tile.watching {
@@ -2081,7 +2085,7 @@ impl PublisherUi {
                 );
                 if ui
                     .put(target, primary(tr("Watch"), watch_width))
-                    .accessible_name(format!("{} · {}", tr("Watch"), tile.name))
+                    .accessible_name(format!("{} · {}", tr("Watch"), stream_name(tile)))
                     .clicked()
                 {
                     self.controller.send(Command::Watch {
@@ -2111,39 +2115,47 @@ impl PublisherUi {
                     .inner_margin(egui::Margin::symmetric(4, 2))
                     .show(&mut hud, |ui| {
                         ui.horizontal(|ui| {
-                            let stop_label = format!("{} · {}", tr("Stop watching"), tile.name);
-                            let stop = if width >= 270.0 {
-                                let response = ui.add(
-                                    egui::Button::new(skin::strong(tr("Stop watching"), 12.5))
-                                        .frame(false),
-                                );
-                                response.widget_info(|| {
-                                    egui::WidgetInfo::labeled(
-                                        egui::Role::Button,
-                                        ui.is_enabled(),
-                                        &stop_label,
-                                    )
-                                });
-                                response.on_hover_text(&stop_label)
-                            } else {
-                                skin::icon_button(ui, Icon::Stop, &stop_label)
-                            };
-                            if stop.clicked() {
-                                self.stop_watching(ui.ctx(), tile);
+                            if tile.kind == crate::preview::Kind::Screen {
+                                let stop_label =
+                                    format!("{} · {}", tr("Stop watching"), stream_name(tile));
+                                let stop = if width >= 270.0 {
+                                    let response = ui.add(
+                                        egui::Button::new(skin::strong(tr("Stop watching"), 12.5))
+                                            .frame(false),
+                                    );
+                                    response.widget_info(|| {
+                                        egui::WidgetInfo::labeled(
+                                            egui::Role::Button,
+                                            ui.is_enabled(),
+                                            &stop_label,
+                                        )
+                                    });
+                                    response.on_hover_text(&stop_label)
+                                } else {
+                                    skin::icon_button(ui, Icon::Stop, &stop_label)
+                                };
+                                if stop.clicked() {
+                                    self.stop_watching(ui.ctx(), tile);
+                                }
                             }
                             if !compact
                                 && skin::icon_button(
                                     ui,
                                     Icon::Fullscreen,
-                                    &format!("{} · {}", tr("Full screen"), tile.name),
+                                    &format!("{} · {}", tr("Full screen"), stream_name(tile)),
                                 )
                                 .clicked()
                             {
                                 self.set_fullscreen(ui.ctx(), Some(tile.id.clone()));
                             }
-                            self.volume_button(ui, tile);
+                            if tile.kind == crate::preview::Kind::Screen {
+                                self.volume_button(ui, tile);
+                            }
                             self.stream_options(ui, tile);
-                            if !compact && width >= 360.0 {
+                            if tile.kind == crate::preview::Kind::Screen
+                                && !compact
+                                && width >= 360.0
+                            {
                                 Self::inline_volume(ui, tile);
                             }
                         });
@@ -2621,11 +2633,9 @@ impl PublisherUi {
         // Fullscreen returns early below; retired stream/source textures must
         // still be released when another participant stops or leaves.
         self.textures.retain(|id, _| {
-            (state.sharing && id == SELF_PREVIEW) || state.tiles.iter().any(|t| &t.id == id)
+            (state.any_sharing() && id == SELF_PREVIEW) || state.tiles.iter().any(|t| &t.id == id)
         });
-        self.texture_kinds
-            .retain(|id, _| state.tiles.iter().any(|tile| &tile.id == id));
-        if !state.sharing {
+        if !state.any_sharing() {
             self.self_preview_revision = None;
             self.self_preview_hidden = false;
         }
@@ -2779,7 +2789,7 @@ impl PublisherUi {
                     self.join_landing(ui, &state);
                     return;
                 }
-                if state.tiles.is_empty() && state.sharing {
+                if state.tiles.is_empty() && state.any_sharing() {
                     self.only_stream_stage(ui, &state);
                     return;
                 }
@@ -2814,7 +2824,7 @@ impl PublisherUi {
                         .color(palette().muted),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if state.sharing
+                        if state.any_sharing()
                             && self.self_preview_hidden
                             && state.tiles.iter().any(|tile| tile.watching)
                         {
@@ -2906,7 +2916,7 @@ impl PublisherUi {
                             .profiles
                             .iter()
                             .any(|p| p.participant_id == own_id && p.discord);
-                        if participant(ui, &self.name, true, state.sharing, texture, discord)
+                        if participant(ui, &self.name, true, state.any_sharing(), texture, discord)
                             .clicked()
                         {
                             self.open_profile();
@@ -2922,7 +2932,7 @@ impl PublisherUi {
                                 ui,
                                 name,
                                 false,
-                                state.tiles.iter().any(|tile| tile.id == id),
+                                state.tiles.iter().any(|tile| tile.owner() == id),
                                 texture,
                                 self.profile_state
                                     .profiles
@@ -2994,24 +3004,17 @@ impl PublisherUi {
     }
 
     fn sharing_panel_title(state: &Snapshot) -> &'static str {
-        tr(
-            if (state.sharing || state.capture_pending)
-                && !(state.camera_sharing || state.camera_pending)
-            {
-                "Edit stream settings"
-            } else {
-                "Share your screen"
-            },
-        )
+        tr(if state.sharing || state.capture_pending {
+            "Edit stream settings"
+        } else {
+            "Share your screen"
+        })
     }
 
     fn studio_dock(&mut self, root: &mut egui::Ui, state: &Snapshot) -> SharingDock {
         let camera_live = state.camera_sharing || state.camera_pending;
-        let screen_live = (state.sharing || state.capture_pending) && !camera_live;
-        let can_start = state.connection == "connected"
-            && !state.busy
-            && !state.sharing
-            && !state.capture_pending;
+        let screen_live = state.sharing || state.capture_pending;
+        let can_start = state.connection == "connected" && !state.busy;
         let camera_selected = state
             .cameras
             .iter()
@@ -3041,7 +3044,7 @@ impl PublisherUi {
                                 ui.horizontal(|ui| {
                                     let p = palette();
                                     let screen_action = if screen_live {
-                                        sharing_action(tr("Stop sharing"), Icon::Stop, p.error)
+                                        sharing_action(tr("Stop screen sharing"), Icon::Stop, p.error)
                                             .fill(p.danger.gamma_multiply(0.14))
                                             .stroke((1.0, p.danger.gamma_multiply(0.45)))
                                     } else {
@@ -3092,7 +3095,7 @@ impl PublisherUi {
                                     let camera = camera_action.rect.union(camera_settings.rect);
                                     if camera_action.clicked() {
                                         if camera_live {
-                                            self.controller.send(Command::Stop);
+                                            self.controller.send(Command::StopCamera);
                                         } else {
                                             self.controller.send(Command::StartCamera {
                                                 device_id: self.camera_settings.device_id.clone(),
@@ -3103,16 +3106,11 @@ impl PublisherUi {
                                     }
                                     camera_action.on_disabled_hover_text(tr(if !cfg!(windows) {
                                         "Camera sharing is available on Windows."
-                                    } else if screen_live {
-                                        "Stop your current stream before sharing a camera."
                                     } else if state.encoders.is_empty() {
                                         "No supported hardware encoder was found. You can still watch compatible streams."
                                     } else {
                                         "Choose a device in Camera settings."
                                     }));
-                                    if camera_live {
-                                        screen_action.on_disabled_hover_text(tr("Stop your camera before sharing a screen."));
-                                    }
 
                                     let requested = if screen_settings.clicked() {
                                         Some(SharingSetup::Screen)
@@ -3376,6 +3374,14 @@ impl PublisherUi {
             .show_value(false),
         )
         .labelled_by(bitrate.id);
+    }
+}
+
+fn stream_name(tile: &Tile) -> std::borrow::Cow<'_, str> {
+    if tile.kind == crate::preview::Kind::Camera {
+        format!("{} · {}", tile.name, tr("Camera")).into()
+    } else {
+        tile.name.as_str().into()
     }
 }
 
@@ -4548,7 +4554,6 @@ mod tests {
             custom_bitrate: false,
             download_budget: None,
             textures: HashMap::new(),
-            texture_kinds: HashMap::new(),
             focused: None,
             spotlight: None,
             self_preview_hidden: false,
@@ -5544,7 +5549,7 @@ mod tests {
         ));
         let ([_, camera], _) = draw(&mut app, vec![]);
         click(&mut app, camera.left_center() + egui::vec2(42.0, 0.0));
-        assert!(matches!(commands(), Some(Command::Stop)));
+        assert!(matches!(commands(), Some(Command::StopCamera)));
     }
 
     #[test]

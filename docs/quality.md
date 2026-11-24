@@ -32,7 +32,7 @@ it, including after a restrictive member leaves. Missing/dropped frames, pauses,
 congestion and interruptions are playback-health conditions, not capability
 changes. A codec change is allowed when explicit hardware capabilities exclude
 the current codec, or when the streamer applies settings. It
-replaces the single publication while retaining Watch intent and preview cadence.
+replaces the affected publication while retaining Watch intent and preview cadence.
 
 | Bitrate mode | Behavior                                                                                                                |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
@@ -69,6 +69,9 @@ Six healthy two-second samples allow a 5% recovery within the original allowance
 Absent feedback does not increase it; optional incoming-capacity stats are not
 treated as a qualified downlink measurement. Subscriptions pause when the available budget cannot fit them, including all
 watches on an extremely slow connection.
+Automatic camera subscriptions share the allowance and take any remaining slots
+after explicit screen watches. The publisher divides its measured video upload
+allowance between its screen and camera in proportion to their requested bitrates.
 
 Each watcher advertises its per-stream video cap. The publisher uses the lowest
 active watcher cap alongside its own sender feedback and requested target.

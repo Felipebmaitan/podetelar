@@ -164,8 +164,16 @@ pub struct Tile {
     pub status: String,
 }
 
+impl Tile {
+    pub fn owner(&self) -> &str {
+        match self.kind {
+            Kind::Screen => &self.id,
+            Kind::Camera => self.id.strip_suffix(".camera").unwrap_or(&self.id),
+        }
+    }
+}
+
 struct Watch {
-    kind: Kind,
     picture: Picture,
     presentation: Arc<Presentation>,
     frames: Arc<AtomicU64>,
@@ -181,6 +189,23 @@ struct Watch {
 }
 
 impl Watch {
+    fn new() -> Self {
+        Self {
+            picture: Arc::default(),
+            presentation: Arc::default(),
+            frames: Arc::default(),
+            received_bps: Arc::default(),
+            volume: Arc::new(AtomicU32::new(100)),
+            since: Instant::now(),
+            last_frame: Arc::new(Mutex::new(Instant::now())),
+            audio: Arc::default(),
+            error: Arc::default(),
+            diagnostic_task: None,
+            admitted: false,
+            video_sid: String::new(),
+        }
+    }
+
     fn admit(&mut self, admitted: bool) {
         if admitted
             && !self.admitted
@@ -233,20 +258,33 @@ struct PreviewImage {
     attempted: Instant,
 }
 
-fn share_video<'a>(
+fn video_kind(source: TrackSource) -> Option<Kind> {
+    match source {
+        TrackSource::Screenshare => Some(Kind::Screen),
+        TrackSource::Camera => Some(Kind::Camera),
+        _ => None,
+    }
+}
+
+fn stream_publications<'a>(
     publications: impl Iterator<Item = &'a RemoteTrackPublication>,
-) -> Option<(&'a RemoteTrackPublication, Kind)> {
+    kind: Kind,
+) -> impl Iterator<Item = &'a RemoteTrackPublication> {
+    publications.filter(move |publication| {
+        video_kind(publication.source()) == Some(kind)
+            || (kind == Kind::Screen && publication.source() == TrackSource::ScreenshareAudio)
+    })
+}
+
+fn stream_video<'a>(
+    publications: impl Iterator<Item = &'a RemoteTrackPublication>,
+    kind: Kind,
+) -> Option<&'a RemoteTrackPublication> {
     publications
-        .filter(|publication| publication.kind() == TrackKind::Video)
-        .filter_map(|publication| {
-            let kind = match publication.source() {
-                TrackSource::Screenshare => Kind::Screen,
-                TrackSource::Camera => Kind::Camera,
-                _ => return None,
-            };
-            Some((publication, kind))
+        .filter(|publication| {
+            publication.kind() == TrackKind::Video && video_kind(publication.source()) == Some(kind)
         })
-        .min_by_key(|(publication, kind)| (*kind == Kind::Camera, publication.sid().to_string()))
+        .min_by_key(|publication| publication.sid().to_string())
 }
 
 #[derive(Clone)]
@@ -393,6 +431,9 @@ impl Playback {
     }
 
     pub fn watch(&mut self, id: String, kind: Kind, enabled: bool) -> Result<()> {
+        if kind == Kind::Camera {
+            return Ok(());
+        }
         if enabled {
             if self.watches.is_empty() {
                 self.budget.set(self.budget_setting);
@@ -401,38 +442,10 @@ impl Playback {
                 self.h264 || self.hevc || self.av1,
                 "No compatible hardware video decoder is available on this computer."
             );
-            if self
-                .watches
-                .get(&id)
-                .is_some_and(|watch| watch.kind != kind)
-            {
-                self.watches.remove(&id);
-            }
-            self.watches.entry(id).or_insert_with(|| Watch {
-                kind,
-                picture: Arc::default(),
-                presentation: Arc::default(),
-                frames: Arc::default(),
-                received_bps: Arc::default(),
-                volume: Arc::new(AtomicU32::new(100)),
-                since: Instant::now(),
-                last_frame: Arc::new(Mutex::new(Instant::now())),
-                audio: Arc::default(),
-                error: Arc::default(),
-                diagnostic_task: None,
-                admitted: false,
-                video_sid: String::new(),
-            });
-        } else {
-            if self
-                .watches
-                .get(&id)
-                .is_some_and(|watch| watch.kind == kind)
-            {
-                self.watches.remove(&id);
-                // Restore the existing still without requesting another capture.
-                self.previews.remove(&id);
-            }
+            self.watches.entry(id).or_insert_with(Watch::new);
+        } else if self.watches.remove(&id).is_some() {
+            // Restore the existing still without requesting another capture.
+            self.previews.remove(&id);
         }
         Ok(())
     }
@@ -444,13 +457,18 @@ impl Playback {
         self.sampled = Instant::now();
         let mut jobs = Vec::new();
         for participant in room.remote_participants().values() {
-            if !self.watches.contains_key(participant.identity().as_str()) {
-                continue;
-            }
             for publication in participant.track_publications().values() {
-                if let Some(RemoteTrack::Video(track)) = publication.track() {
+                let Some(kind) = video_kind(publication.source()) else {
+                    continue;
+                };
+                let owner = kind.stream_id(participant.identity().as_str());
+                if let Some(RemoteTrack::Video(track)) = publication.track()
+                    && self
+                        .watches
+                        .get(&owner)
+                        .is_some_and(|watch| watch.video_sid == publication.sid().as_str())
+                {
                     let sid = publication.sid().to_string();
-                    let owner = participant.identity().to_string();
                     jobs.push(async move {
                         (
                             owner,
@@ -529,73 +547,71 @@ impl Playback {
             return Ok(Vec::new());
         }
         self.sample_budget(room).await;
-        let participants = room.remote_participants();
-        let mut selected: Vec<_> = participants
-            .values()
-            .filter(|p| {
-                self.watches
-                    .get(p.identity().as_str())
-                    .is_some_and(|watch| {
-                        share_video(p.track_publications().values())
-                            .is_some_and(|(_, kind)| watch.kind == kind)
-                    })
+        let participants: Vec<_> = room
+            .remote_participants()
+            .into_values()
+            .map(|participant| {
+                let publications = participant.track_publications();
+                (participant, publications)
             })
-            .map(|p| p.identity().to_string())
             .collect();
+        let streams = || {
+            participants.iter().flat_map(|(participant, publications)| {
+                Kind::ALL.map(|kind| (participant, publications, kind))
+            })
+        };
+        let decoders = self.decoders();
+        let mut selected = Vec::new();
+        for (participant, publications, kind) in streams() {
+            let id = kind.stream_id(participant.identity().as_str());
+            let Some(video) = stream_video(publications.values(), kind) else {
+                continue;
+            };
+            if kind == Kind::Camera {
+                // Keep the SDK's default subscriptions off. Camera publications
+                // are selected here so they still obey hardware and budget policy.
+                self.watches.entry(id.clone()).or_insert_with(Watch::new);
+                if codec_policy::from_mime(&video.mime_type())
+                    .is_none_or(|codec| !decoders.supports(codec))
+                {
+                    continue;
+                }
+            }
+            if self.watches.contains_key(&id) {
+                selected.push((kind == Kind::Camera, id));
+            }
+        }
+        // Explicit screen watches keep their place when a camera comes online.
         selected.sort();
         selected.truncate(self.budget.max_streams());
-        let allowed: HashSet<_> = selected.into_iter().collect();
+        let allowed: HashSet<_> = selected.into_iter().map(|(_, id)| id).collect();
         let cap = self.budget.per_stream(allowed.len());
         let mut live = HashSet::new();
         let mut tiles = Vec::new();
         let mut pumps = HashSet::new();
         let mut announce = HashMap::new();
-        let decoders = self.decoders();
         announce.insert(codec_policy::CAPABILITIES.to_owned(), decoders.encode());
         announce.insert(
             codec_policy::HARDWARE_CAPABILITIES.to_owned(),
             decoders.encode(),
         );
-        for participant in participants.values() {
-            let id = participant.identity().to_string();
-            let publications = participant.track_publications();
-            let selected = share_video(publications.values());
-            // Reconnects and codec replacements keep Watch for this media kind.
-            // A participant switching between screen and camera needs a new Watch.
-            if let Some((_, kind)) = selected
-                && self
-                    .watches
-                    .get(&id)
-                    .is_some_and(|watch| watch.kind != kind)
-            {
-                self.watches.remove(&id);
-            }
-            // Preserve older publishers' capability protocol during replacement.
-            if self.watches.contains_key(&id) {
+        for (participant, publications, kind) in streams() {
+            let owner = participant.identity();
+            let id = kind.stream_id(owner.as_str());
+            if kind == Kind::Screen && self.watches.contains_key(&id) {
                 announce.insert(
                     format!("{}{id}", codec_policy::DECODE_PREFIX),
                     decoders.encode(),
                 );
             }
-            let Some((video, kind)) = selected else {
+            let Some(video) = stream_video(publications.values(), kind) else {
                 self.previews.remove(&id);
-                if let Some(watch) = self.watches.get_mut(&id) {
-                    watch.diagnostic_task = None;
-                    watch
-                        .presentation
-                        .diagnostics
-                        .open
-                        .store(false, Ordering::Relaxed);
-                }
-                for publication in publications
-                    .values()
-                    .filter(|p| p.source() == TrackSource::ScreenshareAudio)
-                {
+                for publication in stream_publications(publications.values(), kind) {
                     apply_subscription(publication, false);
                 }
-                // Retain watch intent while a codec/source replacement is in flight.
-                if self.watches.contains_key(&id) {
-                    live.insert(id.clone());
+                // Manual screen watches survive a codec/source replacement.
+                if kind == Kind::Screen && self.watches.contains_key(&id) {
+                    live.insert(id);
                 }
                 continue;
             };
@@ -654,7 +670,7 @@ impl Playback {
                     let loaded = Arc::new(AtomicBool::new(false));
                     let complete = loaded.clone();
                     let admission = admission.clone();
-                    let owner = id.clone();
+                    let owner = owner.to_string();
                     let revision = revision.to_owned();
                     let requested = revision.clone();
                     let job = tokio::spawn(async move {
@@ -684,12 +700,7 @@ impl Playback {
                     .is_some_and(|codec| decoders.supports(codec))
             };
             let admitted = allowed.contains(&id);
-            for publication in publications.values().filter(|p| {
-                matches!(
-                    p.source(),
-                    TrackSource::Screenshare | TrackSource::Camera | TrackSource::ScreenshareAudio
-                )
-            }) {
+            for publication in stream_publications(publications.values(), kind) {
                 let belongs = publication.sid() == video.sid()
                     || (video.source() == TrackSource::Screenshare
                         && publication.source() == TrackSource::ScreenshareAudio);
@@ -720,7 +731,7 @@ impl Playback {
                         watch.diagnostic_task =
                             Some(Pump::new(tokio::spawn(crate::stream_diagnostics::viewer(
                                 admission.clone(),
-                                id.clone(),
+                                owner.to_string(),
                                 sid.clone(),
                                 presentation.clone(),
                                 watch.frames.clone(),
@@ -895,10 +906,10 @@ impl Playback {
                 volume: watch
                     .map(|w| w.volume.clone())
                     .unwrap_or_else(|| Arc::new(AtomicU32::new(100))),
-                status: if watching && !admitted {
-                    "Paused by your watching budget. Stop another stream or adjust the connection limit.".into()
-                } else if watching && !compatible {
+                status: if watching && !compatible {
                     "Negotiating a compatible codec…".into()
+                } else if watching && !admitted {
+                    "Paused by your watching budget. Stop another stream or adjust the connection limit.".into()
                 } else if let Some(watch) = watch {
                     let error = watch.error.lock().map(|e| e.clone()).unwrap_or_default();
                     if !error.is_empty() { error } else if watch.last_frame.lock().is_ok_and(|last| last.elapsed() > Duration::from_secs(12)) {
@@ -1083,10 +1094,11 @@ pub fn qualification_tone() -> Result<AudioPipeline> {
 
 /// A limit applies only while the same participant also requests this publisher.
 /// The minimum watcher allowance is shared by the single encoder, not per viewer.
-pub fn requested_cap(room: &Room) -> Option<u64> {
+pub fn requested_cap(room: &Room, kind: Kind) -> Option<u64> {
     let identity = room.local_participant().identity();
-    let watch = format!("{WATCH_PREFIX}{identity}");
-    let limit = format!("{LIMIT_PREFIX}{identity}");
+    let id = kind.stream_id(identity.as_str());
+    let watch = format!("{WATCH_PREFIX}{id}");
+    let limit = format!("{LIMIT_PREFIX}{id}");
     room.remote_participants()
         .values()
         .filter_map(|p| {
@@ -1136,7 +1148,6 @@ mod tests {
     #[test]
     fn replacement_video_keeps_late_old_results_out_of_the_current_mailbox() {
         let mut watch = Watch {
-            kind: Kind::Screen,
             picture: Arc::default(),
             presentation: Arc::default(),
             frames: Arc::new(AtomicU64::new(7)),

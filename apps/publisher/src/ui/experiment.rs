@@ -92,7 +92,6 @@ pub fn qualify_planar_transitions(
         custom_bitrate: false,
         download_budget: None,
         textures: HashMap::new(),
-        texture_kinds: HashMap::new(),
         focused: None,
         spotlight: None,
         self_preview_hidden: false,

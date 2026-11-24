@@ -158,7 +158,7 @@ impl PublisherUi {
                                 } else {
                                     "Watch"
                                 });
-                                let label = format!("{action} · {}", tile.name);
+                                let label = format!("{action} · {}", stream_name(tile));
                                 if ui
                                     .add(egui::Button::new(&label).truncate())
                                     .on_hover_text(&label)
@@ -411,7 +411,7 @@ impl PublisherUi {
     }
 
     pub(super) fn refresh_self_preview(&mut self, ctx: &egui::Context, state: &Snapshot) {
-        if !state.sharing {
+        if !state.any_sharing() {
             self.self_preview_revision = None;
             self.textures.remove(SELF_PREVIEW);
             return;
@@ -531,7 +531,7 @@ impl PublisherUi {
             .spotlight
             .as_ref()
             .and_then(|id| state.tiles.iter().find(|tile| tile.id == *id));
-        let show_self = state.sharing
+        let show_self = state.any_sharing()
             && !self.self_preview_hidden
             && state.tiles.iter().any(|tile| tile.watching);
         if main.is_none() && !show_self {

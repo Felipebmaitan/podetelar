@@ -1,7 +1,8 @@
+import { spawn } from "node:child_process";
 import { expect, test } from "@playwright/test";
 import { RoomServiceClient, TrackSource, TrackType } from "livekit-server-sdk";
 import { createTestRoom } from "../scripts/test-room.js";
-import { nativeRequest } from "./fixtures.js";
+import { nativeExecutable, nativeRequest } from "./fixtures.js";
 
 type Sent = {
   captureStopped: boolean;
@@ -11,30 +12,38 @@ type Sent = {
   previewUploads: number;
 };
 type Received = {
-  previewBeforeWatching: boolean;
   samples: {
-    phaseSecond: number | null;
-    receivedBytes: number;
-    streams: { frames: number; pictureSize: number[] | null }[];
+    second: number;
+    streams: {
+      kind: "screen" | "camera";
+      frames: number;
+      watching: boolean;
+      pictureSize: number[] | null;
+    }[];
   }[];
 };
 
-test("an explicitly selected Windows camera publishes video, previews and releases capture", async ({
-  request,
-  baseURL,
-}) => {
+async function cameraId() {
   const name = process.env.PODETELAR_TEST_CAMERA;
   test.skip(
     !name || !process.env.PODETELAR_TEST_SFU_PID,
     "Choose a camera for the isolated Windows SFU run.",
   );
-  test.setTimeout(90_000);
   const devices = (await nativeRequest("--cameras", {}).result) as {
     id: string;
     name: string;
   }[];
   const selected = devices.filter((camera) => camera.name === name);
   expect(selected).toHaveLength(1);
+  return selected[0]!.id;
+}
+
+test("an explicitly selected Windows camera publishes and starts playing automatically", async ({
+  request,
+  baseURL,
+}) => {
+  test.setTimeout(90_000);
+  const id = await cameraId();
   const created = await createTestRoom(request, baseURL!, "Native camera");
   expect(created.status()).toBe(201);
   const { room, invitationUrl } = await created.json();
@@ -46,7 +55,7 @@ test("an explicitly selected Windows camera publishes video, previews and releas
   const configuration = {
     invitationUrl,
     displayName: "Camera publisher",
-    cameraId: selected[0]!.id,
+    cameraId: id,
     codec: "h264",
     quality: {
       resolution: "p720",
@@ -77,27 +86,22 @@ test("an explicitly selected Windows camera publishes video, previews and releas
     viewer = nativeRequest("--watch-fixture", {
       invitationUrl,
       seconds: 20,
-      waitForPreview: true,
+      previewOnly: true,
     });
     const watched = (await viewer.result) as Received;
-    expect(watched.previewBeforeWatching).toBe(true);
-    const decoded = (minimum: number, maximum: number) =>
+    expect(
       watched.samples.some(
         (sample) =>
-          sample.phaseSecond !== null &&
-          sample.phaseSecond >= minimum &&
-          sample.phaseSecond <= maximum &&
+          sample.second < 6 &&
           sample.streams.some(
             (stream) =>
-              stream.frames > 5 && stream.pictureSize?.join("x") === "1280x720",
+              stream.kind === "camera" &&
+              stream.watching &&
+              stream.frames > 5 &&
+              stream.pictureSize?.join("x") === "1280x720",
           ),
-      );
-    expect(decoded(0, 4)).toBe(true);
-    expect(decoded(10, 19)).toBe(true);
-    const before = watched.samples.find((sample) => sample.phaseSecond === 6)!;
-    const after = watched.samples.find((sample) => sample.phaseSecond === 7)!;
-    expect(before.receivedBytes).toBeGreaterThan(0);
-    expect(after.receivedBytes).toBe(before.receivedBytes);
+      ),
+    ).toBe(true);
     await expect.poll(published, { timeout: 7500 }).toEqual([]);
     expect(sender.child.exitCode).toBeNull();
     restarted = nativeRequest("--publish-fixture", {
@@ -143,5 +147,150 @@ test("an explicitly selected Windows camera publishes video, previews and releas
     sender.child.kill();
     viewer?.child.kill();
     restarted?.child.kill();
+  }
+});
+
+test("one participant shares a window and a camera concurrently with independent playback and stop", async ({
+  request,
+  baseURL,
+}) => {
+  test.setTimeout(115_000);
+  const id = await cameraId();
+  const screen = spawn(
+    process.env.PODETELAR_NATIVE_TONE_EXE ?? nativeExecutable(),
+    ["--av-timing-source", "90"],
+    {
+      windowsHide: false,
+      stdio: "ignore",
+    },
+  );
+  let viewer: ReturnType<typeof nativeRequest> | undefined;
+  let sender: ReturnType<typeof nativeRequest> | undefined;
+  try {
+    let sourceId: string | undefined;
+    await expect
+      .poll(
+        async () => {
+          const sources = (await nativeRequest("--sources", {}).result) as {
+            id: string;
+          }[];
+          sourceId = sources.find(
+            (source) =>
+              source.id.startsWith("window:") &&
+              source.id.endsWith(`:${screen.pid}`),
+          )?.id;
+          return Boolean(sourceId);
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+    const created = await createTestRoom(
+      request,
+      baseURL!,
+      "Concurrent camera and screen",
+    );
+    expect(created.status()).toBe(201);
+    const { room, invitationUrl } = await created.json();
+    const media = new RoomServiceClient(
+      `http://127.0.0.1:${process.env.PODETELAR_SMOKE_SFU_PORT ?? 17880}`,
+      process.env.LIVEKIT_API_KEY!,
+      process.env.LIVEKIT_API_SECRET!,
+    );
+    const participants = () => media.listParticipants(`podetelar_${room.id}`);
+    const name = "Dual publisher";
+    viewer = nativeRequest("--watch-fixture", {
+      invitationUrl,
+      seconds: 37,
+      watchSchedule: [
+        { displayName: name, second: 0, enabled: false },
+        { displayName: name, second: 10, enabled: true },
+        { displayName: name, second: 14, enabled: false },
+        { displayName: name, second: 17, enabled: true },
+      ],
+    });
+    await expect
+      .poll(
+        async () =>
+          (await participants()).some(
+            (participant) => participant.name === "Native playback check",
+          ),
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+    sender = nativeRequest("--qualify-dual-sharing", {
+      invitationUrl,
+      sourceId,
+      cameraId: id,
+    });
+    expect(await sender.reported).toEqual({ both: true });
+    const tracks = async () =>
+      (await participants()).find((p) => p.name === name)?.tracks ?? [];
+    const sid = async (source: TrackSource) =>
+      (await tracks()).find((t) => t.source === source)?.sid;
+    const screenSid = await sid(TrackSource.SCREEN_SHARE);
+    const cameraSid = await sid(TrackSource.CAMERA);
+    expect(screenSid).toBeTruthy();
+    expect(cameraSid).toBeTruthy();
+    expect(await sid(TrackSource.SCREEN_SHARE_AUDIO)).toBeTruthy();
+    const sources = async () => (await tracks()).map((t) => t.source).sort();
+    await expect
+      .poll(sources, { timeout: 22_000 })
+      .toEqual(
+        [TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO].sort(),
+      );
+    expect(await sid(TrackSource.SCREEN_SHARE)).toBe(screenSid);
+    await expect
+      .poll(sources, { timeout: 10_000 })
+      .toEqual(
+        [
+          TrackSource.SCREEN_SHARE,
+          TrackSource.SCREEN_SHARE_AUDIO,
+          TrackSource.CAMERA,
+        ].sort(),
+      );
+    const nextCameraSid = await sid(TrackSource.CAMERA);
+    expect(nextCameraSid).not.toBe(cameraSid);
+    await expect
+      .poll(sources, { timeout: 10_000 })
+      .toEqual([TrackSource.CAMERA]);
+    expect(await sid(TrackSource.CAMERA)).toBe(nextCameraSid);
+    expect(await sender.result).toEqual({ closed: true });
+    const watched = (await viewer.result) as Received;
+    const frameCount = (
+      sample: Received["samples"][number],
+      kind: "screen" | "camera",
+    ) =>
+      sample.streams.find((stream) => stream.kind === kind && stream.watching)
+        ?.frames ?? 0;
+    expect(
+      watched.samples.some(
+        (sample) =>
+          sample.second < 10 &&
+          frameCount(sample, "camera") > 5 &&
+          frameCount(sample, "screen") === 0,
+      ),
+    ).toBe(true);
+    expect(
+      watched.samples.some(
+        (sample) =>
+          sample.second >= 11 &&
+          sample.second < 14 &&
+          frameCount(sample, "camera") > 5 &&
+          frameCount(sample, "screen") > 5,
+      ),
+    ).toBe(true);
+    expect(
+      watched.samples.some(
+        (sample) =>
+          sample.second >= 15 &&
+          sample.second < 17 &&
+          frameCount(sample, "camera") > 5 &&
+          frameCount(sample, "screen") === 0,
+      ),
+    ).toBe(true);
+  } finally {
+    sender?.child.kill();
+    viewer?.child.kill();
+    screen.kill();
   }
 });

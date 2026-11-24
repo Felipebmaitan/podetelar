@@ -69,6 +69,14 @@ fn paint_presence_name(ui: &egui::Ui, avatar: egui::Rect, name: &str) {
         .galley(label.center() - text.size() / 2.0, text, p.text);
 }
 
+fn capsule_person(ui: &mut egui::Ui, name: &str, texture: Option<egui::TextureId>) {
+    ui.horizontal(|ui| {
+        profile::avatar(ui, name, 20.0, texture);
+        ui.add(egui::Label::new(name).truncate())
+            .on_hover_text(name);
+    });
+}
+
 impl PublisherUi {
     pub(super) fn room_capsule(&mut self, ui: &mut egui::Ui, state: &Snapshot, width: f32) {
         let name = if state.room_name.is_empty() {
@@ -178,18 +186,15 @@ impl PublisherUi {
                         ui.label(
                             skin::strong(tr("People in this room"), 12.0).color(palette().muted),
                         );
-                        ui.add(
-                            egui::Label::new(format!("{} ({})", self.name, tr("you"))).truncate(),
-                        );
-                        for name in &state.participants {
-                            ui.add(egui::Label::new(name).truncate())
-                                .on_hover_text(name);
+                        capsule_person(ui, &format!("{} ({})", self.name, tr("you")), own_texture);
+                        for (index, name) in state.participants.iter().enumerate() {
+                            let texture = state
+                                .participant_ids
+                                .get(index)
+                                .and_then(|(id, _)| self.profile_texture(ui.ctx(), id));
+                            capsule_person(ui, name, texture);
                         }
                     });
-                if ui.button(tr("User settings")).clicked() {
-                    self.open_profile();
-                    ui.close();
-                }
             });
     }
 

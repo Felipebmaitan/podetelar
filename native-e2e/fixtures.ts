@@ -1,3 +1,5 @@
+import { expect, type APIRequestContext } from "@playwright/test";
+import { defaultStreamPolicy, type StreamPolicy } from "@podetelar/contracts";
 import { spawn, type ChildProcess } from "node:child_process";
 import { copyFileSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
@@ -110,6 +112,19 @@ export function nativeRequest(
       ["Audio transport stalled", "audio-transport"],
       ["Audio publication failed", "audio-publication"],
       ["Fixture media connection", "media-connection"],
+      ["Could not connect to the media server", "media-connection"],
+      ["Media connection timed out", "media-timeout"],
+      [
+        "The media server is synchronizing stream limits",
+        "policy-synchronization",
+      ],
+      ["Dual-sharing operation did not finish", "dual-sharing-timeout"],
+      ["Dual-sharing qualification requires", "dual-sharing-locality"],
+      ["No codec can be hardware encoded", "codec-negotiation"],
+      ["This camera does not offer the selected", "camera-mode"],
+      ["Sharing stopped because the media server ended", "sfu-ended-video"],
+      ["Sharing stopped because the stream could not meet", "policy-update"],
+      ["No H.264 hardware encoder", "hardware-encoder"],
       ["Application audio capture failed", "audio-capture"],
       ["Room access was denied", "admission"],
       ["Too many room requests", "rate-limit"],
@@ -149,4 +164,34 @@ export function nativeRequest(
   void reported.catch(() => {});
   child.stdin.end(JSON.stringify(request));
   return { child, result, reported };
+}
+
+export async function policyAdministrator(
+  request: APIRequestContext,
+  origin: string,
+) {
+  expect(new URL(origin).hostname).toMatch(
+    /^(localhost|127\.0\.0\.1|\[::1\])$/,
+  );
+  const headers = { Origin: origin };
+  const login = await request.post("/api/admin/login", {
+    headers,
+    data: { password: process.env.ADMIN_TOKEN },
+  });
+  expect(login.status()).toBe(200);
+  const endpoint = "/api/admin/stream-policy";
+  const read = async () => {
+    const response = await request.get(endpoint);
+    expect(response.status()).toBe(200);
+    return (await response.json()).policy as StreamPolicy;
+  };
+  const write = async (policy: StreamPolicy) => {
+    const response = await request.put(endpoint, { headers, data: policy });
+    expect(response.status()).toBe(200);
+  };
+  const initial = await read();
+  await write({ ...defaultStreamPolicy, revision: initial.revision });
+  const restore = async () =>
+    write({ ...initial, revision: (await read()).revision });
+  return { read, write, restore };
 }

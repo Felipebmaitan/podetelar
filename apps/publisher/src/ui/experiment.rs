@@ -59,6 +59,22 @@ pub fn qualify_planar_transitions(
     use livekit::webrtc::video_frame::{I420Buffer, NV12Buffer};
     use std::sync::Arc;
     let mut app = PublisherUi {
+        following_client: crate::following::Client::new(),
+        following: Default::default(),
+        following_key: None,
+        next_follow_attempt: Instant::now(),
+        account_client: crate::account::Client::new(),
+        account_state: Default::default(),
+        account_server: String::new(),
+        profile_connection_key: None,
+        profile_client: None,
+        profile_state: Default::default(),
+        profile_textures: HashMap::new(),
+        profile_started: Instant::now(),
+        profile_open: false,
+        profile_page: profile::SettingsPage::Profile,
+        profile_name: String::new(),
+        saved_guest_name: String::new(),
         activation: crate::activation::Inbox::new(),
         prior_room: None,
         updates: crate::updates::Client::new(),
@@ -72,6 +88,8 @@ pub fn qualify_planar_transitions(
         source_id: String::new(),
         encoder: String::new(),
         quality: Settings::default(),
+        camera_settings: CameraSettings::default(),
+        camera_settings_open: false,
         custom_bitrate: false,
         download_budget: None,
         textures: HashMap::new(),
@@ -103,6 +121,7 @@ pub fn qualify_planar_transitions(
     };
     let tile = Tile {
         id: "qualification".into(),
+        kind: Kind::Screen,
         name: String::new(),
         codec: String::new(),
         watching: true,
@@ -223,7 +242,6 @@ pub fn run(request: Request) -> Result<()> {
         Box::new(move |context| {
             configure_theme(&context.egui_ctx);
             let mut inner = PublisherUi::with_browser_link(None);
-            inner.store = None;
             inner.invitation = request.invitation_url.clone();
             inner.name = "Local benchmark".into();
             if !request.disconnected {
@@ -231,6 +249,8 @@ pub fn run(request: Request) -> Result<()> {
                     invitation: request.invitation_url.clone(),
                     name: inner.name.clone(),
                     route: Route::Auto,
+                    account: None,
+                    voice: None,
                 });
             }
             inner.download_budget = Some(200_000_000);
@@ -340,6 +360,7 @@ impl BenchmarkUi {
         {
             self.inner.controller.send(Command::Watch {
                 id: tile.id.clone(),
+                kind: tile.kind,
                 enabled: true,
             });
             self.watched.insert(tile.id.clone());
@@ -407,6 +428,8 @@ impl BenchmarkUi {
                                 invitation: self.request.invitation_url.clone(),
                                 name: "Local benchmark".into(),
                                 route: Route::Auto,
+                                account: None,
+                                voice: None,
                             });
                         }
                     }
@@ -419,6 +442,7 @@ impl BenchmarkUi {
                     {
                         self.inner.controller.send(Command::Watch {
                             id: id.clone(),
+                            kind: Kind::Screen,
                             enabled: false,
                         });
                     }
@@ -430,6 +454,7 @@ impl BenchmarkUi {
                     {
                         self.inner.controller.send(Command::Watch {
                             id: tile.id.clone(),
+                            kind: tile.kind,
                             enabled: true,
                         });
                     }
@@ -447,6 +472,7 @@ impl BenchmarkUi {
                     for tile in &state.tiles {
                         self.inner.controller.send(Command::Watch {
                             id: tile.id.clone(),
+                            kind: tile.kind,
                             enabled: false,
                         });
                     }

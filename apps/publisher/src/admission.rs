@@ -4,6 +4,11 @@ use serde::{Deserialize, de::DeserializeOwned};
 use std::time::Duration;
 use url::Url;
 
+pub(crate) fn loopback_url(input: &str) -> bool {
+    Url::parse(input)
+        .is_ok_and(|url| matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]")))
+}
+
 pub(crate) fn valid_server(input: &str) -> bool {
     let Ok(url) = Url::parse(input) else {
         return false;
@@ -717,10 +722,19 @@ impl Admission {
         Ok(())
     }
 
-    pub async fn send_preview(&self, sid: &str, bytes: Vec<u8>) -> PreviewDelivery {
+    pub async fn send_preview(
+        &self,
+        kind: crate::preview::Kind,
+        sid: &str,
+        bytes: Vec<u8>,
+    ) -> PreviewDelivery {
         let url = self
             .origin
-            .join(&format!("api/rooms/{}/previews/screen", self.room_id))
+            .join(&format!(
+                "api/rooms/{}/previews/{}",
+                self.room_id,
+                kind.path()
+            ))
             .expect("validated room URL");
         let response = self
             .client
@@ -753,6 +767,7 @@ impl Admission {
     }
     pub async fn get_preview(
         &self,
+        kind: crate::preview::Kind,
         owner: &str,
         revision: &str,
     ) -> Result<eframe::egui::ColorImage> {
@@ -763,8 +778,9 @@ impl Admission {
             "Invalid preview address."
         );
         let url = self.origin.join(&format!(
-            "api/rooms/{}/previews/{owner}/screen/{revision}",
-            self.room_id
+            "api/rooms/{}/previews/{owner}/{}/{revision}",
+            self.room_id,
+            kind.path()
         ))?;
         let mut response = self
             .client
@@ -797,10 +813,14 @@ impl Admission {
         ))
     }
 
-    pub async fn remove_preview(&self, sid: &str) {
+    pub async fn remove_preview(&self, kind: crate::preview::Kind, sid: &str) {
         let url = self
             .origin
-            .join(&format!("api/rooms/{}/previews/screen", self.room_id))
+            .join(&format!(
+                "api/rooms/{}/previews/{}",
+                self.room_id,
+                kind.path()
+            ))
             .expect("validated room URL");
         let _ = self
             .client

@@ -11,6 +11,29 @@ fn guest_path() -> Option<PathBuf> {
     root.is_absolute()
         .then(|| root.join("PodeTelar").join("guest-name.json"))
 }
+pub fn camera_device() -> Option<String> {
+    let path = guest_path()?.with_file_name("camera-device");
+    if std::fs::metadata(&path).ok()?.len() != 64 {
+        return None;
+    }
+    let id = std::fs::read_to_string(path).ok()?;
+    id.bytes()
+        .all(|byte| byte.is_ascii_hexdigit())
+        .then_some(id)
+}
+
+pub fn save_camera_device(id: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    if let Some(path) = guest_path().map(|path| path.with_file_name("camera-device")) {
+        let dir = path.parent().expect("profile directory");
+        std::fs::create_dir_all(dir)?;
+        let mut file = tempfile::NamedTempFile::new_in(dir)?;
+        file.write_all(id.as_bytes())?;
+        file.persist(path)?;
+    }
+    Ok(())
+}
+
 pub fn login_server() -> Option<String> {
     let path = guest_path()?.with_file_name("login-server.json");
     if std::fs::metadata(&path).ok()?.len() > 4096 {

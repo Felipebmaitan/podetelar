@@ -207,23 +207,27 @@ impl StreamPolicy {
             FRAME_RATES.contains(&settings.fps),
             "Choose a supported frame rate up to 120 fps."
         );
-        let (mut width, mut height) = settings.resolution.dimensions(source)?;
+        let (width, height) = settings.resolution.dimensions(source)?;
+        let mode = self.limit_video(Mode {
+            width,
+            height,
+            fps: settings.fps,
+            bitrate: 0,
+        })?;
+        self.with_bitrate(settings, codec, mode)
+    }
+
+    pub fn limit_video(&self, mut mode: Mode) -> Result<Mode> {
         if let Some(cap) = self.resolution_cap()
-            && !cap.fits(width, height)
+            && !cap.fits(mode.width, mode.height)
         {
-            (width, height) = cap.fit(width, height, false)?;
+            (mode.width, mode.height) = cap.fit(mode.width, mode.height, false)?;
         }
-        let fps = settings.fps.min(self.max_fps.unwrap_or(settings.fps));
-        self.with_bitrate(
-            settings,
-            codec,
-            Mode {
-                width,
-                height,
-                fps,
-                bitrate: 0,
-            },
-        )
+        mode.fps = mode.fps.min(self.max_fps.unwrap_or(mode.fps));
+        mode.bitrate = mode
+            .bitrate
+            .min(self.max_bitrate_bps.unwrap_or(MAX_BITRATE));
+        Ok(mode)
     }
 
     fn resolution_cap(&self) -> Option<Resolution> {
@@ -381,8 +385,11 @@ impl RateControl {
             (MIN_BITRATE..=MAX_BITRATE).contains(&bitrate),
             "Choose a bitrate from 1 to 100 Mbps."
         );
-        self.requested.store(bitrate, Ordering::Release);
+        self.set_resolved(bitrate);
         Ok(())
+    }
+    pub fn set_resolved(&self, bitrate: u64) {
+        self.requested.store(bitrate, Ordering::Release);
     }
     pub fn set_viewer_cap(&self, cap: Option<u64>) {
         self.viewer_cap.store(

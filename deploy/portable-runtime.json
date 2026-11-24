@@ -113,6 +113,11 @@
       "sha256": "840ea975226baf73898fd0f7c26b62b8ee6b556bf2142cb88f29da468ed397f6"
     },
     {
+      "path": "bin/gstwinrt-1.0-0.dll",
+      "component": "gstreamer",
+      "sha256": "99c085e0dab19a80731e60ef661f7097f0cfef21782e64d8d01d27bcb2f26400"
+    },
+    {
       "path": "bin/intl-8.dll",
       "component": "proxy-libintl",
       "sha256": "2ef6a23f712fd7b9bf72b2fef1a1fd5cde27ba88f7d164e9e6de18936c1f51b0"
@@ -191,6 +196,11 @@
       "path": "lib/gstreamer-1.0/gstjpeg.dll",
       "component": "gstreamer",
       "sha256": "a24d6f36a05543ef0564c5c13e8ae4d3be972fd9ee75a340d8a147d31d74fcc4"
+    },
+    {
+      "path": "lib/gstreamer-1.0/gstmediafoundation.dll",
+      "component": "gstreamer",
+      "sha256": "fb6450e53c13f19483dd41b8b3100481b2a8cc52da4890975635a30fafb24ef0"
     },
     {
       "path": "lib/gstreamer-1.0/gstnvcodec.dll",
@@ -330,6 +340,9 @@
     "imm32.dll",
     "iphlpapi.dll",
     "kernel32.dll",
+    "mf.dll",
+    "mfplat.dll",
+    "mfreadwrite.dll",
     "mmdevapi.dll",
     "msdmo.dll",
     "ntdll.dll",

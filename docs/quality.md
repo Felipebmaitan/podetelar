@@ -83,7 +83,10 @@ five seconds of sustained violations. Video with unverified dimensions is blocke
 a resolution cap. The SFU stops forwarding video after ten seconds without a
 valid policy refresh. Stream limits require the policy-enabled SFU image.
 
-Per-stream limits apply to video payload for each publication. Plan total SFU
+Per-stream limits apply separately to screen and camera video. Each native
+publication follows live changes to bitrate, resolution and FPS ceilings. Camera
+uses its own manual bitrate, so server Automatic targets apply only to screens
+using Automatic bitrate. Plan total SFU
 egress around the number of subscriptions, audio, retransmission and transport
 overhead. The owner decides when to adjust policy as demand changes.
 

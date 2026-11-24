@@ -33,12 +33,22 @@ and `PODETELAR_SMOKE_SFU_PORT` to unused ports. The SFU also uses the next
 two ports. Defaults remain 3010 and 17880–17882. Do not stop another test run's
 services to free these ports.
 
+On Windows, set `PODETELAR_TEST_CAMERA` to an explicit device display name and run
+`npm run native:room-smoke -- camera.spec.ts`. Select a camera whose output is safe
+to transmit to the isolated local SFU. The suite checks video-only publication,
+automatic webcam playback, concurrent sharing with a generated window, and
+independent stop and restart. Set `PODETELAR_TEST_CAMERA_CODEC` to `av1`, `h265` or
+`h264` to exercise a chosen camera codec in the concurrent test.
+
 Run `npm run native:e2e -- stream-policy.spec.ts` with
 `PODETELAR_TEST_STREAM_POLICY=1` and `PODETELAR_NATIVE_EXE` pointing at the
 built publisher. Use an isolated local API and policy-enabled SFU because the
 test changes the server's stream limits. It exercises real encoding and
-decoding across live bitrate, resolution and FPS changes. The SFU image also
-runs the packet-budget and observed-resolution unit tests during its build.
+decoding across live bitrate, resolution and FPS changes. With a selected 1080p
+camera, run `npm run native:e2e -- camera.spec.ts` against the same isolated
+policy-enabled SFU to exercise those changes during concurrent sharing.
+The SFU image also runs the packet-budget and observed-resolution unit tests
+during its build.
 With the same local configuration, `npm run test:admin -- stream-policy.spec.ts`
 checks dashboard saves and enforcement against a publisher that ignores the policy.
 

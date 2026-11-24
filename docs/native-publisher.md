@@ -39,13 +39,34 @@ No room or language preference is saved. See [Discord accounts](discord-accounts
 Guest pictures and live nickname editing are described in [guest profiles](guest-profiles.md).
 Later links may reuse the nickname
 and join when idle while the app remains open. An active room requires confirmation
-before switching. Sharing and watching remain explicit. See
+before switching. Starting screen or camera sharing always requires an explicit action. See
 [launch and firewall behavior](distribution.md#invitations-and-launch-behavior).
 
 The initial 1280×720 viewport has sharing controls on the left and larger native
-stream tiles on the right. Watch sits in the center of each still preview. Stop
-watching actually unsubscribes video and audio; focus/hiding does not. Each stream
-has independent volume. Preview capture occurs initially and at most once/minute.
+stream tiles on the right. Screen streams start as still previews. Watch and Stop
+watching subscribe and unsubscribe the screen's video and audio. Focus and layout
+changes do not change subscriptions. Preview capture occurs initially and at most
+once per minute for each publication type.
+
+On Windows, expand **Camera settings**, select a system camera, and choose
+**Share camera**. The app remembers the device on this computer. Use **Refresh
+cameras** after connecting a device or enabling a virtual camera. Media Foundation
+discovers supported physical and virtual cameras, including OBS Virtual Camera
+when installed and active. Windows camera privacy settings apply.
+
+Camera quality defaults to 720p, 30 FPS and 2 Mbps. It has independent resolution
+(720p, 1080p or Source), frame rate (24, 30 or 60 FPS) and bitrate (0.5–8 Mbps)
+controls. Modes are bounded by the camera, hardware encoder and server ceilings.
+The frame-rate setting is a ceiling. The device can deliver fewer frames, for
+example when exposure takes longer. Stop the camera before changing its settings. Camera sharing requires a room
+codec the publisher can encode and each connected native member can decode.
+
+One participant can publish a screen and one camera concurrently. The camera
+has no audio, and stopping either share leaves the other active. Native viewers
+subscribe to camera video automatically when a hardware decoder and subscription
+slot are available. Existing screen watches get priority within the shared
+watching allowance. The macOS app uses the same receiver path. Webcam
+publishing is Windows-only.
 
 Source resolution defaults to the monitor/window bounded to 4K, at 60 FPS. The
 visible slider offers 15–120 FPS; codec/bitrate live in Advanced. Auto starts around

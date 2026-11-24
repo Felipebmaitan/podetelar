@@ -12,8 +12,10 @@ use crate::ui_style::{self as skin, Icon};
 use crate::{
     connection::Route,
     playback::Tile,
+    preview::Kind,
     publisher::{Command, Controller, SharingSelection, Snapshot},
     quality::{self, Bitrate, Profile, Settings},
+    sources::camera,
 };
 use eframe::egui;
 use std::{
@@ -90,6 +92,43 @@ pub fn configure_theme(ctx: &egui::Context) {
     ctx.set_style_of(egui::Theme::Dark, style);
 }
 
+struct CameraSettings {
+    device_id: String,
+    resolution: quality::Resolution,
+    fps: u32,
+    bitrate_mbps: f32,
+}
+
+impl Default for CameraSettings {
+    fn default() -> Self {
+        Self {
+            device_id: String::new(),
+            resolution: quality::Resolution::P720,
+            fps: 30,
+            bitrate_mbps: 2.0,
+        }
+    }
+}
+
+impl CameraSettings {
+    fn quality(&self) -> Settings {
+        Settings {
+            resolution: self.resolution,
+            fps: self.fps,
+            bitrate: Bitrate::Manual((self.bitrate_mbps * 1_000_000.0).round() as u64),
+            profile: Profile::Motion,
+        }
+    }
+}
+
+fn stream_name(tile: &Tile) -> std::borrow::Cow<'_, str> {
+    if tile.kind == Kind::Camera {
+        format!("{} · {}", tile.name, tr("Camera")).into()
+    } else {
+        tile.name.as_str().into()
+    }
+}
+
 pub struct PublisherUi {
     following_client: crate::following::Client,
     following: crate::following::Follow,
@@ -120,6 +159,8 @@ pub struct PublisherUi {
     source_id: String,
     encoder: String,
     quality: Settings,
+    camera_settings: CameraSettings,
+    camera_settings_open: bool,
     custom_bitrate: bool,
     download_budget: Option<u64>,
     textures: HashMap<String, egui::TextureHandle>,
@@ -232,6 +273,11 @@ impl PublisherUi {
             source_id: String::new(),
             encoder: String::new(),
             quality: Settings::default(),
+            camera_settings: CameraSettings {
+                device_id: crate::settings::camera_device().unwrap_or_default(),
+                ..Default::default()
+            },
+            camera_settings_open: false,
             custom_bitrate: false,
             download_budget: None,
             textures: HashMap::new(),
@@ -555,7 +601,7 @@ impl PublisherUi {
     }
 
     fn source_preview(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
-        let own_tile = if state.sharing {
+        let own_tile = if state.any_sharing() {
             // Retain the Arc, not just an address: a later source can reuse
             // a freed allocation and restart its sequence at one.
             let same_source = self
@@ -605,12 +651,24 @@ impl PublisherUi {
             }
             Some(Tile {
                 id: "__self_preview".into(),
+                kind: if state.sharing {
+                    Kind::Screen
+                } else {
+                    Kind::Camera
+                },
                 name: state
                     .active_selection
                     .as_ref()
                     .and_then(|a| state.sources.iter().find(|s| s.id == a.source_id))
                     .map(|s| s.label.clone())
-                    .unwrap_or_else(|| tr("Your screen").into()),
+                    .unwrap_or_else(|| {
+                        tr(if state.camera_sharing {
+                            "Your camera"
+                        } else {
+                            "Your screen"
+                        })
+                        .into()
+                    }),
                 codec: String::new(),
                 watching: false,
                 picture,
@@ -632,7 +690,7 @@ impl PublisherUi {
         let (rect, _) =
             ui.allocate_exact_size(egui::vec2(width, width * 9.0 / 16.0), egui::Sense::hover());
         ui.painter().rect_filled(rect, 6.0, CANVAS);
-        if state.sharing
+        if state.any_sharing()
             && let Some(texture) = self.textures.get("__self_preview")
         {
             let target = fit_picture(rect, texture.aspect_ratio());
@@ -642,7 +700,11 @@ impl PublisherUi {
             ui.painter().text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
-                tr("Your screen"),
+                tr(if state.camera_sharing && !state.sharing {
+                    "Your camera"
+                } else {
+                    "Your screen"
+                }),
                 egui::FontId::proportional(14.0),
                 MUTED,
             );
@@ -929,6 +991,187 @@ impl PublisherUi {
             })
     }
 
+    fn camera_section(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+        if !cfg!(windows) {
+            return;
+        }
+        let changed =
+            skin::disclosure(ui, tr("Camera settings"), &mut self.camera_settings_open).changed();
+        if changed && self.camera_settings_open && !state.camera_sharing && !state.camera_pending {
+            self.controller.send(Command::RefreshCameras);
+        }
+        if self.camera_settings_open {
+            self.camera_setup_fields(ui, state);
+        }
+
+        if let Some(mode) = state.camera_mode {
+            ui.colored_label(
+                ACCENT,
+                format!(
+                    "{}×{} · {} FPS · {:.1} Mbps",
+                    mode.width,
+                    mode.height,
+                    mode.fps,
+                    mode.bitrate as f64 / 1_000_000.0
+                ),
+            );
+        }
+        let width = ui.available_width();
+        if state.camera_sharing || state.camera_pending {
+            if ui
+                .add_sized(
+                    [width, 38.0],
+                    egui::Button::new(egui::RichText::new(tr("Stop camera")).color(ERROR))
+                        .fill(egui::Color32::from_rgb(65, 37, 46)),
+                )
+                .clicked()
+            {
+                self.controller.send(Command::StopCamera);
+            }
+        } else {
+            let selected = state
+                .cameras
+                .iter()
+                .any(|device| device.id == self.camera_settings.device_id);
+            if ui
+                .add_enabled(
+                    !state.busy && !state.refreshing_cameras && selected,
+                    primary(tr("Share camera"), width),
+                )
+                .on_disabled_hover_text(tr("Choose a camera"))
+                .clicked()
+            {
+                self.controller.send(Command::StartCamera {
+                    device_id: self.camera_settings.device_id.clone(),
+                    quality: self.camera_settings.quality(),
+                    preferred_codec: None,
+                });
+            }
+        }
+    }
+
+    fn camera_setup_fields(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+        let camera_live = state.camera_sharing || state.camera_pending;
+        ui.horizontal(|ui| {
+            if camera_live {
+                ui.label(tr("Stop camera to change its settings."));
+            } else if state.refreshing_cameras {
+                ui.spinner();
+                ui.label(tr("Refreshing cameras…"));
+            } else if ui.button(tr("Refresh cameras")).clicked() {
+                self.controller.send(Command::RefreshCameras);
+            }
+        });
+        if state.cameras_ready && state.cameras.is_empty() && !state.refreshing_cameras {
+            ui.label(tr(
+                "No camera found. Check Windows camera permissions and refresh.",
+            ));
+        }
+        ui.add_enabled_ui(!camera_live && !state.refreshing_cameras, |ui| {
+            self.camera_controls(ui, state)
+        });
+    }
+
+    fn camera_controls(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+        let settings = &mut self.camera_settings;
+        let device = ui.label(tr("Camera device"));
+        let selected = state
+            .cameras
+            .iter()
+            .find(|device| device.id == settings.device_id);
+        let selected_text = selected.map_or_else(
+            || {
+                tr(if settings.device_id.is_empty() {
+                    "Choose a camera"
+                } else {
+                    "Selected camera is unavailable"
+                })
+            },
+            |device| device.name.as_str(),
+        );
+        egui::ComboBox::from_id_salt("camera-device")
+            .width(ui.available_width())
+            .selected_text(selected_text)
+            .show_ui(ui, |ui| {
+                for (index, device) in state.cameras.iter().enumerate() {
+                    let name = if state
+                        .cameras
+                        .iter()
+                        .any(|other| other.id != device.id && other.name == device.name)
+                    {
+                        format!("{} ({})", device.name, index + 1)
+                    } else {
+                        device.name.clone()
+                    };
+                    if ui
+                        .selectable_label(settings.device_id == device.id, name)
+                        .clicked()
+                    {
+                        settings.device_id.clone_from(&device.id);
+                        if crate::settings::save_camera_device(&device.id).is_err() {
+                            self.settings_error = "Could not save the selected camera.".into();
+                        }
+                    }
+                }
+            })
+            .response
+            .labelled_by(device.id);
+        ui.add_space(6.0);
+        ui.columns(2, |columns| {
+            let ui = &mut columns[0];
+            let resolution = ui.label(tr("Resolution"));
+            egui::ComboBox::from_id_salt("camera-resolution")
+                .width(ui.available_width())
+                .selected_text(tr(settings.resolution.label()))
+                .show_ui(ui, |ui| {
+                    for resolution in camera::RESOLUTIONS {
+                        ui.selectable_value(
+                            &mut settings.resolution,
+                            resolution,
+                            tr(resolution.label()),
+                        );
+                    }
+                })
+                .response
+                .labelled_by(resolution.id);
+
+            let ui = &mut columns[1];
+            let fps = ui.label(tr("Frame rate"));
+            egui::ComboBox::from_id_salt("camera-fps")
+                .width(ui.available_width())
+                .selected_text(format!("{} FPS", settings.fps))
+                .show_ui(ui, |ui| {
+                    for fps in camera::FRAME_RATES {
+                        ui.selectable_value(&mut settings.fps, fps, format!("{fps} FPS"));
+                    }
+                })
+                .response
+                .labelled_by(fps.id);
+        });
+        let bitrate = ui
+            .horizontal(|ui| {
+                let label = ui.label(tr("Bitrate"));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(skin::strong(
+                        format!("{:.1} Mbps", settings.bitrate_mbps),
+                        12.0,
+                    ));
+                });
+                label
+            })
+            .inner;
+        ui.spacing_mut().slider_width = ui.available_width();
+        ui.add(
+            egui::Slider::new(
+                &mut settings.bitrate_mbps,
+                camera::MIN_BITRATE as f32 / 1_000_000.0..=camera::MAX_BITRATE as f32 / 1_000_000.0,
+            )
+            .step_by(0.5)
+            .show_value(false),
+        )
+        .labelled_by(bitrate.id);
+    }
+
     fn sharing_actions(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
         let valid = self.valid_selection(state);
         ui.add_space(6.0);
@@ -941,7 +1184,7 @@ impl PublisherUi {
         .response
         .on_hover_text(tr("Discord and PodeTelar excluded."));
         if state.sharing || state.capture_pending {
-            if let Some(mode) = state.mode {
+            if let Some(mode) = state.mode.filter(|_| state.sharing) {
                 ui.colored_label(
                     ACCENT,
                     skin::strong(
@@ -1383,55 +1626,61 @@ impl PublisherUi {
         ui.add_space(3.0);
         ui.horizontal(|ui| {
             ui.add_space(10.0);
-            ui.label(skin::strong(&tile.name, 12.0).color(MUTED));
+            ui.label(skin::strong(stream_name(tile).as_ref(), 12.0).color(MUTED));
         });
         ui.add_space(5.0);
         if !tile.watching {
-            if skin::menu_row(ui, tr("Watch"), Some(Icon::Play), "", false).clicked() {
+            if tile.kind == Kind::Screen
+                && skin::menu_row(ui, tr("Watch"), Some(Icon::Play), "", false).clicked()
+            {
                 self.controller.send(Command::Watch {
                     id: tile.id.clone(),
+                    kind: tile.kind,
                     enabled: true,
                 });
                 ui.close();
             }
             return;
         }
-        let mut volume = tile.volume.load(Ordering::Relaxed);
-        let label = ui
-            .horizontal(|ui| {
-                ui.add_space(10.0);
-                let label = ui.label(egui::RichText::new(tr("Volume")).size(13.0));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        if tile.kind == Kind::Screen {
+            let mut volume = tile.volume.load(Ordering::Relaxed);
+            let label = ui
+                .horizontal(|ui| {
                     ui.add_space(10.0);
-                    ui.label(skin::strong(format!("{volume}%"), 12.0));
-                });
-                label
-            })
-            .inner;
-        ui.horizontal(|ui| {
-            ui.add_space(10.0);
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(17.0, 24.0), egui::Sense::hover());
-            skin::icon(ui.painter(), rect, Icon::Volume, TEXT);
-            ui.spacing_mut().slider_width = ui.available_width() - 10.0;
-            // Keep egui's slider focus, keyboard, drag and range semantics.
-            if skin::mint_slider(ui, &mut volume, 0..=100)
-                .labelled_by(label.id)
-                .changed()
-            {
+                    let label = ui.label(egui::RichText::new(tr("Volume")).size(13.0));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add_space(10.0);
+                        ui.label(skin::strong(format!("{volume}%"), 12.0));
+                    });
+                    label
+                })
+                .inner;
+            ui.horizontal(|ui| {
+                ui.add_space(10.0);
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(17.0, 24.0), egui::Sense::hover());
+                skin::icon(ui.painter(), rect, Icon::Volume, TEXT);
+                ui.spacing_mut().slider_width = ui.available_width() - 10.0;
+                // Keep egui's slider focus, keyboard, drag and range semantics.
+                if skin::mint_slider(ui, &mut volume, 0..=100)
+                    .labelled_by(label.id)
+                    .changed()
+                {
+                    tile.volume.store(volume, Ordering::Relaxed);
+                }
+            });
+            let mut muted = volume == 0;
+            if skin::mute_switch(ui, tr("Mute"), &mut muted).changed() {
+                if muted {
+                    self.remembered_volume.insert(tile.id.clone(), volume);
+                    volume = 0;
+                } else {
+                    volume = self.remembered_volume.get(&tile.id).copied().unwrap_or(100);
+                }
                 tile.volume.store(volume, Ordering::Relaxed);
             }
-        });
-        let mut muted = volume == 0;
-        if skin::mute_switch(ui, tr("Mute"), &mut muted).changed() {
-            if muted {
-                self.remembered_volume.insert(tile.id.clone(), volume);
-                volume = 0;
-            } else {
-                volume = self.remembered_volume.get(&tile.id).copied().unwrap_or(100);
-            }
-            tile.volume.store(volume, Ordering::Relaxed);
+            skin::menu_separator(ui);
         }
-        skin::menu_separator(ui);
         if skin::menu_row(
             ui,
             if self.focused.as_ref() == Some(&tile.id) {
@@ -1486,10 +1735,15 @@ impl PublisherUi {
                 .store(true, Ordering::Relaxed);
             ui.close();
         }
-        skin::menu_separator(ui);
-        if skin::menu_row(ui, tr("Stop watching"), Some(Icon::Stop), "", true).clicked() {
+        if tile.kind == Kind::Screen {
+            skin::menu_separator(ui);
+        }
+        if tile.kind == Kind::Screen
+            && skin::menu_row(ui, tr("Stop watching"), Some(Icon::Stop), "", true).clicked()
+        {
             self.controller.send(Command::Watch {
                 id: tile.id.clone(),
+                kind: tile.kind,
                 enabled: false,
             });
             self.textures.remove(&tile.id);
@@ -1566,27 +1820,31 @@ impl PublisherUi {
                                 .corner_radius(6)
                                 .show(ui, |ui| {
                                     ui.horizontal(|ui| {
-                                        ui.label(&tile.name);
+                                        ui.label(stream_name(tile).as_ref());
                                         if ui.button(tr("Exit full screen")).clicked() {
                                             self.set_fullscreen(&ctx, None);
                                         }
-                                        if ui.button(tr("Stop")).clicked() {
-                                            self.controller.send(Command::Watch {
-                                                id: tile.id.clone(),
-                                                enabled: false,
-                                            });
-                                            self.set_fullscreen(&ctx, None);
-                                        }
-                                        let mut volume = tile.volume.load(Ordering::Relaxed);
-                                        ui.spacing_mut().slider_width = 120.0;
-                                        if ui
-                                            .add(
-                                                egui::Slider::new(&mut volume, 0..=100).suffix("%"),
-                                            )
-                                            .on_hover_text(tr("This stream's volume"))
-                                            .changed()
-                                        {
-                                            tile.volume.store(volume, Ordering::Relaxed);
+                                        if tile.kind == Kind::Screen {
+                                            if ui.button(tr("Stop")).clicked() {
+                                                self.controller.send(Command::Watch {
+                                                    id: tile.id.clone(),
+                                                    kind: tile.kind,
+                                                    enabled: false,
+                                                });
+                                                self.set_fullscreen(&ctx, None);
+                                            }
+                                            let mut volume = tile.volume.load(Ordering::Relaxed);
+                                            ui.spacing_mut().slider_width = 120.0;
+                                            if ui
+                                                .add(
+                                                    egui::Slider::new(&mut volume, 0..=100)
+                                                        .suffix("%"),
+                                                )
+                                                .on_hover_text(tr("This stream's volume"))
+                                                .changed()
+                                            {
+                                                tile.volume.store(volume, Ordering::Relaxed);
+                                            }
                                         }
                                     });
                                 });
@@ -1661,7 +1919,7 @@ impl PublisherUi {
             let overlay = egui::Color32::from_rgba_unmultiplied(23, 31, 37, 230);
             let name_width = ui
                 .painter()
-                .layout_no_wrap(tile.name.clone(), skin::semibold(14.0), TEXT)
+                .layout_no_wrap(stream_name(tile).into_owned(), skin::semibold(14.0), TEXT)
                 .size()
                 .x
                 .min(160.0);
@@ -1683,14 +1941,14 @@ impl PublisherUi {
                         avatar(ui, &tile.name, 28.0);
                         ui.add_sized(
                             [name_width.max(24.0), 28.0],
-                            egui::Label::new(skin::strong(&tile.name, 14.0))
+                            egui::Label::new(skin::strong(stream_name(tile).as_ref(), 14.0))
                                 .truncate()
                                 .halign(egui::Align::Min),
                         )
-                        .on_hover_text(&tile.name);
+                        .on_hover_text(stream_name(tile).as_ref());
                         badge(
                             ui,
-                            if !tile.watching {
+                            if !tile.watching && tile.kind == Kind::Screen {
                                 tr("Preview")
                             } else if tile.frames.load(Ordering::Relaxed) > 0 {
                                 tr("Watching")
@@ -1701,13 +1959,14 @@ impl PublisherUi {
                         );
                     });
                 });
-            if !tile.watching {
+            if !tile.watching && tile.kind == Kind::Screen {
                 ui.painter()
                     .rect_filled(rect, 6.0, egui::Color32::from_black_alpha(65));
                 let target = egui::Rect::from_center_size(rect.center(), egui::vec2(124.0, 40.0));
                 if ui.put(target, primary(tr("Watch"), 124.0)).clicked() {
                     self.controller.send(Command::Watch {
                         id: tile.id.clone(),
+                        kind: tile.kind,
                         enabled: true,
                     });
                 }
@@ -2167,7 +2426,8 @@ impl PublisherUi {
         // Fullscreen returns early below; retired stream/source textures must
         // still be released when another participant stops or leaves.
         self.textures.retain(|id, _| {
-            (state.sharing && id == "__self_preview") || state.tiles.iter().any(|t| &t.id == id)
+            (state.any_sharing() && id == "__self_preview")
+                || state.tiles.iter().any(|t| &t.id == id)
         });
         if !state.sharing {
             self.self_preview_revision = None;
@@ -2316,6 +2576,8 @@ impl PublisherUi {
                             if !pinned_actions {
                                 self.sharing_actions(ui, &state);
                             }
+                            ui.add_space(6.0);
+                            self.camera_section(ui, &state);
                             ui.add_space(10.0);
                             ui.separator();
                             ui.label(
@@ -2336,8 +2598,15 @@ impl PublisherUi {
                                 .profiles
                                 .iter()
                                 .any(|p| p.participant_id == own_id && p.discord);
-                            if participant(ui, &self.name, true, state.sharing, texture, discord)
-                                .clicked()
+                            if participant(
+                                ui,
+                                &self.name,
+                                true,
+                                state.any_sharing(),
+                                texture,
+                                discord,
+                            )
+                            .clicked()
                             {
                                 self.open_profile();
                             }
@@ -2352,7 +2621,7 @@ impl PublisherUi {
                                     ui,
                                     name,
                                     false,
-                                    state.tiles.iter().any(|tile| tile.id == id),
+                                    state.tiles.iter().any(|tile| tile.owner() == id),
                                     texture,
                                     self.profile_state
                                         .profiles
@@ -3586,6 +3855,8 @@ mod tests {
             source_id: String::new(),
             encoder: String::new(),
             quality: Settings::default(),
+            camera_settings: CameraSettings::default(),
+            camera_settings_open: false,
             custom_bitrate: false,
             download_budget: None,
             textures: HashMap::new(),
@@ -3636,6 +3907,7 @@ mod tests {
         let ctx = egui::Context::default();
         let tile = Tile {
             id: "clipping".into(),
+            kind: Kind::Screen,
             name: "Remote".into(),
             codec: String::new(),
             watching: true,
@@ -3687,6 +3959,7 @@ mod tests {
         let ctx = egui::Context::default();
         let tile = Tile {
             id: "remote".into(),
+            kind: Kind::Screen,
             name: "Remote".into(),
             codec: String::new(),
             watching: true,
@@ -3771,6 +4044,7 @@ mod tests {
             configure_theme(&ctx);
             let tile = Tile {
                 id: "fullscreen-menu-test".into(),
+                kind: Kind::Screen,
                 name: "Friend".into(),
                 codec: "video/h264".into(),
                 watching: true,
@@ -3875,6 +4149,7 @@ mod tests {
         configure_theme(&ctx);
         let mut tile = Tile {
             id: "synthetic-stream".into(),
+            kind: Kind::Screen,
             name: "Friend".into(),
             codec: "video/h265".into(),
             watching: true,

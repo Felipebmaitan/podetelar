@@ -149,6 +149,34 @@ test("diagnostic endpoints deny anonymous, wrong owner, unwatched and cross-room
   const cookie = String(other.headers["set-cookie"]).split(";")[0]!;
   assert.equal((await f.request("POST", cookie)).statusCode, 401);
 });
+
+test("camera and screen diagnostics have independent watch authority and demand", async (t) => {
+  const f = await fixture(t);
+  const viewer = await f.viewer();
+  const camera = f.url.replace("TR_screen", "TR_camera");
+  f.media.participants.get(f.owner.owner)!.tracks.push({
+    sid: "TR_camera",
+    kind: "camera",
+    muted: false,
+  });
+  assert.equal((await f.request("POST", viewer.cookie)).statusCode, 200);
+  assert.equal(
+    (await f.request("POST", viewer.cookie, undefined, camera)).statusCode,
+    403,
+  );
+  f.media.participants.get(viewer.id)!.attributes![
+    `podetelar.watch.${f.owner.owner}.camera`
+  ] = "h264";
+  assert.equal(
+    (await f.request("POST", viewer.cookie, undefined, camera)).statusCode,
+    200,
+  );
+  assert.equal((await f.request("GET")).json().demand, 1);
+  assert.equal(
+    (await f.request("GET", undefined, undefined, camera)).json().demand,
+    1,
+  );
+});
 test("valid aggregates are bounded, memory only, stale explicitly and erased with demand", async (t) => {
   const f = await fixture(t);
   const a = await f.viewer();

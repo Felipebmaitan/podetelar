@@ -81,6 +81,7 @@ pub fn run() -> Result<()> {
             "only-self",
             "self-preview",
             "setup",
+            "camera-setup",
             "roster",
             "join",
             "settings",
@@ -92,7 +93,7 @@ pub fn run() -> Result<()> {
             "fullscreen",
         ]
         .contains(&mode.as_str()),
-        "Choose room, room-streams, spotlight, only-self, self-preview, setup, roster, join, settings, profile, discord, information, update, invitation or fullscreen."
+        "Choose room, room-streams, spotlight, only-self, self-preview, setup, camera-setup, roster, join, settings, profile, discord, information, update, invitation or fullscreen."
     );
     let output = PathBuf::from(
         std::env::args()
@@ -222,7 +223,7 @@ pub fn run() -> Result<()> {
                 room_name: "Friday Screening".into(),
                 sources: vec![source, second_source],
                 encoders: vec![encoder],
-                sharing: !matches!(mode.as_str(), "room" | "spotlight"),
+                sharing: !matches!(mode.as_str(), "room" | "spotlight" | "camera-setup"),
                 mode: Some(crate::quality::Mode { width: 1920, height: 1080, fps: 60, bitrate: 20_000_000 }),
                 active_selection: Some(active_selection),
                 participants: vec!["Felipe".into(), "Marina".into(), "Lucas".into()],
@@ -256,7 +257,11 @@ pub fn run() -> Result<()> {
         let (controller, commands) = Controller::recording_for_test(state);
         inner.controller = controller;
         inner.advanced_open = mode == "settings";
-        inner.setup_open = mode == "setup";
+        inner.sharing_setup = match mode.as_str() {
+            "setup" => Some(SharingSetup::Screen),
+            "camera-setup" => Some(SharingSetup::Camera),
+            _ => None,
+        };
         inner.roster_open = mode == "roster" || std::env::args().any(|arg| arg == "--roster");
         if mode == "spotlight" {
             inner.spotlight = Some("layout-fixture".into());

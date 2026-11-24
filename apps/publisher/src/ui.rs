@@ -110,6 +110,36 @@ fn apply_palette(ctx: &egui::Context, effective: Theme) {
     ctx.data_mut(|data| data.insert_temp(egui::Id::unique("studio-palette"), effective));
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SharingSetup {
+    Screen,
+    Camera,
+}
+
+const SHARING_BUTTON_HEIGHT: f32 = 38.0;
+
+struct CameraSettings {
+    resolution: quality::Resolution,
+    fps: u32,
+    bitrate_mbps: f32,
+}
+
+impl Default for CameraSettings {
+    fn default() -> Self {
+        Self {
+            resolution: quality::Resolution::P720,
+            fps: 30,
+            bitrate_mbps: 2.0,
+        }
+    }
+}
+
+struct SharingDock {
+    rect: egui::Rect,
+    screen: egui::Rect,
+    camera: egui::Rect,
+}
+
 pub struct PublisherUi {
     following_client: crate::following::Client,
     following: crate::following::Follow,
@@ -140,6 +170,7 @@ pub struct PublisherUi {
     source_id: String,
     encoder: String,
     quality: Settings,
+    camera_settings: CameraSettings,
     custom_bitrate: bool,
     download_budget: Option<u64>,
     textures: HashMap<String, egui::TextureHandle>,
@@ -156,7 +187,7 @@ pub struct PublisherUi {
     advanced_open: bool,
     licenses_open: bool,
     diagnostics_open: bool,
-    setup_open: bool,
+    sharing_setup: Option<SharingSetup>,
     roster_open: bool,
     show_invitation: bool,
     browser_invitation_open: bool,
@@ -269,6 +300,7 @@ impl PublisherUi {
             source_id: String::new(),
             encoder: String::new(),
             quality: Settings::default(),
+            camera_settings: CameraSettings::default(),
             custom_bitrate: false,
             download_budget: None,
             textures: HashMap::new(),
@@ -288,7 +320,7 @@ impl PublisherUi {
             advanced_open: false,
             licenses_open: false,
             diagnostics_open: false,
-            setup_open: false,
+            sharing_setup: None,
             roster_open: false,
             show_invitation: false,
             browser_invitation_open: is_browser_launch,
@@ -376,7 +408,7 @@ impl PublisherUi {
                 self.following.manual_leave(&self.following_client.state());
                 self.controller.send(Command::Leave);
                 self.textures.clear();
-                self.setup_open = false;
+                self.sharing_setup = None;
                 self.roster_open = false;
                 self.focused = None;
                 self.spotlight = None;
@@ -1041,7 +1073,7 @@ impl PublisherUi {
             .clicked()
         {
             self.send_settings(false);
-            self.setup_open = false;
+            self.sharing_setup = None;
         }
     }
 
@@ -2527,8 +2559,7 @@ impl PublisherUi {
                     self.set_fullscreen(&ctx, None);
                 }
             } else if !egui::Popup::is_any_open(&ctx) {
-                if self.setup_open {
-                    self.setup_open = false;
+                if self.sharing_setup.take().is_some() {
                     self.clear_picker();
                 } else if self.roster_open {
                     self.roster_open = false;
@@ -2704,7 +2735,7 @@ impl PublisherUi {
             .show(root, |ui| {
                 if !connected {
                     self.clear_picker();
-                    self.setup_open = false;
+                    self.sharing_setup = None;
                     self.roster_open = false;
                     self.join_landing(ui, &state);
                     return;
@@ -2766,15 +2797,17 @@ impl PublisherUi {
                 ui.add_space(10.0);
                 self.room_stage(ui, &state);
             });
-        if let Some(dock) = dock
-            && self.setup_open
+        if let (Some(dock), Some(setup)) = (dock, self.sharing_setup)
             && !self.advanced_open
             && !self.profile_open
             && !self.browser_invitation_open
             && !self.update_open
             && !self.licenses_open
         {
-            self.broadcast_setup_popover(&ctx, &state, stage_bounds, dock);
+            if setup == SharingSetup::Camera {
+                self.clear_picker();
+            }
+            self.sharing_setup_popover(&ctx, &state, stage_bounds, dock, setup);
         } else {
             self.clear_picker();
         }
@@ -2929,63 +2962,20 @@ impl PublisherUi {
         })
     }
 
-    fn studio_dock(&mut self, root: &mut egui::Ui, state: &Snapshot) -> egui::Rect {
-        let valid = self.valid_selection(state);
-        let selection = self.selection();
+    fn studio_dock(&mut self, root: &mut egui::Ui, state: &Snapshot) -> SharingDock {
+        let live = state.sharing || state.capture_pending;
         let dirty = state.sharing
             && state
                 .active_selection
                 .as_ref()
-                .is_some_and(|active| active != &selection);
-        let live_only = dirty
-            && state.active_selection.as_ref().is_some_and(|a| {
-                a.source_id == selection.source_id
-                    && a.encoder == selection.encoder
-                    && a.quality.resolution == selection.quality.resolution
-                    && a.quality.fps == selection.quality.fps
-            });
-        let pending_note = if live_only {
-            tr("Changes pending · applies live")
-        } else {
-            tr("Changes pending · restarts stream")
-        };
-        let shown_source_id = if state.sharing {
-            state
-                .active_selection
-                .as_ref()
-                .map(|active| active.source_id.as_str())
-                .unwrap_or(&self.source_id)
-        } else {
-            &self.source_id
-        };
-        let displayed_source = state
-            .sources
-            .iter()
-            .find(|s| s.id == shown_source_id)
-            .cloned();
-        let source_label = displayed_source
-            .as_ref()
-            .map(source_name)
-            .unwrap_or(Self::sharing_panel_title(state));
-        let setup_summary = dock_stream_summary(state, displayed_source.as_ref(), self.quality);
-        let available_width = root.available_width();
-        let camera_label = tr("Share camera");
-        let labeled_camera_width = button_width(root, camera_label) + 24.0;
-        let compact_camera = available_width - 395.0 - labeled_camera_width - 8.0 < 180.0;
-        let camera_width = if compact_camera {
-            40.0
-        } else {
-            labeled_camera_width
-        };
-        let source_width = (available_width - 395.0 - camera_width - 8.0).clamp(116.0, 244.0);
+                .is_some_and(|active| active != &self.selection());
         egui::Panel::bottom("studio-dock")
-            .exact_size(94.0)
+            .exact_size(88.0)
             .show_separator_line(false)
             .frame(egui::Frame::new().fill(palette().canvas))
             .show(root, |ui| {
-                // Constrain painting to the full window. A clip rect around the
-                // reserved panel cuts the dock and its shadow at the panel edge.
-                egui::Area::new(egui::Id::unique("studio-controls"))
+                // Paint through the reserved panel edge so the dock shadow stays visible.
+                let controls = egui::Area::new(egui::Id::unique("studio-controls"))
                     .accessibility_parent(ui.unique_id())
                     .enabled(ui.is_enabled())
                     .pivot(egui::Align2::CENTER_BOTTOM)
@@ -2993,431 +2983,343 @@ impl PublisherUi {
                     .fade_in(false)
                     .order(egui::Order::Middle)
                     .show(ui.ctx(), |ui| {
-                        skin::dock_frame().show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = 8.0;
-                                // 1. Broadcast setup popover trigger pill
-                                let setup_btn = ui.add(
-                                    egui::Button::new("")
-                                        .min_size(egui::vec2(source_width, 44.0))
-                                        .corner_radius(10)
-                                        .fill(if self.setup_open {
-                                            palette().accent.gamma_multiply(0.14)
-                                        } else {
-                                            palette().card
-                                        })
-                                        .stroke(egui::Stroke::new(
-                                            1.0,
-                                            if self.setup_open || dirty {
-                                                palette().accent.gamma_multiply(0.65)
-                                            } else {
-                                                palette().border
-                                            },
-                                        )),
-                                );
-                                let sr = setup_btn.rect;
-                                let is_window = displayed_source
-                                    .as_ref()
-                                    .is_some_and(|s| s.id.starts_with("window:"));
-                                if state.sharing {
-                                    ui.painter().circle_filled(
-                                        sr.left_center() + egui::vec2(14.0, 0.0),
-                                        4.0,
-                                        palette().danger,
+                        skin::dock_frame()
+                            .show(ui, |ui| {
+                                ui.spacing_mut().interact_size.y = SHARING_BUTTON_HEIGHT;
+                                ui.horizontal(|ui| {
+                                    let p = palette();
+                                    let screen_action = if live {
+                                        sharing_action(tr("Stop sharing"), Icon::Stop, p.error)
+                                            .fill(p.danger.gamma_multiply(0.14))
+                                            .stroke((1.0, p.danger.gamma_multiply(0.45)))
+                                    } else {
+                                        sharing_action(
+                                            tr("Share screen"),
+                                            Icon::Monitor,
+                                            p.on_accent,
+                                        )
+                                        .fill(p.accent)
+                                    };
+                                    let can_share = live
+                                        || (state.connection == "connected"
+                                            && !state.busy
+                                            && self.valid_selection(state));
+                                    let (screen_action, screen_settings) = sharing_split_button(
+                                        ui,
+                                        screen_action,
+                                        can_share,
+                                        tr("Screen settings"),
+                                        self.sharing_setup == Some(SharingSetup::Screen),
+                                        dirty,
                                     );
-                                } else {
-                                    skin::icon(
-                                        ui.painter(),
-                                        egui::Rect::from_center_size(
-                                            sr.left_center() + egui::vec2(16.0, 0.0),
-                                            egui::vec2(16.0, 16.0),
-                                        ),
-                                        if is_window {
-                                            Icon::Window
+                                    if screen_action.clicked() {
+                                        if live {
+                                            self.controller.send(Command::Stop);
                                         } else {
-                                            Icon::Monitor
-                                        },
-                                        if self.setup_open {
-                                            palette().accent
-                                        } else {
-                                            palette().text
-                                        },
-                                    );
-                                }
-                                let mut title_job = egui::text::LayoutJob::simple(
-                                    source_label.to_owned(),
-                                    skin::semibold(12.5),
-                                    palette().text,
-                                    (sr.width() - 58.0).max(40.0),
-                                );
-                                title_job.wrap.max_rows = 1;
-                                title_job.wrap.break_anywhere = true;
-                                title_job.wrap.overflow_character = Some('\u{2026}');
-                                let title_galley = ui.fonts_mut(|f| f.layout_job(title_job));
-                                let mut sub_job = egui::text::LayoutJob::simple(
-                                    setup_summary.clone(),
-                                    egui::FontId::proportional(12.0),
-                                    if dirty {
-                                        palette().warning
-                                    } else {
-                                        palette().muted
-                                    },
-                                    (sr.width() - 58.0).max(40.0),
-                                );
-                                sub_job.wrap.max_rows = 1;
-                                sub_job.wrap.break_anywhere = true;
-                                sub_job.wrap.overflow_character = Some('\u{2026}');
-                                let sub_galley = ui.fonts_mut(|f| f.layout_job(sub_job));
-                                let text_left = sr.left() + 30.0;
-                                let title_height = title_galley.size().y;
-                                let gap = 2.0;
-                                let text_top = sr.center().y
-                                    - (title_height + gap + sub_galley.size().y) / 2.0;
-                                ui.painter().galley(
-                                    egui::pos2(text_left, text_top),
-                                    title_galley,
-                                    palette().text,
-                                );
-                                ui.painter().galley(
-                                    egui::pos2(text_left, text_top + title_height + gap),
-                                    sub_galley,
-                                    if dirty {
-                                        palette().warning
-                                    } else {
-                                        palette().muted
-                                    },
-                                );
-                                skin::icon(
-                                    ui.painter(),
-                                    egui::Rect::from_center_size(
-                                        sr.right_center() - egui::vec2(14.0, 0.0),
-                                        egui::vec2(13.0, 13.0),
-                                    ),
-                                    Icon::ChevronUp,
-                                    if self.setup_open {
-                                        palette().accent
-                                    } else {
-                                        palette().muted
-                                    },
-                                );
-                                setup_btn.widget_info(|| {
-                                    egui::WidgetInfo::selected(
-                                        egui::Role::Button,
-                                        true,
-                                        self.setup_open,
-                                        Self::sharing_panel_title(state),
-                                    )
-                                });
-                                if setup_btn
-                                    .on_hover_text(if dirty {
-                                        format!(
-                                            "{}\n{setup_summary}\n{pending_note}",
-                                            Self::sharing_panel_title(state)
-                                        )
-                                    } else {
-                                        format!(
-                                            "{}\n{setup_summary}",
-                                            Self::sharing_panel_title(state)
-                                        )
-                                    })
-                                    .clicked()
-                                {
-                                    self.setup_open = !self.setup_open;
-                                }
-
-                                // 2. Primary broadcast action (Start / Stop + Apply)
-                                if state.sharing || state.capture_pending {
-                                    if ui
-                                        .add_sized(
-                                            [button_width(ui, tr("Stop sharing")).max(96.0), 36.0],
-                                            egui::Button::new(
-                                                skin::strong(tr("Stop sharing"), 13.5)
-                                                    .color(palette().error),
-                                            )
-                                            .corner_radius(10)
-                                            .fill(palette().danger.gamma_multiply(0.14))
-                                            .stroke(
-                                                egui::Stroke::new(
-                                                    1.0,
-                                                    palette().danger.gamma_multiply(0.45),
-                                                ),
-                                            ),
-                                        )
-                                        .on_hover_text(tr("Stop sharing"))
-                                        .clicked()
-                                    {
-                                        self.controller.send(Command::Stop);
+                                            self.send_settings(false);
+                                            self.sharing_setup = None;
+                                        }
                                     }
-                                    if dirty
-                                        && !self.setup_open
-                                        && ui
-                                            .add_enabled(
-                                                state.sharing && !state.busy && valid,
-                                                primary(tr("Apply"), 82.0)
-                                                    .min_size(egui::vec2(82.0, 36.0)),
-                                            )
-                                            .on_hover_text(pending_note)
-                                            .clicked()
-                                    {
-                                        self.send_settings(true);
-                                    }
-                                } else if ui
-                                    .add_enabled(
-                                        state.connection == "connected" && !state.busy && valid,
-                                        primary(tr("Start sharing"), 148.0)
-                                            .min_size(egui::vec2(148.0, 36.0)),
-                                    )
-                                    .clicked()
-                                {
-                                    self.send_settings(false);
-                                    self.setup_open = false;
-                                }
 
-                                let camera_icon =
-                                    egui::Atom::paint(egui::vec2(16.0, 16.0), |ui, args| {
-                                        skin::icon(
-                                            ui.painter(),
-                                            args.rect,
-                                            Icon::Camera,
-                                            palette().muted,
-                                        );
-                                    });
-                                let camera = if compact_camera {
-                                    egui::Atoms::new(camera_icon)
-                                } else {
-                                    egui::Atoms::new((
-                                        camera_icon,
-                                        skin::strong(camera_label, 13.5).color(palette().muted),
-                                    ))
-                                };
-                                ui.add_enabled(
-                                    false,
-                                    egui::Button::new(camera)
-                                        .gap(6.0)
-                                        .min_size(egui::vec2(camera_width, 36.0))
-                                        .corner_radius(8)
-                                        .fill(palette().card)
-                                        .stroke((1.0, palette().border)),
-                                )
-                                .accessible_name(camera_label)
-                                .on_disabled_hover_text(tr("Camera sharing is coming soon."));
-
-                                // Subtle vertical divider
-                                let (sep, _) = ui.allocate_exact_size(
-                                    egui::vec2(1.0, 22.0),
-                                    egui::Sense::hover(),
-                                );
-                                ui.painter().line_segment(
-                                    [sep.center_top(), sep.center_bottom()],
-                                    (1.0, palette().border),
-                                );
-
-                                let count = state.participants.len() + 1;
-                                let people_resp = ui.add(
-                                    egui::Button::new("")
-                                        .min_size(egui::vec2(54.0, 32.0))
-                                        .corner_radius(8)
-                                        .fill(if self.roster_open {
-                                            palette().accent.gamma_multiply(0.14)
-                                        } else {
-                                            egui::Color32::TRANSPARENT
-                                        })
-                                        .stroke(if self.roster_open {
-                                            egui::Stroke::new(
-                                                1.0,
-                                                palette().accent.gamma_multiply(0.65),
-                                            )
-                                        } else {
-                                            egui::Stroke::NONE
-                                        }),
-                                );
-                                if !self.roster_open
-                                    && (people_resp.hovered() || people_resp.has_focus())
-                                {
-                                    ui.painter().rect_filled(
-                                        people_resp.rect,
-                                        8.0,
-                                        palette().control_hover,
+                                    let camera_action =
+                                        sharing_action(tr("Share camera"), Icon::Camera, p.muted)
+                                            .fill(p.card)
+                                            .stroke((1.0, p.border));
+                                    let (camera_action, camera_settings) = sharing_split_button(
+                                        ui,
+                                        camera_action,
+                                        false,
+                                        tr("Camera settings"),
+                                        self.sharing_setup == Some(SharingSetup::Camera),
+                                        false,
                                     );
-                                }
-                                let people_color = if self.roster_open {
-                                    palette().accent
-                                } else {
-                                    secondary_or_ink(people_resp.hovered())
-                                };
-                                skin::icon(
-                                    ui.painter(),
-                                    egui::Rect::from_center_size(
-                                        people_resp.rect.left_center() + egui::vec2(17.0, 0.0),
-                                        egui::vec2(16.0, 16.0),
-                                    ),
-                                    Icon::People,
-                                    people_color,
-                                );
-                                ui.painter().text(
-                                    people_resp.rect.right_center() - egui::vec2(12.0, 0.0),
-                                    egui::Align2::RIGHT_CENTER,
-                                    count.to_string(),
-                                    skin::semibold(12.5),
-                                    people_color,
-                                );
-                                people_resp.widget_info(|| {
-                                    egui::WidgetInfo::selected(
-                                        egui::Role::Button,
-                                        true,
-                                        self.roster_open,
-                                        tr("People in this room"),
-                                    )
-                                });
-                                if people_resp
-                                    .on_hover_text(tr("People in this room"))
-                                    .clicked()
-                                {
-                                    self.roster_open = !self.roster_open;
-                                }
+                                    let screen = screen_action.rect.union(screen_settings.rect);
+                                    let camera = camera_action.rect.union(camera_settings.rect);
+                                    camera_action.on_disabled_hover_text(tr(
+                                        "Camera sharing is coming soon.",
+                                    ));
 
-                                let own_id = self
-                                    .profile_client
-                                    .as_ref()
-                                    .map(|c| c.participant_id.clone())
-                                    .unwrap_or_default();
-                                let texture = self.profile_texture(ui.ctx(), &own_id);
-                                let (av_rect, av_resp) = ui.allocate_exact_size(
-                                    egui::vec2(30.0, 30.0),
-                                    egui::Sense::click(),
-                                );
-                                if let Some(tex) = texture {
-                                    egui::Image::new((tex, egui::vec2(30.0, 30.0)))
-                                        .corner_radius(egui::CornerRadius::same(15))
-                                        .paint_at(ui, av_rect);
-                                } else {
-                                    paint_avatar_circle(ui.painter(), av_rect, &self.name);
-                                }
-                                ui.painter().circle_filled(
-                                    av_rect.right_bottom() - egui::vec2(4.0, 4.0),
-                                    4.0,
-                                    if state.connection == "connected" {
-                                        palette().success
+                                    let requested = if screen_settings.clicked() {
+                                        Some(SharingSetup::Screen)
+                                    } else if camera_settings.clicked() {
+                                        Some(SharingSetup::Camera)
                                     } else {
-                                        palette().warning
-                                    },
-                                );
-                                ui.painter().circle_stroke(
-                                    av_rect.right_bottom() - egui::vec2(4.0, 4.0),
-                                    4.0,
-                                    egui::Stroke::new(1.5, palette().panel),
-                                );
-                                if av_resp.has_focus() || av_resp.hovered() {
-                                    ui.painter().circle_stroke(
-                                        av_rect.center(),
-                                        16.0,
-                                        egui::Stroke::new(1.5, palette().accent),
-                                    );
-                                }
-                                av_resp.widget_info(|| {
-                                    egui::WidgetInfo::labeled(
-                                        egui::Role::Button,
-                                        true,
-                                        tr("User settings"),
-                                    )
-                                });
-                                if av_resp.on_hover_text(tr("User settings")).clicked() {
-                                    self.open_profile();
-                                }
-                            });
-                        });
-                    })
-                    .response
-                    .rect
+                                        None
+                                    };
+                                    if let Some(setup) = requested {
+                                        self.sharing_setup =
+                                            (self.sharing_setup != Some(setup)).then_some(setup);
+                                    }
+                                    (screen, camera)
+                                })
+                                .inner
+                            })
+                            .inner
+                    });
+                SharingDock {
+                    rect: controls.response.rect,
+                    screen: controls.inner.0,
+                    camera: controls.inner.1,
+                }
             })
             .inner
     }
 
-    fn broadcast_setup_popover(
+    fn sharing_setup_popover(
         &mut self,
         ctx: &egui::Context,
         state: &Snapshot,
         stage: egui::Rect,
-        dock: egui::Rect,
+        dock: SharingDock,
+        setup: SharingSetup,
     ) {
-        let pending = state
-            .active_selection
-            .as_ref()
-            .is_some_and(|s| s != &self.selection());
-        let footer_height = if pending { 80.0 } else { 50.0 };
-        let max_height = (stage.height() - 112.0 - footer_height).clamp(48.0, 480.0);
-        let panel = egui::Area::new(egui::Id::unique("broadcast-setup"))
-            .constrain_to(stage.shrink2(egui::vec2(0.0, 6.0)))
-            .anchor(
-                egui::Align2::LEFT_BOTTOM,
-                egui::vec2((dock.left() + 10.0 - stage.left()).max(0.0), 0.0),
-            )
-            .order(egui::Order::Foreground)
-            .interactable(true)
-            .show(ctx, |ui| {
-                skin::menu_frame()
-                    .fill(palette().panel)
-                    .corner_radius(14)
-                    .inner_margin(egui::Margin::same(16))
-                    .show(ui, |ui| {
-                        ui.set_width(332.0);
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                skin::strong(Self::sharing_panel_title(state), 15.0)
-                                    .color(palette().text),
-                            );
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if skin::icon_button(ui, Icon::Close, tr("Close")).clicked() {
-                                        self.setup_open = false;
-                                        self.clear_picker();
-                                    }
-                                    if ui
-                                        .add(
-                                            egui::Button::new(skin::strong(tr("Advanced"), 12.5))
-                                                .frame(false),
-                                        )
-                                        .clicked()
-                                    {
-                                        self.setup_open = false;
-                                        self.clear_picker();
-                                        self.advanced_open = true;
-                                    }
-                                },
-                            );
-                        });
-                        ui.add_space(6.0);
-                        egui::ScrollArea::vertical()
-                            .id_salt("broadcast-setup-scroll")
-                            .max_height(max_height)
-                            .auto_shrink([false, true])
-                            .show(ui, |ui| {
-                                self.sharing_menu(ui, state);
-                            });
-                        self.sharing_actions(ui, state);
+        let screen = setup == SharingSetup::Screen;
+        let pending = screen
+            && state
+                .active_selection
+                .as_ref()
+                .is_some_and(|s| s != &self.selection());
+        let reserved_height = if screen {
+            112.0 + if pending { 80.0 } else { 50.0 }
+        } else {
+            74.0
+        };
+        let max_height = (stage.height() - reserved_height).clamp(48.0, 480.0);
+        let trigger = if screen { dock.screen } else { dock.camera };
+        let position = egui::pos2(trigger.left(), dock.rect.top() - 10.0);
+        let panel = egui::Area::new(egui::Id::unique(if screen {
+            "screen-setup"
+        } else {
+            "camera-setup"
+        }))
+        .constrain_to(egui::Rect::from_min_max(
+            stage.min + egui::vec2(6.0, 6.0),
+            egui::pos2(stage.right() - 6.0, position.y),
+        ))
+        .pivot(egui::Align2::LEFT_BOTTOM)
+        .fixed_pos(position)
+        .order(egui::Order::Foreground)
+        .interactable(true)
+        .show(ctx, |ui| {
+            ui.set_clip_rect(egui::Rect::from_min_max(
+                stage.min,
+                egui::pos2(stage.right(), dock.rect.top()),
+            ));
+            let mut frame = skin::menu_frame()
+                .fill(palette().panel)
+                .corner_radius(14)
+                .inner_margin(egui::Margin::same(16));
+            frame.shadow.offset = [0, 4];
+            frame.shadow.blur = 16;
+            frame.show(ui, |ui| {
+                ui.set_width(332.0);
+                ui.horizontal(|ui| {
+                    let title = if screen {
+                        Self::sharing_panel_title(state)
+                    } else {
+                        tr("Camera settings")
+                    };
+                    ui.label(skin::strong(title, 15.0).color(palette().text));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if skin::icon_button(ui, Icon::Close, tr("Close")).clicked() {
+                            self.sharing_setup = None;
+                            self.clear_picker();
+                        }
+                        if screen
+                            && ui
+                                .add(
+                                    egui::Button::new(skin::strong(tr("Advanced"), 12.5))
+                                        .frame(false),
+                                )
+                                .clicked()
+                        {
+                            self.sharing_setup = None;
+                            self.clear_picker();
+                            self.advanced_open = true;
+                        }
                     });
+                });
+                ui.add_space(6.0);
+                let mut body = ui.available_rect_before_wrap();
+                if !screen {
+                    // The camera fields can grow after the floating area has been measured.
+                    body.set_height(max_height);
+                }
+                ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("broadcast-setup-scroll")
+                        .max_height(max_height)
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {
+                            if screen {
+                                self.sharing_menu(ui, state);
+                            } else {
+                                self.camera_setup_fields(ui);
+                            }
+                        });
+                });
+                if screen {
+                    self.sharing_actions(ui, state);
+                }
             });
+        });
         if !egui::Popup::is_any_open(ctx)
             && ctx.input(|input| {
                 input.pointer.any_pressed()
                     && input.pointer.interact_pos().is_some_and(|pos| {
-                        !panel.response.rect.contains(pos) && !dock.contains(pos)
+                        !panel.response.rect.contains(pos) && !dock.rect.contains(pos)
                     })
             })
         {
-            self.setup_open = false;
+            self.sharing_setup = None;
             self.clear_picker();
         }
     }
+
+    fn camera_setup_fields(&mut self, ui: &mut egui::Ui) {
+        let settings = &mut self.camera_settings;
+        let device = ui.label(tr("Camera device"));
+        ui.add_enabled_ui(false, |ui| {
+            egui::ComboBox::from_id_salt("camera-device")
+                .width(ui.available_width())
+                .selected_text(tr("System default"))
+                .show_ui(ui, |_| {})
+                .response
+                .labelled_by(device.id);
+        });
+        ui.label(
+            egui::RichText::new(tr(
+                "Camera selection will be available when camera sharing is ready.",
+            ))
+            .size(12.0)
+            .color(palette().muted),
+        );
+        ui.add_space(6.0);
+        ui.columns(2, |columns| {
+            let ui = &mut columns[0];
+            let resolution = ui.label(tr("Resolution"));
+            egui::ComboBox::from_id_salt("camera-resolution")
+                .width(ui.available_width())
+                .selected_text(tr(settings.resolution.label()))
+                .show_ui(ui, |ui| {
+                    for resolution in [
+                        quality::Resolution::P720,
+                        quality::Resolution::P1080,
+                        quality::Resolution::Source,
+                    ] {
+                        ui.selectable_value(
+                            &mut settings.resolution,
+                            resolution,
+                            tr(resolution.label()),
+                        );
+                    }
+                })
+                .response
+                .labelled_by(resolution.id);
+
+            let ui = &mut columns[1];
+            let fps = ui.label(tr("Frame rate"));
+            egui::ComboBox::from_id_salt("camera-fps")
+                .width(ui.available_width())
+                .selected_text(format!("{} FPS", settings.fps))
+                .show_ui(ui, |ui| {
+                    for fps in [24, 30, 60] {
+                        ui.selectable_value(&mut settings.fps, fps, format!("{fps} FPS"));
+                    }
+                })
+                .response
+                .labelled_by(fps.id);
+        });
+        let bitrate = ui
+            .horizontal(|ui| {
+                let label = ui.label(tr("Bitrate"));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(skin::strong(
+                        format!("{:.1} Mbps", settings.bitrate_mbps),
+                        12.0,
+                    ));
+                });
+                label
+            })
+            .inner;
+        ui.spacing_mut().slider_width = ui.available_width();
+        ui.add(
+            egui::Slider::new(&mut settings.bitrate_mbps, 0.5..=8.0)
+                .step_by(0.5)
+                .show_value(false),
+        )
+        .labelled_by(bitrate.id);
+    }
 }
 
-fn secondary_or_ink(hovered: bool) -> egui::Color32 {
-    if hovered {
-        palette().text
-    } else {
-        palette().muted
-    }
+fn sharing_action(label: &str, icon: Icon, ink: egui::Color32) -> egui::Button<'_> {
+    egui::Button::new((
+        egui::Atom::paint(egui::vec2(16.0, 16.0), move |ui, args| {
+            skin::icon(ui.painter(), args.rect, icon, ink);
+        }),
+        skin::strong(label, 13.5).color(ink),
+    ))
+    .gap(6.0)
+    .min_size(egui::vec2(0.0, SHARING_BUTTON_HEIGHT))
+}
+
+fn sharing_split_button(
+    ui: &mut egui::Ui,
+    action: egui::Button<'_>,
+    enabled: bool,
+    settings_label: &str,
+    open: bool,
+    pending: bool,
+) -> (egui::Response, egui::Response) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        let action = ui.add_enabled(
+            enabled,
+            action.corner_radius(egui::CornerRadius {
+                nw: 9,
+                sw: 9,
+                ne: 0,
+                se: 0,
+            }),
+        );
+        let p = palette();
+        let border = if pending {
+            p.warning
+        } else if open {
+            p.hover_stroke
+        } else {
+            p.border
+        };
+        let ink = if pending {
+            p.warning
+        } else if open {
+            p.accent
+        } else {
+            p.text
+        };
+        let settings = ui.add(
+            egui::Button::new(egui::Atom::paint(
+                egui::vec2(14.0, 14.0),
+                move |ui, args| {
+                    skin::icon(ui.painter(), args.rect, Icon::ChevronUp, ink);
+                },
+            ))
+            .min_size(egui::vec2(38.0, SHARING_BUTTON_HEIGHT))
+            .corner_radius(egui::CornerRadius {
+                nw: 0,
+                sw: 0,
+                ne: 9,
+                se: 9,
+            })
+            .fill(if open { p.control_hover } else { p.card })
+            .stroke((1.0, border)),
+        );
+        settings.widget_info(|| {
+            egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), open, settings_label)
+        });
+        (action, settings.on_hover_text(settings_label))
+    })
+    .inner
 }
 
 /// A small fixed kernel softens only this new window's onboarding paint. No
@@ -3527,39 +3429,6 @@ fn open_notices_folder(path: &std::path::Path) -> std::io::Result<()> {
     let opener = "xdg-open";
     std::process::Command::new(opener).arg(path).spawn()?;
     Ok(())
-}
-
-fn dock_stream_summary(
-    state: &Snapshot,
-    source: Option<&crate::sources::SourceInfo>,
-    settings: Settings,
-) -> String {
-    if state.sharing {
-        let Some(mode) = state.mode else {
-            return tr("Live").into();
-        };
-        let fps = if state.metrics.fps > 0.0 {
-            state.metrics.fps
-        } else {
-            f64::from(mode.fps)
-        };
-        return format!(
-            "{}×{} · {fps:.0} FPS · {:.1} Mbps",
-            mode.width,
-            mode.height,
-            state.delivery.bitrate_bps as f64 / 1_000_000.0,
-        );
-    }
-    let fps = settings.fps;
-    if let Some((width, height)) =
-        source.and_then(|source| settings.resolution.dimensions(source).ok())
-    {
-        format!("{width}×{height} · {fps} FPS")
-    } else if settings.resolution == quality::Resolution::Source {
-        format!("{fps} FPS")
-    } else {
-        format!("{} · {fps} FPS", tr(settings.resolution.label()))
-    }
 }
 
 fn quality_controls(
@@ -4548,6 +4417,7 @@ mod tests {
             source_id: String::new(),
             encoder: String::new(),
             quality: Settings::default(),
+            camera_settings: CameraSettings::default(),
             custom_bitrate: false,
             download_budget: None,
             textures: HashMap::new(),
@@ -4566,7 +4436,7 @@ mod tests {
             },
             advanced_open: false,
             licenses_open: false,
-            setup_open: false,
+            sharing_setup: None,
             roster_open: false,
             diagnostics_open: false,
             show_invitation: false,
@@ -5378,38 +5248,6 @@ mod tests {
     }
 
     #[test]
-    fn dock_summary_prefers_the_live_mode_and_uses_source_dimensions_while_idle() {
-        let source = crate::sources::SourceInfo {
-            id: "monitor:fixture".into(),
-            label: "Monitor".into(),
-            width: 5120,
-            height: 2880,
-        };
-        let settings = Settings {
-            fps: 60,
-            ..Default::default()
-        };
-        let mut state = Snapshot::default();
-        assert_eq!(
-            dock_stream_summary(&state, Some(&source), settings),
-            "3840×2160 · 60 FPS"
-        );
-        assert_eq!(dock_stream_summary(&state, None, settings), "60 FPS");
-        state.sharing = true;
-        state.mode = Some(quality::Mode {
-            width: 1440,
-            height: 1080,
-            fps: 30,
-            bitrate: 8_000_000,
-        });
-        state.delivery.bitrate_bps = 6_400_000;
-        assert_eq!(
-            dock_stream_summary(&state, Some(&source), settings),
-            "1440×1080 · 30 FPS · 6.4 Mbps"
-        );
-    }
-
-    #[test]
     fn empty_room_avatar_displays_a_name_on_hover_and_keyboard_focus() {
         let mut app = app();
         let ctx = egui::Context::default();
@@ -5467,6 +5305,88 @@ mod tests {
     }
 
     #[test]
+    fn split_arrows_open_separate_settings_without_starting_capture() {
+        let mut app = app();
+        let state = Snapshot {
+            connection: "connected",
+            ..Default::default()
+        };
+        let (controller, mut commands) = Controller::recording_for_test(state.clone());
+        app.controller = controller;
+        let ctx = egui::Context::default();
+        configure_theme(&ctx);
+        let window = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(960.0, 540.0));
+        let draw = |app: &mut PublisherUi, events| {
+            let mut buttons = None;
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(window),
+                    events,
+                    ..Default::default()
+                },
+                |root| {
+                    let dock = app.studio_dock(root, &state);
+                    buttons = Some([dock.screen, dock.camera]);
+                    if let Some(setup) = app.sharing_setup {
+                        let stage = root.available_rect_before_wrap();
+                        app.sharing_setup_popover(root.ctx(), &state, stage, dock, setup);
+                    }
+                },
+            );
+            output.textures_delta.clear();
+            (buttons.unwrap(), output)
+        };
+        let click = |app: &mut PublisherUi, pos| {
+            for pressed in [true, false] {
+                draw(
+                    app,
+                    vec![
+                        egui::Event::PointerMoved(pos),
+                        egui::Event::PointerButton {
+                            pos,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: Default::default(),
+                        },
+                    ],
+                );
+            }
+            draw(app, vec![]);
+            draw(app, vec![]).1
+        };
+        let text_center = |output: &egui::FullOutput, label| {
+            output
+                .shapes
+                .iter()
+                .find_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text) if text.galley.text() == label => {
+                        Some(text.pos + text.galley.size() / 2.0)
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("Missing control: {label}"))
+        };
+        draw(&mut app, vec![]);
+        let ([screen, camera], _) = draw(&mut app, vec![]);
+        assert!((screen.center().y - camera.center().y).abs() < 0.5);
+        let arrow = |button: egui::Rect| button.right_center() - egui::vec2(16.0, 0.0);
+        click(&mut app, arrow(screen));
+        assert!(app.sharing_setup == Some(SharingSetup::Screen));
+        let screen_quality = app.quality;
+        let output = click(&mut app, arrow(camera));
+        assert!(app.sharing_setup == Some(SharingSetup::Camera));
+        let output = click(&mut app, text_center(&output, "30 FPS"));
+        click(&mut app, text_center(&output, "24 FPS"));
+        assert_eq!(app.camera_settings.fps, 24);
+        assert_eq!(app.quality, screen_quality);
+        click(&mut app, arrow(camera));
+        assert!(app.sharing_setup.is_none());
+        click(&mut app, camera.left_center() + egui::vec2(42.0, 0.0));
+        assert!(app.sharing_setup.is_none());
+        assert!(commands().is_none());
+    }
+
+    #[test]
     fn floating_dock_keeps_its_bottom_edge_and_shadow_inside_the_window() {
         let mut app = app();
         let ctx = egui::Context::default();
@@ -5501,7 +5421,7 @@ mod tests {
                             app.roster_drawer(root, &state);
                         }
                         stage = root.available_rect_before_wrap();
-                        dock = app.studio_dock(root, &state);
+                        dock = app.studio_dock(root, &state).rect;
                     },
                 );
                 output.textures_delta.clear();

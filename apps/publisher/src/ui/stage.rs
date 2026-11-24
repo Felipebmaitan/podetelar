@@ -195,6 +195,13 @@ impl PublisherUi {
                             capsule_person(ui, name, texture);
                         }
                     });
+                ui.separator();
+                if skin::menu_row(ui, tr("Show room roster"), Some(Icon::People), "", false)
+                    .clicked()
+                {
+                    self.roster_open = true;
+                    ui.close();
+                }
             });
     }
 

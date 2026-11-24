@@ -2,9 +2,9 @@ use crate::{
     admission::Admission,
     audio, connection, delivery,
     encoding::{Codec, Encoder, Encoding, Metrics, Mode},
-    preview::{self, Latest},
+    preview::{self, Kind, Latest},
     quality::{MAX_BITRATE, RateControl, Settings},
-    sources::{self, Source, SourceInfo},
+    sources::{self, Source, SourceInfo, camera},
 };
 use anyhow::{Context, Result, bail};
 use livekit::{
@@ -29,6 +29,7 @@ use tokio::{
 };
 
 const TRACK_NAME: &str = "PodeTelar screen";
+const CAMERA_TRACK_NAME: &str = "PodeTelar camera";
 const AUDIO_TRACK_NAME: &str = "PodeTelar application audio";
 #[derive(Default)]
 pub(crate) struct CaptureCancellation(Mutex<Vec<Weak<AtomicBool>>>);
@@ -56,7 +57,27 @@ impl CaptureCancellation {
     }
 }
 
-type Cancellation = Arc<CaptureCancellation>;
+#[derive(Default)]
+struct CaptureStops {
+    screen: CaptureCancellation,
+    camera: CaptureCancellation,
+}
+
+impl CaptureStops {
+    fn for_kind(&self, kind: Kind) -> &CaptureCancellation {
+        match kind {
+            Kind::Screen => &self.screen,
+            Kind::Camera => &self.camera,
+        }
+    }
+
+    fn cancel(&self) {
+        self.screen.cancel();
+        self.camera.cancel();
+    }
+}
+
+type Cancellation = Arc<CaptureStops>;
 
 // Unlike queued commands, this signal can preempt a network join already being
 // awaited. A cancelled stage retains ownership until it can release its result.
@@ -155,7 +176,11 @@ pub struct Snapshot {
     pub operation: &'static str,
     pub sharing: bool,
     pub capture_pending: bool,
+    pub camera_sharing: bool,
+    pub camera_pending: bool,
     pub sources: Vec<SourceInfo>,
+    pub cameras: Vec<camera::Info>,
+    pub refreshing_cameras: bool,
     pub encoders: Vec<Encoder>,
     pub metrics: Metrics,
     pub audio: audio::Metrics,
@@ -182,7 +207,11 @@ impl Default for Snapshot {
             operation: "",
             sharing: false,
             capture_pending: false,
+            camera_sharing: false,
+            camera_pending: false,
             sources: Vec::new(),
+            cameras: Vec::new(),
+            refreshing_cameras: false,
             encoders: Vec::new(),
             metrics: Metrics::default(),
             audio: audio::Metrics::default(),
@@ -197,6 +226,12 @@ impl Default for Snapshot {
             capacity: crate::network::Capacity::default(),
             testing_connection: false,
         }
+    }
+}
+
+impl Snapshot {
+    pub fn any_sharing(&self) -> bool {
+        self.sharing || self.camera_sharing
     }
 }
 
@@ -222,17 +257,25 @@ pub enum Command {
         exclusions: Vec<String>,
         quality: Settings,
     },
+    StartCamera {
+        device_id: String,
+        quality: Settings,
+        preferred_codec: Option<Codec>,
+    },
     DownloadBudget {
         bps: Option<u64>,
     },
     MeasureConnection,
     Watch {
         id: String,
+        kind: preview::Kind,
         enabled: bool,
     },
     Stop,
+    StopCamera,
     Leave,
     RefreshSources,
+    RefreshCameras,
     Shutdown,
 }
 
@@ -275,7 +318,7 @@ impl Controller {
     pub fn new() -> Self {
         let (commands, receiver) = mpsc::channel(8);
         let snapshot = Arc::new(Mutex::new(Snapshot::default()));
-        let cancellation = Arc::new(CaptureCancellation::default());
+        let cancellation = Arc::new(CaptureStops::default());
         let state = snapshot.clone();
         let cancel = cancellation.clone();
         let shutdown = Arc::new(Shutdown::default());
@@ -320,7 +363,7 @@ impl Controller {
         if self.shutdown.requested.load(Ordering::Acquire) {
             return;
         }
-        if matches!(command, Command::RefreshSources) {
+        if matches!(command, Command::RefreshSources | Command::RefreshCameras) {
             // Metadata refresh is best-effort and must not disable/close the picker,
             // overwrite operation feedback, or allocate capture authority.
             let _ = self.commands.try_send(QueuedCommand {
@@ -339,47 +382,53 @@ impl Controller {
         let join = matches!(command, Command::Join { .. }).then(|| self.join_cancellation.ticket());
         let operation = match &command {
             Command::Join { .. } => "Joining room…",
-            Command::Start { .. } => "Starting your stream…",
+            Command::Start { .. } | Command::StartCamera { .. } => "Starting your stream…",
             Command::Apply { .. } => "Applying stream settings…",
-            Command::Stop => "Stopping your stream…",
+            Command::Stop | Command::StopCamera => "Stopping your stream…",
             Command::Leave => "Leaving the room…",
             Command::Shutdown => "Closing…",
             Command::RefreshSources => "Refreshing available sources…",
+            Command::RefreshCameras => "Refreshing cameras…",
             Command::DownloadBudget { .. } => "Updating your watching allowance…",
             Command::MeasureConnection => "Measuring your connection…",
             Command::Watch { enabled: true, .. } => "Starting playback…",
             Command::Watch { enabled: false, .. } => "Stopping playback…",
         };
+        let camera_pending = matches!(command, Command::StartCamera { .. });
         let capture_pending = matches!(command, Command::Start { .. } | Command::Apply { .. });
         // Register before enqueueing: Stop must also cancel capture work that
         // has not yet reached the room worker.
-        let capture = capture_pending.then(|| self.cancellation.register());
-        if matches!(
-            command,
-            Command::Join { .. } | Command::Stop | Command::Leave | Command::Shutdown
-        ) {
-            self.cancel_capture();
-        }
-        if self
-            .commands
-            .try_send(QueuedCommand {
-                command,
-                capture,
-                join,
-            })
-            .is_err()
-        {
-            update(&self.snapshot, |state| {
-                state.error = "Publisher is busy. Try again shortly.".into()
-            });
+        let capture = if camera_pending {
+            Some(self.cancellation.camera.register())
         } else {
-            update(&self.snapshot, |state| {
+            capture_pending.then(|| self.cancellation.screen.register())
+        };
+        match &command {
+            Command::Stop => self.cancellation.screen.cancel(),
+            Command::StopCamera => self.cancellation.camera.cancel(),
+            Command::Join { .. } | Command::Leave | Command::Shutdown => self.cancel_capture(),
+            _ => {}
+        }
+        // Publish pending state before the worker can report completion.
+        update(&self.snapshot, |state| {
+            if self
+                .commands
+                .try_send(QueuedCommand {
+                    command,
+                    capture,
+                    join,
+                })
+                .is_err()
+            {
+                state.error = "Publisher is busy. Try again shortly.".into();
+            } else {
                 state.busy = true;
                 state.operation = operation;
                 state.capture_pending |= capture_pending;
+                state.camera_pending |= camera_pending;
                 state.error.clear();
-            });
-        }
+            }
+        });
     }
 
     fn cancel_capture(&self) {
@@ -456,6 +505,22 @@ pub struct StreamConfig {
     pub exclusions: Vec<String>,
 }
 impl StreamConfig {
+    fn kind(&self) -> Kind {
+        if self.source.is_camera() {
+            Kind::Camera
+        } else {
+            Kind::Screen
+        }
+    }
+
+    fn resolve_mode(&self, codec: Codec) -> Result<Mode> {
+        if self.source.is_camera() {
+            camera::mode(&self.source.info, self.quality)
+        } else {
+            self.quality.resolve(&self.source.info, codec)
+        }
+    }
+
     fn negotiate(&mut self, room: &Room, preferred: &Encoder, available: &[Encoder]) -> Result<()> {
         let shared = crate::playback::room_codecs(room)
             .context("Waiting for every room member's hardware decoder capabilities. Update older apps and retry.")?;
@@ -468,15 +533,14 @@ impl StreamConfig {
         available: &[Encoder],
     ) -> Result<()> {
         let codec = shared.best(preferred.codec, |codec| available.iter().any(|encoder| {
-            encoder.codec == codec && self.quality.resolve(&self.source.info, codec).is_ok_and(|mode| encoder.supports(mode))
+            encoder.codec == codec && self.resolve_mode(codec).is_ok_and(|mode| encoder.supports(mode))
         })).context("No codec can be hardware encoded at this resolution/frame rate and hardware decoded by every room member.")?;
         self.encoder = available
             .iter()
             .filter(|encoder| {
                 encoder.codec == codec
                     && self
-                        .quality
-                        .resolve(&self.source.info, codec)
+                        .resolve_mode(codec)
                         .is_ok_and(|mode| encoder.supports(mode))
             })
             .min_by_key(|encoder| encoder.factory != preferred.factory)
@@ -512,9 +576,7 @@ impl StreamConfig {
         }))
     }
     pub fn mode(&self) -> Result<Mode> {
-        let mode = self
-            .quality
-            .resolve(&self.source.info, self.encoder.codec)?;
+        let mode = self.resolve_mode(self.encoder.codec)?;
         anyhow::ensure!(
             self.encoder.supports(mode),
             "This resolution/frame rate is unavailable on the selected hardware encoder."
@@ -572,6 +634,10 @@ impl Drop for StopOnDrop {
 }
 
 impl Stream {
+    pub fn kind(&self) -> Kind {
+        self.config.kind()
+    }
+
     pub fn sid(&self) -> String {
         self.video.sid().to_string()
     }
@@ -581,7 +647,7 @@ impl Stream {
 
     pub fn constrain_watchers(&self, room: &Room) {
         self.rate
-            .set_viewer_cap(crate::playback::requested_cap(room));
+            .set_viewer_cap(crate::playback::requested_cap(room, self.config.kind()));
     }
 
     pub fn encoder(&self) -> &Encoder {
@@ -621,7 +687,7 @@ impl Stream {
         let cancelled = stop.clone();
         let rate = RateControl::new(mode.bitrate);
         rate.set_upload_cap(upload_cap);
-        rate.set_viewer_cap(crate::playback::requested_cap(room));
+        rate.set_viewer_cap(crate::playback::requested_cap(room, config.kind()));
         let encoding_rate = rate.clone();
         let capture = preview_capture.clone();
         let encoding = tokio::task::spawn_blocking(move || {
@@ -636,6 +702,7 @@ impl Stream {
         })
         .await
         .context("Capture worker stopped.")??;
+        anyhow::ensure!(!stop.load(Ordering::Acquire), "Capture was cancelled.");
         let codec = encoder_codec(&encoding);
         let rate = encoding.rate();
         let previews = encoding.previews();
@@ -643,8 +710,13 @@ impl Stream {
             width: mode.width,
             height: mode.height,
         });
+        let camera = config.source.is_camera();
         let track = LocalVideoTrack::create_video_track(
-            TRACK_NAME,
+            if camera {
+                CAMERA_TRACK_NAME
+            } else {
+                TRACK_NAME
+            },
             RtcVideoSource::Native(rtc_source.clone()),
         );
         lease.tracks.push(LocalTrack::Video(track.clone()));
@@ -665,7 +737,16 @@ impl Stream {
             video_codec: codec,
             video_encoder: VideoEncoderBackend::PreEncoded,
             simulcast: false,
-            source: TrackSource::Screenshare,
+            source: if camera {
+                TrackSource::Camera
+            } else {
+                TrackSource::Screenshare
+            },
+            stream: if camera {
+                "camera".into()
+            } else {
+                String::new()
+            },
             video_encoding: Some(VideoEncoding {
                 // Keep the RTC transport ceiling stable across live bitrate edits.
                 // The GPU encoder always obeys the user's smaller cap and BWE.
@@ -720,7 +801,7 @@ impl Stream {
             rate,
             mode,
         };
-        if audio_choice != audio::Choice::Off {
+        if !camera && audio_choice != audio::Choice::Off {
             let source = NativeAudioSource::new(AudioSourceOptions::default(), 48000, 2, 50);
             let track = LocalAudioTrack::create_audio_track(
                 AUDIO_TRACK_NAME,
@@ -834,6 +915,11 @@ impl Stream {
         if self.preview_task.is_none() {
             self.preview_task = Some(tokio::spawn(preview::upload(
                 admission,
+                if self.config.source.is_camera() {
+                    preview::Kind::Camera
+                } else {
+                    preview::Kind::Screen
+                },
                 self.previews.clone(),
                 self.video.clone(),
                 self.stop.flag.clone(),
@@ -894,16 +980,9 @@ impl Stream {
         // a publication from its local map before removing its RTC sender, so
         // an empty map is not proof that failed/timed-out removal succeeded.
         settle_publications(
-            publication_ids.into_iter().map(|sid| async move {
-                matches!(
-                    tokio::time::timeout(
-                        Duration::from_secs(5),
-                        room.local_participant().unpublish_track(&sid)
-                    )
-                    .await,
-                    Ok(Ok(_))
-                )
-            }),
+            publication_ids
+                .into_iter()
+                .map(|sid| async move { unpublish(room, &sid).await }),
             || {
                 room.connection_state() != ConnectionState::Connected
                     || room
@@ -923,6 +1002,22 @@ impl Stream {
         }
         audio_result?;
         captured
+    }
+}
+
+async fn unpublish(room: &Room, sid: &TrackSid) -> bool {
+    match tokio::time::timeout(
+        Duration::from_secs(5),
+        room.local_participant().unpublish_track(sid),
+    )
+    .await
+    {
+        Ok(Ok(_)) => true,
+        // A disabled-track event and Stop can own the same removal. The SDK
+        // reports an absent local SID here. The first remover still handles any
+        // actual RTC sender error and closes the session if necessary.
+        Ok(Err(livekit::RoomError::Internal(reason))) if reason == "track not found" => true,
+        _ => false,
     }
 }
 
@@ -1025,17 +1120,10 @@ impl Session {
                     }
                     | RoomEvent::LocalTrackRepublished {
                         publication, track, ..
-                    } if !track.rtc_track().enabled() => {
-                        let cleanup = tokio::time::timeout(
-                            Duration::from_secs(5),
-                            media_room
-                                .local_participant()
-                                .unpublish_track(&publication.sid()),
-                        )
-                        .await;
-                        if !matches!(cleanup, Ok(Ok(_))) {
-                            let _ = media_room.close().await;
-                        }
+                    } if !track.rtc_track().enabled()
+                        && !unpublish(&media_room, &publication.sid()).await =>
+                    {
+                        let _ = media_room.close().await;
                     }
                     RoomEvent::Disconnected { .. } => {
                         cancellation.cancel();
@@ -1051,15 +1139,19 @@ impl Session {
                     RoomEvent::Reconnected => {
                         recovery.fetch_add(1, Ordering::AcqRel);
                         let publications = media_room.local_participant().track_publications();
-                        let published = publications
-                            .values()
-                            .any(|publication| publication.name() == TRACK_NAME)
-                            && (!audio_expected.load(Ordering::Acquire)
-                                || publications
-                                    .values()
-                                    .any(|publication| publication.name() == AUDIO_TRACK_NAME));
-                        if !published {
-                            cancellation.cancel();
+                        let published = |name| {
+                            publications
+                                .values()
+                                .any(|publication| publication.name() == name)
+                        };
+                        if !published(TRACK_NAME)
+                            || (audio_expected.load(Ordering::Acquire)
+                                && !published(AUDIO_TRACK_NAME))
+                        {
+                            cancellation.screen.cancel();
+                        }
+                        if !published(CAMERA_TRACK_NAME) {
+                            cancellation.camera.cancel();
                         }
                         update(&snapshot, |state| state.connection = "connected");
                     }
@@ -1101,13 +1193,127 @@ impl Drop for ConnectionProbe {
     }
 }
 
+#[derive(Default)]
+struct Streams {
+    screen: Option<Stream>,
+    camera: Option<Stream>,
+}
+
+impl Streams {
+    fn slot(&mut self, kind: Kind) -> &mut Option<Stream> {
+        match kind {
+            Kind::Screen => &mut self.screen,
+            Kind::Camera => &mut self.camera,
+        }
+    }
+
+    fn publish_snapshot(&self, state: &mut Snapshot) {
+        state.sharing = self.screen.is_some();
+        state.camera_sharing = self.camera.is_some();
+        if !state.sharing {
+            state.active_selection = None;
+        }
+        let primary = self.screen.as_ref().or(self.camera.as_ref());
+        state.self_preview = primary
+            .map(|stream| stream.previews.clone())
+            .unwrap_or_default();
+        state.mode = primary.map(|stream| stream.mode);
+        state.metrics = primary
+            .and_then(|s| s.metrics.lock().ok().map(|value| value.clone()))
+            .unwrap_or_default();
+        state.audio = primary
+            .and_then(|s| s.audio_metrics.lock().ok().map(|value| value.clone()))
+            .unwrap_or_default();
+        state.delivery = primary
+            .and_then(|s| s.delivery.lock().ok().map(|value| value.clone()))
+            .unwrap_or_default();
+    }
+
+    async fn stop_all(&mut self, room: &Room) {
+        for stream in [self.screen.take(), self.camera.take()]
+            .into_iter()
+            .flatten()
+        {
+            let _ = stream.stop(room).await;
+        }
+    }
+
+    fn upload_cap(
+        &self,
+        capacity: &crate::network::Capacity,
+        kind: Kind,
+        target: u64,
+    ) -> Option<u64> {
+        let other = match kind {
+            Kind::Screen => self.camera.as_ref(),
+            Kind::Camera => self.screen.as_ref(),
+        };
+        let cap = capacity.upload_video_cap()?;
+        Some(other.map_or(cap, |other| cap * target / (target + other.mode.bitrate)))
+    }
+
+    async fn maintain(
+        &mut self,
+        joined: &Session,
+        cancellation: &CaptureStops,
+        capacity: &crate::network::Capacity,
+    ) -> Result<()> {
+        let mut result = Ok(());
+        for kind in Kind::ALL {
+            let Some(target) = self.slot(kind).as_ref().map(|stream| stream.mode.bitrate) else {
+                continue;
+            };
+            let cap = self.upload_cap(capacity, kind, target);
+            let slot = self.slot(kind);
+            let active = slot.as_ref().expect("active stream");
+            active.rate.set_upload_cap(cap);
+            active.constrain_watchers(&joined.room);
+            if active.finished() {
+                let active = slot.take().expect("finished stream");
+                result = result.and(active.stop(&joined.room).await.map(|_| ()));
+                continue;
+            }
+            // A concurrent Stop must see either the active token or this replacement.
+            let replacement = cancellation.for_kind(kind).register();
+            if joined.room.connection_state() != ConnectionState::Connected || active.cancelled() {
+                continue;
+            }
+            match active.compatible_config(&joined.room) {
+                Ok(None) => {}
+                Ok(Some(config)) => {
+                    let active = slot.take().expect("stream to replace");
+                    match active
+                        .fallback(&joined.room, joined.admission.clone(), replacement, config)
+                        .await
+                    {
+                        Ok(active) => *slot = Some(active),
+                        Err(error) => result = result.and(Err(error)),
+                    }
+                }
+                Err(error) => {
+                    let active = slot.take().expect("incompatible stream");
+                    let _ = active.stop(&joined.room).await;
+                    result = result.and(Err(error));
+                }
+            }
+        }
+        result
+    }
+}
+
 async fn worker(
     mut commands: mpsc::Receiver<QueuedCommand>,
     snapshot: Arc<Mutex<Snapshot>>,
     cancellation: Cancellation,
     shutdown: Arc<Shutdown>,
 ) {
+    // Finish Media Foundation plugin initialization before opening any native
+    // encoder sessions. Camera device discovery still runs on explicit refresh.
+    #[cfg(windows)]
+    let _ = gstreamer::Plugin::load_by_name("mediafoundation");
     let mut sources = sources::enumerate();
+    let mut cameras: Vec<camera::Device> = Vec::new();
+    let mut camera_discovery: Option<JoinHandle<Vec<camera::Device>>> = None;
     update(&snapshot, |state| {
         state.sources = sources.iter().map(|source| source.info.clone()).collect();
         state.encoders = crate::encoding::encoders();
@@ -1126,7 +1332,7 @@ async fn worker(
         });
     }
     let mut session: Option<Session> = None;
-    let mut stream: Option<Stream> = None;
+    let mut streams = Streams::default();
     let mut playback = crate::playback::Playback::new();
     let mut download_budget = None;
     let mut probe: Option<ConnectionProbe> = None;
@@ -1138,6 +1344,15 @@ async fn worker(
             _ = shutdown.wake.notified() => QueuedCommand { command: Command::Shutdown, capture: None, join: None },
             command = commands.recv() => command.unwrap_or(QueuedCommand { command: Command::Shutdown, capture: None, join: None }),
             _ = tick.tick() => {
+                if camera_discovery.as_ref().is_some_and(JoinHandle::is_finished)
+                    && let Some(job) = camera_discovery.take()
+                {
+                    cameras = job.await.unwrap_or_default();
+                    update(&snapshot, |state| {
+                        state.cameras = cameras.iter().map(|device| device.info.clone()).collect();
+                        state.refreshing_cameras = false;
+                    });
+                }
                 if probe.as_ref().is_some_and(|job|job.is_finished()) && let Some(job)=probe.take() {
                         let mut result=job.finish().await.unwrap_or_else(|_|crate::network::Capacity{error:"Connection measurement unavailable. Try again in Advanced.".into(),..Default::default()});
                         result.download_bps=result.download_bps.or(capacity.download_bps);
@@ -1162,40 +1377,11 @@ async fn worker(
                         else { playback = crate::playback::Playback::new(); }
                         update(&snapshot, |state| state.tiles.clear());
                     }
-                    // Register before observing the old token: a concurrent
-                    // Stop must either cancel this replacement or the old
-                    // token that prevents entering the replacement path.
-                    let replacement_stop = cancellation.register();
-                    if joined.room.connection_state() == ConnectionState::Connected
-                        && stream.as_ref().is_some_and(|s| !s.cancelled()) {
-                        match stream.as_ref().unwrap().compatible_config(&joined.room) {
-                            Ok(Some(config)) => {
-                                let active = stream.take().unwrap();
-                                match active.fallback(&joined.room, joined.admission.clone(), replacement_stop, config).await {
-                                    Ok(active) => stream = Some(active),
-                                    Err(_) => update(&snapshot, |state| { state.sharing = false; state.self_preview = Arc::default(); state.mode = None; state.active_selection = None; state.error = "Could not switch codecs. Choose a supported mode and start again.".into(); }),
-                                }
-                            }
-                            Ok(None) => {},
-                            Err(error) => {
-                                let _ = stream.take().unwrap().stop(&joined.room).await;
-                                update(&snapshot, |state| {state.sharing=false; state.self_preview=Arc::default(); state.mode=None; state.active_selection=None; state.error=error.to_string();});
-                            },
-                        }
-                    }
-                }
-                if let Some(active) = &stream {
-                    active.rate.set_upload_cap(capacity.upload_video_cap());
-                    update(&snapshot, |state| state.self_preview=active.previews.clone());
-                    active.constrain_watchers(&session.as_ref().unwrap().room);
-                    if let Ok(metrics) = active.metrics.lock() { update(&snapshot, |state| state.metrics = metrics.clone()); }
-                    if let Ok(metrics) = active.audio_metrics.lock() { update(&snapshot, |state| state.audio = metrics.clone()); }
-                    if let Ok(metrics) = active.delivery.lock() { update(&snapshot, |state| { state.delivery = metrics.clone(); state.mode=Some(active.mode); }); }
-                    if !active.finished() { continue; }
-                    if let (Some(active), Some(joined)) = (stream.take(), session.as_ref()) {
-                        let result = active.stop(&joined.room).await;
-                        update(&snapshot, |state| { state.sharing = false; state.self_preview = Arc::default(); state.active_selection = None; if let Err(error) = result { state.error = error.to_string(); } });
-                    }
+                    let result = streams.maintain(joined, &cancellation, &capacity).await;
+                    update(&snapshot, |state| {
+                        streams.publish_snapshot(state);
+                        if let Err(error) = result { state.error = error.to_string(); }
+                    });
                 }
                 continue;
             }
@@ -1208,7 +1394,23 @@ async fn worker(
             });
             continue;
         }
+        if matches!(command, Command::RefreshCameras) {
+            if camera::available() && camera_discovery.is_none() && streams.camera.is_none() {
+                camera_discovery = Some(tokio::task::spawn_blocking(camera::enumerate));
+                update(&snapshot, |state| state.refreshing_cameras = true);
+            }
+            continue;
+        }
         let shutdown = matches!(command, Command::Shutdown);
+        let completes_screen = matches!(
+            command,
+            Command::Start { .. } | Command::Apply { .. } | Command::Stop
+        );
+        let completes_camera = matches!(command, Command::StartCamera { .. } | Command::StopCamera);
+        let ends_session = matches!(
+            command,
+            Command::Join { .. } | Command::Leave | Command::Shutdown
+        );
         let result: Result<()> = async {
             match command {
                 Command::Join {
@@ -1228,8 +1430,8 @@ async fn worker(
                     });
                     playback = crate::playback::Playback::new();
                     playback.set_budget(download_budget);
-                    if let (Some(active), Some(joined)) = (stream.take(), session.as_ref()) {
-                        let _ = active.stop(&joined.room).await;
+                    if let Some(joined) = session.as_ref() {
+                        streams.stop_all(&joined.room).await;
                     }
                     if let Some(joined) = session.take() {
                         joined.close().await;
@@ -1237,6 +1439,7 @@ async fn worker(
                     update(&snapshot, |state| {
                         state.connection = "connecting";
                         state.sharing = false;
+                        state.camera_sharing = false;
                         state.self_preview = Arc::default();
                         state.room_name.clear();
                         state.participants.clear();
@@ -1267,102 +1470,138 @@ async fn worker(
                         update(&snapshot, |state| state.connection = "disconnected");
                     }
                 }
-                Command::Start {
-                    source_id,
-                    encoder,
-                    audio: _requested_audio,
-                    exclusions,
-                    quality,
-                }
-                | Command::Apply {
-                    source_id,
-                    encoder,
-                    audio: _requested_audio,
-                    exclusions,
-                    quality,
-                } => {
-                    let selection = SharingSelection {
-                        source_id: source_id.clone(),
-                        encoder: encoder.clone(),
-                        quality,
-                    };
+                command @ (Command::Start { .. }
+                | Command::Apply { .. }
+                | Command::StartCamera { .. }) => {
                     let joined = session.as_ref().context("Join a room first.")?;
-                    let source = sources::enumerate()
-                        .iter()
-                        .find(|source| source.info.id == source_id)
-                        .context("Refresh and choose a capture source.")?
-                        .clone();
-                    let encoder = crate::encoding::encoders()
-                        .into_iter()
-                        .find(|candidate| candidate.factory == encoder)
-                        .context("Choose an available hardware encoder.")?;
-                    let preferred_encoder = encoder.clone();
-                    let audio = audio::for_source(&source)?;
                     let stop = queued.capture.context("Capture request was cancelled.")?;
                     anyhow::ensure!(
                         !stop.load(Ordering::Acquire),
                         "Capture request was cancelled."
                     );
-                    let mut config = StreamConfig {
-                        source,
-                        encoder,
-                        quality,
-                        audio: audio.clone(),
-                        exclusions,
+                    let encoders = crate::encoding::encoders();
+                    let (mut config, selection) = match command {
+                        Command::StartCamera {
+                            device_id,
+                            quality,
+                            preferred_codec,
+                        } => {
+                            anyhow::ensure!(
+                                streams.camera.is_none(),
+                                "Your camera is already sharing."
+                            );
+                            let encoder = encoders
+                                .iter()
+                                .find(|encoder| {
+                                    encoder.codec == preferred_codec.unwrap_or(Codec::H264)
+                                })
+                                .or_else(|| encoders.first())
+                                .context("Choose an available hardware encoder.")?
+                                .clone();
+                            let source = cameras
+                                .iter()
+                                .find(|device| device.info.id == device_id)
+                                .context("Refresh cameras and select an available device.")?
+                                .source(quality)?;
+                            (
+                                StreamConfig {
+                                    source,
+                                    encoder,
+                                    quality,
+                                    audio: audio::Choice::Off,
+                                    exclusions: Vec::new(),
+                                },
+                                None,
+                            )
+                        }
+                        Command::Start {
+                            source_id,
+                            encoder,
+                            quality,
+                            exclusions,
+                            audio: _requested_audio,
+                        }
+                        | Command::Apply {
+                            source_id,
+                            encoder,
+                            quality,
+                            exclusions,
+                            audio: _requested_audio,
+                        } => {
+                            let source = sources::enumerate()
+                                .into_iter()
+                                .find(|source| source.info.id == source_id)
+                                .context("Refresh and choose a capture source.")?;
+                            let selection = SharingSelection {
+                                source_id,
+                                encoder: encoder.clone(),
+                                quality,
+                            };
+                            let encoder = encoders
+                                .iter()
+                                .find(|candidate| candidate.factory == encoder)
+                                .context("Choose an available hardware encoder.")?
+                                .clone();
+                            let audio = audio::for_source(&source)?;
+                            (
+                                StreamConfig {
+                                    source,
+                                    encoder,
+                                    quality,
+                                    audio,
+                                    exclusions,
+                                },
+                                Some(selection),
+                            )
+                        }
+                        _ => unreachable!("Only capture commands are handled here"),
                     };
-                    config.negotiate(
-                        &joined.room,
-                        &preferred_encoder,
-                        &crate::encoding::encoders(),
-                    )?;
-                    if let Some(active) = stream.as_mut()
+                    let preferred_encoder = config.encoder.clone();
+                    config.negotiate(&joined.room, &preferred_encoder, &encoders)?;
+                    let mode = config.mode()?;
+                    let kind = config.kind();
+                    let cap = streams.upload_cap(&capacity, kind, mode.bitrate);
+                    let slot = streams.slot(kind);
+                    if let Some(active) = slot.as_mut()
                         && active.apply_live(&config)?
                     {
                         active.preferred_encoder = preferred_encoder;
-                        update(&snapshot, |state| {
-                            state.mode = Some(active.mode);
-                            state.active_selection = Some(selection);
-                        });
+                        update(&snapshot, |state| state.active_selection = selection);
                         return Ok(());
                     }
-                    config.mode()?;
-                    if let Some(active) = stream.take() {
+                    if let Some(active) = slot.take() {
                         active.stop(&joined.room).await?;
                     }
-                    joined
-                        .expected_audio
-                        .store(audio != audio::Choice::Off, Ordering::Release);
-                    let mut active = Stream::start_with_upload_cap(
-                        &joined.room,
-                        config,
-                        stop.clone(),
-                        capacity.upload_video_cap(),
-                    )
-                    .await?;
+                    if kind == Kind::Screen {
+                        joined
+                            .expected_audio
+                            .store(config.audio != audio::Choice::Off, Ordering::Release);
+                    }
+                    let mut active =
+                        Stream::start_with_upload_cap(&joined.room, config, stop.clone(), cap)
+                            .await?;
                     active.preferred_encoder = preferred_encoder;
-                    active.rate.set_upload_cap(capacity.upload_video_cap());
-                    active.start_previews(joined.admission.clone());
                     if stop.load(Ordering::Acquire) {
                         let _ = active.stop(&joined.room).await;
                     } else {
-                        let mode = active.mode;
-                        let self_preview = active.previews.clone();
-                        stream = Some(active);
-                        update(&snapshot, |state| {
-                            state.sharing = true;
-                            state.self_preview = self_preview;
-                            state.mode = Some(mode);
-                            state.metrics = Metrics::default();
-                            state.delivery = delivery::Metrics::default();
-                            state.active_selection = Some(selection);
-                        });
+                        active.start_previews(joined.admission.clone());
+                        *slot = Some(active);
+                        if kind == Kind::Screen {
+                            update(&snapshot, |state| state.active_selection = selection);
+                        }
                     }
                 }
-                Command::Stop => {
-                    if let (Some(active), Some(joined)) = (stream.take(), session.as_ref()) {
+                command @ (Command::Stop | Command::StopCamera) => {
+                    let kind = if matches!(command, Command::StopCamera) {
+                        Kind::Camera
+                    } else {
+                        Kind::Screen
+                    };
+                    if let (Some(active), Some(joined)) =
+                        (streams.slot(kind).take(), session.as_ref())
+                    {
                         active.stop(&joined.room).await?;
                     }
-                    update(&snapshot, |state| state.sharing = false);
                 }
                 Command::Leave | Command::Shutdown => {
                     if let Some(job) = probe.take() {
@@ -1373,8 +1612,8 @@ async fn worker(
                         state.capacity = capacity.clone();
                         state.testing_connection = false;
                     });
-                    if let (Some(active), Some(joined)) = (stream.take(), session.as_ref()) {
-                        let _ = active.stop(&joined.room).await;
+                    if let Some(joined) = session.as_ref() {
+                        streams.stop_all(&joined.room).await;
                     }
                     if let Some(joined) = session.take() {
                         joined.close().await;
@@ -1400,6 +1639,9 @@ async fn worker(
                         }
                     });
                 }
+                Command::RefreshCameras => {
+                    unreachable!("Camera discovery is handled before room operations")
+                }
                 Command::DownloadBudget { bps } => {
                     anyhow::ensure!(
                         bps.is_none_or(
@@ -1421,9 +1663,9 @@ async fn worker(
                     })));
                     update(&snapshot, |state| state.testing_connection = true);
                 }
-                Command::Watch { id, enabled } => {
+                Command::Watch { id, kind, enabled } => {
                     session.as_ref().context("Join a room first.")?;
-                    playback.watch(id, enabled)?;
+                    playback.watch(id, kind, enabled)?;
                 }
             }
             Ok(())
@@ -1432,12 +1674,13 @@ async fn worker(
         update(&snapshot, |state| {
             state.busy = false;
             state.operation = "";
-            state.capture_pending = false;
-            state.sharing = stream.is_some();
-            if stream.is_none() {
-                state.active_selection = None;
-                state.self_preview = Arc::default();
+            if completes_screen || ends_session {
+                state.capture_pending = false;
             }
+            if completes_camera || ends_session {
+                state.camera_pending = false;
+            }
+            streams.publish_snapshot(state);
             if let Err(error) = result {
                 state.error = error.to_string();
                 if state.connection == "connecting" {
@@ -1465,7 +1708,8 @@ mod tests {
             shutdown: Arc::default(),
             worker: None,
         };
-        let capture = controller.cancellation.register();
+        let capture = controller.cancellation.screen.register();
+        let camera = controller.cancellation.camera.register();
         controller.send(Command::Join {
             invitation: String::new(),
             name: "Friend".into(),
@@ -1474,9 +1718,24 @@ mod tests {
             voice: None,
         });
         assert!(capture.load(Ordering::Acquire));
+        assert!(camera.load(Ordering::Acquire));
         let queued = receiver.try_recv().unwrap();
         assert!(matches!(queued.command, Command::Join { .. }));
         assert!(queued.capture.is_none());
+    }
+
+    #[test]
+    fn each_stop_cancels_only_its_source() {
+        let (controller, _) = Controller::recording_for_test(Snapshot::default());
+        let screen = controller.cancellation.screen.register();
+        let camera = controller.cancellation.camera.register();
+        controller.send(Command::StopCamera);
+        assert!(camera.load(Ordering::Acquire));
+        assert!(!screen.load(Ordering::Acquire));
+        let next_camera = controller.cancellation.camera.register();
+        controller.send(Command::Stop);
+        assert!(screen.load(Ordering::Acquire));
+        assert!(!next_camera.load(Ordering::Acquire));
     }
 
     #[tokio::test]
@@ -1495,7 +1754,7 @@ mod tests {
             controller.send(Command::DownloadBudget { bps: Some(0) });
         }
         assert_eq!(controller.commands.capacity(), 0);
-        let capture = controller.cancellation.register();
+        let capture = controller.cancellation.screen.register();
         controller.begin_shutdown();
         controller.begin_shutdown();
         assert!(capture.load(Ordering::Acquire));

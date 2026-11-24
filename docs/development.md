@@ -57,8 +57,9 @@ SQLite supports a single application instance. Independent databases do not shar
 sessions. Back up the database before migrations and retain a matching backup
 when rolling back to code that cannot read the new schema.
 
-Watch is an actual subscription. Stop watching releases video and audio; hiding
-a tile does not. Uploaded previews capture once at stream start and at most once
+Watch starts a screen subscription. Stop watching releases its video and audio.
+Camera publications are subscribed automatically subject to hardware and the watching
+allowance. Hiding or focusing tiles changes the layout. Uploaded previews capture once at stream start and at most once
 per minute afterward. Codec replacements and reconnects preserve that clock.
 Native media-token requests include a bounded `hardwareDecoders` list (`av1`,
 `hevc`, `h264`). The server puts that declaration in the initial participant's

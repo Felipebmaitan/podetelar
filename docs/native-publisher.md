@@ -43,20 +43,31 @@ are kept in memory. See [Discord accounts](discord-accounts.md).
 Guest pictures and live nickname editing are described in [guest profiles](guest-profiles.md).
 Later links may reuse the nickname
 and join when idle while the app remains open. An active room requires confirmation
-before switching. Sharing and watching remain explicit. See
+before switching. Starting screen or camera sharing and watching a screen remain explicit. See
 [launch and firewall behavior](distribution.md#invitations-and-launch-behavior).
 
 The room dock groups screen and camera sharing separately. Open the arrow on
 **Share screen** to choose a capture source or adjust stream quality. While
 sharing, use the same arrow to apply changes. The camera menu has separate
-quality settings. Starting a camera stream and selecting a camera device are
-pending camera support. The stage toolbar offers Grid, Spotlight and Focus.
+quality settings. Open **Camera settings** and select a Windows camera, then click
+**Share camera**. The selected device is remembered locally. If it is disconnected,
+refresh the list and reconnect it or select another device explicitly. Windows camera
+discovery includes OBS Virtual Camera when its driver is registered and usable.
+The camera settings show a one-shot local preview of the selected device and mode.
+The camera is released after the preview, and its bitrate is automatic unless you
+override it in **Advanced camera settings**.
+Camera streams publish only video and prefer compatible hardware H.264. A participant can share one screen and one
+camera together. Each stop control ends its own stream. Stop the camera before
+changing its settings.
+Watching cameras requires a native app version with camera playback support.
+Camera capture is currently Windows-only. The stage toolbar offers Grid, Spotlight and Focus.
 Spotlight keeps one stream large and the others in a scrollable strip. Highlighting a stream changes the layout.
-Watch subscribes to video and audio, and Stop watching unsubscribes. Hover over a
-watched stream to reveal its controls and received codec and bitrate. The
-speaker opens a vertical volume slider for that stream. Click the video for
-additional actions. When only you are live, the stage shows your most recent
-preview. While you share and watch someone else, you can hide or restore the small
+Camera tiles subscribe automatically when the watching allowance permits.
+Use **Watch** to subscribe to a screen and its audio, and **Stop watching**
+to unsubscribe. Hover over a watched stream for controls and received codec and
+bitrate. The speaker opens a vertical volume slider for a screen. Click a stream
+for additional actions. When you share both sources, the local stage preview
+follows the screen. You can hide or restore the small
 local preview beside the streams. Preview capture occurs initially and at most
 once per minute.
 
@@ -98,6 +109,14 @@ npm run native:qualify -- monitor-wgc
 ```
 
 The first command encodes a GPU-generated pattern; the other commands capture the local monitor through each backend. They discard all buffers locally, upload nothing and write no video/images. Each detected encoder must produce 120 frames and release its pipeline. `npm run native:run -- --sources` explicitly lists window titles/source IDs; do not paste that output into public logs. Pass a chosen source ID to `native:qualify` to check a window.
+
+`npm run native:run -- --cameras` lists camera names and local device IDs.
+Set `PODETELAR_TEST_CAMERA` to the exact name of a camera with a 720p-compatible
+mode and run `npm run native:room-smoke -- camera.spec.ts`. This opt-in test
+publishes the chosen camera to the isolated local SFU. Use a test scene or aim
+the camera at a test target before running it. Run it separately for each device.
+Set `PODETELAR_TEST_CAMERA_CODEC=h265` to qualify H.265 in the concurrent sharing
+scenario.
 
 For native acceptance, build the app/server, then run `npm run native:room-smoke`
 under Node 24 on Windows. It downloads a checksum-pinned official Windows LiveKit

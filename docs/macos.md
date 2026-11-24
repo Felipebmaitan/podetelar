@@ -14,8 +14,9 @@ The Finder application launches a native GUI without a terminal. Its media UI
 has a nested application bundle so macOS can identify its window and permissions
 independently of the outer update/link host. Launch Services
 routes `podetelar://` invitations through the app host and the authenticated
-local activation bridge. Joining, changing rooms, sharing and subscriptions retain
-the existing explicit controls. Grant Screen & System Audio Recording permission
+local activation bridge. Screen sharing and screen subscriptions use explicit
+controls. Live cameras are subscribed automatically when the hardware and watching
+allowance permit. Grant Screen & System Audio Recording permission
 to PodeTelar when macOS requests it, then refresh sources. Capture never opens a
 microphone. Desktop audio excludes PodeTelar and Discord; application/window audio
 uses ScreenCaptureKit filters. Exclusion, actual output and physical A/V timing

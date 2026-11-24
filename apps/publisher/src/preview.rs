@@ -77,9 +77,41 @@ async fn cancelled(stop: &AtomicBool) {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    Screen,
+    Camera,
+}
+
+impl Kind {
+    pub const ALL: [Self; 2] = [Self::Screen, Self::Camera];
+
+    pub fn stream_id(self, owner: &str) -> String {
+        match self {
+            Self::Screen => owner.to_owned(),
+            Self::Camera => format!("{owner}.camera"),
+        }
+    }
+
+    pub fn path(self) -> &'static str {
+        match self {
+            Self::Screen => "screen",
+            Self::Camera => "camera",
+        }
+    }
+
+    pub fn attribute(self) -> &'static str {
+        match self {
+            Self::Screen => "podetelar.preview.screen",
+            Self::Camera => "podetelar.preview.camera",
+        }
+    }
+}
+
 /// Owns a single cached JPEG, independent of the video pump and RTC subscriptions.
 pub async fn upload(
     admission: Admission,
+    kind: Kind,
     frames: Latest,
     video: LocalVideoTrack,
     stop: Arc<AtomicBool>,
@@ -109,7 +141,7 @@ pub async fn upload(
             attempted_sid = sid.clone();
             let result = tokio::select! {
                 _ = cancelled(&stop) => break,
-                result = admission.send_preview(&sid, frame.bytes) => result,
+                result = admission.send_preview(kind, &sid, frame.bytes) => result,
             };
             match result {
                 PreviewDelivery::Sent => {
@@ -126,7 +158,8 @@ pub async fn upload(
     sids.sort();
     sids.dedup();
     sids.retain(|sid| !sid.is_empty());
-    futures_util::future::join_all(sids.iter().map(|sid| admission.remove_preview(sid))).await;
+    futures_util::future::join_all(sids.iter().map(|sid| admission.remove_preview(kind, sid)))
+        .await;
     if let Ok(mut latest) = frames.lock() {
         *latest = None;
     }

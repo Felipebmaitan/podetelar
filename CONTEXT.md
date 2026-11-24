@@ -25,11 +25,11 @@ A PC recognized across room sessions for usage aggregation. A device is not an a
 _Avoid_: Account, session, verified user
 
 **Publisher**:
-A participant contributing a live screen or camera stream.
+A participant contributing a live screen stream, a live camera stream, or both.
 _Avoid_: Room owner, host
 
 **Subscription**:
-A participant's explicit choice to receive one published stream's full video and audio.
+A participant receiving one published stream's live video and any associated audio. Screen subscriptions are explicit and camera subscriptions start automatically.
 _Avoid_: Room membership, visible tile
 
 **Preview**:

@@ -167,6 +167,7 @@ pub fn run() -> Result<()> {
         let active_selection = inner.selection();
         let tile = Tile {
             id: "layout-fixture".into(),
+            kind: crate::preview::Kind::Screen,
             name: "Felipe".into(),
             codec: "AV1".into(),
             watching: true,
@@ -180,6 +181,7 @@ pub fn run() -> Result<()> {
         };
         let preview_tile = Tile {
             id: "layout-fixture-2".into(),
+            kind: crate::preview::Kind::Screen,
             name: "Marina".into(),
             codec: "HEVC".into(),
             watching: false,

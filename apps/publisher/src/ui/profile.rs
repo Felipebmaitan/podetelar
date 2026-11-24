@@ -562,10 +562,10 @@ impl PublisherUi {
                     label.clone_from(name);
                 }
             }
-            if let Some(tile) = state
+            for tile in state
                 .tiles
                 .iter_mut()
-                .find(|tile| tile.id == profile.participant_id)
+                .filter(|tile| tile.owner() == profile.participant_id)
             {
                 tile.name.clone_from(&profile.display_name);
             }

@@ -259,7 +259,7 @@ pub fn icon_button(ui: &mut egui::Ui, symbol: Icon, label: &str) -> egui::Respon
 pub fn layout_button(
     ui: &mut egui::Ui,
     symbol: Icon,
-    caption: &str,
+    caption: Option<&str>,
     label: &str,
     selected: bool,
 ) -> egui::Response {
@@ -268,11 +268,15 @@ pub fn layout_button(
     } else {
         palette().muted
     };
-    let text = ui
-        .painter()
-        .layout_no_wrap(caption.to_owned(), semibold(12.5), ink);
+    let text = caption.map(|caption| {
+        ui.painter()
+            .layout_no_wrap(caption.to_owned(), semibold(12.5), ink)
+    });
     let response = ui.add_sized(
-        [text.size().x + 38.0, 32.0],
+        [
+            text.as_ref().map_or(32.0, |text| text.size().x + 38.0),
+            32.0,
+        ],
         egui::Button::new("").frame(false),
     );
     if selected {
@@ -295,8 +299,10 @@ pub fn layout_button(
         symbol,
         ink,
     );
-    ui.painter()
-        .galley(center + egui::vec2(13.0, -text.size().y / 2.0), text, ink);
+    if let Some(text) = text {
+        ui.painter()
+            .galley(center + egui::vec2(13.0, -text.size().y / 2.0), text, ink);
+    }
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), selected, label)
     });
@@ -321,13 +327,13 @@ pub fn dock_frame() -> egui::Frame {
     egui::Frame::new()
         .fill(palette().panel)
         .stroke(egui::Stroke::new(1.0, palette().border))
-        .corner_radius(14)
+        .corner_radius(22)
         .inner_margin(egui::Margin::symmetric(10, 7))
         .shadow(egui::epaint::Shadow {
-            offset: [0, 8],
-            blur: 26,
+            offset: [0, 5],
+            blur: 18,
             spread: 0,
-            color: Color32::from_black_alpha(150),
+            color: Color32::from_black_alpha(if palette().dark { 120 } else { 62 }),
         })
 }
 

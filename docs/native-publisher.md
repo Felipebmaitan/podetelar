@@ -46,8 +46,8 @@ and join when idle while the app remains open. An active room requires confirmat
 before switching. Sharing and watching remain explicit. See
 [launch and firewall behavior](distribution.md#invitations-and-launch-behavior).
 
-The room dock offers Grid, Spotlight and Focus. Spotlight keeps one stream large
-and the others in a scrollable strip. Highlighting a stream changes the layout.
+The room dock manages sharing. The stage toolbar offers Grid, Spotlight and Focus.
+Spotlight keeps one stream large and the others in a scrollable strip. Highlighting a stream changes the layout.
 Watch subscribes to video and audio, and Stop watching unsubscribes. Each stream
 has independent volume. When only you are live, the stage shows your most recent
 preview. While you share and watch someone else, you can hide or restore the small

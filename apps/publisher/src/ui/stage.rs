@@ -3,8 +3,33 @@ use super::*;
 pub(super) const SELF_PREVIEW: &str = "__self_preview";
 const GAP: f32 = 14.0;
 
+fn monitor_glow(painter: &egui::Painter, screen: egui::Rect) {
+    const SEGMENTS: u32 = 48;
+    let accent = palette().accent;
+    let center = screen.center();
+    let radius = screen.size();
+    let mut glow = egui::Mesh::default();
+    for (distance, opacity) in [(0.0, 0.11), (0.42, 0.07), (0.72, 0.022), (1.0, 0.0)] {
+        for index in 0..SEGMENTS {
+            let angle = index as f32 / SEGMENTS as f32 * std::f32::consts::TAU;
+            let offset = egui::vec2(angle.cos() * radius.x, angle.sin() * radius.y) * distance;
+            glow.colored_vertex(center + offset, accent.gamma_multiply(opacity));
+        }
+    }
+    for ring in 0..3 {
+        for index in 0..SEGMENTS {
+            let inner = ring * SEGMENTS;
+            let a = inner + index;
+            let b = inner + (index + 1) % SEGMENTS;
+            glow.add_triangle(a, b, a + SEGMENTS);
+            glow.add_triangle(b, b + SEGMENTS, a + SEGMENTS);
+        }
+    }
+    painter.add(egui::Shape::mesh(glow));
+}
+
 impl PublisherUi {
-    pub(super) fn room_capsule(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+    pub(super) fn room_capsule(&mut self, ui: &mut egui::Ui, state: &Snapshot, width: f32) {
         let name = if state.room_name.is_empty() {
             tr("Your private room")
         } else if state.room_name == "Friends" {
@@ -14,11 +39,19 @@ impl PublisherUi {
         };
         let count = format!("{} {}", state.participants.len() + 1, tr("in room"));
         let label = format!("{name} · {count}");
-        let width = (ui.available_width() - 375.0).clamp(80.0, 240.0);
-        let avatars = std::iter::once(self.name.as_str())
-            .chain(state.participants.iter().map(String::as_str))
-            .take(3)
-            .collect::<Vec<_>>();
+        let own_id = self
+            .profile_client
+            .as_ref()
+            .map(|client| client.participant_id.clone());
+        let own_texture = own_id.and_then(|id| self.profile_texture(ui.ctx(), &id));
+        let mut avatars = vec![(self.name.clone(), own_texture)];
+        for (index, name) in state.participants.iter().take(2).enumerate() {
+            let texture = state
+                .participant_ids
+                .get(index)
+                .and_then(|(id, _)| self.profile_texture(ui.ctx(), id));
+            avatars.push((name.clone(), texture));
+        }
         let stack_width = 20.0 + (avatars.len() - 1) as f32 * 13.0;
         let online = state.connection == "connected";
         let contents = egui::Atoms::new((
@@ -37,24 +70,33 @@ impl PublisherUi {
         ));
         let mut button = egui::Button::new(contents)
             .truncate()
-            .corner_radius(16)
-            .fill(palette().card);
+            .corner_radius(20)
+            .stroke((1.0, palette().border))
+            .fill(palette().panel);
         if width >= 156.0 {
             button = button.right_text(egui::Atom::paint(
                 egui::vec2(stack_width, 20.0),
                 |ui, args| {
-                    for (index, name) in avatars.iter().enumerate() {
+                    for (index, (name, texture)) in avatars.iter().enumerate() {
                         let rect = egui::Rect::from_min_size(
                             args.rect.min + egui::vec2(index as f32 * 13.0, 0.0),
                             egui::vec2(20.0, 20.0),
                         );
-                        paint_avatar_circle(ui.painter(), rect, name);
+                        if let Some(texture) = texture {
+                            egui::Image::new((*texture, rect.size()))
+                                .corner_radius(10)
+                                .paint_at(ui, rect);
+                        } else {
+                            paint_avatar_circle(ui.painter(), rect, name);
+                        }
+                        ui.painter()
+                            .circle_stroke(rect.center(), 10.0, (1.0, palette().panel));
                     }
                 },
             ));
         }
         let response = ui
-            .add_sized([width, 32.0], button)
+            .add_sized([width, 36.0], button)
             .accessible_name(&label)
             .on_hover_text(&label);
         egui::Popup::menu(&response)
@@ -114,6 +156,129 @@ impl PublisherUi {
                     ui.close();
                 }
             });
+    }
+
+    pub(super) fn stage_view_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        state: &Snapshot,
+        compact: bool,
+    ) {
+        fn caption(compact: bool, label: &str) -> Option<&str> {
+            (!compact).then(|| tr(label))
+        }
+        // The parent aligns this control group to the right. Add the buttons
+        // inward from that edge so Grid reads first across the toolbar.
+        let mut controls = ui.new_child(
+            egui::UiBuilder::new()
+                .id_salt("stage-views")
+                .max_rect(ui.available_rect_before_wrap())
+                .layout(egui::Layout::right_to_left(egui::Align::Center)),
+        );
+        let watched = state.tiles.iter().find(|tile| tile.watching);
+        controls.add_enabled_ui(watched.is_some(), |ui| {
+            if skin::layout_button(
+                ui,
+                Icon::Focus,
+                caption(compact, "Focus"),
+                tr("Focus stream"),
+                self.focused.is_some(),
+            )
+            .clicked()
+            {
+                self.focused = state
+                    .tiles
+                    .iter()
+                    .find(|tile| tile.watching && self.spotlight.as_ref() == Some(&tile.id))
+                    .or(watched)
+                    .map(|tile| tile.id.clone());
+                self.spotlight = None;
+            }
+        });
+        controls.add_enabled_ui(state.tiles.len() > 1, |ui| {
+            if skin::layout_button(
+                ui,
+                Icon::Spotlight,
+                caption(compact, "Spotlight"),
+                tr("Spotlight"),
+                self.spotlight.is_some(),
+            )
+            .clicked()
+            {
+                self.spotlight = self
+                    .focused
+                    .take()
+                    .or_else(|| Self::default_spotlight(state).map(|tile| tile.id.clone()));
+            }
+        });
+        if skin::layout_button(
+            &mut controls,
+            Icon::Grid,
+            caption(compact, "Grid"),
+            tr("Back to grid"),
+            self.focused.is_none() && self.spotlight.is_none(),
+        )
+        .clicked()
+        {
+            self.focused = None;
+            self.spotlight = None;
+        }
+        ui.advance_cursor_after_rect(controls.min_rect());
+    }
+
+    pub(super) fn empty_room_stage(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+        ui.vertical_centered(|ui| {
+            let art_height = (ui.available_height() * 0.42).clamp(92.0, 170.0);
+            ui.add_space((ui.available_height() * 0.16).max(8.0));
+            let (art, _) =
+                ui.allocate_exact_size(egui::vec2(244.0, art_height), egui::Sense::hover());
+            let p = palette();
+            let screen = egui::Rect::from_center_size(
+                art.center() - egui::vec2(0.0, 10.0),
+                egui::vec2(art_height * 1.28, art_height * 0.72),
+            );
+            monitor_glow(ui.painter(), screen);
+            ui.painter().rect_filled(screen, 18.0, p.panel);
+            ui.painter().rect_stroke(
+                screen,
+                18.0,
+                (1.0, p.hover_stroke),
+                egui::StrokeKind::Inside,
+            );
+            ui.painter().line_segment(
+                [
+                    screen.left_top() + egui::vec2(28.0, 1.0),
+                    screen.left_top() + egui::vec2(76.0, 1.0),
+                ],
+                (2.0, p.accent),
+            );
+            let foot = screen.center_bottom() + egui::vec2(0.0, 13.0);
+            ui.painter()
+                .line_segment([screen.center_bottom(), foot], (2.0, p.hover_stroke));
+            ui.painter().line_segment(
+                [foot - egui::vec2(24.0, 0.0), foot + egui::vec2(24.0, 0.0)],
+                (2.0, p.hover_stroke),
+            );
+            ui.add_space(8.0);
+            ui.label(skin::strong(tr("No one is sharing yet"), 24.0).color(p.text));
+            if !state.participants.is_empty() {
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new(tr("Here now")).color(p.muted));
+                let names = state
+                    .participants
+                    .iter()
+                    .take(3)
+                    .map(String::as_str)
+                    .collect::<Vec<_>>();
+                let others = state.participants.len() - names.len();
+                let mut people = names.join(" · ");
+                if others > 0 {
+                    people.push_str(&format!(" · +{others}"));
+                }
+                ui.add(egui::Label::new(skin::strong(&people, 13.0)).truncate())
+                    .on_hover_text(people);
+            }
+        });
     }
 
     pub(super) fn default_spotlight(state: &Snapshot) -> Option<&Tile> {

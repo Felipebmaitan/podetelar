@@ -16,6 +16,7 @@ type Received = {
     second: number;
     streams: {
       kind: "screen" | "camera";
+      codec: string;
       frames: number;
       watching: boolean;
       pictureSize: number[] | null;
@@ -156,6 +157,7 @@ test("one participant shares a window and a camera concurrently with independent
 }) => {
   test.setTimeout(115_000);
   const id = await cameraId();
+  const cameraCodec = process.env.PODETELAR_TEST_CAMERA_CODEC;
   const screen = spawn(
     process.env.PODETELAR_NATIVE_TONE_EXE ?? nativeExecutable(),
     ["--av-timing-source", "90"],
@@ -221,33 +223,32 @@ test("one participant shares a window and a camera concurrently with independent
       invitationUrl,
       sourceId,
       cameraId: id,
+      cameraCodec,
     });
     expect(await sender.reported).toEqual({ both: true });
     const tracks = async () =>
       (await participants()).find((p) => p.name === name)?.tracks ?? [];
     const sid = async (source: TrackSource) =>
       (await tracks()).find((t) => t.source === source)?.sid;
+    const sources = async () => (await tracks()).map((t) => t.source).sort();
+    const both = [
+      TrackSource.SCREEN_SHARE,
+      TrackSource.SCREEN_SHARE_AUDIO,
+      TrackSource.CAMERA,
+    ].sort();
+    await expect.poll(sources).toEqual(both);
     const screenSid = await sid(TrackSource.SCREEN_SHARE);
     const cameraSid = await sid(TrackSource.CAMERA);
     expect(screenSid).toBeTruthy();
     expect(cameraSid).toBeTruthy();
     expect(await sid(TrackSource.SCREEN_SHARE_AUDIO)).toBeTruthy();
-    const sources = async () => (await tracks()).map((t) => t.source).sort();
     await expect
       .poll(sources, { timeout: 22_000 })
       .toEqual(
         [TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO].sort(),
       );
     expect(await sid(TrackSource.SCREEN_SHARE)).toBe(screenSid);
-    await expect
-      .poll(sources, { timeout: 10_000 })
-      .toEqual(
-        [
-          TrackSource.SCREEN_SHARE,
-          TrackSource.SCREEN_SHARE_AUDIO,
-          TrackSource.CAMERA,
-        ].sort(),
-      );
+    await expect.poll(sources, { timeout: 10_000 }).toEqual(both);
     const nextCameraSid = await sid(TrackSource.CAMERA);
     expect(nextCameraSid).not.toBe(cameraSid);
     await expect
@@ -256,6 +257,18 @@ test("one participant shares a window and a camera concurrently with independent
     expect(await sid(TrackSource.CAMERA)).toBe(nextCameraSid);
     expect(await sender.result).toEqual({ closed: true });
     const watched = (await viewer.result) as Received;
+    if (cameraCodec) {
+      expect(
+        watched.samples.some((sample) =>
+          sample.streams.some(
+            (stream) =>
+              stream.kind === "camera" &&
+              stream.frames > 5 &&
+              stream.codec.toLowerCase() === `video/${cameraCodec}`,
+          ),
+        ),
+      ).toBe(true);
+    }
     const frameCount = (
       sample: Received["samples"][number],
       kind: "screen" | "camera",

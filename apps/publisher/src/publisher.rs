@@ -260,6 +260,7 @@ pub enum Command {
     StartCamera {
         device_id: String,
         quality: Settings,
+        preferred_codec: Option<Codec>,
     },
     DownloadBudget {
         bps: Option<u64>,
@@ -1306,6 +1307,10 @@ async fn worker(
     cancellation: Cancellation,
     shutdown: Arc<Shutdown>,
 ) {
+    // Finish Media Foundation plugin initialization before opening any native
+    // encoder sessions. Camera device discovery still runs on explicit refresh.
+    #[cfg(windows)]
+    let _ = gstreamer::Plugin::load_by_name("mediafoundation");
     let mut sources = sources::enumerate();
     let mut cameras: Vec<camera::Device> = Vec::new();
     let mut camera_discovery: Option<JoinHandle<Vec<camera::Device>>> = None;
@@ -1476,14 +1481,20 @@ async fn worker(
                     );
                     let encoders = crate::encoding::encoders();
                     let (mut config, selection) = match command {
-                        Command::StartCamera { device_id, quality } => {
+                        Command::StartCamera {
+                            device_id,
+                            quality,
+                            preferred_codec,
+                        } => {
                             anyhow::ensure!(
                                 streams.camera.is_none(),
                                 "Your camera is already sharing."
                             );
                             let encoder = encoders
                                 .iter()
-                                .find(|encoder| encoder.codec == Codec::H264)
+                                .find(|encoder| {
+                                    encoder.codec == preferred_codec.unwrap_or(Codec::H264)
+                                })
                                 .or_else(|| encoders.first())
                                 .context("Choose an available hardware encoder.")?
                                 .clone();

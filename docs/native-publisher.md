@@ -112,6 +112,8 @@ Set `PODETELAR_TEST_CAMERA` to the exact name of a camera with a 720p-compatible
 mode and run `npm run native:room-smoke -- camera.spec.ts`. This opt-in test
 publishes the chosen camera to the isolated local SFU. Use a test scene or aim
 the camera at a test target before running it. Run it separately for each device.
+Set `PODETELAR_TEST_CAMERA_CODEC=h265` to qualify H.265 in the concurrent sharing
+scenario.
 
 For native acceptance, build the app/server, then run `npm run native:room-smoke`
 under Node 24 on Windows. It downloads a checksum-pinned official Windows LiveKit

@@ -434,6 +434,7 @@ struct DualSharingRequest {
     invitation_url: String,
     source_id: String,
     camera_id: String,
+    camera_codec: Option<Codec>,
 }
 
 async fn qualify_dual_sharing(request: DualSharingRequest) -> Result<()> {
@@ -507,6 +508,7 @@ async fn qualify_dual_sharing(request: DualSharingRequest) -> Result<()> {
     let start_camera = || {
         controller.send(Command::StartCamera {
             device_id: request.camera_id.clone(),
+            preferred_codec: request.camera_codec,
             quality: quality::Settings {
                 resolution: quality::Resolution::P720,
                 fps: 30,

@@ -3100,6 +3100,7 @@ impl PublisherUi {
                                             self.controller.send(Command::StartCamera {
                                                 device_id: self.camera_settings.device_id.clone(),
                                                 quality: self.camera_settings.quality(),
+                                                preferred_codec: None,
                                             });
                                             self.sharing_setup = None;
                                         }
@@ -5542,7 +5543,7 @@ mod tests {
         click(&mut app, camera.left_center() + egui::vec2(42.0, 0.0));
         assert!(matches!(
             commands(),
-            Some(Command::StartCamera { device_id, quality })
+            Some(Command::StartCamera { device_id, quality, .. })
                 if device_id == "test-camera" && quality.fps == 24
                     && quality.resolution == quality::Resolution::P720
                     && quality.bitrate == Bitrate::Manual(2_000_000)

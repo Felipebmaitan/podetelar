@@ -145,6 +145,53 @@ test("admins set a durable stream policy, and only admitted publishers and the S
       ).json(),
       expected,
     );
+    const cameraLogin = await app.inject({
+      method: "POST",
+      url: "/api/admin/login",
+      headers: { origin },
+      payload: { password },
+    });
+    const cameraHeaders = {
+      origin,
+      cookie: String(cameraLogin.headers["set-cookie"]).split(";")[0]!,
+    };
+    const camera = {
+      maxCameraBitrateBps: 750_000,
+      cameraAutomaticTargets: [
+        { resolution: 480, fps: 15, bitrateBps: 500_000 },
+      ],
+    };
+    assert.equal(
+      (await save({ ...expected, ...camera }, cameraHeaders)).statusCode,
+      409,
+    );
+    await app.inject({
+      url: sfuUrl,
+      headers: { ...sfuHeaders, "x-podetelar-stream-policy": "camera-bitrate" },
+    });
+    assert.equal(
+      (
+        await save(
+          { ...expected, ...camera, maxCameraBitrateBps: 499_999 },
+          cameraHeaders,
+        )
+      ).statusCode,
+      400,
+    );
+    assert.equal(
+      (await save({ ...expected, ...camera }, cameraHeaders)).statusCode,
+      200,
+    );
+    const legacy = await save({ ...expected, revision: 2 }, cameraHeaders);
+    assert.equal(legacy.statusCode, 200);
+    assert.deepEqual(legacy.json().policy, {
+      ...expected,
+      ...camera,
+      revision: 3,
+    });
+    const cameraCaps = await app.inject({ url: sfuUrl, headers: sfuHeaders });
+    assert.equal(cameraCaps.json().maxCameraBitrateBps, 750_000);
+    assert.equal(cameraCaps.json().cameraAutomaticTargets, undefined);
     await app.close();
     app = await buildApp(
       { ...config, streamPolicyEnforcement: false },
@@ -161,18 +208,37 @@ test("admins set a durable stream policy, and only admitted publishers and the S
     )[0]!;
     const headers = { origin, cookie: secondAdmin };
     assert.equal(
-      (await save({ ...expected, maxFps: 30 }, headers)).statusCode,
+      (await save({ ...expected, revision: 3, maxFps: 30 }, headers))
+        .statusCode,
       409,
     );
     const defaultsOnly = await save(
-      { ...expected, automaticTargets: [] },
+      { ...expected, revision: 3, automaticTargets: [] },
       headers,
     );
     assert.equal(defaultsOnly.statusCode, 200);
     assert.deepEqual(defaultsOnly.json().policy, {
       ...expected,
-      revision: 2,
+      ...camera,
+      revision: 4,
       automaticTargets: [],
+    });
+    const cleared = await save(
+      {
+        ...expected,
+        revision: 4,
+        automaticTargets: [],
+        maxCameraBitrateBps: null,
+      },
+      headers,
+    );
+    assert.equal(cleared.statusCode, 200);
+    assert.deepEqual(cleared.json().policy, {
+      ...expected,
+      ...camera,
+      revision: 5,
+      automaticTargets: [],
+      maxCameraBitrateBps: null,
     });
   } finally {
     await app.close();

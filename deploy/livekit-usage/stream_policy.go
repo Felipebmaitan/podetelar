@@ -26,15 +26,24 @@ const (
 )
 
 type streamCaps struct {
-	MaxBitrate    int `json:"maxBitrateBps"`
-	MaxResolution int `json:"maxResolution"`
-	MaxFPS        int `json:"maxFps"`
+	MaxCameraBitrate int `json:"maxCameraBitrateBps"`
+	MaxBitrate       int `json:"maxBitrateBps"`
+	MaxResolution    int `json:"maxResolution"`
+	MaxFPS           int `json:"maxFps"`
 }
 
 func (c streamCaps) valid() bool {
 	return (c.MaxBitrate == 0 || c.MaxBitrate >= 1_000_000 && c.MaxBitrate <= 100_000_000) &&
+		(c.MaxCameraBitrate == 0 || c.MaxCameraBitrate >= 500_000 && c.MaxCameraBitrate <= 8_000_000) &&
 		(c.MaxResolution == 0 || c.MaxResolution == 720 || c.MaxResolution == 1080 || c.MaxResolution == 1440 || c.MaxResolution == 2160) &&
 		(c.MaxFPS == 0 || c.MaxFPS == 15 || c.MaxFPS == 24 || c.MaxFPS == 30 || c.MaxFPS == 60 || c.MaxFPS == 90 || c.MaxFPS == 120)
+}
+
+func (c streamCaps) cameraBitrate() int {
+	if c.MaxCameraBitrate > 0 && (c.MaxBitrate == 0 || c.MaxCameraBitrate < c.MaxBitrate) {
+		return c.MaxCameraBitrate
+	}
+	return c.MaxBitrate
 }
 
 type policyLimit struct {
@@ -58,30 +67,36 @@ func (l policyLimit) forPublication(started, now time.Time) int {
 }
 
 type policySnapshot struct {
-	bitrate, resolution, fps policyLimit
-	expires                  time.Time
+	bitrate, cameraBitrate, resolution, fps policyLimit
+	expires                                 time.Time
 }
 
 func (p *policySnapshot) refresh(caps streamCaps, now time.Time) *policySnapshot {
 	if p == nil {
 		return &policySnapshot{
-			bitrate:    policyLimit{current: caps.MaxBitrate},
-			resolution: policyLimit{current: caps.MaxResolution},
-			fps:        policyLimit{current: caps.MaxFPS},
-			expires:    now.Add(policyTTL),
+			bitrate:       policyLimit{current: caps.MaxBitrate},
+			cameraBitrate: policyLimit{current: caps.cameraBitrate()},
+			resolution:    policyLimit{current: caps.MaxResolution},
+			fps:           policyLimit{current: caps.MaxFPS},
+			expires:       now.Add(policyTTL),
 		}
 	}
 	return &policySnapshot{
-		bitrate:    p.bitrate.update(caps.MaxBitrate, now),
-		resolution: p.resolution.update(caps.MaxResolution, now),
-		fps:        p.fps.update(caps.MaxFPS, now),
-		expires:    now.Add(policyTTL),
+		bitrate:       p.bitrate.update(caps.MaxBitrate, now),
+		cameraBitrate: p.cameraBitrate.update(caps.cameraBitrate(), now),
+		resolution:    p.resolution.update(caps.MaxResolution, now),
+		fps:           p.fps.update(caps.MaxFPS, now),
+		expires:       now.Add(policyTTL),
 	}
 }
 
-func (p *policySnapshot) forPublication(started, now time.Time) streamCaps {
+func (p *policySnapshot) forPublication(started, now time.Time, camera bool) streamCaps {
+	bitrate := p.bitrate
+	if camera {
+		bitrate = p.cameraBitrate
+	}
 	return streamCaps{
-		MaxBitrate:    p.bitrate.forPublication(started, now),
+		MaxBitrate:    bitrate.forPublication(started, now),
 		MaxResolution: p.resolution.forPublication(started, now),
 		MaxFPS:        p.fps.forPublication(started, now),
 	}
@@ -123,6 +138,7 @@ func readStreamCaps(client *http.Client, endpoint, token string) (streamCaps, er
 		return caps, err
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("X-PodeTelar-Stream-Policy", "camera-bitrate")
 	response, err := client.Do(request)
 	if err != nil {
 		return caps, err
@@ -145,6 +161,7 @@ func readStreamCaps(client *http.Client, endpoint, token string) (streamCaps, er
 type StreamPolicyGuard struct {
 	sync.Mutex
 	close                            func()
+	camera                           bool
 	closed                           bool
 	started                          bool
 	caps                             streamCaps
@@ -154,11 +171,11 @@ type StreamPolicyGuard struct {
 	bitrateViolation, frameViolation policyOverage
 }
 
-func NewStreamPolicyGuard(closeTrack func()) *StreamPolicyGuard {
+func NewStreamPolicyGuard(camera bool, closeTrack func()) *StreamPolicyGuard {
 	if policyURL == "" {
 		return nil
 	}
-	return &StreamPolicyGuard{close: closeTrack, created: time.Now()}
+	return &StreamPolicyGuard{close: closeTrack, camera: camera, created: time.Now()}
 }
 
 // SetStreamPolicy is called once on the publisher buffer before it is bound.
@@ -201,7 +218,7 @@ func (g *StreamPolicyGuard) acceptCurrent(p *streamPolicyBuffer, packet *rtp.Pac
 	if policy == nil || !now.Before(policy.expires) {
 		return false
 	}
-	return g.accept(p, packet, timestamp, now, policy.forPublication(g.created, now))
+	return g.accept(p, packet, timestamp, now, policy.forPublication(g.created, now, g.camera))
 }
 
 func (g *StreamPolicyGuard) accept(p *streamPolicyBuffer, packet *rtp.Packet, timestamp uint64, now time.Time, caps streamCaps) bool {

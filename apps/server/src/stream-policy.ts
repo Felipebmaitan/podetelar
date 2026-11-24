@@ -8,6 +8,7 @@ import {
 export class StreamPolicies {
   private readonly db: DatabaseSync;
   private sfuReadAt = 0;
+  private cameraSfuReadAt = 0;
 
   constructor(path: string) {
     this.db = new DatabaseSync(path);
@@ -41,14 +42,31 @@ export class StreamPolicies {
     return result.changes === 1 ? next : null;
   }
 
-  mediaCaps() {
-    const { revision, maxBitrateBps, maxResolution, maxFps } = this.current();
+  mediaCaps(cameraSupported: boolean) {
+    const {
+      revision,
+      maxBitrateBps,
+      maxResolution,
+      maxFps,
+      maxCameraBitrateBps,
+    } = this.current();
     this.sfuReadAt = Date.now();
-    return { revision, maxBitrateBps, maxResolution, maxFps };
+    if (cameraSupported) this.cameraSfuReadAt = this.sfuReadAt;
+    return {
+      revision,
+      maxBitrateBps,
+      maxResolution,
+      maxFps,
+      maxCameraBitrateBps,
+    };
   }
 
   enforcementReady() {
     return Date.now() - this.sfuReadAt < 10_000;
+  }
+
+  cameraEnforcementReady() {
+    return Date.now() - this.cameraSfuReadAt < 10_000;
   }
 
   close(): void {
@@ -59,6 +77,7 @@ export class StreamPolicies {
 export function hasStreamCaps(policy: StreamPolicy) {
   return (
     policy.maxBitrateBps !== null ||
+    policy.maxCameraBitrateBps != null ||
     policy.maxFps !== null ||
     policy.maxResolution !== null
   );

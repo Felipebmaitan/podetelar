@@ -190,8 +190,13 @@ export async function policyAdministrator(
     expect(response.status()).toBe(200);
   };
   const initial = await read();
-  await write({ ...defaultStreamPolicy, revision: initial.revision });
+  const emptyCamera = { maxCameraBitrateBps: null, cameraAutomaticTargets: [] };
+  await write({
+    ...defaultStreamPolicy,
+    ...emptyCamera,
+    revision: initial.revision,
+  });
   const restore = async () =>
-    write({ ...initial, revision: (await read()).revision });
+    write({ ...emptyCamera, ...initial, revision: (await read()).revision });
   return { read, write, restore };
 }

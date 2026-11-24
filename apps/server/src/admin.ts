@@ -63,19 +63,30 @@ export async function adminRoutes(
     scope.get("/api/admin/stream-policy", async () => ({
       policy: streamPolicies.current(),
       enforcement: Boolean(config.streamPolicyEnforcement),
+      cameraEnforcement:
+        Boolean(config.streamPolicyEnforcement) &&
+        streamPolicies.cameraEnforcementReady(),
     }));
     scope.put("/api/admin/stream-policy", async (request, reply) => {
       const policy = streamPolicySchema.safeParse(request.body);
       if (!policy.success)
         return reply.code(400).send({
-          error: "Choose valid stream limits and bitrate targets (1–100 Mbps).",
+          error:
+            "Choose valid stream limits and bitrate targets (1–100 Mbps for screens and 0.5–8 Mbps for cameras).",
         });
       const current = streamPolicies.current();
+      const next = { ...current, ...policy.data };
+      const changesCameraCap =
+        (next.maxCameraBitrateBps ?? null) !==
+        (current.maxCameraBitrateBps ?? null);
       const changesCaps =
         policy.data.maxBitrateBps !== current.maxBitrateBps ||
         policy.data.maxResolution !== current.maxResolution ||
         policy.data.maxFps !== current.maxFps;
-      const requiresEnforcement = changesCaps && hasStreamCaps(policy.data);
+      const setsCameraCap =
+        changesCameraCap && next.maxCameraBitrateBps != null;
+      const requiresEnforcement =
+        (changesCaps && hasStreamCaps(next)) || setsCameraCap;
       if (requiresEnforcement && !config.streamPolicyEnforcement)
         return reply.code(409).send({
           error:
@@ -86,7 +97,12 @@ export async function adminRoutes(
           error:
             "Wait for the media server to synchronize stream policy, then try again.",
         });
-      const saved = streamPolicies.save(policy.data);
+      if (setsCameraCap && !streamPolicies.cameraEnforcementReady())
+        return reply.code(409).send({
+          error:
+            "The media server must support camera bitrate limits before you can set one.",
+        });
+      const saved = streamPolicies.save(next);
       if (!saved)
         return reply.code(409).send({
           error: "The policy changed. Reload this section before editing.",
@@ -94,6 +110,9 @@ export async function adminRoutes(
       return {
         policy: saved,
         enforcement: Boolean(config.streamPolicyEnforcement),
+        cameraEnforcement:
+          Boolean(config.streamPolicyEnforcement) &&
+          streamPolicies.cameraEnforcementReady(),
       };
     });
   });

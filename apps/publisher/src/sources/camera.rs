@@ -1,24 +1,36 @@
-use crate::quality::{self, Bitrate, Codec, Mode, Settings};
+use crate::quality::{self, Bitrate, Codec, Mode, Settings, StreamPolicy};
 use anyhow::{Result, ensure};
 use serde::Serialize;
 
 pub const MIN_BITRATE: u64 = 500_000;
 pub const MAX_BITRATE: u64 = 8_000_000;
 pub const FRAME_RATES: [u32; 3] = [24, 30, 60];
+pub const TARGET_FRAME_RATES: [u32; 4] = [15, 24, 30, 60];
+pub const TARGET_TIERS: [u32; 5] = [480, 720, 1080, 1440, 2160];
 pub const RESOLUTIONS: [quality::Resolution; 3] = [
     quality::Resolution::P720,
     quality::Resolution::P1080,
     quality::Resolution::Source,
 ];
 
-pub(crate) fn automatic_bitrate(width: u32, height: u32, fps: u32, codec: Codec) -> u64 {
+fn target_tier(width: u32, height: u32) -> u32 {
     let pixels = u64::from(width) * u64::from(height);
+    match pixels {
+        0..=307_200 => 480,
+        307_201..=921_600 => 720,
+        921_601..=2_073_600 => 1080,
+        2_073_601..=3_686_400 => 1440,
+        _ => 2160,
+    }
+}
+
+fn automatic_bitrate(tier: u32, fps: u32, codec: Codec) -> u64 {
     // H.264 targets in 100 kbps increments for 24, 30, and 60 FPS.
-    let h264 = match pixels {
-        0..=307_200 => [6, 8, 12],
-        307_201..=921_600 => [10, 14, 22],
-        921_601..=2_073_600 => [16, 22, 34],
-        2_073_601..=3_686_400 => [25, 33, 50],
+    let h264 = match tier {
+        480 => [6, 8, 12],
+        720 => [10, 14, 22],
+        1080 => [16, 22, 34],
+        1440 => [25, 33, 50],
         _ => [40, 50, 70],
     };
     let index = if fps <= 24 {
@@ -106,7 +118,7 @@ pub struct Input {
     pub caps: gstreamer::Caps,
 }
 
-fn validate_settings(quality: Settings) -> Result<()> {
+pub fn validate_settings(quality: Settings) -> Result<()> {
     ensure!(
         FRAME_RATES.contains(&quality.fps),
         "Choose a camera frame rate from the list."
@@ -124,19 +136,39 @@ fn validate_settings(quality: Settings) -> Result<()> {
     Ok(())
 }
 
-pub fn mode(info: &super::SourceInfo, quality: Settings, codec: Codec) -> Result<Mode> {
+pub fn mode(
+    info: &super::SourceInfo,
+    quality: Settings,
+    codec: Codec,
+    policy: &StreamPolicy,
+) -> Result<Mode> {
     validate_settings(quality)?;
     let (width, height) = quality.resolution.dimensions(info)?;
+    Ok(with_bitrate(
+        policy,
+        quality,
+        codec,
+        policy.limit_video(Mode {
+            width,
+            height,
+            fps: quality.fps,
+            bitrate: 0,
+        })?,
+    ))
+}
+
+pub fn with_bitrate(policy: &StreamPolicy, quality: Settings, codec: Codec, mode: Mode) -> Mode {
+    let tier = target_tier(mode.width, mode.height);
     let bitrate = match quality.bitrate {
-        Bitrate::Auto => automatic_bitrate(width, height, quality.fps, codec),
+        Bitrate::Auto => policy
+            .camera_target(tier, mode.fps)
+            .unwrap_or_else(|| automatic_bitrate(tier, mode.fps, codec)),
         Bitrate::Manual(bitrate) => bitrate,
     };
-    Ok(Mode {
-        width,
-        height,
-        fps: quality.fps,
-        bitrate,
-    })
+    Mode {
+        bitrate: bitrate.min(policy.camera_cap().unwrap_or(MAX_BITRATE)),
+        ..mode
+    }
 }
 
 impl Device {
@@ -220,22 +252,96 @@ mod tests {
             bitrate: Bitrate::Auto,
             ..Default::default()
         };
+        let policy = StreamPolicy::default();
         for (codec, target) in [
             (Codec::H264, 1_400_000),
             (Codec::H265, 1_100_000),
             (Codec::Av1, 900_000),
         ] {
-            assert_eq!(mode(&info, settings, codec).unwrap().bitrate, target);
+            assert_eq!(
+                mode(&info, settings, codec, &policy).unwrap().bitrate,
+                target
+            );
         }
         settings.resolution = quality::Resolution::Source;
         settings.fps = 60;
         assert_eq!(
-            mode(&info, settings, Codec::H264).unwrap().bitrate,
+            mode(&info, settings, Codec::H264, &policy).unwrap().bitrate,
             3_400_000
         );
         settings.bitrate = Bitrate::Manual(5_500_000);
         for codec in [Codec::H264, Codec::H265, Codec::Av1] {
-            assert_eq!(mode(&info, settings, codec).unwrap().bitrate, 5_500_000);
+            assert_eq!(
+                mode(&info, settings, codec, &policy).unwrap().bitrate,
+                5_500_000
+            );
         }
+    }
+
+    #[test]
+    fn camera_overrides_and_caps_use_effective_geometry_without_screen_targets() {
+        let source = super::super::SourceInfo {
+            id: "camera".into(),
+            label: "Camera".into(),
+            width: 1920,
+            height: 1080,
+        };
+        let mut policy: StreamPolicy = serde_json::from_str(
+            r#"{
+            "maxBitrateBps": 1000000,
+            "maxResolution": 720,
+            "maxFps": 15,
+            "automaticTargets":[{"resolution":720,"fps":15,"bitrateBps":4000000}],
+            "cameraAutomaticTargets":[{"resolution":720,"fps":15,"bitrateBps":750000}]
+        }"#,
+        )
+        .unwrap();
+        policy.validate().unwrap();
+        let settings = Settings {
+            fps: 30,
+            ..Settings::default()
+        };
+        let active = mode(&source, settings, Codec::H264, &policy).unwrap();
+        assert_eq!(
+            active,
+            Mode {
+                width: 1280,
+                height: 720,
+                fps: 15,
+                bitrate: 750_000
+            }
+        );
+        policy.max_camera_bitrate_bps = Some(500_000);
+        assert_eq!(
+            with_bitrate(&policy, settings, Codec::H264, active).bitrate,
+            500_000
+        );
+        let manual = Settings {
+            bitrate: Bitrate::Manual(2_000_000),
+            ..settings
+        };
+        assert_eq!(
+            with_bitrate(&policy, manual, Codec::H264, active).bitrate,
+            500_000
+        );
+        policy.max_camera_bitrate_bps = Some(4_000_000);
+        assert_eq!(
+            with_bitrate(&policy, manual, Codec::H264, active).bitrate,
+            1_000_000
+        );
+        assert_eq!(
+            mode(
+                &source,
+                Settings {
+                    fps: 24,
+                    ..settings
+                },
+                Codec::Av1,
+                &StreamPolicy::default()
+            )
+            .unwrap()
+            .bitrate,
+            1_000_000
+        );
     }
 }

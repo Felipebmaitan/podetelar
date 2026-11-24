@@ -23,7 +23,7 @@ index 895216f..97cd3e1 100644
  		backupCodecPolicy: ti.BackupCodecPolicy,
  	}
 +	if params.OnStreamPolicyViolation != nil {
-+		t.streamPolicy = buffer.NewStreamPolicyGuard(func() { params.OnStreamPolicyViolation(t) })
++		t.streamPolicy = buffer.NewStreamPolicyGuard(ti.Source == livekit.TrackSource_CAMERA, func() { params.OnStreamPolicyViolation(t) })
 +	}
  
  	if t.params.ForceBackupCodecPolicySimulcast {

@@ -380,6 +380,104 @@ async function timingWindow(pid: number | undefined) {
   return sourceId!;
 }
 
+test("live camera Automatic target and sub-1 Mbps cap preserve the concurrent screen", async ({
+  request,
+  baseURL,
+}) => {
+  test.setTimeout(85_000);
+  const id = await cameraId(process.env.PODETELAR_TEST_STREAM_POLICY === "1");
+  const admin = await policyAdministrator(request, baseURL!);
+  const screen = timingSource();
+  let sender: ReturnType<typeof nativeRequest> | undefined;
+  let viewer: ReturnType<typeof nativeRequest> | undefined;
+  try {
+    const sourceId = await timingWindow(screen.pid);
+    const created = await createTestRoom(
+      request,
+      baseURL!,
+      "Camera bitrate policy",
+    );
+    expect(created.status()).toBe(201);
+    const { room, invitationUrl } = await created.json();
+    await admin.write({
+      ...(await admin.read()),
+      maxBitrateBps: 6_000_000,
+      maxCameraBitrateBps: null,
+      cameraAutomaticTargets: [],
+    });
+    sender = nativeRequest("--qualify-dual-sharing", {
+      invitationUrl,
+      sourceId,
+      cameraId: id,
+      cameraCodec: "h264",
+      cameraPolicyBitrates: [800_000, 500_000],
+    });
+    expect(await sender.reported).toEqual({ both: true });
+    const client = new RoomServiceClient(
+      process.env.LIVEKIT_INTERNAL_URL!,
+      process.env.LIVEKIT_API_KEY!,
+      process.env.LIVEKIT_API_SECRET!,
+    );
+    const sid = async (source: TrackSource) =>
+      (await client.listParticipants(`podetelar_${room.id}`))
+        .flatMap((participant) => participant.tracks)
+        .find((track) => track.source === source)?.sid;
+    const cameraSid = await sid(TrackSource.CAMERA);
+    const screenSid = await sid(TrackSource.SCREEN_SHARE);
+    expect(cameraSid).toBeTruthy();
+    expect(screenSid).toBeTruthy();
+    viewer = nativeRequest("--watch-fixture", {
+      invitationUrl,
+      seconds: 19,
+      continuousWatch: true,
+      watchOncePerPublisher: true,
+    });
+    let observations = "";
+    sender.child.stdout?.on("data", (chunk: Buffer) => {
+      observations = (observations + chunk.toString()).slice(-4096);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+    await admin.write({
+      ...(await admin.read()),
+      cameraAutomaticTargets: [
+        { resolution: 720, fps: 30, bitrateBps: 800_000 },
+      ],
+    });
+    await expect
+      .poll(() => observations, { timeout: 8_000 })
+      .toContain('"cameraBitrate":800000');
+    await admin.write({
+      ...(await admin.read()),
+      maxCameraBitrateBps: 500_000,
+    });
+    await expect
+      .poll(() => observations, { timeout: 8_000 })
+      .toContain('"cameraBitrate":500000');
+    expect(await sid(TrackSource.CAMERA)).toBe(cameraSid);
+    expect(await sid(TrackSource.SCREEN_SHARE)).toBe(screenSid);
+    const [sent, watched] = await Promise.all([sender.result, viewer.result]);
+    expect(sent).toMatchObject({
+      cameraMode: { bitrate: 500_000 },
+      screenMode: { fps: 30 },
+    });
+    expect(
+      (watched as Received).samples.filter(({ streams }) =>
+        ["camera", "screen"].every((kind) =>
+          streams.some(
+            (stream) =>
+              stream.kind === kind && stream.watching && stream.frames > 5,
+          ),
+        ),
+      ).length,
+    ).toBeGreaterThan(2);
+  } finally {
+    sender?.child.kill();
+    viewer?.child.kill();
+    screen.kill();
+    await admin.restore();
+  }
+});
+
 test("a live SFU policy update applies to both concurrent video publications", async ({
   request,
   baseURL,

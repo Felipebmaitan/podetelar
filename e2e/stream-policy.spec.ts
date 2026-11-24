@@ -22,6 +22,87 @@ test.skip(
 );
 test.use({ bypassCSP: true });
 
+test("camera caps and Automatic targets survive dashboard reload independently of screen targets", async ({
+  page,
+  baseURL,
+}) => {
+  const origin = new URL(baseURL!).origin;
+  expect(new URL(origin).hostname).toMatch(
+    /^(localhost|127\.0\.0\.1|\[::1\])$/,
+  );
+  await page.goto("/");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill(process.env.ADMIN_TOKEN!);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  const open = () =>
+    page.getByRole("button", { name: "Stream quality", exact: true }).click();
+  await open();
+  const endpoint = "/api/admin/stream-policy";
+  const read = async () =>
+    (await (await page.request.get(endpoint)).json()).policy as StreamPolicy;
+  const initial = await read();
+  try {
+    await page.getByLabel("Maximum video bitrate (Mbps)").fill("10");
+    await page.getByLabel("Maximum camera video bitrate (Mbps)").fill("0.75");
+    await page.getByLabel("720p at 30 FPS, Mbps", { exact: true }).fill("4");
+    await page
+      .getByLabel("Camera 720p at 30 FPS, Mbps", { exact: true })
+      .fill("0.5");
+    await page.getByRole("button", { name: "Save stream policy" }).click();
+    await expect(page.getByText("Stream policy saved.")).toBeVisible();
+    await page.reload();
+    await open();
+    await expect(page.getByLabel("Maximum video bitrate (Mbps)")).toHaveValue(
+      "10",
+    );
+    await expect(
+      page.getByLabel("Maximum camera video bitrate (Mbps)"),
+    ).toHaveValue("0.75");
+    await expect(
+      page.getByLabel("720p at 30 FPS, Mbps", { exact: true }),
+    ).toHaveValue("4");
+    await expect(
+      page.getByLabel("Camera 720p at 30 FPS, Mbps", { exact: true }),
+    ).toHaveValue("0.5");
+    // Simulate the dashboard status during an SFU capability loss.
+    await page.route(`**${endpoint}`, async (route) => {
+      if (route.request().method() !== "GET") return route.continue();
+      const response = await route.fetch();
+      await route.fulfill({
+        response,
+        json: { ...(await response.json()), cameraEnforcement: false },
+      });
+    });
+    await page.reload();
+    await open();
+    await expect(
+      page.getByText(/Camera enforcement is unavailable/),
+    ).toBeVisible();
+    await page.getByLabel("Maximum camera video bitrate (Mbps)").fill("");
+    await page.getByRole("button", { name: "Save stream policy" }).click();
+    await expect(page.getByText("Stream policy saved.")).toBeVisible();
+    expect(await read()).toMatchObject({
+      maxBitrateBps: 10_000_000,
+      maxCameraBitrateBps: null,
+      cameraAutomaticTargets: [
+        { resolution: 720, fps: 30, bitrateBps: 500_000 },
+      ],
+    });
+  } finally {
+    const restore = await page.request.put(endpoint, {
+      headers: { Origin: origin },
+      data: {
+        maxCameraBitrateBps: null,
+        cameraAutomaticTargets: [],
+        ...initial,
+        revision: (await read()).revision,
+      },
+    });
+    expect(restore.status()).toBe(200);
+  }
+});
+
 test("dashboard saves caps and the SFU enforces them for a publisher that ignores policy", async ({
   page,
   context,
@@ -60,11 +141,11 @@ test("dashboard saves caps and the SFU enforces them for a publisher that ignore
     await page.getByLabel("Maximum video bitrate (Mbps)").fill("10");
     await page.getByLabel("Maximum resolution").selectOption("1080");
     await page.getByLabel("Maximum frame rate").selectOption("60");
-    await page.getByLabel("720p at 30 FPS, Mbps").fill("4");
-    await page.getByLabel("1080p at 60 FPS, Mbps").fill("6");
+    await page.getByLabel("720p at 30 FPS, Mbps", { exact: true }).fill("4");
+    await page.getByLabel("1080p at 60 FPS, Mbps", { exact: true }).fill("6");
     await page.getByRole("button", { name: "Save stream policy" }).click();
     await expect(page.getByText("Stream policy saved.")).toBeVisible();
-    expect(await read()).toEqual({
+    expect(await read()).toMatchObject({
       revision: initial.revision + 1,
       maxBitrateBps: 10_000_000,
       maxResolution: 1080,
@@ -202,6 +283,29 @@ test("dashboard saves caps and the SFU enforces them for a publisher that ignore
         { timeout: 30_000 },
       )
       .toBe(3);
+
+    await page.getByLabel("Maximum video bitrate (Mbps)").fill("10");
+    await page.getByRole("button", { name: "Save stream policy" }).click();
+    await expect
+      .poll(async () => (await read()).maxBitrateBps)
+      .toBe(10_000_000);
+    await publish(source, 1280, 720, true, "camera");
+    await expect
+      .poll(async () => 8 * (await outgoingRate(source, "bytesSent")), {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(1_000_000);
+    await page.getByLabel("Maximum camera video bitrate (Mbps)").fill("0.5");
+    await page.getByRole("button", { name: "Save stream policy" }).click();
+    await expect
+      .poll(async () => (await read()).maxCameraBitrateBps)
+      .toBe(500_000);
+    await expect
+      .poll(
+        () => viewer.evaluate(() => (window as unknown as TestWindow).removed),
+        { timeout: 30_000 },
+      )
+      .toBe(4);
   } finally {
     await Promise.all([
       source.close(),
@@ -211,7 +315,12 @@ test("dashboard saves caps and the SFU enforces them for a publisher that ignore
     ]);
     const restore = await page.request.put(endpoint, {
       headers,
-      data: { ...initial, revision: (await read()).revision },
+      data: {
+        maxCameraBitrateBps: null,
+        cameraAutomaticTargets: [],
+        ...initial,
+        revision: (await read()).revision,
+      },
     });
     expect(restore.status()).toBe(200);
   }
@@ -250,10 +359,11 @@ async function publish(
   width: number,
   height: number,
   detailed = false,
+  kind: "screen" | "camera" = "screen",
 ) {
   await page.bringToFront();
   await page.evaluate(
-    async ({ width, height, detailed }) => {
+    async ({ width, height, detailed, kind }) => {
       const test = window as unknown as TestWindow;
       if (test.policyTrack) {
         await test.policyRoom.localParticipant.unpublishTrack(test.policyTrack);
@@ -288,7 +398,10 @@ async function publish(
       const track = new sdk.LocalVideoTrack(sourceTrack);
       test.policyTrack = track;
       await test.policyRoom.localParticipant.publishTrack(track, {
-        source: sdk.Track.Source.ScreenShare,
+        source:
+          kind === "camera"
+            ? sdk.Track.Source.Camera
+            : sdk.Track.Source.ScreenShare,
         videoCodec: "h264",
         simulcast: false,
         degradationPreference: detailed
@@ -298,6 +411,6 @@ async function publish(
         videoEncoding: { maxBitrate: 8_000_000, maxFramerate: 30 },
       });
     },
-    { width, height, detailed },
+    { width, height, detailed, kind },
   );
 }

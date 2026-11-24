@@ -172,6 +172,8 @@ pub struct StreamPolicy {
     pub max_resolution: Option<u32>,
     pub max_fps: Option<u32>,
     automatic_targets: Vec<AutomaticTarget>,
+    pub max_camera_bitrate_bps: Option<u64>,
+    camera_automatic_targets: Vec<AutomaticTarget>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -184,7 +186,10 @@ struct AutomaticTarget {
 
 impl StreamPolicy {
     pub fn validate(&self) -> Result<()> {
+        use crate::sources::camera;
         let valid_bitrate = |bps: u64| (MIN_BITRATE..=MAX_BITRATE).contains(&bps);
+        let valid_camera_bitrate =
+            |bps: u64| (camera::MIN_BITRATE..=camera::MAX_BITRATE).contains(&bps);
         ensure!(
             self.max_bitrate_bps.is_none_or(valid_bitrate)
                 && self
@@ -196,10 +201,32 @@ impl StreamPolicy {
                     Resolution::from_height(target.resolution).is_some()
                         && FRAME_RATES.contains(&target.fps)
                         && valid_bitrate(target.bitrate_bps)
+                })
+                && self.max_camera_bitrate_bps.is_none_or(valid_camera_bitrate)
+                && self.camera_automatic_targets.len()
+                    <= camera::TARGET_TIERS.len() * camera::TARGET_FRAME_RATES.len()
+                && self.camera_automatic_targets.iter().all(|target| {
+                    camera::TARGET_TIERS.contains(&target.resolution)
+                        && camera::TARGET_FRAME_RATES.contains(&target.fps)
+                        && valid_camera_bitrate(target.bitrate_bps)
                 }),
             "The room server returned invalid stream quality settings."
         );
         Ok(())
+    }
+
+    pub fn camera_cap(&self) -> Option<u64> {
+        self.max_bitrate_bps
+            .into_iter()
+            .chain(self.max_camera_bitrate_bps)
+            .min()
+    }
+
+    pub fn camera_target(&self, resolution: u32, fps: u32) -> Option<u64> {
+        self.camera_automatic_targets
+            .iter()
+            .find(|target| target.resolution == resolution && target.fps == fps)
+            .map(|target| target.bitrate_bps)
     }
 
     pub fn resolve(&self, settings: Settings, source: &SourceInfo, codec: Codec) -> Result<Mode> {
@@ -680,6 +707,7 @@ mod tests {
                     bitrate_bps: 6_000_000,
                 },
             ],
+            ..Default::default()
         };
         let settings = Settings {
             fps: 120,

@@ -9,7 +9,7 @@ publish or play streams.
 Windows camera sharing has its own settings and defaults to 720p, 30 FPS and
 Automatic bitrate. Choose 720p, 1080p or Source and 24, 30 or 60 FPS.
 Advanced camera settings offer a manual target from 0.5 to 8 Mbps.
-Automatic uses the negotiated codec, selected frame rate, and output pixel
+Automatic uses the negotiated codec, effective frame rate, and output pixel
 count. Source uses the actual output size. These camera targets are tuned for
 lower motion than the screen motion presets and are in Mbps.
 
@@ -24,7 +24,8 @@ lower motion than the screen motion presets and are in Mbps.
 The camera needs to expose a mode that can supply the selected dimensions and
 frame rate. Output preserves aspect ratio, downscales where needed, and can drop
 frames from faster camera modes. Camera settings apply on the next start and use
-the room's hardware codec negotiation and bitrate feedback.
+the room's hardware codec negotiation and bitrate feedback. Camera outputs at
+15 FPS use the 24 FPS defaults when no override is configured.
 
 ## Choosing a mode
 
@@ -103,10 +104,15 @@ five seconds of sustained violations. Video with unverified dimensions is blocke
 a resolution cap. The SFU stops forwarding video after ten seconds without a
 valid policy refresh. Stream limits require the policy-enabled SFU image.
 
-Per-stream limits apply separately to screen and camera video. Each native
-publication follows live changes to bitrate, resolution and FPS ceilings. Camera
-uses its own manual bitrate, so server Automatic targets apply only to screens
-using Automatic bitrate. Plan total SFU
+The **Camera** section offers a camera-specific ceiling and separate Automatic
+targets from 0.5 to 8 Mbps. Camera video uses the lower of the shared and
+camera-specific ceilings. The SFU applies it to video tracks published with the
+Camera source. The shared resolution and FPS limits apply to both sources.
+For Source and other nonstandard camera sizes, the Automatic override uses the
+smallest camera tier by output pixel count at the effective FPS. Blank camera
+targets use the codec-specific defaults above. Camera bitrate policy updates
+apply to the active camera encoder while a concurrent screen can keep sharing.
+Plan total SFU
 egress around the number of subscriptions, audio, retransmission and transport
 overhead. The owner decides when to adjust policy as demand changes.
 

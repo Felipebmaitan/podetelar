@@ -539,24 +539,10 @@ impl StreamConfig {
 
     fn resolve_mode(&self, codec: Codec) -> Result<Mode> {
         if self.source.is_camera() {
-            let mode =
-                self.policy
-                    .limit_video(camera::mode(&self.source.info, self.quality, codec)?)?;
-            Ok(self.with_camera_bitrate(mode, codec))
+            camera::mode(&self.source.info, self.quality, codec, &self.policy)
         } else {
             self.policy.resolve(self.quality, &self.source.info, codec)
         }
-    }
-
-    fn with_camera_bitrate(&self, mut mode: Mode, codec: Codec) -> Mode {
-        let requested = match self.quality.bitrate {
-            crate::quality::Bitrate::Auto => {
-                camera::automatic_bitrate(mode.width, mode.height, mode.fps, codec)
-            }
-            crate::quality::Bitrate::Manual(target) => target,
-        };
-        mode.bitrate = requested.min(self.policy.max_bitrate_bps.unwrap_or(MAX_BITRATE));
-        mode
     }
 
     fn negotiate(&mut self, room: &Room, preferred: &Encoder, available: &[Encoder]) -> Result<()> {
@@ -607,12 +593,21 @@ impl StreamConfig {
                 && self.source.info.height >= mode.height,
             "Source is smaller than the active resolution. Stop and choose a smaller mode."
         );
+        self.resolve_bitrate(mode).map(Some)
+    }
+
+    fn resolve_bitrate(&self, mode: Mode) -> Result<Mode> {
         if self.source.is_camera() {
-            Ok(Some(self.with_camera_bitrate(mode, self.encoder.codec)))
+            camera::validate_settings(self.quality)?;
+            Ok(camera::with_bitrate(
+                &self.policy,
+                self.quality,
+                self.encoder.codec,
+                mode,
+            ))
         } else {
             self.policy
                 .with_bitrate(self.quality, self.encoder.codec, mode)
-                .map(Some)
         }
     }
     pub fn mode(&self) -> Result<Mode> {
@@ -685,13 +680,7 @@ impl Stream {
         config.policy = policy;
         let before = self.mode;
         if config.policy.allows_geometry(before) {
-            let next = if config.kind() == Kind::Camera {
-                config.with_camera_bitrate(before, config.encoder.codec)
-            } else {
-                config
-                    .policy
-                    .with_bitrate(config.quality, config.encoder.codec, before)?
-            };
+            let next = config.resolve_bitrate(before)?;
             self.rate.set_resolved(next.bitrate);
             self.mode = next;
             self.config = config;

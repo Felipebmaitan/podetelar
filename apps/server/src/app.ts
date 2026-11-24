@@ -554,12 +554,15 @@ export async function buildApp(
           return reply
             .code(401)
             .send({ error: "Open your room invitation to join." });
+        const streamPolicy = native ? streamPolicies.current() : null;
         const streamCapsConfigured =
-          native && hasStreamCaps(streamPolicies.current());
+          streamPolicy !== null && hasStreamCaps(streamPolicy);
         if (
           streamCapsConfigured &&
           config.streamPolicyEnforcement &&
-          !streamPolicies.enforcementReady()
+          (!streamPolicies.enforcementReady() ||
+            (streamPolicy?.maxCameraBitrateBps != null &&
+              !streamPolicies.cameraEnforcementReady()))
         )
           return reply.header("Retry-After", "2").code(503).send({
             error:
@@ -622,7 +625,11 @@ export async function buildApp(
           .send({ error: "Media server credentials required." });
       return reply
         .header("Cache-Control", "no-store")
-        .send(streamPolicies.mediaCaps());
+        .send(
+          streamPolicies.mediaCaps(
+            request.headers["x-podetelar-stream-policy"] === "camera-bitrate",
+          ),
+        );
     });
 
   await previewRoutes(app, rooms, previews);

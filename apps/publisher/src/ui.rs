@@ -3365,6 +3365,13 @@ impl PublisherUi {
         ui.add_enabled_ui(!camera_live && !state.refreshing_cameras, |ui| {
             self.camera_controls(ui, state)
         });
+        if let Some(cap) = state.stream_policy.camera_cap() {
+            ui.small(format!(
+                "{} · {} Mbps",
+                tr("Server limits"),
+                cap as f64 / 1_000_000.0
+            ));
+        }
     }
 
     fn camera_preview_panel(

@@ -42,7 +42,6 @@ fn apply_palette(ctx: &egui::Context, effective: Theme) {
     } else {
         egui::Visuals::light()
     };
-    style.visuals.override_text_color = Some(p.text);
     style.visuals.weak_text_color = Some(p.muted);
     style.visuals.disabled_alpha = 0.84;
     style.visuals.panel_fill = p.panel;
@@ -61,6 +60,7 @@ fn apply_palette(ctx: &egui::Context, effective: Theme) {
     style.visuals.popup_shadow = skin::menu_frame().shadow;
     style.spacing.menu_margin = egui::Margin::same(8);
     style.spacing.slider_rail_height = 4.0;
+    // Keep normal text in the widget palette so selected controls use on-accent ink.
     for widget in [
         &mut style.visuals.widgets.noninteractive,
         &mut style.visuals.widgets.inactive,
@@ -154,6 +154,7 @@ pub struct PublisherUi {
     remembered_volume: HashMap<String, u32>,
     appearance: Appearance,
     advanced_open: bool,
+    licenses_open: bool,
     diagnostics_open: bool,
     setup_open: bool,
     roster_open: bool,
@@ -285,6 +286,7 @@ impl PublisherUi {
                 ..Appearance::default()
             },
             advanced_open: false,
+            licenses_open: false,
             diagnostics_open: false,
             setup_open: false,
             roster_open: false,
@@ -439,7 +441,10 @@ impl PublisherUi {
                                 ui.close();
                             }
                         }
-                        open_licenses(ui);
+                        if ui.button(tr("Licenses")).clicked() {
+                            self.licenses_open = true;
+                            ui.close();
+                        }
                     });
             if connected && !self.invitation.is_empty() {
                 let copied = self
@@ -1264,6 +1269,55 @@ impl PublisherUi {
         if self.appearance.theme != previous {
             self.save_appearance();
             ui.ctx().request_repaint();
+        }
+    }
+
+    fn licenses_dialog(&mut self, ctx: &egui::Context) {
+        if !self.licenses_open || self.browser_invitation_open {
+            return;
+        }
+        const FOLDER_ERROR: &str = "Could not open the bundled notices folder.";
+        let modal = egui::Modal::new(egui::Id::unique("licenses"))
+            .frame(skin::menu_frame().inner_margin(16))
+            .show(ctx, |ui| {
+                ui.set_width((ctx.content_rect().width() - 48.0).clamp(200.0, 480.0));
+                let mut close = false;
+                ui.horizontal(|ui| {
+                    ui.heading(tr("Licenses"));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        close = skin::icon_button(ui, Icon::Close, tr("Close")).clicked();
+                    });
+                });
+                if let Some(notices) = bundled_notices()
+                    && ui.button(tr("Open bundled notices and sources")).clicked()
+                {
+                    if open_notices_folder(&notices).is_err() {
+                        self.settings_error = FOLDER_ERROR.into();
+                    } else {
+                        close = true;
+                    }
+                }
+                if self.settings_error == FOLDER_ERROR {
+                    ui.colored_label(palette().error, tr(FOLDER_ERROR));
+                }
+                ui.separator();
+                ui.label(skin::strong(tr("Inter font license"), 14.0));
+                egui::ScrollArea::vertical()
+                    .max_height((ctx.content_rect().height() - 208.0).clamp(96.0, 380.0))
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::Label::new(include_str!("../../../assets/fonts/OFL-Inter.txt"))
+                                .selectable(true)
+                                .wrap(),
+                        );
+                    });
+                close
+            });
+        if modal.inner || modal.should_close() {
+            self.licenses_open = false;
+            if self.settings_error == FOLDER_ERROR {
+                self.settings_error.clear();
+            }
         }
     }
 
@@ -2150,6 +2204,7 @@ impl PublisherUi {
         if self.closing_since.is_some()
             || self.browser_invitation_open
             || self.advanced_open
+            || self.licenses_open
             || self.profile_open
             || self.fullscreen.is_some()
         {
@@ -2490,6 +2545,7 @@ impl PublisherUi {
         }
         if !self.browser_invitation_open
             && !self.update_open
+            && !self.licenses_open
             && ctx.input(|i| i.key_pressed(egui::Key::Escape))
         {
             if self.profile_open {
@@ -2562,6 +2618,7 @@ impl PublisherUi {
         }));
         if !self.browser_invitation_open
             && !self.update_open
+            && !self.licenses_open
             && !self.profile_open
             && !self.advanced_open
             && !egui::Popup::is_any_open(&ctx)
@@ -2617,6 +2674,7 @@ impl PublisherUi {
         let room_blocked = self.browser_invitation_open
             || self.profile_open
             || self.advanced_open
+            || self.licenses_open
             || self.update_open;
         #[cfg(windows)]
         if room_blocked {
@@ -2751,12 +2809,14 @@ impl PublisherUi {
             && !self.profile_open
             && !self.browser_invitation_open
             && !self.update_open
+            && !self.licenses_open
         {
             self.broadcast_setup_popover(&ctx, &state, stage_bounds, dock);
         } else {
             self.clear_picker();
         }
         self.advanced_modal(&ctx, &state);
+        self.licenses_dialog(&ctx);
         if self.browser_invitation_open {
             defocus_invitation_background(root);
             self.browser_invitation_modal(&ctx, &state);
@@ -3444,26 +3504,34 @@ fn badge(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
         });
 }
 
-fn open_licenses(ui: &mut egui::Ui) {
-    ui.collapsing(tr("Inter font license"), |ui| {
-        egui::ScrollArea::vertical()
-            .max_height(220.0)
-            .max_width(380.0)
-            .show(ui, |ui| {
-                ui.label(include_str!("../../../assets/fonts/OFL-Inter.txt"));
-            });
-    });
-    if let Some(notices) = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent()?.parent().map(|p| p.join("notices")))
-        .filter(|p| p.is_dir())
-        && ui.button(tr("Licenses and library sources")).clicked()
-        && let Some(windows) = std::env::var_os("WINDIR")
-    {
-        let _ = std::process::Command::new(std::path::PathBuf::from(windows).join("explorer.exe"))
-            .arg(notices)
-            .spawn();
-    }
+fn bundled_notices() -> Option<std::path::PathBuf> {
+    let executable = std::env::current_exe().ok()?;
+    #[cfg(windows)]
+    let notices = executable.parent()?.parent()?.join("notices");
+    #[cfg(target_os = "macos")]
+    let notices = executable
+        .ancestors()
+        .filter(|dir| dir.file_name().is_some_and(|name| name == "Contents"))
+        .map(|dir| dir.join("Resources/notices"))
+        .find(|dir| dir.is_dir())?;
+    #[cfg(not(any(windows, target_os = "macos")))]
+    let notices = executable.parent()?.parent()?.join("notices");
+    notices.is_dir().then_some(notices)
+}
+
+fn open_notices_folder(path: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    let opener = std::path::PathBuf::from(
+        std::env::var_os("WINDIR")
+            .ok_or_else(|| std::io::Error::other("Windows directory unavailable"))?,
+    )
+    .join("explorer.exe");
+    #[cfg(target_os = "macos")]
+    let opener = "/usr/bin/open";
+    #[cfg(not(any(windows, target_os = "macos")))]
+    let opener = "xdg-open";
+    std::process::Command::new(opener).arg(path).spawn()?;
+    Ok(())
 }
 
 fn quality_controls(
@@ -4467,6 +4535,7 @@ mod tests {
                 ..Appearance::default()
             },
             advanced_open: false,
+            licenses_open: false,
             setup_open: false,
             roster_open: false,
             diagnostics_open: false,
@@ -4498,6 +4567,133 @@ mod tests {
                 }
             }
             _ => {}
+        }
+    }
+
+    #[test]
+    fn one_license_menu_action_opens_the_notice_dialog() {
+        let mut app = app();
+        let ctx = egui::Context::default();
+        configure_theme(&ctx);
+        let mut frame = eframe::Frame::_new_kittest();
+        let mut draw = |app: &mut PublisherUi, events| {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(960.0, 540.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |root| app.render(root, &mut frame),
+            );
+            output.textures_delta.clear();
+            output
+        };
+        let clicks = |pos, pressed| {
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: Default::default(),
+                },
+            ]
+        };
+        draw(&mut app, vec![]);
+        for pressed in [true, false] {
+            draw(&mut app, clicks(egui::pos2(836.0, 26.0), pressed));
+        }
+        draw(&mut app, vec![]);
+        let menu = draw(&mut app, vec![]);
+        let licenses: Vec<_> = menu
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == tr("Licenses") => {
+                    Some(text.pos + text.galley.size() / 2.0)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(licenses.len(), 1);
+        for pressed in [true, false] {
+            draw(&mut app, clicks(licenses[0], pressed));
+        }
+        assert!(app.licenses_open);
+        assert!(!egui::Popup::is_any_open(&ctx));
+        draw(&mut app, vec![]);
+        let output = draw(&mut app, vec![]);
+        let mut text = String::new();
+        for shape in &output.shapes {
+            painted_text(&shape.shape, &mut text);
+        }
+        assert!(text.contains(tr("Inter font license")));
+        assert!(text.contains("SIL OPEN FONT LICENSE"));
+        draw(
+            &mut app,
+            vec![egui::Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Default::default(),
+            }],
+        );
+        assert!(!app.licenses_open);
+    }
+
+    #[test]
+    fn selected_theme_option_renders_on_accent_text_in_every_palette() {
+        let mut app = app();
+        let ctx = egui::Context::default();
+        configure_theme(&ctx);
+        for system in [egui::Theme::Dark, egui::Theme::Light] {
+            for preference in Theme::ALL {
+                app.appearance.theme = preference;
+                let effective = preference.resolve(Some(system));
+                let mut output = ctx.run_ui(
+                    egui::RawInput {
+                        system_theme: Some(system),
+                        ..Default::default()
+                    },
+                    |root| {
+                        apply_palette(root.ctx(), effective);
+                        root.set_style(root.ctx().style_of(system));
+                        app.theme_options(root);
+                    },
+                );
+                output.textures_delta.clear();
+                let label = tr(preference.label());
+                let selected = output
+                    .shapes
+                    .iter()
+                    .find_map(|shape| match &shape.shape {
+                        egui::Shape::Text(text) if text.galley.text() == label => Some(text),
+                        _ => None,
+                    })
+                    .expect("Selected theme label");
+                let palette = effective.palette();
+                assert!(
+                    output.shapes.iter().any(|shape| {
+                        matches!(&shape.shape, egui::Shape::Rect(rect)
+                        if rect.fill == palette.accent && rect.rect.contains(selected.pos))
+                    }),
+                    "Missing selected fill for {preference:?} in {effective:?}"
+                );
+                for section in &selected.galley.job.sections {
+                    let color = selected.override_text_color.unwrap_or_else(|| {
+                        if section.format.color == egui::Color32::PLACEHOLDER {
+                            selected.fallback_color
+                        } else {
+                            section.format.color
+                        }
+                    });
+                    assert_eq!(color, palette.on_accent, "{preference:?} in {effective:?}");
+                }
+            }
         }
     }
 

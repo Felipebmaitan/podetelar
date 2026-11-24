@@ -105,6 +105,7 @@ pub fn qualify_planar_transitions(
             ..Appearance::default()
         },
         advanced_open: false,
+        licenses_open: false,
         setup_open: false,
         roster_open: false,
         diagnostics_open: false,

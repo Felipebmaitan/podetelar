@@ -78,7 +78,8 @@ The publisher joins a cleanup job before it can create descendants, so terminati
 the launcher also ends its publisher processes.
 
 Completed caches are reused, preserving compatible LGPL library replacements.
-**Licenses and library sources** opens the packaged notices. The internal
+**Licenses** shows the Inter license and gives access to the packaged notices and
+library sources. The internal
 `PodeTelar.exe --licenses` command does the same; `--extract C:\new\absolute-folder`
 extracts to a previously nonexistent directory.
 

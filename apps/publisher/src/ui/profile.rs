@@ -384,7 +384,7 @@ impl PublisherUi {
             if let Some(tile) = state
                 .tiles
                 .iter_mut()
-                .find(|tile| tile.id == profile.participant_id)
+                .find(|tile| tile.owner() == profile.participant_id)
             {
                 tile.name.clone_from(&profile.display_name);
             }

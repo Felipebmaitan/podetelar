@@ -209,6 +209,8 @@ fn capture(source: &Source, cancelled: &dyn Fn() -> bool) -> Result<ColorImage> 
     let input = crate::macos::input(source)?;
     #[cfg(not(target_os = "macos"))]
     let input = match source.target {
+        #[cfg(windows)]
+        Target::Camera(_) => anyhow::bail!("Camera capture requires Share camera."),
         Target::Pattern => gst::ElementFactory::make("d3d11testsrc")
             .property("is-live", true)
             .build()?,

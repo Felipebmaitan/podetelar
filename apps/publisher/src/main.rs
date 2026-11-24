@@ -153,6 +153,15 @@ fn run() -> Result<()> {
                     .collect::<Vec<_>>()
             )?
         ),
+        Some("--cameras") => println!(
+            "{}",
+            serde_json::to_string(
+                &sources::camera::enumerate()
+                    .into_iter()
+                    .map(|device| device.info)
+                    .collect::<Vec<_>>()
+            )?
+        ),
         Some("--audio-apps") => println!("{}", serde_json::to_string(&audio::applications()?)?),
         Some("--measure-connection") => {
             // Private invitation is stdin-only; output contains capacity, never authority.
@@ -334,8 +343,18 @@ fn run() -> Result<()> {
                 .build()?;
             runtime.block_on(publish_fixture(request))?;
         }
+        Some("--qualify-dual-sharing") => {
+            let mut input = String::new();
+            std::io::stdin().take(8193).read_to_string(&mut input)?;
+            ensure!(input.len() <= 8192, "Fixture input is too large.");
+            let request = serde_json::from_str(&input).context("Invalid dual-sharing fixture.")?;
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(qualify_dual_sharing(request))?;
+        }
         Some(value) if value != "--browser-link" => bail!(
-            "Unknown option. Use --probe, --sources, --audio-apps, --qualify, --qualify-audio or --publish-fixture / --watch-fixture."
+            "Unknown option. Use --probe, --sources, --cameras, --audio-apps, --qualify, --qualify-audio or --publish-fixture / --watch-fixture."
         ),
         _ => {
             let browser_link = if std::env::args().nth(1).as_deref() == Some("--browser-link") {
@@ -402,6 +421,7 @@ struct FixtureRequest {
     codec: Codec,
     seconds: u64,
     source_id: Option<String>,
+    camera_id: Option<String>,
     #[serde(default)]
     audio: audio::Choice,
     #[serde(default)]
@@ -424,6 +444,137 @@ struct FixtureRequest {
     next_quality: Option<quality::Settings>,
     #[serde(default)]
     next_codec: Option<Codec>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DualSharingRequest {
+    invitation_url: String,
+    source_id: String,
+    camera_id: String,
+    camera_codec: Option<Codec>,
+    #[serde(default)]
+    check_live_policy: bool,
+}
+
+async fn qualify_dual_sharing(request: DualSharingRequest) -> Result<()> {
+    use publisher::{Command, Controller, Snapshot};
+    ensure!(
+        admission::loopback_url(&request.invitation_url)
+            && request.source_id.starts_with("window:"),
+        "Dual-sharing qualification requires an isolated local room and an explicit window."
+    );
+    async fn wait(controller: &Controller, ready: impl Fn(&Snapshot) -> bool) -> Result<Snapshot> {
+        tokio::time::timeout(Duration::from_secs(25), async {
+            loop {
+                let state = controller.snapshot();
+                if ready(&state) {
+                    return Ok(state);
+                }
+                ensure!(
+                    state.error.is_empty() || state.busy,
+                    "Dual-sharing operation failed: {}",
+                    state.error
+                );
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .context("Dual-sharing operation did not finish.")?
+    }
+    let controller = Controller::for_local_media_qualification();
+    controller.send(Command::Join {
+        invitation: request.invitation_url,
+        name: "Dual publisher".into(),
+        route: connection::Route::Auto,
+        account: None,
+        voice: None,
+    });
+    let joined = wait(&controller, |state| state.connection == "connected").await?;
+    let encoder = joined
+        .encoders
+        .iter()
+        .find(|encoder| encoder.codec == Codec::H264)
+        .context("No H.264 hardware encoder is available.")?;
+    controller.send(Command::Start {
+        source_id: request.source_id,
+        encoder: encoder.factory.clone(),
+        quality: quality::Settings {
+            fps: 30,
+            ..Default::default()
+        },
+        audio: audio::Choice::Off,
+        exclusions: Vec::new(),
+    });
+    wait(&controller, |state| state.sharing).await?;
+    controller.send(Command::RefreshCameras);
+    wait(&controller, |state| {
+        state
+            .cameras
+            .iter()
+            .any(|device| device.id == request.camera_id)
+    })
+    .await?;
+    let start_camera = || {
+        controller.send(Command::StartCamera {
+            device_id: request.camera_id.clone(),
+            preferred_codec: request.camera_codec,
+            quality: quality::Settings {
+                resolution: if request.check_live_policy {
+                    quality::Resolution::P1080
+                } else {
+                    quality::Resolution::P720
+                },
+                fps: 30,
+                bitrate: quality::Bitrate::Manual(2_000_000),
+                ..Default::default()
+            },
+        })
+    };
+    start_camera();
+    wait(&controller, |state| state.sharing && state.camera_sharing).await?;
+    println!("{}", serde_json::json!({"both":true}));
+    if request.check_live_policy {
+        let meets_cap = |mode: Option<quality::Mode>| {
+            mode.is_some_and(|mode| mode.fps == 24 && mode.bitrate == 1_000_000)
+        };
+        let state = wait(&controller, |state| {
+            state.sharing
+                && state.camera_sharing
+                && meets_cap(state.mode)
+                && meets_cap(state.camera_mode)
+        })
+        .await?;
+        // Allow the receiver to decode both replacement publications under the new cap.
+        tokio::time::sleep(Duration::from_secs(8)).await;
+        controller.send(Command::Leave);
+        wait(&controller, |state| {
+            !state.any_sharing() && state.connection == "disconnected"
+        })
+        .await?;
+        println!(
+            "{}",
+            serde_json::json!({"screenMode": state.mode, "cameraMode": state.camera_mode})
+        );
+        return Ok(());
+    }
+    tokio::time::sleep(Duration::from_secs(17)).await;
+    controller.send(Command::StopCamera);
+    wait(&controller, |state| state.sharing && !state.camera_sharing).await?;
+    tokio::time::sleep(Duration::from_secs(4)).await;
+    start_camera();
+    wait(&controller, |state| state.sharing && state.camera_sharing).await?;
+    tokio::time::sleep(Duration::from_secs(4)).await;
+    controller.send(Command::Stop);
+    wait(&controller, |state| !state.sharing && state.camera_sharing).await?;
+    tokio::time::sleep(Duration::from_secs(4)).await;
+    controller.send(Command::Leave);
+    wait(&controller, |state| {
+        !state.any_sharing() && state.connection == "disconnected"
+    })
+    .await?;
+    println!("{}", serde_json::json!({"closed":true}));
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -648,10 +799,11 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
             for tile in &tiles {
                 if tile.watching { tile.presentation.request(); }
                 if request.diagnostics { tile.presentation.diagnostics.open.store(tile.watching, Ordering::Relaxed); }
+                if tile.kind == preview::Kind::Camera { continue; }
                 let tile_watching = request.watch_schedule.iter().filter(|step| step.second <= elapsed && step.display_name == tile.name).max_by_key(|step| step.second).map_or(watching, |step| step.enabled);
                 if tile_watching != tile.watching
                     && (!request.watch_once_per_publisher || tile_watching && requested_watches.insert(tile.id.clone()))
-                { playback.watch(tile.id.clone(), tile_watching)?; }
+                { playback.watch(tile.id.clone(), tile.kind, tile_watching)?; }
                 let requested_volume = request.volume_schedule.iter().filter(|step| step.second <= elapsed && step.display_name.as_ref().is_none_or(|name| name == &tile.name)).max_by_key(|step| step.second).map_or(100, |step| step.percent);
                 playback.set_volume(&tile.id, requested_volume);
             }
@@ -693,7 +845,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                         }
                     }
                 }
-                samples.push(serde_json::json!({"second": elapsed, "nativeAudio":native_output::audit(),"syncGroups":fixture_sync_groups(&room), "mediaTiming":media_timing, "recoveries": recovery.load(Ordering::Acquire), "connected": room.connection_state() == ConnectionState::Connected, "phaseSecond": phase, "watching": watching,"receivedBytes":byte_totals.values().sum::<u64>(), "decoders":decoders, "streams": tiles.iter().map(|tile| serde_json::json!({"diagnosticRates":tile.presentation.diagnostics.rates.lock().ok().and_then(|v|*v),"diagnosticAttempts":tile.presentation.diagnostics.attempts.load(Ordering::Relaxed),"diagnosticSuccesses":tile.presentation.diagnostics.successes.load(Ordering::Relaxed),"diagnosticSender":tile.presentation.diagnostics.sender.lock().ok().and_then(|value|value.as_ref().map(|(_,value)|value.clone())),"status":tile.status,"codec":tile.codec,"frames":tile.frames.load(Ordering::Relaxed),"watching":tile.watching,"pictureSize":tile.picture.lock().ok().and_then(|p|p.as_ref().map(|image|image.size)),"audio":tile.audio.lock().map(|m|m.clone()).unwrap_or_default()})).collect::<Vec<_>>() }));
+                samples.push(serde_json::json!({"second": elapsed, "nativeAudio":native_output::audit(),"syncGroups":fixture_sync_groups(&room), "mediaTiming":media_timing, "recoveries": recovery.load(Ordering::Acquire), "connected": room.connection_state() == ConnectionState::Connected, "phaseSecond": phase, "watching": watching,"receivedBytes":byte_totals.values().sum::<u64>(), "decoders":decoders, "streams": tiles.iter().map(|tile| serde_json::json!({"kind":tile.kind.path(),"diagnosticRates":tile.presentation.diagnostics.rates.lock().ok().and_then(|v|*v),"diagnosticAttempts":tile.presentation.diagnostics.attempts.load(Ordering::Relaxed),"diagnosticSuccesses":tile.presentation.diagnostics.successes.load(Ordering::Relaxed),"diagnosticSender":tile.presentation.diagnostics.sender.lock().ok().and_then(|value|value.as_ref().map(|(_,value)|value.clone())),"status":tile.status,"codec":tile.codec,"frames":tile.frames.load(Ordering::Relaxed),"watching":tile.watching,"pictureSize":tile.picture.lock().ok().and_then(|p|p.as_ref().map(|image|image.size)),"audio":tile.audio.lock().map(|m|m.clone()).unwrap_or_default()})).collect::<Vec<_>>() }));
                 if request.consume_pictures { for tile in &tiles { if let Ok(mut picture) = tile.picture.lock() { picture.take(); } } }
                 if request.soak {
                     eprintln!("soak-progress second={} video={} audio={} rendering={}",elapsed,
@@ -722,6 +874,16 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
 }
 
 async fn publish_fixture(request: FixtureRequest) -> Result<()> {
+    if request.camera_id.is_some() {
+        ensure!(
+            admission::loopback_url(&request.invitation_url)
+                && request.source_id.is_none()
+                && request.seconds <= 120
+                && request.reconfigure_after_seconds.is_none()
+                && request.bitrate_after_seconds.is_none(),
+            "Camera qualification requires an explicit device and an isolated local room."
+        );
+    }
     ensure!(
         (1..=2100).contains(&request.seconds),
         "Fixture duration must be between 1 and 2100 seconds."
@@ -747,9 +909,24 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             && request.reconfigure_after_seconds.is_some() == request.next_quality.is_some(),
         "Choose one complete fixture transition."
     );
+    let camera = request
+        .camera_id
+        .as_ref()
+        .map(|id| {
+            sources::camera::enumerate()
+                .into_iter()
+                .find(|device| device.info.id == *id)
+                .context("Fixture camera is unavailable.")?
+                .source(request.quality)
+        })
+        .transpose()?;
     let admission =
         admission::Admission::join(&request.invitation_url, &request.display_name).await?;
     let access = admission.media_access().await?;
+    if request.camera_id.is_some() && !admission::loopback_url(&access.server_url) {
+        admission.leave().await;
+        bail!("Camera qualification requires local media signaling.");
+    }
     let options = connection::options(request.route);
     let (room, mut events) = tokio::time::timeout(
         Duration::from_secs(15),
@@ -786,12 +963,13 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
         .into_iter()
         .find(|encoder| encoder.codec == request.codec)
         .context("No hardware encoder supports the requested codec.")?;
-    let source = match request.source_id {
-        Some(id) => sources::enumerate()
+    let source = match (request.source_id, camera) {
+        (_, Some(source)) => source,
+        (Some(id), None) => sources::enumerate()
             .into_iter()
             .find(|source| source.info.id == id)
             .context("Fixture capture source is unavailable.")?,
-        None => {
+        (None, None) => {
             let mut source = sources::fixture();
             if request.fixture_4k {
                 source.info.width = 3840;
@@ -881,7 +1059,7 @@ async fn serve_fixture(
             let metrics = active.metrics.lock().map(|m| m.clone()).unwrap_or_default();
             println!(
                 "{}",
-                serde_json::json!({"rateSample":true,"second":second,"encoderBps":metrics.encoder_bitrate,"fps":metrics.fps,"watcherCap":playback::requested_cap(room)})
+                serde_json::json!({"rateSample":true,"second":second,"encoderBps":metrics.encoder_bitrate,"fps":metrics.fps,"watcherCap":playback::requested_cap(room, active.kind())})
             );
             next_sample = second + 1;
         }

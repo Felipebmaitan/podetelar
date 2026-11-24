@@ -465,5 +465,7 @@ pub fn for_source(source: &crate::sources::Source) -> Result<Choice> {
             }
         }
         crate::sources::Target::Pattern => Ok(Choice::Off),
+        #[cfg(windows)]
+        crate::sources::Target::Camera(_) => Ok(Choice::Off),
     }
 }

@@ -1,3 +1,5 @@
+import { expect, type APIRequestContext } from "@playwright/test";
+import { defaultStreamPolicy, type StreamPolicy } from "@podetelar/contracts";
 import { spawn, type ChildProcess } from "node:child_process";
 import { copyFileSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
@@ -149,4 +151,34 @@ export function nativeRequest(
   void reported.catch(() => {});
   child.stdin.end(JSON.stringify(request));
   return { child, result, reported };
+}
+
+export async function policyAdministrator(
+  request: APIRequestContext,
+  origin: string,
+) {
+  expect(new URL(origin).hostname).toMatch(
+    /^(localhost|127\.0\.0\.1|\[::1\])$/,
+  );
+  const headers = { Origin: origin };
+  const login = await request.post("/api/admin/login", {
+    headers,
+    data: { password: process.env.ADMIN_TOKEN },
+  });
+  expect(login.status()).toBe(200);
+  const endpoint = "/api/admin/stream-policy";
+  const read = async () => {
+    const response = await request.get(endpoint);
+    expect(response.status()).toBe(200);
+    return (await response.json()).policy as StreamPolicy;
+  };
+  const write = async (policy: StreamPolicy) => {
+    const response = await request.put(endpoint, { headers, data: policy });
+    expect(response.status()).toBe(200);
+  };
+  const initial = await read();
+  await write({ ...defaultStreamPolicy, revision: initial.revision });
+  const restore = async () =>
+    write({ ...initial, revision: (await read()).revision });
+  return { read, write, restore };
 }

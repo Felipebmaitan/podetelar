@@ -148,10 +148,14 @@ export function streamDiagnosticsRoutes(
         const publisher = await participant(owner);
         if (!session() || !rooms.active(room, owner))
           return reply.code(403).send({ error: "Session ended." });
-        if (!publisher?.tracks.some((t) => t.sid === sid && !t.muted)) {
+        const publication = publisher?.tracks.find(
+          (t) => t.sid === sid && !t.muted,
+        );
+        if (!publication) {
           entries.delete(key);
           return reply.code(409).send({ error: "Publication ended." });
         }
+        const watchKey = `podetelar.watch.${owner}${publication.kind === "camera" ? ".camera" : ""}`;
         if (!own) {
           const watcher = await participant(viewer);
           // The SFU API exposes participant-owned watch intent, not actual RTP subscription state.
@@ -160,7 +164,7 @@ export function streamDiagnosticsRoutes(
             !session() ||
             !rooms.active(room, owner) ||
             !["h264", "hevc", "av1"].includes(
-              watcher?.attributes?.[`podetelar.watch.${owner}`] ?? "",
+              watcher?.attributes?.[watchKey] ?? "",
             )
           )
             return reply
@@ -175,7 +179,7 @@ export function streamDiagnosticsRoutes(
             if (
               !rooms.active(room, viewerId) ||
               !["h264", "hevc", "av1"].includes(
-                watcher?.attributes?.[`podetelar.watch.${owner}`] ?? "",
+                watcher?.attributes?.[watchKey] ?? "",
               )
             )
               existing.viewers.delete(viewerId);
@@ -191,7 +195,13 @@ export function streamDiagnosticsRoutes(
           return reply.code(403).send({ error: "Session ended." });
         // Track SID is the SFU publication generation. Retire old generations.
         for (const [oldKey, entry] of entries)
-          if (entry.room === room && entry.owner === owner && entry.sid !== sid)
+          if (
+            entry.room === room &&
+            entry.owner === owner &&
+            !stillPublished.tracks.some(
+              (track) => track.sid === entry.sid && !track.muted,
+            )
+          )
             entries.delete(oldKey);
         sweep();
         let entry = entries.get(key);

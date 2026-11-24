@@ -170,6 +170,8 @@ try {
   start(process.execPath, ["apps/server/dist/main.js"], {
     ...process.env,
     PUBLIC_URL: origin,
+    DIRECT_URL: origin,
+    LIVEKIT_URL: "",
     HOST: "127.0.0.1",
     PORT: String(appPort),
     DATABASE_PATH: join(run, "rooms.db"),

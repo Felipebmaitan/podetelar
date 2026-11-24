@@ -120,7 +120,8 @@ fn available_window(handle: HWND) -> bool {
 
 pub fn validate(source: &Source) -> bool {
     match source.target {
-        Target::Pattern => true,
+        // The camera pipeline reopens the exact device path and validates its caps.
+        Target::Pattern | Target::Camera(_) => true,
         Target::Monitor(raw) | Target::MonitorWgc(raw) => {
             let mut info = MONITORINFO {
                 cbSize: std::mem::size_of::<MONITORINFO>() as u32,

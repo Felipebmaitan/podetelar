@@ -48,7 +48,7 @@ pub fn run() -> Result<()> {
         inner.encoder = encoder.factory.clone();
         inner.name = "Felipão".into();
         let active_selection = inner.selection();
-        let tile = Tile { id: "layout-fixture".into(), name: "Felipe".into(), codec: "AV1".into(), watching: true, picture: Arc::default(), presentation: Arc::default(), frames: Arc::default(), received_bps: Arc::new(13_800_000.into()), volume: Arc::default(), audio: Arc::default(), status: String::new() };
+        let tile = Tile { id: "layout-fixture".into(), kind: Kind::Screen, name: "Felipe".into(), codec: "AV1".into(), watching: true, picture: Arc::default(), presentation: Arc::default(), frames: Arc::default(), received_bps: Arc::new(13_800_000.into()), volume: Arc::default(), audio: Arc::default(), status: String::new() };
         let diagnostics = &tile.presentation.diagnostics;
         diagnostics.open.store(mode == "information", Ordering::Relaxed);
         *diagnostics.rates.lock().unwrap() = Some((59.9, 59.8, 0.1));

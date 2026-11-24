@@ -1730,23 +1730,48 @@ impl PublisherUi {
         egui::Popup::from_toggle_button_response(&trigger)
             .align(egui::RectAlign::TOP)
             .gap(6.0)
-            .width(48.0)
+            .width(46.0)
             .layout(egui::Layout::top_down(egui::Align::Center))
-            .frame(skin::menu_frame().inner_margin(6))
+            .frame(
+                skin::menu_frame()
+                    .corner_radius(15)
+                    .inner_margin(egui::Margin::symmetric(6, 8)),
+            )
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
-                ui.set_width(36.0);
-                ui.label(skin::strong(format!("{volume}%"), 12.0));
-                ui.spacing_mut().slider_width = 88.0;
-                if ui
-                    .add(
-                        egui::Slider::new(&mut volume, 0..=100)
-                            .vertical()
-                            .show_value(false),
+                ui.set_width(32.0);
+                ui.label(skin::strong(format!("{volume}%"), 11.5));
+                let slider_size = egui::vec2(22.0, 70.0);
+                let changed = ui
+                    .allocate_ui_with_layout(
+                        slider_size,
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            let p = palette();
+                            ui.spacing_mut().interact_size.y = slider_size.x;
+                            ui.spacing_mut().slider_width = slider_size.y;
+                            ui.spacing_mut().slider_rail_height = 3.0;
+                            let widgets = &mut ui.visuals_mut().widgets;
+                            widgets.inactive.bg_fill = p.control_hover;
+                            widgets.inactive.fg_stroke = egui::Stroke::new(3.0, p.accent);
+                            for widget in [&mut widgets.hovered, &mut widgets.active] {
+                                widget.bg_fill = p.accent;
+                                widget.fg_stroke = egui::Stroke::NONE;
+                            }
+                            ui.add(
+                                egui::Slider::new(&mut volume, 0..=100)
+                                    .vertical()
+                                    .show_value(false)
+                                    .handle_shape(egui::style::HandleShape::Rect {
+                                        aspect_ratio: 0.3,
+                                    }),
+                            )
+                            .accessible_name(tr("Volume"))
+                            .changed()
+                        },
                     )
-                    .accessible_name(tr("Volume"))
-                    .changed()
-                {
+                    .inner;
+                if changed {
                     tile.volume.store(volume, Ordering::Relaxed);
                 }
                 if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::F11)) {
@@ -1993,15 +2018,38 @@ impl PublisherUi {
                     self.spotlight = Some(tile.id.clone());
                 }
             } else {
+                let p = palette();
+                let (status, status_color) = if !tile.watching {
+                    (tr("Preview"), p.muted)
+                } else if tile.frames.load(Ordering::Relaxed) > 0 {
+                    (tr("Watching"), p.success)
+                } else {
+                    (tr("Connecting"), p.warning)
+                };
+                let status_font = egui::FontId::proportional(11.5);
+                let max_width = width - 24.0;
+                let show_status = max_width >= 164.0;
+                let status_width = if show_status {
+                    ui.painter()
+                        .layout_no_wrap(status.to_owned(), status_font.clone(), p.muted)
+                        .size()
+                        .x
+                        + 7.0
+                } else {
+                    0.0
+                };
+                // Frame padding, avatar, status dot, and the two shared gaps.
+                let fixed_width = 16.0 + 20.0 + 6.0 + 14.0;
+                let max_name_width = (max_width - fixed_width - status_width).clamp(24.0, 160.0);
                 let name_width = ui
                     .painter()
-                    .layout_no_wrap(tile.name.clone(), skin::semibold(13.5), palette().text)
+                    .layout_no_wrap(tile.name.clone(), skin::semibold(13.0), p.text)
                     .size()
                     .x
-                    .min(160.0);
+                    .clamp(24.0, max_name_width);
                 let identity = egui::Rect::from_min_size(
                     rect.min + egui::vec2(12.0, 12.0),
-                    egui::vec2((width - 24.0).min(name_width + 140.0), 32.0),
+                    egui::vec2(name_width + fixed_width + status_width, 32.0),
                 );
                 let mut header = ui.new_child(
                     egui::UiBuilder::new()
@@ -2012,37 +2060,32 @@ impl PublisherUi {
                     header.set_opacity(0.0);
                 }
                 egui::Frame::new()
-                    .fill(overlay)
-                    .stroke(egui::Stroke::new(1.0, palette().border))
-                    .corner_radius(10)
-                    .inner_margin(egui::Margin::symmetric(8, 5))
+                    .fill(p.card.gamma_multiply(0.96))
+                    .stroke(egui::Stroke::new(1.0, p.border))
+                    .corner_radius(12)
+                    .inner_margin(egui::Margin::symmetric(7, 4))
                     .show(&mut header, |ui| {
+                        ui.spacing_mut().item_spacing.x = 7.0;
+                        ui.spacing_mut().interact_size.y = 22.0;
                         ui.horizontal(|ui| {
-                            avatar(ui, &tile.name, 24.0);
+                            avatar(ui, &tile.name, 20.0);
                             ui.add_sized(
-                                [name_width.max(24.0), 24.0],
-                                egui::Label::new(
-                                    skin::strong(&tile.name, 13.5).color(palette().text),
-                                )
-                                .truncate()
-                                .halign(egui::Align::Min),
+                                [name_width, 22.0],
+                                egui::Label::new(skin::strong(&tile.name, 13.0).color(p.text))
+                                    .truncate()
+                                    .halign(egui::Align::Min),
                             )
                             .on_hover_text(&tile.name);
-                            badge(
-                                ui,
-                                if !tile.watching {
-                                    tr("Preview")
-                                } else if tile.frames.load(Ordering::Relaxed) > 0 {
-                                    tr("Watching")
-                                } else {
-                                    tr("Connecting")
-                                },
-                                if tile.watching {
-                                    palette().accent
-                                } else {
-                                    palette().muted
-                                },
-                            );
+                            let (dot, response) =
+                                ui.allocate_exact_size(egui::vec2(6.0, 12.0), egui::Sense::hover());
+                            ui.painter().circle_filled(dot.center(), 2.5, status_color);
+                            if show_status {
+                                ui.label(
+                                    egui::RichText::new(status).font(status_font).color(p.muted),
+                                );
+                            } else {
+                                response.accessible_name(status).on_hover_text(status);
+                            }
                         });
                     });
             }

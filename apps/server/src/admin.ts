@@ -71,7 +71,8 @@ export async function adminRoutes(
       const policy = streamPolicySchema.safeParse(request.body);
       if (!policy.success)
         return reply.code(400).send({
-          error: "Choose valid stream limits and bitrate targets (1–100 Mbps).",
+          error:
+            "Choose valid stream limits and bitrate targets (1–100 Mbps for screens and 0.5–8 Mbps for cameras).",
         });
       const current = streamPolicies.current();
       const next = { ...current, ...policy.data };
@@ -82,8 +83,10 @@ export async function adminRoutes(
         policy.data.maxBitrateBps !== current.maxBitrateBps ||
         policy.data.maxResolution !== current.maxResolution ||
         policy.data.maxFps !== current.maxFps;
+      const setsCameraCap =
+        changesCameraCap && next.maxCameraBitrateBps != null;
       const requiresEnforcement =
-        (changesCaps || changesCameraCap) && hasStreamCaps(next);
+        (changesCaps && hasStreamCaps(next)) || setsCameraCap;
       if (requiresEnforcement && !config.streamPolicyEnforcement)
         return reply.code(409).send({
           error:
@@ -94,11 +97,7 @@ export async function adminRoutes(
           error:
             "Wait for the media server to synchronize stream policy, then try again.",
         });
-      if (
-        changesCameraCap &&
-        next.maxCameraBitrateBps != null &&
-        !streamPolicies.cameraEnforcementReady()
-      )
+      if (setsCameraCap && !streamPolicies.cameraEnforcementReady())
         return reply.code(409).send({
           error:
             "The media server must support camera bitrate limits before you can set one.",

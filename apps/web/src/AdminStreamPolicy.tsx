@@ -18,6 +18,8 @@ const endpoint = "/api/admin/stream-policy";
 const resolutionLabel = (resolution: number) =>
   resolution === 2160 ? "4K" : `${resolution}p`;
 const toMbps = (bps?: number | null) => (bps == null ? "" : bps / 1_000_000);
+const canEditCameraCap = ({ cameraEnforcement, policy }: PolicyResponse) =>
+  cameraEnforcement || policy.maxCameraBitrateBps != null;
 
 export function AdminStreamPolicy({ onExpired }: { onExpired: () => void }) {
   const [data, setData] = useState<PolicyResponse>();
@@ -61,7 +63,7 @@ export function AdminStreamPolicy({ onExpired }: { onExpired: () => void }) {
           return bitrateBps === null ? [] : [{ resolution, fps, bitrateBps }];
         }),
       );
-    const maxCameraBitrateBps = data.cameraEnforcement
+    const maxCameraBitrateBps = canEditCameraCap(data)
       ? bitrate("maxCameraBitrate")
       : data.policy.maxCameraBitrateBps;
     const cameraAutomaticTargets = targets(
@@ -191,14 +193,16 @@ export function AdminStreamPolicy({ onExpired }: { onExpired: () => void }) {
                 min="0.5"
                 max="8"
                 step="any"
-                disabled={!data.cameraEnforcement}
+                disabled={!canEditCameraCap(data)}
                 placeholder="Use the per-stream limit"
                 defaultValue={toMbps(policy.maxCameraBitrateBps)}
               />
             </label>
             {!data.cameraEnforcement && (
               <p>
-                Camera limits require a media server with camera policy support.
+                {policy.maxCameraBitrateBps == null
+                  ? "Camera limits require a media server with camera policy support."
+                  : "Camera enforcement is unavailable. Clear the saved camera limit or reconnect a compatible media server."}
               </p>
             )}
             <p>

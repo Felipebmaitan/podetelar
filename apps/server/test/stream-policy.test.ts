@@ -223,6 +223,23 @@ test("admins set a durable stream policy, and only admitted publishers and the S
       revision: 4,
       automaticTargets: [],
     });
+    const cleared = await save(
+      {
+        ...expected,
+        revision: 4,
+        automaticTargets: [],
+        maxCameraBitrateBps: null,
+      },
+      headers,
+    );
+    assert.equal(cleared.statusCode, 200);
+    assert.deepEqual(cleared.json().policy, {
+      ...expected,
+      ...camera,
+      revision: 5,
+      automaticTargets: [],
+      maxCameraBitrateBps: null,
+    });
   } finally {
     await app.close();
     rmSync(directory, { recursive: true, force: true });

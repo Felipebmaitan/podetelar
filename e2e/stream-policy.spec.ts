@@ -65,6 +65,30 @@ test("camera caps and Automatic targets survive dashboard reload independently o
     await expect(
       page.getByLabel("Camera 720p at 30 FPS, Mbps", { exact: true }),
     ).toHaveValue("0.5");
+    // Simulate the dashboard status during an SFU capability loss.
+    await page.route(`**${endpoint}`, async (route) => {
+      if (route.request().method() !== "GET") return route.continue();
+      const response = await route.fetch();
+      await route.fulfill({
+        response,
+        json: { ...(await response.json()), cameraEnforcement: false },
+      });
+    });
+    await page.reload();
+    await open();
+    await expect(
+      page.getByText(/Camera enforcement is unavailable/),
+    ).toBeVisible();
+    await page.getByLabel("Maximum camera video bitrate (Mbps)").fill("");
+    await page.getByRole("button", { name: "Save stream policy" }).click();
+    await expect(page.getByText("Stream policy saved.")).toBeVisible();
+    expect(await read()).toMatchObject({
+      maxBitrateBps: 10_000_000,
+      maxCameraBitrateBps: null,
+      cameraAutomaticTargets: [
+        { resolution: 720, fps: 30, bitrateBps: 500_000 },
+      ],
+    });
   } finally {
     const restore = await page.request.put(endpoint, {
       headers: { Origin: origin },

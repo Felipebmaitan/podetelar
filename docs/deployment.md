@@ -313,6 +313,10 @@ following. The command revokes Discord voice sessions and queues
 their SFU removal while preserving independently joined guests. Keep a
 matching backup for schema rollback. Do not delete volumes or use Docker prune.
 
+Use a pre-camera-policy database backup when rolling back the app to a release
+with the original stream policy schema after saving camera policy fields. That
+release expects the original JSON shape in the stream policy table.
+
 ## Resource budget and acceptance
 
 Containers cap app at 0.5 CPU/512 MiB, SFU at 1 CPU/512 MiB and relay at 0.5

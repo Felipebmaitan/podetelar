@@ -2791,53 +2791,31 @@ impl PublisherUi {
                     self.empty_room_stage(ui, &state);
                     return;
                 }
-                ui.horizontal(|ui| {
-                    ui.label(
-                        skin::strong(
-                            if self.focused.is_some() {
-                                tr("Focused stream")
-                            } else if self.spotlight.is_some() {
-                                tr("Spotlight")
-                            } else {
-                                tr("Streams")
-                            },
-                            15.0,
-                        )
-                        .color(palette().text),
-                    );
-                    ui.add_space(6.0);
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{} {} · {} {}",
-                            state.tiles.len(),
-                            tr("live"),
-                            state.tiles.iter().filter(|t| t.watching).count(),
-                            tr("watching")
-                        ))
-                        .size(12.5)
-                        .color(palette().muted),
-                    );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if state.sharing
-                            && self.self_preview_hidden
-                            && state.tiles.iter().any(|tile| tile.watching)
-                        {
-                            let show = if ui.available_width() >= 475.0 {
-                                skin::outline_button(ui, tr("Show my preview"), Icon::Monitor)
-                            } else {
-                                skin::icon_button(ui, Icon::Monitor, tr("Show my preview"))
-                            };
-                            if show.clicked() {
-                                self.self_preview_hidden = false;
+                let show_preview_restore = state.sharing
+                    && self.self_preview_hidden
+                    && state.tiles.iter().any(|tile| tile.watching);
+                let show_view_controls = state.tiles.len() > 1 || self.focused.is_some();
+                if show_preview_restore || show_view_controls {
+                    ui.horizontal(|ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if show_preview_restore {
+                                let show = if ui.available_width() >= 475.0 {
+                                    skin::outline_button(ui, tr("Show my preview"), Icon::Monitor)
+                                } else {
+                                    skin::icon_button(ui, Icon::Monitor, tr("Show my preview"))
+                                };
+                                if show.clicked() {
+                                    self.self_preview_hidden = false;
+                                }
                             }
-                        }
-                        if state.tiles.len() > 1 || self.focused.is_some() {
-                            let compact = ui.available_width() < 340.0;
-                            self.stage_view_controls(ui, &state, compact);
-                        }
+                            if show_view_controls {
+                                let compact = ui.available_width() < 340.0;
+                                self.stage_view_controls(ui, &state, compact);
+                            }
+                        });
                     });
-                });
-                ui.add_space(10.0);
+                    ui.add_space(10.0);
+                }
                 self.room_stage(ui, &state);
             });
         if let (Some(dock), Some(setup)) = (dock, self.sharing_setup)

@@ -2019,6 +2019,11 @@ impl PublisherUi {
                 }
             } else {
                 let p = palette();
+                let texture = if overlay_visible {
+                    self.profile_texture(ui.ctx(), &tile.id)
+                } else {
+                    None
+                };
                 let (status, status_color) = if !tile.watching {
                     (tr("Preview"), p.muted)
                 } else if tile.frames.load(Ordering::Relaxed) > 0 {
@@ -2068,7 +2073,7 @@ impl PublisherUi {
                         ui.spacing_mut().item_spacing.x = 7.0;
                         ui.spacing_mut().interact_size.y = 22.0;
                         ui.horizontal(|ui| {
-                            avatar(ui, &tile.name, 20.0);
+                            profile::avatar(ui, &tile.name, 20.0, texture);
                             ui.add_sized(
                                 [name_width, 22.0],
                                 egui::Label::new(skin::strong(&tile.name, 13.0).color(p.text))
@@ -5295,6 +5300,71 @@ mod tests {
         click(rail.center_bottom() - egui::vec2(0.0, 1.0));
         assert_eq!(tile.volume.load(Ordering::Relaxed), 0);
         assert!(egui::Popup::is_any_open(&ctx));
+    }
+
+    #[test]
+    fn stream_badge_uses_the_publishers_photo_by_participant_id() {
+        let mut app = app();
+        let ctx = egui::Context::default();
+        configure_theme(&ctx);
+        let name = "Friend";
+        let revision = "fixture-picture";
+        app.profile_state.profiles = [("other", None), ("publisher", Some(revision))]
+            .into_iter()
+            .map(|(id, revision)| crate::profile::Participant {
+                participant_id: id.into(),
+                display_name: name.into(),
+                avatar_revision: revision.map(str::to_owned),
+                uploads_blocked: false,
+                discord: false,
+            })
+            .collect();
+        app.profile_state.avatars.insert(
+            revision.into(),
+            std::sync::Arc::new(crate::profile::Animation {
+                frames: vec![(
+                    egui::ColorImage::filled([2, 2], egui::Color32::RED),
+                    Duration::from_secs(1),
+                )],
+                duration: Duration::from_secs(1),
+            }),
+        );
+        for (id, has_photo) in [("publisher", true), ("other", false)] {
+            let tile = Tile {
+                id: id.into(),
+                name: name.into(),
+                codec: String::new(),
+                watching: true,
+                picture: Default::default(),
+                presentation: Default::default(),
+                frames: Default::default(),
+                received_bps: Default::default(),
+                volume: Default::default(),
+                audio: Default::default(),
+                status: String::new(),
+            };
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(800.0, 600.0),
+                    )),
+                    events: vec![egui::Event::PointerMoved(egui::pos2(300.0, 180.0))],
+                    ..Default::default()
+                },
+                |root| {
+                    egui::CentralPanel::default()
+                        .show(root, |ui| app.stream_tile(ui, &tile, 600.0));
+                },
+            );
+            output.textures_delta.clear();
+            let avatar_id = app.profile_textures[revision].1.id();
+            let primitives = ctx.tessellate(output.shapes, output.pixels_per_point);
+            let painted = primitives.iter().any(|entry| {
+                matches!(&entry.primitive, egui::epaint::Primitive::Mesh(mesh) if mesh.texture_id == avatar_id)
+            });
+            assert_eq!(painted, has_photo, "{id}");
+        }
     }
 
     #[test]

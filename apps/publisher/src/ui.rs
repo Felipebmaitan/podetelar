@@ -3044,7 +3044,7 @@ impl PublisherUi {
                                 ui.horizontal(|ui| {
                                     let p = palette();
                                     let screen_action = if screen_live {
-                                        sharing_action(tr("Stop screen sharing"), Icon::Stop, p.error)
+                                        sharing_action(tr("Stop screen"), Icon::Stop, p.error)
                                             .fill(p.danger.gamma_multiply(0.14))
                                             .stroke((1.0, p.danger.gamma_multiply(0.45)))
                                     } else {

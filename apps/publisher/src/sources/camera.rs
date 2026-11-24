@@ -1,5 +1,5 @@
-use crate::quality::{self, Bitrate, Mode, Settings};
-use anyhow::{Result, bail, ensure};
+use crate::quality::{self, Bitrate, Codec, Mode, Settings};
+use anyhow::{Result, ensure};
 use serde::Serialize;
 
 pub const MIN_BITRATE: u64 = 500_000;
@@ -10,6 +10,32 @@ pub const RESOLUTIONS: [quality::Resolution; 3] = [
     quality::Resolution::P1080,
     quality::Resolution::Source,
 ];
+
+pub(crate) fn automatic_bitrate(width: u32, height: u32, fps: u32, codec: Codec) -> u64 {
+    let pixels = u64::from(width) * u64::from(height);
+    // H.264 targets in 100 kbps increments for 24, 30, and 60 FPS.
+    let h264 = match pixels {
+        0..=307_200 => [6, 8, 12],
+        307_201..=921_600 => [10, 14, 22],
+        921_601..=2_073_600 => [16, 22, 34],
+        2_073_601..=3_686_400 => [25, 33, 50],
+        _ => [40, 50, 70],
+    };
+    let index = if fps <= 24 {
+        0
+    } else if fps <= 30 {
+        1
+    } else {
+        2
+    };
+    let percent = match codec {
+        Codec::H264 => 100,
+        Codec::H265 => 80,
+        Codec::Av1 => 65,
+    };
+    let rounded = (h264[index] * percent + 50) / 100;
+    (rounded * 100_000).max(MIN_BITRATE)
+}
 
 #[derive(Clone, Serialize)]
 pub struct Info {
@@ -80,8 +106,7 @@ pub struct Input {
     pub caps: gstreamer::Caps,
 }
 
-/// The bitrate is independent of the screen presets and room codec selection.
-pub fn mode(info: &super::SourceInfo, quality: Settings) -> Result<Mode> {
+fn validate_settings(quality: Settings) -> Result<()> {
     ensure!(
         FRAME_RATES.contains(&quality.fps),
         "Choose a camera frame rate from the list."
@@ -90,14 +115,22 @@ pub fn mode(info: &super::SourceInfo, quality: Settings) -> Result<Mode> {
         RESOLUTIONS.contains(&quality.resolution),
         "Choose a camera resolution from the list."
     );
-    let Bitrate::Manual(bitrate) = quality.bitrate else {
-        bail!("Choose a camera bitrate from 0.5 to 8 Mbps.");
-    };
-    ensure!(
-        (MIN_BITRATE..=MAX_BITRATE).contains(&bitrate),
-        "Choose a camera bitrate from 0.5 to 8 Mbps."
-    );
+    if let Bitrate::Manual(bitrate) = quality.bitrate {
+        ensure!(
+            (MIN_BITRATE..=MAX_BITRATE).contains(&bitrate),
+            "Choose a camera bitrate from 0.5 to 8 Mbps."
+        );
+    }
+    Ok(())
+}
+
+pub fn mode(info: &super::SourceInfo, quality: Settings, codec: Codec) -> Result<Mode> {
+    validate_settings(quality)?;
     let (width, height) = quality.resolution.dimensions(info)?;
+    let bitrate = match quality.bitrate {
+        Bitrate::Auto => automatic_bitrate(width, height, quality.fps, codec),
+        Bitrate::Manual(bitrate) => bitrate,
+    };
     Ok(Mode {
         width,
         height,
@@ -114,14 +147,11 @@ impl Device {
             use gstreamer::{self as gst, prelude::*};
             use std::cmp::Reverse;
 
+            validate_settings(quality)?;
             let caps = self
                 .device
                 .caps()
                 .context("Camera formats are unavailable. Refresh cameras and try again.")?;
-            ensure!(
-                FRAME_RATES.contains(&quality.fps),
-                "Choose a camera frame rate from the list."
-            );
             let minimum_fps = gst::Fraction::new(quality.fps as i32, 1);
             let candidates = caps.iter().filter_map(|format| {
                 let jpeg = format.name() == "image/jpeg";
@@ -140,8 +170,8 @@ impl Device {
                     width,
                     height,
                 };
-                let mode = mode(&info, quality).ok()?;
-                let output = u64::from(mode.width) * u64::from(mode.height);
+                let (output_width, output_height) = quality.resolution.dimensions(&info).ok()?;
+                let output = u64::from(output_width) * u64::from(output_height);
                 let input = u64::from(width) * u64::from(height);
                 let rank = (Reverse(output), input, fps, jpeg);
                 Some((rank, format.name(), fps, info))
@@ -167,7 +197,45 @@ impl Device {
         #[cfg(not(windows))]
         {
             let _ = quality;
-            bail!("Camera sharing is available on Windows.");
+            anyhow::bail!("Camera sharing is available on Windows.");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn automatic_camera_bitrate_uses_output_dimensions_fps_and_codec() {
+        let info = super::super::SourceInfo {
+            id: "example-camera".into(),
+            label: "Camera".into(),
+            width: 1920,
+            height: 1080,
+        };
+        let mut settings = Settings {
+            resolution: quality::Resolution::P720,
+            fps: 30,
+            bitrate: Bitrate::Auto,
+            ..Default::default()
+        };
+        for (codec, target) in [
+            (Codec::H264, 1_400_000),
+            (Codec::H265, 1_100_000),
+            (Codec::Av1, 900_000),
+        ] {
+            assert_eq!(mode(&info, settings, codec).unwrap().bitrate, target);
+        }
+        settings.resolution = quality::Resolution::Source;
+        settings.fps = 60;
+        assert_eq!(
+            mode(&info, settings, Codec::H264).unwrap().bitrate,
+            3_400_000
+        );
+        settings.bitrate = Bitrate::Manual(5_500_000);
+        for codec in [Codec::H264, Codec::H265, Codec::Av1] {
+            assert_eq!(mode(&info, settings, codec).unwrap().bitrate, 5_500_000);
         }
     }
 }

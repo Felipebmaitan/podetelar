@@ -53,7 +53,7 @@ impl Resolution {
             Self::P1080 => "1080p",
             Self::P1440 => "1440p",
             Self::P2160 => "4K",
-            Self::Source => "Source · up to 4K",
+            Self::Source => "Source",
         }
     }
     fn bounds(self) -> (u32, u32) {

@@ -25,9 +25,28 @@ pub struct Frame {
 #[derive(Default)]
 struct State {
     current: Option<String>,
-    pending: Option<(u64, SourceInfo)>,
+    pending: Option<(u64, Request)>,
     result: Option<Frame>,
+    capturing_camera: bool,
     closed: bool,
+}
+
+enum Request {
+    Screen(SourceInfo),
+    Camera {
+        key: String,
+        device: String,
+        quality: crate::quality::Settings,
+    },
+}
+
+impl Request {
+    fn key(&self) -> &str {
+        match self {
+            Self::Screen(info) => &info.id,
+            Self::Camera { key, .. } => key,
+        }
+    }
 }
 
 pub struct Preview {
@@ -66,17 +85,20 @@ impl Preview {
                     if guard.closed {
                         break;
                     }
-                    let (requested, info) = guard.pending.take().expect("Pending request");
+                    let (requested, request) = guard.pending.take().expect("Pending request");
+                    guard.capturing_camera = matches!(&request, Request::Camera { .. });
                     // Wait until hover/focus settles; rapid list traversal never queues captures.
-                    let (guard, _) = ready
+                    let (mut guard, _) = ready
                         .wait_timeout_while(guard, SETTLE, |state| {
                             !state.closed && epoch.load(Ordering::Acquire) == requested
                         })
                         .unwrap_or_else(|p| p.into_inner());
                     if guard.closed {
+                        guard.capturing_camera = false;
                         break;
                     }
                     if epoch.load(Ordering::Acquire) != requested {
+                        guard.capturing_camera = false;
                         continue;
                     }
                     drop(guard);
@@ -86,7 +108,12 @@ impl Preview {
                         if cancelled() {
                             break;
                         }
-                        image = capture(&info, &cancelled);
+                        image = match &request {
+                            Request::Screen(info) => capture(info, &cancelled),
+                            Request::Camera {
+                                device, quality, ..
+                            } => capture_camera(device, *quality, &cancelled),
+                        };
                         if image.is_some() || cancelled() || attempt + 1 == CAPTURE_ATTEMPTS {
                             break;
                         }
@@ -103,9 +130,10 @@ impl Preview {
                         }
                     }
                     let mut guard = lock.lock().unwrap_or_else(|p| p.into_inner());
+                    guard.capturing_camera = false;
                     if !guard.closed && !cancelled() {
                         guard.result = Some(Frame {
-                            source_id: info.id,
+                            source_id: request.key().to_owned(),
                             image,
                         });
                     }
@@ -122,20 +150,37 @@ impl Preview {
     }
 
     pub fn request(&self, source: &SourceInfo) {
+        self.request_frame(Request::Screen(source.clone()));
+    }
+
+    pub fn request_camera(&self, key: String, device: String, quality: crate::quality::Settings) {
+        self.request_frame(Request::Camera {
+            key,
+            device,
+            quality,
+        });
+    }
+
+    pub fn camera_capturing(&self) -> bool {
+        let state = self.shared.0.lock().unwrap_or_else(|p| p.into_inner());
+        state.capturing_camera || matches!(&state.pending, Some((_, Request::Camera { .. })))
+    }
+
+    fn request_frame(&self, request: Request) {
         let mut state = self.shared.0.lock().unwrap_or_else(|p| p.into_inner());
-        if state.current.as_deref() == Some(&source.id) {
+        if state.current.as_deref() == Some(request.key()) {
             return;
         }
-        state.current = Some(source.id.clone());
+        state.current = Some(request.key().to_owned());
         state.result = None;
         let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
         if state.closed {
             state.result = Some(Frame {
-                source_id: source.id.clone(),
+                source_id: request.key().to_owned(),
                 image: None,
             });
         } else {
-            state.pending = Some((generation, source.clone()));
+            state.pending = Some((generation, request));
         }
         self.shared.1.notify_one();
     }
@@ -191,17 +236,48 @@ impl Drop for Pipeline {
     }
 }
 
+fn capture_camera(
+    device_id: &str,
+    quality: crate::quality::Settings,
+    cancelled: &dyn Fn() -> bool,
+) -> Option<ColorImage> {
+    gst::init().ok()?;
+    let device = sources::camera::enumerate()
+        .into_iter()
+        .find(|device| device.info.id == device_id)?;
+    let source = device.source(quality).ok()?;
+    capture(&source, cancelled).ok()
+}
+
 fn capture(source: &Source, cancelled: &dyn Fn() -> bool) -> Result<ColorImage> {
     ensure!(
         !cancelled() && sources::validate(source),
         "Source unavailable."
     );
-    #[cfg(target_os = "macos")]
-    let processing = "queue name=entry max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! videoconvert ! videoscale add-borders=true ! video/x-raw,format=RGBA,width=480,height=270 ! appsink name=local max-buffers=1 drop=true sync=false async=false wait-on-eos=false";
+    #[cfg(any(windows, target_os = "macos"))]
+    const CPU_PREVIEW: &str =
+        "videoconvert ! videoscale add-borders=true ! video/x-raw,format=RGBA,width=480,height=270";
     #[cfg(not(target_os = "macos"))]
-    let processing = "queue name=entry max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=RGBA,width=480,height=270 ! d3d11download ! video/x-raw,format=RGBA ! appsink name=local max-buffers=1 drop=true sync=false async=false wait-on-eos=false";
+    const GPU_PREVIEW: &str = "d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=RGBA,width=480,height=270 ! d3d11download ! video/x-raw,format=RGBA";
+    #[cfg(target_os = "macos")]
+    let processing = CPU_PREVIEW.to_owned();
+    #[cfg(not(target_os = "macos"))]
+    let processing = match &source.target {
+        #[cfg(windows)]
+        Target::Camera(camera)
+            if camera
+                .caps
+                .structure(0)
+                .is_some_and(|format| format.name() == "image/jpeg") =>
+        {
+            format!("jpegdec ! {CPU_PREVIEW}")
+        }
+        #[cfg(windows)]
+        Target::Camera(_) => CPU_PREVIEW.to_owned(),
+        _ => GPU_PREVIEW.to_owned(),
+    };
     let pipeline = Pipeline(
-        gst::parse::launch(processing)?
+        gst::parse::launch(&format!("queue name=entry max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! {processing} ! appsink name=local max-buffers=1 drop=true sync=false async=false wait-on-eos=false"))?
             .downcast::<gst::Pipeline>()
             .map_err(|_| anyhow::anyhow!("Invalid local preview pipeline."))?,
     );
@@ -210,7 +286,7 @@ fn capture(source: &Source, cancelled: &dyn Fn() -> bool) -> Result<ColorImage> 
     #[cfg(not(target_os = "macos"))]
     let input = match source.target {
         #[cfg(windows)]
-        Target::Camera(_) => anyhow::bail!("Camera capture requires Share camera."),
+        Target::Camera(ref camera) => camera.device.create_element(None)?,
         Target::Pattern => gst::ElementFactory::make("d3d11testsrc")
             .property("is-live", true)
             .build()?,
@@ -229,16 +305,22 @@ fn capture(source: &Source, cancelled: &dyn Fn() -> bool) -> Result<ColorImage> 
             .property("show-cursor", false)
             .build()?,
     };
-    if input.find_property("num-buffers").is_some() {
+    if !source.is_camera() && input.find_property("num-buffers").is_some() {
         input.set_property("num-buffers", 1_i32);
     }
     pipeline.0.add(&input)?;
-    input.link(
-        &pipeline
-            .0
-            .by_name("entry")
-            .context("Missing capture queue.")?,
-    )?;
+    let entry = pipeline
+        .0
+        .by_name("entry")
+        .context("Missing capture queue.")?;
+    #[cfg(windows)]
+    if let Target::Camera(camera) = &source.target {
+        input.link_filtered(&entry, &camera.caps)?;
+    } else {
+        input.link(&entry)?;
+    }
+    #[cfg(not(windows))]
+    input.link(&entry)?;
     let sink = pipeline
         .0
         .by_name("local")
@@ -290,6 +372,30 @@ fn capture(source: &Source, cancelled: &dyn Fn() -> bool) -> Result<ColorImage> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "requires a named Windows camera"]
+    fn physical_camera_produces_a_local_frame_and_can_be_reopened() {
+        let name = std::env::var("PODETELAR_TEST_CAMERA").expect("Name a local camera");
+        gst::init().unwrap();
+        let device = sources::camera::enumerate()
+            .into_iter()
+            .find(|device| device.info.name == name)
+            .expect("Selected local camera");
+        let quality = crate::quality::Settings {
+            resolution: crate::quality::Resolution::P720,
+            fps: 30,
+            bitrate: crate::quality::Bitrate::Auto,
+            ..Default::default()
+        };
+        for _ in 0..2 {
+            let image = capture_camera(&device.info.id, quality, &|| false)
+                .expect("Capture a frame and release the selected camera");
+            assert_eq!(image.size, [480, 270]);
+        }
+    }
+
     fn info(id: &str) -> SourceInfo {
         SourceInfo {
             id: id.into(),

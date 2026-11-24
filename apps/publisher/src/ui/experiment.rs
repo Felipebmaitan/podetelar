@@ -72,7 +72,6 @@ pub fn qualify_planar_transitions(
         profile_textures: HashMap::new(),
         profile_started: Instant::now(),
         profile_open: false,
-        profile_page: profile::SettingsPage::Profile,
         profile_name: String::new(),
         saved_guest_name: String::new(),
         activation: crate::activation::Inbox::new(),
@@ -89,19 +88,25 @@ pub fn qualify_planar_transitions(
         encoder: String::new(),
         quality: Settings::default(),
         camera_settings: CameraSettings::default(),
-        camera_settings_open: false,
         custom_bitrate: false,
         download_budget: None,
         textures: HashMap::new(),
         focused: None,
-        stream_menu: None,
+        spotlight: None,
+        self_preview_hidden: false,
         fullscreen: None,
         fullscreen_controls_until: Instant::now(),
         settings_error: String::new(),
         auto_join_ready: false,
         copied_until: None,
-        remembered_volume: HashMap::new(),
+        appearance: Appearance {
+            theme: Theme::Amber,
+            ..Appearance::default()
+        },
         advanced_open: false,
+        licenses_open: false,
+        sharing_setup: None,
+        roster_open: false,
         diagnostics_open: false,
         show_invitation: false,
         browser_invitation_open: false,
@@ -121,7 +126,7 @@ pub fn qualify_planar_transitions(
     };
     let tile = Tile {
         id: "qualification".into(),
-        kind: Kind::Screen,
+        kind: crate::preview::Kind::Screen,
         name: String::new(),
         codec: String::new(),
         watching: true,
@@ -439,10 +444,11 @@ impl BenchmarkUi {
                 "focus" => {
                     if std::env::var("PODETELAR_DEEP_SELECTIVE_STOP").is_ok_and(|v| v == "1")
                         && let Some(id) = first.as_ref()
+                        && let Some(tile) = state.tiles.iter().find(|tile| &tile.id == id)
                     {
                         self.inner.controller.send(Command::Watch {
                             id: id.clone(),
-                            kind: Kind::Screen,
+                            kind: tile.kind,
                             enabled: false,
                         });
                     }

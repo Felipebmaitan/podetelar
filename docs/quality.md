@@ -6,6 +6,26 @@ Automatic bitrate. Codec/hardware encoder and manual bitrate live in Advanced.
 The website handles invitations, access management and app downloads; it does not
 publish or play streams.
 
+Windows camera sharing has its own settings and defaults to 720p, 30 FPS and
+Automatic bitrate. Choose 720p, 1080p or Source and 24, 30 or 60 FPS.
+Advanced camera settings offer a manual target from 0.5 to 8 Mbps.
+Automatic uses the negotiated codec, selected frame rate, and output pixel
+count. Source uses the actual output size. These camera targets are tuned for
+lower motion than the screen motion presets and are in Mbps.
+
+| Output up to | H.264 24 / 30 / 60 FPS | HEVC 24 / 30 / 60 FPS | AV1 24 / 30 / 60 FPS |
+| ------------ | ---------------------- | --------------------- | -------------------- |
+| 480p         | 0.6 / 0.8 / 1.2        | 0.5 / 0.6 / 1.0       | 0.5 / 0.5 / 0.8      |
+| 720p         | 1.0 / 1.4 / 2.2        | 0.8 / 1.1 / 1.8       | 0.7 / 0.9 / 1.4      |
+| 1080p        | 1.6 / 2.2 / 3.4        | 1.3 / 1.8 / 2.7       | 1.0 / 1.4 / 2.2      |
+| 1440p        | 2.5 / 3.3 / 5.0        | 2.0 / 2.6 / 4.0       | 1.6 / 2.1 / 3.3      |
+| 4K           | 4.0 / 5.0 / 7.0        | 3.2 / 4.0 / 5.6       | 2.6 / 3.3 / 4.6      |
+
+The camera needs to expose a mode that can supply the selected dimensions and
+frame rate. Output preserves aspect ratio, downscales where needed, and can drop
+frames from faster camera modes. Camera settings apply on the next start and use
+the room's hardware codec negotiation and bitrate feedback.
+
 ## Choosing a mode
 
 Resolution choices are 720p, 1080p, 1440p, 4K and Source. Each preserves source aspect ratio, rounds down to even dimensions, and never scales above its captured source. The 4K ceiling is 3840×2160, or 2160×3840 in portrait orientation. Ultrawide sources fit inside that envelope. Source means the bounded dimensions evaluated at capture start. A source resize does not silently change the active output; shrinking below its selected dimensions stops sharing with an explanation. The negotiated capture dimensions are checked before publication and during capture. Window enumeration uses visible DWM bounds instead of invisible resize margins, matching WGC capture.
@@ -25,7 +45,7 @@ it, including after a restrictive member leaves. Missing/dropped frames, pauses,
 congestion and interruptions are playback-health conditions, not capability
 changes. A codec change is allowed when explicit hardware capabilities exclude
 the current codec, or when the streamer applies settings. It
-replaces the single publication while retaining Watch intent and preview cadence.
+replaces the affected publication while retaining Watch intent and preview cadence.
 
 | Bitrate mode | Behavior                                                                                                                |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
@@ -101,6 +121,9 @@ Six healthy two-second samples allow a 5% recovery within the original allowance
 Absent feedback does not increase it; optional incoming-capacity stats are not
 treated as a qualified downlink measurement. Subscriptions pause when the available budget cannot fit them, including all
 watches on an extremely slow connection.
+Automatic camera subscriptions share the allowance and take any remaining slots
+after explicit screen watches. The publisher divides its measured video upload
+allowance between its screen and camera in proportion to their requested bitrates.
 
 Each watcher advertises its per-stream video cap. The publisher uses the lowest
 active watcher cap alongside its own sender feedback and requested target.

@@ -112,8 +112,11 @@ export class VoiceFollowing {
           .all() as { userId: string }[]
       ).map((r) => r.userId),
       sessions: this.db
-        .prepare("SELECT * FROM discord_voice_sessions")
-        .all() as Lease[],
+        .prepare(
+          `SELECT s.*, a.display_name AS displayName FROM discord_voice_sessions s
+           LEFT JOIN discord_accounts a ON a.user_id = s.userId`,
+        )
+        .all() as (Lease & { displayName: string | null })[],
     };
   }
   manage(action: "enable" | "disable" | "block" | "allow", user?: string) {

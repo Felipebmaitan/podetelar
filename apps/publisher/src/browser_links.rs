@@ -172,30 +172,6 @@ impl Link {
     }
 }
 
-pub fn set_enabled(enabled: bool) -> Result<()> {
-    let executable = std::env::var_os("PODETELAR_PORTABLE_EXE")
-        .context("Download and run the portable EXE to enable browser links.")?;
-    let mut command = std::process::Command::new(executable);
-    command.arg(if enabled {
-        "--enable-browser-links"
-    } else {
-        "--disable-browser-links"
-    });
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x08000000);
-    }
-    let output = command
-        .output()
-        .context("Could not update browser-link settings.")?;
-    ensure!(
-        output.status.success(),
-        "Could not update browser links. Check that this app has permission to save your user settings."
-    );
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

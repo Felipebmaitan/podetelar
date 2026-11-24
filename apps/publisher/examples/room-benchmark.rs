@@ -2,6 +2,9 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 #![allow(dead_code)]
 
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/account.rs"]
+mod account;
 #[path = "../src/activation.rs"]
 #[cfg(feature = "performance-experiments")]
 mod activation;
@@ -15,8 +18,14 @@ mod admission;
 #[path = "../src/audio/mod.rs"]
 mod audio;
 #[cfg(feature = "performance-experiments")]
+#[path = "../src/av_qualification.rs"]
+mod av_qualification;
+#[cfg(feature = "performance-experiments")]
 #[path = "../src/browser_links.rs"]
 mod browser_links;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/codec_policy.rs"]
+mod codec_policy;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/connection.rs"]
 mod connection;
@@ -24,14 +33,23 @@ mod connection;
 #[path = "../src/delivery.rs"]
 mod delivery;
 #[cfg(feature = "performance-experiments")]
+#[path = "../src/device.rs"]
+mod device;
+#[cfg(feature = "performance-experiments")]
 #[path = "../src/diagnostics.rs"]
 mod diagnostics;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/encoding.rs"]
 mod encoding;
 #[cfg(feature = "performance-experiments")]
+#[path = "../src/following.rs"]
+mod following;
+#[cfg(feature = "performance-experiments")]
 #[path = "../src/locale.rs"]
 mod locale;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/native_output.rs"]
+mod native_output;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/network.rs"]
 mod network;
@@ -44,6 +62,9 @@ mod playback;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/preview.rs"]
 mod preview;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/profile.rs"]
+mod profile;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/publisher.rs"]
 mod publisher;
@@ -65,6 +86,9 @@ mod sources;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/stream_diagnostics.rs"]
 mod stream_diagnostics;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/theme.rs"]
+mod theme;
 #[cfg(feature = "performance-experiments")]
 #[path = "../src/ui.rs"]
 mod ui;

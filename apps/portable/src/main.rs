@@ -56,7 +56,6 @@ fn run() -> Result<i32> {
     }
     let bundled_probe = args.first().is_some_and(|arg| arg == "--bundled-probe");
     let mut command = podetelar_portable::command(&directory)?;
-    command.env("PODETELAR_PORTABLE_EXE", std::env::current_exe()?);
     #[cfg(windows)]
     command.env(
         "PODETELAR_BROWSER_LINKS",

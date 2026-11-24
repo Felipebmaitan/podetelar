@@ -19,8 +19,10 @@ the Gateway event is observed. Existing signaling and durable SFU removal enforc
 that revocation; unreachable SFUs retain the documented pending-removal limitation.
 Login revocation and policy changes also end tagged sessions.
 
-The desktop polls its authenticated voice location every two seconds. Moving A
-to B cancels capture, tears down the old room and all subscriptions, then joins B
+The desktop checks its authenticated voice location every two seconds while it
+sees an eligible voice channel, and every ten seconds otherwise. Failed checks
+back off and honor the server's retry delay. Moving A to B cancels capture, tears
+down the old room and all subscriptions, then joins B
 without confirmation. Sharing and watching stay stopped. An outage marks voice
 state unknown: existing sessions remain connected, new automatic admissions pause,
 and fresh snapshots reconcile membership after recovery. This also means an

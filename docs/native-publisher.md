@@ -57,7 +57,8 @@ when installed and active. Windows camera privacy settings apply.
 Camera quality defaults to 720p, 30 FPS and 2 Mbps. It has independent resolution
 (720p, 1080p or Source), frame rate (24, 30 or 60 FPS) and bitrate (0.5–8 Mbps)
 controls. Modes are bounded by the camera, hardware encoder and server ceilings.
-Stop the camera before changing its settings. Camera sharing requires a room
+The frame-rate setting is a ceiling. The device can deliver fewer frames, for
+example when exposure takes longer. Stop the camera before changing its settings. Camera sharing requires a room
 codec the publisher can encode and each connected native member can decode.
 
 One participant can publish a screen and one camera concurrently. The camera

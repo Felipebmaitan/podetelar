@@ -113,6 +113,11 @@ export function nativeRequest(
       ["Audio publication failed", "audio-publication"],
       ["Fixture media connection", "media-connection"],
       ["Could not connect to the media server", "media-connection"],
+      ["Media connection timed out", "media-timeout"],
+      [
+        "The media server is synchronizing stream limits",
+        "policy-synchronization",
+      ],
       ["Dual-sharing operation did not finish", "dual-sharing-timeout"],
       ["Dual-sharing qualification requires", "dual-sharing-locality"],
       ["No codec can be hardware encoded", "codec-negotiation"],

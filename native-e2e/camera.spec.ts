@@ -132,7 +132,9 @@ test("an explicitly selected Windows camera publishes and starts playing automat
       fps: 24,
       bitrate: 500_000,
     });
-    expect(sent.metrics.fps).toBeGreaterThan(20);
+    // Exposure and driver timing can drop camera input frames. Verify an
+    // active stream and enforce the selected ceiling without duplicating frames.
+    expect(sent.metrics.fps).toBeGreaterThan(10);
     expect(sent.metrics.fps).toBeLessThan(25);
     expect(sent.metrics.requested_bitrate).toBe(500_000);
     expect(sent.metrics.encoder_bitrate).toBeGreaterThan(0);
@@ -381,7 +383,10 @@ test("a live SFU policy update applies to both concurrent video publications", a
           ) &&
           streams.some(
             (stream) =>
-              stream.kind === "screen" && stream.watching && stream.frames > 5,
+              stream.kind === "screen" &&
+              stream.watching &&
+              stream.frames > 5 &&
+              stream.pictureSize !== null,
           ),
       );
     const before = played(1080);

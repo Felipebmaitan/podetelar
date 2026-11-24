@@ -3,9 +3,9 @@
 The native app remembers the last successfully used guest nickname in a local
 `PodeTelar/guest-name.json` preferences file. It contains the nickname only, not
 invitations, credentials, room history or raw hardware information. Guests can
-open User settings by clicking their own sidebar name or the bottom-left gear;
-the Room options menu also exposes it before admission. Advanced settings remain
-available through that panel and the Room options menu.
+open User settings from Room options or the gear in the room roster. Open the
+roster from the room name menu. Advanced settings are available from User
+settings and the arrow menu on **Share screen** in the room dock.
 
 Changing a nickname updates the existing participant session and the SFU display
 name without replacing its identity or restarting sharing/watching. Failed SFU

@@ -1,3 +1,4 @@
+import { WindowsInstallerLink } from "./WindowsInstallerLink";
 import { useEffect, useState } from "react";
 import { request } from "./api";
 
@@ -84,6 +85,7 @@ export function OpenInApp({
           {appUrl ? "Join room in PodeTelar" : "Preparing..."}
         </a>
       )}
+      <WindowsInstallerLink />
     </>
   );
 }

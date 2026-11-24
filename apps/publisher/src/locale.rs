@@ -1,4 +1,4 @@
-//! UI language is selected only for this process.
+//! Interface language and the built-in Portuguese translation catalog.
 use std::{
     collections::BTreeMap,
     sync::{

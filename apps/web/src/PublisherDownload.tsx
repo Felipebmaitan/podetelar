@@ -27,11 +27,10 @@ export function PublisherDownload({ roomId }: { roomId: string }) {
     <section className="invite-panel">
       <h2>Share and watch from Windows</h2>
       <p>
-        Download and open the portable EXE for native streaming and playback,
-        then enable browser links in Room options to open invitations from this
-        page. You can also paste your room invitation. Everything is bundled: no
-        installation, PowerShell, or dependency download. First launch prepares
-        a private runtime cache on your PC.
+        Download and open the portable EXE for native streaming and playback.
+        Paste your room invitation into the app to join. Everything is bundled:
+        no installation, PowerShell, or dependency download. First launch
+        prepares a private runtime cache on your PC.
       </p>
       <a className="button secondary" href={release.downloadUrl}>
         Download portable Windows app {release.version}

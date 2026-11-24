@@ -6,9 +6,12 @@ Automatic bitrate. Codec/hardware encoder and manual bitrate live in Advanced.
 The website handles invitations, access management and app downloads; it does not
 publish or play streams.
 
-Windows cameras default to 720p, 30 FPS and Automatic bitrate. Advanced camera
-settings also offer manual bitrates from 0.5 to 8 Mbps. Automatic uses the
-negotiated codec, output pixel count and effective frame rate.
+Windows camera sharing has its own settings and defaults to 720p, 30 FPS and
+Automatic bitrate. Choose 720p, 1080p or Source and 24, 30 or 60 FPS.
+Advanced camera settings offer a manual target from 0.5 to 8 Mbps.
+Automatic uses the negotiated codec, effective frame rate, and output pixel
+count. Source uses the actual output size. These camera targets are tuned for
+lower motion than the screen motion presets and are in Mbps.
 
 | Output up to | H.264 24 / 30 / 60 FPS | HEVC 24 / 30 / 60 FPS | AV1 24 / 30 / 60 FPS |
 | ------------ | ---------------------- | --------------------- | -------------------- |
@@ -18,8 +21,11 @@ negotiated codec, output pixel count and effective frame rate.
 | 1440p        | 2.5 / 3.3 / 5.0        | 2.0 / 2.6 / 4.0       | 1.6 / 2.1 / 3.3      |
 | 4K           | 4.0 / 5.0 / 7.0        | 3.2 / 4.0 / 5.6       | 2.6 / 3.3 / 4.6      |
 
-All targets are in Mbps. Camera outputs at 15 FPS use the 24 FPS defaults when
-no override is configured.
+The camera needs to expose a mode that can supply the selected dimensions and
+frame rate. Output preserves aspect ratio, downscales where needed, and can drop
+frames from faster camera modes. Camera settings apply on the next start and use
+the room's hardware codec negotiation and bitrate feedback. Camera outputs at
+15 FPS use the 24 FPS defaults when no override is configured.
 
 ## Choosing a mode
 
@@ -40,7 +46,7 @@ it, including after a restrictive member leaves. Missing/dropped frames, pauses,
 congestion and interruptions are playback-health conditions, not capability
 changes. A codec change is allowed when explicit hardware capabilities exclude
 the current codec, or when the streamer applies settings. It
-replaces the single publication while retaining Watch intent and preview cadence.
+replaces the affected publication while retaining Watch intent and preview cadence.
 
 | Bitrate mode | Behavior                                                                                                                |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
@@ -121,6 +127,9 @@ Six healthy two-second samples allow a 5% recovery within the original allowance
 Absent feedback does not increase it; optional incoming-capacity stats are not
 treated as a qualified downlink measurement. Subscriptions pause when the available budget cannot fit them, including all
 watches on an extremely slow connection.
+Automatic camera subscriptions share the allowance and take any remaining slots
+after explicit screen watches. The publisher divides its measured video upload
+allowance between its screen and camera in proportion to their requested bitrates.
 
 Each watcher advertises its per-stream video cap. The publisher uses the lowest
 active watcher cap alongside its own sender feedback and requested target.

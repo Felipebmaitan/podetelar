@@ -32,6 +32,9 @@ mod following;
 mod locale;
 #[path = "../src/network.rs"]
 mod network;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/planar_experiment.rs"]
+mod planar_experiment;
 #[path = "../src/playback.rs"]
 mod playback;
 #[path = "../src/preview.rs"]
@@ -42,6 +45,9 @@ mod profile;
 mod publisher;
 #[path = "../src/quality.rs"]
 mod quality;
+#[cfg(feature = "performance-experiments")]
+#[path = "../src/resource_experiment.rs"]
+mod resource_experiment;
 #[path = "../src/settings.rs"]
 mod settings;
 #[path = "../src/source_picker.rs"]
@@ -50,6 +56,8 @@ mod source_picker;
 mod sources;
 #[path = "../src/stream_diagnostics.rs"]
 mod stream_diagnostics;
+#[path = "../src/theme.rs"]
+mod theme;
 #[path = "../src/ui.rs"]
 mod ui;
 #[path = "../src/ui_style.rs"]

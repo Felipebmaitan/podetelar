@@ -93,10 +93,13 @@ export async function publisherRoutes(
         !ticket ||
         ticket.expires <= now() ||
         !admitted(ticket.room, ticket.cookie)
-      )
+      ) {
+        if (request.headers.accept?.includes("text/html"))
+          return reply.redirect("/download#expired", 303);
         return reply
           .code(401)
           .send({ error: "Download expired. Open the room download again." });
+      }
       return reply
         .type("application/vnd.microsoft.portable-executable")
         .header(

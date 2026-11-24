@@ -155,10 +155,7 @@ export function AdminAccounts({ onExpired }: { onExpired: () => void }) {
   };
   return (
     <section className="discord-view">
-      <SectionHeader
-        title="Discord accounts"
-        description="Manage remembered sign-ins and Discord profiles."
-      />
+      <SectionHeader title="Discord accounts" />
       {error && !selected && (
         <p className="discord-feedback" role="alert">
           {error}
@@ -176,41 +173,41 @@ export function AdminAccounts({ onExpired }: { onExpired: () => void }) {
               const expanded = open === a.userId;
               return (
                 <article className="discord-record" key={a.userId}>
-                  <button
-                    className="discord-record-toggle"
-                    aria-expanded={expanded}
-                    disabled={busy}
-                    onClick={() => {
-                      setSessions(null);
-                      setSessionError("");
-                      setOpen(expanded ? null : a.userId);
-                    }}
-                  >
-                    <span className="discord-initial" aria-hidden="true">
-                      {Array.from(a.displayName)[0]?.toUpperCase()}
-                    </span>
-                    <span className="discord-record-name">
-                      <strong>{a.displayName}</strong>
-                      <small>
-                        {a.loginCount} active{" "}
-                        {a.loginCount === 1 ? "login" : "logins"}
-                      </small>
-                    </span>
-                    <StatusLabel tone={a.disabled ? "attention" : "good"}>
-                      {a.disabled ? "Disabled" : "Enabled"}
-                    </StatusLabel>
-                  </button>
+                  <h3>
+                    <button
+                      className="discord-record-toggle"
+                      aria-expanded={expanded}
+                      disabled={busy}
+                      onClick={() => {
+                        setSessions(null);
+                        setSessionError("");
+                        setOpen(expanded ? null : a.userId);
+                      }}
+                    >
+                      <span className="discord-initial" aria-hidden="true">
+                        {Array.from(a.displayName)[0]?.toUpperCase()}
+                      </span>
+                      <span className="discord-record-name">
+                        <strong>{a.displayName}</strong>
+                        <small>
+                          {a.loginCount} active{" "}
+                          {a.loginCount === 1 ? "login" : "logins"}
+                        </small>
+                      </span>
+                      <StatusLabel tone={a.disabled ? "attention" : "good"}>
+                        {a.disabled ? "Disabled" : "Enabled"}
+                      </StatusLabel>
+                    </button>
+                  </h3>
                   {expanded && (
                     <div className="discord-record-body">
                       <p className="discord-account-id">
-                        Discord user ID <code>{a.userId}</code>
+                        ID <code>{a.userId}</code>
                       </p>
                       <ActionGroup
                         title="Room profile"
                         description={
-                          a.avatarHidden
-                            ? "Discord avatar hidden."
-                            : "Discord avatar visible."
+                          a.avatarHidden ? "Avatar hidden" : undefined
                         }
                       >
                         <button
@@ -259,7 +256,10 @@ export function AdminAccounts({ onExpired }: { onExpired: () => void }) {
                           {sessions?.map((session) => (
                             <li key={session.id}>
                               <span className="discord-record-name">
-                                <strong>Login {session.id.slice(0, 8)}</strong>
+                                <strong>
+                                  Login ·{" "}
+                                  {session.id.replace(/^login-/, "").slice(-8)}
+                                </strong>
                                 <small>
                                   Created{" "}
                                   {new Date(
@@ -273,6 +273,7 @@ export function AdminAccounts({ onExpired }: { onExpired: () => void }) {
                               </span>
                               <button
                                 disabled={busy}
+                                aria-label={`Revoke this login for ${a.userId}, ending in ${session.id.slice(-8)}`}
                                 onClick={() =>
                                   void act(
                                     a.userId,
@@ -338,6 +339,7 @@ export function AdminAccounts({ onExpired }: { onExpired: () => void }) {
         ref={dialog}
         className="admin-room-dialog"
         aria-labelledby="discord-account-action"
+        aria-describedby="discord-account-description"
         onCancel={(event) => {
           if (busy) event.preventDefault();
           else setSelected(null);
@@ -347,7 +349,7 @@ export function AdminAccounts({ onExpired }: { onExpired: () => void }) {
         <p>
           <strong>{selected?.account.displayName}</strong>
         </p>
-        <p>{confirmation?.description}</p>
+        <p id="discord-account-description">{confirmation?.description}</p>
         {error && (
           <p className="discord-feedback" role="alert">
             {error}

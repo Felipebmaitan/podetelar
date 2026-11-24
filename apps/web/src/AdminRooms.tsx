@@ -180,15 +180,33 @@ export function AdminRooms({ onExpired }: { onExpired: () => void }) {
     directory?.rooms.filter((room) =>
       room.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()),
     ) ?? [];
+  const activeCount =
+    directory?.rooms.filter((room) => room.presence === "active").length ?? 0;
+  const onlineCount =
+    directory?.rooms.reduce((count, room) => count + room.members.length, 0) ??
+    0;
   return (
     <main className="admin-main admin-rooms-main">
-      <p className="admin-breadcrumb">
-        Administration <span aria-hidden="true">›</span> Rooms
-      </p>
       <div className="admin-heading">
-        <div>
+        <div className="admin-heading-row">
           <h1>Rooms</h1>
-          <p>Create a space. Invite your friends.</p>
+          {directory && offset === 0 && directory.nextOffset === null && (
+            <div className="admin-stat-pills">
+              <span className="admin-stat-pill">
+                <strong>{activeCount}</strong> active
+              </span>
+              <span className="admin-stat-pill">
+                <strong>{onlineCount}</strong> online
+              </span>
+              {directory.rooms.some(
+                (room) => room.presence === "unavailable",
+              ) && (
+                <span className="admin-stat-pill is-warn">
+                  Presence degraded
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <button
           className="admin-primary"
@@ -201,23 +219,6 @@ export function AdminRooms({ onExpired }: { onExpired: () => void }) {
           + New room
         </button>
       </div>
-      {directory && (
-        <p className="admin-room-summary">
-          {offset > 0 || directory.nextOffset !== null ? "On this page: " : ""}
-          Active rooms:{" "}
-          {
-            directory.rooms.filter((room) => room.presence === "active").length
-          }{" "}
-          &middot; Members online:{" "}
-          {directory.rooms.reduce(
-            (count, room) => count + room.members.length,
-            0,
-          )}
-          {directory.rooms.some((room) => room.presence === "unavailable")
-            ? " · Some presence unavailable"
-            : ""}
-        </p>
-      )}
       <div className="admin-rooms-toolbar">
         <label className="admin-search">
           <span className="sr-only">Search rooms on this page</span>
@@ -232,11 +233,7 @@ export function AdminRooms({ onExpired }: { onExpired: () => void }) {
           className={`admin-live ${loadError ? "is-stale" : ""}`}
           role="status"
         >
-          {loading
-            ? "Updating…"
-            : loadError
-              ? "Updates paused"
-              : "Updates every 5s"}
+          {loading ? "Syncing…" : loadError ? "Paused" : "Live"}
         </span>
       </div>
       {(error || loadError) && (
@@ -247,9 +244,11 @@ export function AdminRooms({ onExpired }: { onExpired: () => void }) {
           </button>
         </p>
       )}
-      <p className="admin-room-feedback" role="status">
-        {feedback}
-      </p>
+      {feedback && (
+        <p className="admin-room-feedback" role="status">
+          {feedback}
+        </p>
+      )}
       <section aria-label="Room directory" className="admin-directory">
         <div className="admin-room-columns" aria-hidden="true">
           <span>Room</span>
@@ -260,14 +259,9 @@ export function AdminRooms({ onExpired }: { onExpired: () => void }) {
           <p className="admin-empty" role="status">
             Loading rooms…
           </p>
-        ) : !rooms.length ? (
+        ) : !directory ? null : !rooms.length ? (
           <div className="admin-empty">
             <h2>{search ? "No matching rooms" : "No rooms yet"}</h2>
-            <p>
-              {search
-                ? "Try another name or another page."
-                : "Use New room to invite your friends."}
-            </p>
           </div>
         ) : (
           <ul className="admin-room-accordion">
@@ -295,7 +289,12 @@ export function AdminRooms({ onExpired }: { onExpired: () => void }) {
                       <span>
                         <strong>{room.name}</strong>
                         <small>
-                          Created {new Date(room.createdAt).toLocaleString()}
+                          {new Date(room.createdAt).toLocaleString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
                         </small>
                       </span>
                     </span>
@@ -311,7 +310,7 @@ export function AdminRooms({ onExpired }: { onExpired: () => void }) {
                         ? "Unknown"
                         : room.members.length
                           ? `${room.members.length} member${room.members.length === 1 ? "" : "s"}`
-                          : "No members yet"}
+                          : "Empty"}
                     </span>
                     <span className={`admin-presence is-${room.presence}`}>
                       {presenceText[room.presence]}
@@ -321,10 +320,7 @@ export function AdminRooms({ onExpired }: { onExpired: () => void }) {
                     <div id={`room-${room.id}`} className="admin-room-expanded">
                       <h2>Members</h2>
                       {room.presence === "unavailable" ? (
-                        <p>
-                          Could not check connected members. The room stays open
-                          until presence recovers.
-                        </p>
+                        <p>Could not check connected members.</p>
                       ) : room.members.length ? (
                         <ul className="admin-member-list">
                           {room.members.map((member, index) => (
@@ -338,15 +334,14 @@ export function AdminRooms({ onExpired }: { onExpired: () => void }) {
                                   .toLocaleUpperCase()}
                               </span>
                               <span>{member.displayName}</span>
-                              <small>In room</small>
                             </li>
                           ))}
                         </ul>
                       ) : (
                         <p>
                           {room.presence === "waiting"
-                            ? "Ready for the first friend to join."
-                            : "Everyone has left. Closing after 60 seconds unless someone rejoins."}
+                            ? "Waiting for first join."
+                            : "Closing in 60s unless someone rejoins."}
                         </p>
                       )}
                       <div className="admin-room-actions">
@@ -420,12 +415,6 @@ export function AdminRooms({ onExpired }: { onExpired: () => void }) {
           </button>
         </nav>
       )}
-      <p className="admin-room-policy">
-        Rooms close after everyone leaves. Closed rooms disappear automatically.
-        <small>
-          A 60-second grace period lets disconnected members rejoin.
-        </small>
-      </p>
       <dialog
         ref={dialog}
         className="admin-room-dialog"

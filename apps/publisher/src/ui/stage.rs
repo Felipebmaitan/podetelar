@@ -540,16 +540,27 @@ impl PublisherUi {
             rail.add_space(6.0);
         }
         if let Some(tile) = main {
-            let scroll_space = rail.spacing().scroll.bar_width
-                + rail.spacing().scroll.bar_inner_margin
-                + rail.spacing().scroll.bar_outer_margin;
+            let scroll_style = egui::style::ScrollStyle {
+                bar_width: 8.0,
+                floating_width: 3.0,
+                handle_min_length: 24.0,
+                dormant_handle_opacity: if palette().dark { 0.4 } else { 0.5 },
+                active_handle_opacity: 0.55,
+                interact_handle_opacity: 0.85,
+                active_background_opacity: 0.0,
+                interact_background_opacity: 0.25,
+                ..egui::style::ScrollStyle::floating()
+            };
+            // Keep previews clear of the expanded thumb and at a stable width.
+            let preview_width = rail_width - scroll_style.bar_width - 3.0;
+            rail.spacing_mut().scroll = scroll_style;
             egui::ScrollArea::vertical()
                 .id_salt("spotlight-film")
-                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
+                .auto_shrink([false, true])
                 .max_height(rail.available_height())
                 .show(&mut rail, |ui| {
                     for other in state.tiles.iter().filter(|other| other.id != tile.id) {
-                        self.stream_tile_with_layout(ui, other, rail_width - scroll_space, true);
+                        self.stream_tile_with_layout(ui, other, preview_width, true);
                     }
                 });
         }

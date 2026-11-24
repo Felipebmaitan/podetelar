@@ -3356,22 +3356,6 @@ impl PublisherUi {
         ui.add_enabled_ui(!camera_live && !state.refreshing_cameras, |ui| {
             self.camera_controls(ui, state)
         });
-        if !camera_live && !state.refreshing_cameras && self.camera_selected(state) {
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .add_enabled(
-                            self.can_start_camera(state),
-                            sharing_action(tr("Share camera"), Icon::Camera, palette().text),
-                        )
-                        .clicked()
-                    {
-                        self.start_camera();
-                    }
-                });
-            });
-        }
     }
 
     fn camera_preview_panel(

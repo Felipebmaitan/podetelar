@@ -724,15 +724,9 @@ impl PublisherUi {
                         );
                     });
                     if is_discord {
-                        if ui
-                            .add(
-                                egui::Button::new(tr("Manage Discord connection")).corner_radius(8),
-                            )
-                            .clicked()
-                        {
-                            self.profile_page = SettingsPage::Discord;
-                        }
-                    } else if let Some(client) = &self.profile_client {
+                        return;
+                    }
+                    if let Some(client) = &self.profile_client {
                         let busy = self.profile_state.busy;
                         ui.horizontal_wrapped(|ui| {
                             if ui
@@ -768,12 +762,6 @@ impl PublisherUi {
                             }))
                             .size(12.0)
                             .color(palette().muted),
-                        );
-                    }
-                    if own.as_ref().is_some_and(|p| p.uploads_blocked) {
-                        ui.colored_label(
-                            palette().warning,
-                            tr("Profile picture uploads are disabled for this PC."),
                         );
                     }
                 });

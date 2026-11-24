@@ -92,6 +92,7 @@ pub fn qualify_planar_transitions(
         custom_bitrate: false,
         download_budget: None,
         textures: HashMap::new(),
+        texture_kinds: HashMap::new(),
         focused: None,
         spotlight: None,
         self_preview_hidden: false,
@@ -128,6 +129,7 @@ pub fn qualify_planar_transitions(
     };
     let tile = Tile {
         id: "qualification".into(),
+        kind: crate::preview::Kind::Screen,
         name: String::new(),
         codec: String::new(),
         watching: true,
@@ -366,6 +368,7 @@ impl BenchmarkUi {
         {
             self.inner.controller.send(Command::Watch {
                 id: tile.id.clone(),
+                kind: tile.kind,
                 enabled: true,
             });
             self.watched.insert(tile.id.clone());
@@ -444,9 +447,11 @@ impl BenchmarkUi {
                 "focus" => {
                     if std::env::var("PODETELAR_DEEP_SELECTIVE_STOP").is_ok_and(|v| v == "1")
                         && let Some(id) = first.as_ref()
+                        && let Some(tile) = state.tiles.iter().find(|tile| &tile.id == id)
                     {
                         self.inner.controller.send(Command::Watch {
                             id: id.clone(),
+                            kind: tile.kind,
                             enabled: false,
                         });
                     }
@@ -458,6 +463,7 @@ impl BenchmarkUi {
                     {
                         self.inner.controller.send(Command::Watch {
                             id: tile.id.clone(),
+                            kind: tile.kind,
                             enabled: true,
                         });
                     }
@@ -475,6 +481,7 @@ impl BenchmarkUi {
                     for tile in &state.tiles {
                         self.inner.controller.send(Command::Watch {
                             id: tile.id.clone(),
+                            kind: tile.kind,
                             enabled: false,
                         });
                     }

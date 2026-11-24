@@ -25,6 +25,7 @@ use tokio::task::JoinHandle;
 pub const LIMIT_PREFIX: &str = "podetelar.limit.";
 pub const WATCH_PREFIX: &str = "podetelar.watch.";
 use crate::codec_policy::{self, Codecs};
+use crate::preview::Kind;
 pub type Picture = Arc<Mutex<Option<Arc<egui::ColorImage>>>>;
 
 #[derive(Default)]
@@ -150,6 +151,7 @@ fn conversion_jobs() -> Option<&'static Arc<tokio::sync::Semaphore>> {
 #[derive(Clone)]
 pub struct Tile {
     pub id: String,
+    pub kind: Kind,
     pub name: String,
     pub codec: String,
     pub watching: bool,
@@ -163,6 +165,7 @@ pub struct Tile {
 }
 
 struct Watch {
+    kind: Kind,
     picture: Picture,
     presentation: Arc<Presentation>,
     frames: Arc<AtomicU64>,
@@ -222,11 +225,28 @@ impl Drop for Pump {
 }
 
 struct PreviewImage {
+    sid: String,
     revision: String,
     picture: Picture,
     job: Pump,
     loaded: Arc<AtomicBool>,
     attempted: Instant,
+}
+
+fn share_video<'a>(
+    publications: impl Iterator<Item = &'a RemoteTrackPublication>,
+) -> Option<(&'a RemoteTrackPublication, Kind)> {
+    publications
+        .filter(|publication| publication.kind() == TrackKind::Video)
+        .filter_map(|publication| {
+            let kind = match publication.source() {
+                TrackSource::Screenshare => Kind::Screen,
+                TrackSource::Camera => Kind::Camera,
+                _ => return None,
+            };
+            Some((publication, kind))
+        })
+        .min_by_key(|(publication, kind)| (*kind == Kind::Camera, publication.sid().to_string()))
 }
 
 #[derive(Clone)]
@@ -372,7 +392,7 @@ impl Playback {
         Codecs::new(self.av1, self.hevc, self.h264)
     }
 
-    pub fn watch(&mut self, id: String, enabled: bool) -> Result<()> {
+    pub fn watch(&mut self, id: String, kind: Kind, enabled: bool) -> Result<()> {
         if enabled {
             if self.watches.is_empty() {
                 self.budget.set(self.budget_setting);
@@ -381,7 +401,15 @@ impl Playback {
                 self.h264 || self.hevc || self.av1,
                 "No compatible hardware video decoder is available on this computer."
             );
+            if self
+                .watches
+                .get(&id)
+                .is_some_and(|watch| watch.kind != kind)
+            {
+                self.watches.remove(&id);
+            }
             self.watches.entry(id).or_insert_with(|| Watch {
+                kind,
                 picture: Arc::default(),
                 presentation: Arc::default(),
                 frames: Arc::default(),
@@ -396,7 +424,12 @@ impl Playback {
                 video_sid: String::new(),
             });
         } else {
-            if self.watches.remove(&id).is_some() {
+            if self
+                .watches
+                .get(&id)
+                .is_some_and(|watch| watch.kind == kind)
+            {
+                self.watches.remove(&id);
                 // Restore the existing still without requesting another capture.
                 self.previews.remove(&id);
             }
@@ -500,10 +533,12 @@ impl Playback {
         let mut selected: Vec<_> = participants
             .values()
             .filter(|p| {
-                self.watches.contains_key(p.identity().as_str())
-                    && p.track_publications()
-                        .values()
-                        .any(|v| v.source() == TrackSource::Screenshare)
+                self.watches
+                    .get(p.identity().as_str())
+                    .is_some_and(|watch| {
+                        share_video(p.track_publications().values())
+                            .is_some_and(|(_, kind)| watch.kind == kind)
+                    })
             })
             .map(|p| p.identity().to_string())
             .collect();
@@ -523,19 +558,27 @@ impl Playback {
         );
         for participant in participants.values() {
             let id = participant.identity().to_string();
-            // Preserve older publishers' capability protocol, but never derive
-            // support from missing frames or other transient playback health.
+            let publications = participant.track_publications();
+            let selected = share_video(publications.values());
+            // Reconnects and codec replacements keep Watch for this media kind.
+            // A participant switching between screen and camera needs a new Watch.
+            if let Some((_, kind)) = selected
+                && self
+                    .watches
+                    .get(&id)
+                    .is_some_and(|watch| watch.kind != kind)
+            {
+                self.watches.remove(&id);
+            }
+            // Preserve older publishers' capability protocol during replacement.
             if self.watches.contains_key(&id) {
                 announce.insert(
                     format!("{}{id}", codec_policy::DECODE_PREFIX),
                     decoders.encode(),
                 );
             }
-            let publications = participant.track_publications();
-            let Some(video) = publications
-                .values()
-                .find(|p| p.source() == TrackSource::Screenshare)
-            else {
+            let Some((video, kind)) = selected else {
+                self.previews.remove(&id);
                 if let Some(watch) = self.watches.get_mut(&id) {
                     watch.diagnostic_task = None;
                     watch
@@ -556,12 +599,21 @@ impl Playback {
                 }
                 continue;
             };
+            if self
+                .previews
+                .get(&id)
+                .is_some_and(|preview| preview.sid != video.sid().as_str())
+            {
+                self.previews.remove(&id);
+            }
             live.insert(id.clone());
             if let Some(watch) = self.watches.get_mut(&id) {
                 watch.admit(allowed.contains(&id));
                 if watch.video_sid != video.sid().as_str() {
                     watch.video_sid = video.sid().to_string();
                     watch.since = Instant::now();
+                    watch.picture = Arc::default();
+                    watch.presentation = Arc::default();
                     if let Ok(mut last) = watch.last_frame.lock() {
                         *last = Instant::now();
                     }
@@ -584,7 +636,7 @@ impl Playback {
             if !self.watches.contains_key(&id) {
                 let descriptor = participant
                     .attributes()
-                    .get("podetelar.preview.screen")
+                    .get(kind.attribute())
                     .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok());
                 if let Some(descriptor) = descriptor
                     && descriptor.get("trackSid").and_then(|v| v.as_str())
@@ -606,7 +658,7 @@ impl Playback {
                     let revision = revision.to_owned();
                     let requested = revision.clone();
                     let job = tokio::spawn(async move {
-                        if let Ok(image) = admission.get_preview(&owner, &requested).await
+                        if let Ok(image) = admission.get_preview(kind, &owner, &requested).await
                             && let Ok(mut slot) = latest.lock()
                         {
                             *slot = Some(Arc::new(image));
@@ -616,6 +668,7 @@ impl Playback {
                     self.previews.insert(
                         id.clone(),
                         PreviewImage {
+                            sid: video.sid().to_string(),
                             revision,
                             picture,
                             job: Pump::new(job),
@@ -634,10 +687,13 @@ impl Playback {
             for publication in publications.values().filter(|p| {
                 matches!(
                     p.source(),
-                    TrackSource::Screenshare | TrackSource::ScreenshareAudio
+                    TrackSource::Screenshare | TrackSource::Camera | TrackSource::ScreenshareAudio
                 )
             }) {
-                let enabled = watching && compatible && admitted;
+                let belongs = publication.sid() == video.sid()
+                    || (video.source() == TrackSource::Screenshare
+                        && publication.source() == TrackSource::ScreenshareAudio);
+                let enabled = watching && compatible && admitted && belongs;
                 apply_subscription(publication, enabled);
                 let sid = publication.sid().to_string();
                 if !enabled {
@@ -824,6 +880,7 @@ impl Playback {
             let watch = self.watches.get(&id);
             tiles.push(Tile {
                 id: id.clone(),
+                kind,
                 name: participant.name(),
                 codec: video.mime_type(),
                 watching,
@@ -1079,6 +1136,7 @@ mod tests {
     #[test]
     fn replacement_video_keeps_late_old_results_out_of_the_current_mailbox() {
         let mut watch = Watch {
+            kind: Kind::Screen,
             picture: Arc::default(),
             presentation: Arc::default(),
             frames: Arc::new(AtomicU64::new(7)),

@@ -20,6 +20,7 @@ use crate::{
     playback::Tile,
     publisher::{Command, Controller, SharingSelection, Snapshot},
     quality::{self, Bitrate, Profile, Settings},
+    sources::camera,
 };
 use eframe::egui;
 use std::{
@@ -119,6 +120,7 @@ enum SharingSetup {
 const SHARING_BUTTON_HEIGHT: f32 = 38.0;
 
 struct CameraSettings {
+    device_id: String,
     resolution: quality::Resolution,
     fps: u32,
     bitrate_mbps: f32,
@@ -127,9 +129,21 @@ struct CameraSettings {
 impl Default for CameraSettings {
     fn default() -> Self {
         Self {
+            device_id: String::new(),
             resolution: quality::Resolution::P720,
             fps: 30,
             bitrate_mbps: 2.0,
+        }
+    }
+}
+
+impl CameraSettings {
+    fn quality(&self) -> Settings {
+        Settings {
+            resolution: self.resolution,
+            fps: self.fps,
+            bitrate: Bitrate::Manual((self.bitrate_mbps * 1_000_000.0).round() as u64),
+            profile: Profile::Motion,
         }
     }
 }
@@ -174,6 +188,7 @@ pub struct PublisherUi {
     custom_bitrate: bool,
     download_budget: Option<u64>,
     textures: HashMap<String, egui::TextureHandle>,
+    texture_kinds: HashMap<String, crate::preview::Kind>,
     focused: Option<String>,
     spotlight: Option<String>,
     self_preview_hidden: bool,
@@ -300,10 +315,14 @@ impl PublisherUi {
             source_id: String::new(),
             encoder: String::new(),
             quality: Settings::default(),
-            camera_settings: CameraSettings::default(),
+            camera_settings: CameraSettings {
+                device_id: crate::settings::camera_device().unwrap_or_default(),
+                ..Default::default()
+            },
             custom_bitrate: false,
             download_budget: None,
             textures: HashMap::new(),
+            texture_kinds: HashMap::new(),
             focused: None,
             spotlight: None,
             self_preview_hidden: false,
@@ -994,7 +1013,7 @@ impl PublisherUi {
                 );
             }
         });
-        if state.sharing {
+        if state.sharing && !state.camera_sharing {
             egui::CollapsingHeader::new(tr("Source preview"))
                 .default_open(ui.available_height() > 460.0)
                 .show(ui, |ui| self.source_preview(ui, state));
@@ -1018,7 +1037,9 @@ impl PublisherUi {
         let valid = self.valid_selection(state);
         ui.add_space(3.0);
         ui.separator();
-        if state.sharing || state.capture_pending {
+        if (state.sharing || state.capture_pending)
+            && !(state.camera_sharing || state.camera_pending)
+        {
             let selection = self.selection();
             let dirty = state
                 .active_selection
@@ -1067,7 +1088,11 @@ impl PublisherUi {
             }
         } else if ui
             .add_enabled(
-                state.connection == "connected" && !state.busy && valid,
+                state.connection == "connected"
+                    && !state.busy
+                    && !state.sharing
+                    && !state.capture_pending
+                    && valid,
                 primary(tr("Start sharing"), ui.available_width()),
             )
             .clicked()
@@ -1508,6 +1533,15 @@ impl PublisherUi {
     }
 
     fn update_picture(&mut self, ctx: &egui::Context, tile: &Tile) {
+        if self
+            .texture_kinds
+            .insert(tile.id.clone(), tile.kind)
+            .is_some_and(|kind| kind != tile.kind)
+        {
+            self.textures.remove(&tile.id);
+            #[cfg(feature = "performance-experiments")]
+            self.planar.rgba(&tile.id);
+        }
         // Native platforms can still schedule UI work while minimizing. Keep
         // subscription/audio state independent, but leave video owners in their
         // bounded mailbox until the window is presented again.
@@ -1595,6 +1629,7 @@ impl PublisherUi {
             {
                 self.controller.send(Command::Watch {
                     id: tile.id.clone(),
+                    kind: tile.kind,
                     enabled: true,
                 });
                 ui.close();
@@ -1697,6 +1732,7 @@ impl PublisherUi {
     fn stop_watching(&mut self, ctx: &egui::Context, tile: &Tile) {
         self.controller.send(Command::Watch {
             id: tile.id.clone(),
+            kind: tile.kind,
             enabled: false,
         });
         self.textures.remove(&tile.id);
@@ -2050,6 +2086,7 @@ impl PublisherUi {
                 {
                     self.controller.send(Command::Watch {
                         id: tile.id.clone(),
+                        kind: tile.kind,
                         enabled: true,
                     });
                 }
@@ -2586,6 +2623,8 @@ impl PublisherUi {
         self.textures.retain(|id, _| {
             (state.sharing && id == SELF_PREVIEW) || state.tiles.iter().any(|t| &t.id == id)
         });
+        self.texture_kinds
+            .retain(|id, _| state.tiles.iter().any(|tile| &tile.id == id));
         if !state.sharing {
             self.self_preview_revision = None;
             self.self_preview_hidden = false;
@@ -2955,15 +2994,28 @@ impl PublisherUi {
     }
 
     fn sharing_panel_title(state: &Snapshot) -> &'static str {
-        tr(if state.sharing || state.capture_pending {
-            "Edit stream settings"
-        } else {
-            "Share your screen"
-        })
+        tr(
+            if (state.sharing || state.capture_pending)
+                && !(state.camera_sharing || state.camera_pending)
+            {
+                "Edit stream settings"
+            } else {
+                "Share your screen"
+            },
+        )
     }
 
     fn studio_dock(&mut self, root: &mut egui::Ui, state: &Snapshot) -> SharingDock {
-        let live = state.sharing || state.capture_pending;
+        let camera_live = state.camera_sharing || state.camera_pending;
+        let screen_live = (state.sharing || state.capture_pending) && !camera_live;
+        let can_start = state.connection == "connected"
+            && !state.busy
+            && !state.sharing
+            && !state.capture_pending;
+        let camera_selected = state
+            .cameras
+            .iter()
+            .any(|camera| camera.id == self.camera_settings.device_id);
         let dirty = state.sharing
             && state
                 .active_selection
@@ -2988,7 +3040,7 @@ impl PublisherUi {
                                 ui.spacing_mut().interact_size.y = SHARING_BUTTON_HEIGHT;
                                 ui.horizontal(|ui| {
                                     let p = palette();
-                                    let screen_action = if live {
+                                    let screen_action = if screen_live {
                                         sharing_action(tr("Stop sharing"), Icon::Stop, p.error)
                                             .fill(p.danger.gamma_multiply(0.14))
                                             .stroke((1.0, p.danger.gamma_multiply(0.45)))
@@ -3000,10 +3052,7 @@ impl PublisherUi {
                                         )
                                         .fill(p.accent)
                                     };
-                                    let can_share = live
-                                        || (state.connection == "connected"
-                                            && !state.busy
-                                            && self.valid_selection(state));
+                                    let can_share = screen_live || (can_start && self.valid_selection(state));
                                     let (screen_action, screen_settings) = sharing_split_button(
                                         ui,
                                         screen_action,
@@ -3013,7 +3062,7 @@ impl PublisherUi {
                                         dirty,
                                     );
                                     if screen_action.clicked() {
-                                        if live {
+                                        if screen_live {
                                             self.controller.send(Command::Stop);
                                         } else {
                                             self.send_settings(false);
@@ -3021,23 +3070,49 @@ impl PublisherUi {
                                         }
                                     }
 
-                                    let camera_action =
-                                        sharing_action(tr("Share camera"), Icon::Camera, p.muted)
+                                    let can_share_camera = can_start && camera_selected && !state.refreshing_cameras && !state.encoders.is_empty();
+                                    let camera_action = if camera_live {
+                                        sharing_action(tr("Stop camera"), Icon::Stop, p.error)
+                                            .fill(p.danger.gamma_multiply(0.14))
+                                            .stroke((1.0, p.danger.gamma_multiply(0.45)))
+                                    } else {
+                                        sharing_action(tr("Share camera"), Icon::Camera, if can_share_camera { p.text } else { p.muted })
                                             .fill(p.card)
-                                            .stroke((1.0, p.border));
+                                            .stroke((1.0, p.border))
+                                    };
                                     let (camera_action, camera_settings) = sharing_split_button(
                                         ui,
                                         camera_action,
-                                        false,
+                                        camera_live || can_share_camera,
                                         tr("Camera settings"),
                                         self.sharing_setup == Some(SharingSetup::Camera),
                                         false,
                                     );
                                     let screen = screen_action.rect.union(screen_settings.rect);
                                     let camera = camera_action.rect.union(camera_settings.rect);
-                                    camera_action.on_disabled_hover_text(tr(
-                                        "Camera sharing is coming soon.",
-                                    ));
+                                    if camera_action.clicked() {
+                                        if camera_live {
+                                            self.controller.send(Command::Stop);
+                                        } else {
+                                            self.controller.send(Command::StartCamera {
+                                                device_id: self.camera_settings.device_id.clone(),
+                                                quality: self.camera_settings.quality(),
+                                            });
+                                            self.sharing_setup = None;
+                                        }
+                                    }
+                                    camera_action.on_disabled_hover_text(tr(if !cfg!(windows) {
+                                        "Camera sharing is available on Windows."
+                                    } else if screen_live {
+                                        "Stop your current stream before sharing a camera."
+                                    } else if state.encoders.is_empty() {
+                                        "No supported hardware encoder was found. You can still watch compatible streams."
+                                    } else {
+                                        "Choose a device in Camera settings."
+                                    }));
+                                    if camera_live {
+                                        screen_action.on_disabled_hover_text(tr("Stop your camera before sharing a screen."));
+                                    }
 
                                     let requested = if screen_settings.clicked() {
                                         Some(SharingSetup::Screen)
@@ -3049,6 +3124,9 @@ impl PublisherUi {
                                     if let Some(setup) = requested {
                                         self.sharing_setup =
                                             (self.sharing_setup != Some(setup)).then_some(setup);
+                                        if self.sharing_setup == Some(SharingSetup::Camera) && cfg!(windows) && !camera_live {
+                                            self.controller.send(Command::RefreshCameras);
+                                        }
                                     }
                                     (screen, camera)
                                 })
@@ -3154,7 +3232,7 @@ impl PublisherUi {
                             if screen {
                                 self.sharing_menu(ui, state);
                             } else {
-                                self.camera_setup_fields(ui);
+                                self.camera_setup_fields(ui, state);
                             }
                         });
                 });
@@ -3176,24 +3254,74 @@ impl PublisherUi {
         }
     }
 
-    fn camera_setup_fields(&mut self, ui: &mut egui::Ui) {
+    fn camera_setup_fields(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+        if !cfg!(windows) {
+            ui.label(tr("Camera sharing is available on Windows."));
+            return;
+        }
+        let camera_live = state.camera_sharing || state.camera_pending;
+        ui.horizontal(|ui| {
+            if camera_live {
+                ui.label(tr("Stop camera to change its settings."));
+            } else if state.refreshing_cameras {
+                ui.spinner();
+                ui.label(tr("Refreshing cameras…"));
+            } else if ui.button(tr("Refresh cameras")).clicked() {
+                self.controller.send(Command::RefreshCameras);
+            }
+        });
+        if state.cameras.is_empty() && !state.refreshing_cameras {
+            ui.label(tr(
+                "No camera found. Check Windows camera permissions and refresh.",
+            ));
+        }
+        ui.add_enabled_ui(!camera_live && !state.refreshing_cameras, |ui| {
+            self.camera_controls(ui, state)
+        });
+    }
+
+    fn camera_controls(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
         let settings = &mut self.camera_settings;
         let device = ui.label(tr("Camera device"));
-        ui.add_enabled_ui(false, |ui| {
-            egui::ComboBox::from_id_salt("camera-device")
-                .width(ui.available_width())
-                .selected_text(tr("System default"))
-                .show_ui(ui, |_| {})
-                .response
-                .labelled_by(device.id);
-        });
-        ui.label(
-            egui::RichText::new(tr(
-                "Camera selection will be available when camera sharing is ready.",
-            ))
-            .size(12.0)
-            .color(palette().muted),
+        let selected = state
+            .cameras
+            .iter()
+            .find(|device| device.id == settings.device_id);
+        let selected_text = selected.map_or_else(
+            || {
+                tr(if settings.device_id.is_empty() {
+                    "Choose a camera"
+                } else {
+                    "Selected camera is unavailable"
+                })
+            },
+            |device| device.name.as_str(),
         );
+        egui::ComboBox::from_id_salt("camera-device")
+            .width(ui.available_width())
+            .selected_text(selected_text)
+            .show_ui(ui, |ui| {
+                for (index, device) in state.cameras.iter().enumerate() {
+                    let name = if state
+                        .cameras
+                        .iter()
+                        .any(|other| other.id != device.id && other.name == device.name)
+                    {
+                        format!("{} ({})", device.name, index + 1)
+                    } else {
+                        device.name.clone()
+                    };
+                    if ui
+                        .selectable_label(settings.device_id == device.id, name)
+                        .clicked()
+                    {
+                        settings.device_id.clone_from(&device.id);
+                        let _ = crate::settings::save_camera_device(&device.id);
+                    }
+                }
+            })
+            .response
+            .labelled_by(device.id);
         ui.add_space(6.0);
         ui.columns(2, |columns| {
             let ui = &mut columns[0];
@@ -3202,11 +3330,7 @@ impl PublisherUi {
                 .width(ui.available_width())
                 .selected_text(tr(settings.resolution.label()))
                 .show_ui(ui, |ui| {
-                    for resolution in [
-                        quality::Resolution::P720,
-                        quality::Resolution::P1080,
-                        quality::Resolution::Source,
-                    ] {
+                    for resolution in camera::RESOLUTIONS {
                         ui.selectable_value(
                             &mut settings.resolution,
                             resolution,
@@ -3223,7 +3347,7 @@ impl PublisherUi {
                 .width(ui.available_width())
                 .selected_text(format!("{} FPS", settings.fps))
                 .show_ui(ui, |ui| {
-                    for fps in [24, 30, 60] {
+                    for fps in camera::FRAME_RATES {
                         ui.selectable_value(&mut settings.fps, fps, format!("{fps} FPS"));
                     }
                 })
@@ -3244,9 +3368,12 @@ impl PublisherUi {
             .inner;
         ui.spacing_mut().slider_width = ui.available_width();
         ui.add(
-            egui::Slider::new(&mut settings.bitrate_mbps, 0.5..=8.0)
-                .step_by(0.5)
-                .show_value(false),
+            egui::Slider::new(
+                &mut settings.bitrate_mbps,
+                camera::MIN_BITRATE as f32 / 1_000_000.0..=camera::MAX_BITRATE as f32 / 1_000_000.0,
+            )
+            .step_by(0.5)
+            .show_value(false),
         )
         .labelled_by(bitrate.id);
     }
@@ -4421,6 +4548,7 @@ mod tests {
             custom_bitrate: false,
             download_budget: None,
             textures: HashMap::new(),
+            texture_kinds: HashMap::new(),
             focused: None,
             spotlight: None,
             self_preview_hidden: false,
@@ -4629,6 +4757,7 @@ mod tests {
         let mut app = app();
         let template = Tile {
             id: "main".into(),
+            kind: crate::preview::Kind::Screen,
             name: "Main".into(),
             codec: String::new(),
             watching: true,
@@ -4704,6 +4833,7 @@ mod tests {
         let mut app = app();
         let watched = |id: &str| Tile {
             id: id.into(),
+            kind: crate::preview::Kind::Screen,
             name: id.into(),
             codec: String::new(),
             watching: true,
@@ -4784,6 +4914,7 @@ mod tests {
         app.controller = controller;
         let first = Tile {
             id: "first".into(),
+            kind: crate::preview::Kind::Screen,
             name: "First".into(),
             codec: String::new(),
             watching: true,
@@ -4848,7 +4979,7 @@ mod tests {
         };
         activate(&second, tr("Watch"));
         assert!(
-            matches!(next_command(), Some(Command::Watch { id, enabled: true }) if id == second.id)
+            matches!(next_command(), Some(Command::Watch { id, enabled: true, .. }) if id == second.id)
         );
         second.watching = true;
         activate(&second, &format!("{} · Second", tr("Mute")));
@@ -4858,7 +4989,7 @@ mod tests {
         assert_eq!(first.volume.load(Ordering::Relaxed), 0);
         activate(&second, &format!("{} · Second", tr("Stop watching")));
         assert!(
-            matches!(next_command(), Some(Command::Watch { id, enabled: false }) if id == second.id)
+            matches!(next_command(), Some(Command::Watch { id, enabled: false, .. }) if id == second.id)
         );
         assert!(next_command().is_none());
     }
@@ -4869,6 +5000,7 @@ mod tests {
         let ctx = egui::Context::default();
         let tile = Tile {
             id: "clipping".into(),
+            kind: crate::preview::Kind::Screen,
             name: "Remote".into(),
             codec: String::new(),
             watching: true,
@@ -4920,6 +5052,7 @@ mod tests {
         let ctx = egui::Context::default();
         let tile = Tile {
             id: "remote".into(),
+            kind: crate::preview::Kind::Screen,
             name: "Remote".into(),
             codec: String::new(),
             watching: true,
@@ -5076,6 +5209,7 @@ mod tests {
             configure_theme(&ctx);
             let tile = Tile {
                 id: "fullscreen-menu-test".into(),
+                kind: crate::preview::Kind::Screen,
                 name: "Friend".into(),
                 codec: "video/h264".into(),
                 watching: true,
@@ -5180,6 +5314,7 @@ mod tests {
         configure_theme(&ctx);
         let mut tile = Tile {
             id: "synthetic-stream".into(),
+            kind: crate::preview::Kind::Screen,
             name: "Friend".into(),
             codec: "video/h265".into(),
             watching: true,
@@ -5305,18 +5440,29 @@ mod tests {
     }
 
     #[test]
-    fn split_arrows_open_separate_settings_without_starting_capture() {
+    #[cfg(windows)]
+    fn camera_dock_uses_separate_settings_and_requires_explicit_start() {
         let mut app = app();
         let state = Snapshot {
             connection: "connected",
+            cameras: vec![camera::Info {
+                id: "test-camera".into(),
+                name: "Test camera".into(),
+            }],
+            encoders: vec![crate::encoding::Encoder {
+                factory: "test-encoder".into(),
+                label: "Test encoder".into(),
+                codec: quality::Codec::H264,
+            }],
             ..Default::default()
         };
-        let (controller, mut commands) = Controller::recording_for_test(state.clone());
+        let (controller, mut commands) = Controller::recording_for_test(state);
         app.controller = controller;
         let ctx = egui::Context::default();
         configure_theme(&ctx);
         let window = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(960.0, 540.0));
         let draw = |app: &mut PublisherUi, events| {
+            let state = app.controller.snapshot();
             let mut buttons = None;
             let mut output = ctx.run_ui(
                 egui::RawInput {
@@ -5375,6 +5521,7 @@ mod tests {
         let screen_quality = app.quality;
         let output = click(&mut app, arrow(camera));
         assert!(app.sharing_setup == Some(SharingSetup::Camera));
+        assert!(matches!(commands(), Some(Command::RefreshCameras)));
         let output = click(&mut app, text_center(&output, "30 FPS"));
         click(&mut app, text_center(&output, "24 FPS"));
         assert_eq!(app.camera_settings.fps, 24);
@@ -5384,6 +5531,20 @@ mod tests {
         click(&mut app, camera.left_center() + egui::vec2(42.0, 0.0));
         assert!(app.sharing_setup.is_none());
         assert!(commands().is_none());
+        app.camera_settings.device_id = "test-camera".into();
+        draw(&mut app, vec![]);
+        let ([_, camera], _) = draw(&mut app, vec![]);
+        click(&mut app, camera.left_center() + egui::vec2(42.0, 0.0));
+        assert!(matches!(
+            commands(),
+            Some(Command::StartCamera { device_id, quality })
+                if device_id == "test-camera" && quality.fps == 24
+                    && quality.resolution == quality::Resolution::P720
+                    && quality.bitrate == Bitrate::Manual(2_000_000)
+        ));
+        let ([_, camera], _) = draw(&mut app, vec![]);
+        click(&mut app, camera.left_center() + egui::vec2(42.0, 0.0));
+        assert!(matches!(commands(), Some(Command::Stop)));
     }
 
     #[test]

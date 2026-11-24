@@ -254,13 +254,15 @@ export async function preparePortableRuntime(root, output, notices) {
     ),
     GST_REGISTRY_1_0: join(sourceCache, "qualification-registry.bin"),
   };
-  // Window/WGC capture uses this cadence element even though the synthetic
-  // encoder probe does not. Reject incomplete bundles before creating an EXE.
-  execFileSync(
-    join(output, "bin/gst-inspect-1.0.exe"),
-    ["--exists", "imagefreeze"],
-    { env },
-  );
+  // These capture elements are outside the synthetic encoder probe.
+  for (const element of ["imagefreeze", "mfvideosrc", "d3d11upload", "jpegdec"])
+    execFileSync(
+      join(output, "bin/gst-inspect-1.0.exe"),
+      ["--exists", element],
+      {
+        env,
+      },
+    );
   for (const file of manifest.files.filter((file) =>
     file.path.startsWith("lib/gstreamer-1.0/"),
   )) {

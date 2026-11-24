@@ -12,8 +12,13 @@ pub struct SourceInfo {
 pub enum Target {
     Monitor(u64),
     MonitorWgc(u64),
-    Window { handle: u64, pid: u32 },
+    Window {
+        handle: u64,
+        pid: u32,
+    },
     Pattern,
+    #[cfg(windows)]
+    Camera(camera::Input),
 }
 
 #[derive(Clone)]
@@ -21,6 +26,19 @@ pub struct Source {
     pub info: SourceInfo,
     pub target: Target,
 }
+
+impl Source {
+    pub fn is_camera(&self) -> bool {
+        #[cfg(windows)]
+        if matches!(self.target, Target::Camera(_)) {
+            return true;
+        }
+        false
+    }
+}
+
+#[path = "sources/camera.rs"]
+pub mod camera;
 
 #[cfg(windows)]
 #[path = "sources/windows.rs"]

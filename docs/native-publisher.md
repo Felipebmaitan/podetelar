@@ -49,11 +49,18 @@ before switching. Sharing and watching remain explicit. See
 The room dock groups screen and camera sharing separately. Open the arrow on
 **Share screen** to choose a capture source or adjust stream quality. While
 sharing, use the same arrow to apply changes. The camera menu has separate
-quality settings. Starting a camera stream and selecting a camera device are
-pending camera support. The stage toolbar offers Grid, Spotlight and Focus.
+quality settings. Open **Camera settings** and select a Windows camera, then click
+**Share camera**. The selected device is remembered locally. If it is disconnected,
+refresh the list and reconnect it or select another device explicitly. Windows camera
+discovery includes OBS Virtual Camera when its driver is registered and usable.
+Camera streams publish only video. Each participant can share one source at a time.
+Use **Stop camera** before changing camera settings or starting screen sharing.
+Watching cameras requires a native app version with camera playback support.
+Camera capture is currently Windows-only. The stage toolbar offers Grid, Spotlight and Focus.
 Spotlight keeps one stream large and the others in a scrollable strip. Highlighting a stream changes the layout.
 Watch subscribes to video and audio, and Stop watching unsubscribes. Each stream
-has independent volume. When only you are live, the stage shows your most recent
+has independent volume. Switching between a participant's camera and screen
+requires selecting Watch again. When only you are live, the stage shows your most recent
 preview. While you share and watch someone else, you can hide or restore the small
 local preview beside the streams. Preview capture occurs initially and at most
 once per minute.
@@ -96,6 +103,12 @@ npm run native:qualify -- monitor-wgc
 ```
 
 The first command encodes a GPU-generated pattern; the other commands capture the local monitor through each backend. They discard all buffers locally, upload nothing and write no video/images. Each detected encoder must produce 120 frames and release its pipeline. `npm run native:run -- --sources` explicitly lists window titles/source IDs; do not paste that output into public logs. Pass a chosen source ID to `native:qualify` to check a window.
+
+`npm run native:run -- --cameras` lists camera names and local device IDs.
+Set `PODETELAR_TEST_CAMERA` to the exact name of a camera with a 720p-compatible
+mode and run `npm run native:room-smoke -- camera.spec.ts`. This opt-in test
+publishes the chosen camera to the isolated local SFU. Use a test scene or aim
+the camera at a test target before running it. Run it separately for each device.
 
 For native acceptance, build the app/server, then run `npm run native:room-smoke`
 under Node 24 on Windows. It downloads a checksum-pinned official Windows LiveKit

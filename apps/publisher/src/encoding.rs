@@ -169,8 +169,27 @@ impl Encoding {
             ""
         };
         #[cfg(not(target_os = "macos"))]
+        let camera_decode = match &source.target {
+            #[cfg(windows)]
+            Target::Camera(input)
+                if input
+                    .caps
+                    .structure(0)
+                    .is_some_and(|s| s.name() == "image/jpeg") =>
+            {
+                "jpegdec ! "
+            }
+            _ => "",
+        };
+        #[cfg(not(target_os = "macos"))]
+        let upload = if source.is_camera() {
+            "d3d11upload ! "
+        } else {
+            ""
+        };
+        #[cfg(not(target_os = "macos"))]
         let processing = format!(
-            "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! {cadence}videorate drop-only=true max-rate={} ! d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width={},height={},framerate={}/1 ! clocksync ! tee name=raw raw. ! queue name=encoder_queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! {} name=hardware bitrate={} gop-size={} ! {media_type},profile={profile} ! {framing} ! appsink name=encoded max-buffers=2 sync=false raw. ! queue name=preview_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=NV12,width=960,height=540 ! d3d11download ! video/x-raw,format=NV12 ! videoconvert ! video/x-raw,format=I420 ! jpegenc quality=85 ! appsink name=preview max-buffers=1 drop=true sync=false async=false wait-on-eos=false",
+            "queue name=entry max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! {camera_decode}{cadence}videorate drop-only=true max-rate={} ! {upload}d3d11convert ! video/x-raw(memory:D3D11Memory),format=NV12,width={},height={},framerate={}/1 ! clocksync ! tee name=raw raw. ! queue name=encoder_queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! {} name=hardware bitrate={} gop-size={} ! {media_type},profile={profile} ! {framing} ! appsink name=encoded max-buffers=2 sync=false raw. ! queue name=preview_gate max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! d3d11convert add-borders=true ! video/x-raw(memory:D3D11Memory),format=NV12,width=960,height=540 ! d3d11download ! video/x-raw,format=NV12 ! videoconvert ! video/x-raw,format=I420 ! jpegenc quality=85 ! appsink name=preview max-buffers=1 drop=true sync=false async=false wait-on-eos=false",
             mode.fps,
             mode.width,
             mode.height,
@@ -198,6 +217,11 @@ impl Encoding {
         let input = crate::macos::input(source)?;
         #[cfg(not(target_os = "macos"))]
         let input = match source.target {
+            #[cfg(windows)]
+            Target::Camera(ref camera) => camera
+                .device
+                .create_element(None)
+                .context("Could not open the selected camera.")?,
             Target::Pattern => gst::ElementFactory::make("d3d11testsrc")
                 .property("is-live", true)
                 .build()
@@ -224,24 +248,30 @@ impl Encoding {
         let entry = pipeline
             .by_name("entry")
             .context("Missing capture queue.")?;
-        if matches!(source.target, Target::Pattern) {
-            // A high-resolution fixture must originate at that size, rather than
-            // accidentally qualifying an upscaled default test texture.
-            let caps = gst::Caps::builder("video/x-raw");
-            #[cfg(not(target_os = "macos"))]
-            let caps = caps.features(["memory:D3D11Memory"]);
-            input.link_filtered(
-                &entry,
-                &caps
-                    .field("width", source.info.width as i32)
-                    .field("height", source.info.height as i32)
-                    .field("framerate", gst::Fraction::new(mode.fps as i32, 1))
-                    .build(),
-            )
-        } else {
-            input.link(&entry)
-        }
-        .context("Capture source could not connect to GPU conversion.")?;
+        let link = || {
+            #[cfg(windows)]
+            if let Target::Camera(camera) = &source.target {
+                return input.link_filtered(&entry, &camera.caps);
+            }
+            if matches!(source.target, Target::Pattern) {
+                // A high-resolution fixture must originate at that size, rather than
+                // accidentally qualifying an upscaled default test texture.
+                let caps = gst::Caps::builder("video/x-raw");
+                #[cfg(not(target_os = "macos"))]
+                let caps = caps.features(["memory:D3D11Memory"]);
+                input.link_filtered(
+                    &entry,
+                    &caps
+                        .field("width", source.info.width as i32)
+                        .field("height", source.info.height as i32)
+                        .field("framerate", gst::Fraction::new(mode.fps as i32, 1))
+                        .build(),
+                )
+            } else {
+                input.link(&entry)
+            }
+        };
+        link().context("Capture source could not connect to GPU conversion.")?;
         let enabled = rate.diagnostic_enabled.clone();
         let overruns = rate.capture_overruns.clone();
         entry.connect("overrun", false, move |_| {

@@ -22,6 +22,9 @@ Install Chromium with `npx playwright install chromium` before running administr
 tests. Native acceptance uses Playwright's API client and test runner to launch
 native executables; it requires no browser installation. `npm run native:e2e` runs
 that same suite against an already configured server and native executable.
+The opt-in Windows camera check requires `PODETELAR_TEST_CAMERA` and the isolated
+SFU. It checks a real camera publication, video-only media, preview and native
+decode, Stop watching traffic, rewatch, and device reuse after stopping.
 
 CI runs Node checks on Windows and Linux and the Docker smoke plus desktop
 administrator UI on Linux. Hosted native build/packaging qualification remains an

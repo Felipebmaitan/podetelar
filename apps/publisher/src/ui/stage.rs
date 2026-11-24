@@ -170,6 +170,7 @@ impl PublisherUi {
                                     } else {
                                         self.controller.send(Command::Watch {
                                             id: tile.id.clone(),
+                                            kind: tile.kind,
                                             enabled: true,
                                         });
                                         if self.focused.is_some() {

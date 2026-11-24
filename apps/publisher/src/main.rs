@@ -154,6 +154,15 @@ fn run() -> Result<()> {
                     .collect::<Vec<_>>()
             )?
         ),
+        Some("--cameras") => println!(
+            "{}",
+            serde_json::to_string(
+                &sources::camera::enumerate()
+                    .into_iter()
+                    .map(|device| device.info)
+                    .collect::<Vec<_>>()
+            )?
+        ),
         Some("--audio-apps") => println!("{}", serde_json::to_string(&audio::applications()?)?),
         Some("--measure-connection") => {
             // Private invitation is stdin-only; output contains capacity, never authority.
@@ -319,7 +328,7 @@ fn run() -> Result<()> {
             runtime.block_on(publish_fixture(request))?;
         }
         Some(value) if value != "--browser-link" => bail!(
-            "Unknown option. Use --probe, --sources, --audio-apps, --qualify, --qualify-audio or --publish-fixture / --watch-fixture."
+            "Unknown option. Use --probe, --sources, --cameras, --audio-apps, --qualify, --qualify-audio or --publish-fixture / --watch-fixture."
         ),
         _ => {
             let browser_link = if std::env::args().nth(1).as_deref() == Some("--browser-link") {
@@ -384,6 +393,7 @@ struct FixtureRequest {
     codec: Codec,
     seconds: u64,
     source_id: Option<String>,
+    camera_id: Option<String>,
     #[serde(default)]
     audio: audio::Choice,
     #[serde(default)]
@@ -622,7 +632,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
                 if tile.watching { tile.presentation.request(); }
                 if request.diagnostics { tile.presentation.diagnostics.open.store(tile.watching, Ordering::Relaxed); }
                 let tile_watching = request.watch_schedule.iter().filter(|step| step.second <= elapsed && step.display_name == tile.name).max_by_key(|step| step.second).map_or(watching, |step| step.enabled);
-                if tile_watching != tile.watching { playback.watch(tile.id.clone(), tile_watching)?; }
+                if tile_watching != tile.watching { playback.watch(tile.id.clone(), tile.kind, tile_watching)?; }
                 let requested_volume = request.volume_schedule.iter().filter(|step| step.second <= elapsed && step.display_name.as_ref().is_none_or(|name| name == &tile.name)).max_by_key(|step| step.second).map_or(100, |step| step.percent);
                 playback.set_volume(&tile.id, requested_volume);
             }
@@ -693,6 +703,20 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
 }
 
 async fn publish_fixture(request: FixtureRequest) -> Result<()> {
+    if request.camera_id.is_some() {
+        let invitation = url::Url::parse(&request.invitation_url)
+            .map_err(|_| anyhow::anyhow!("Invalid camera fixture invitation."))?;
+        ensure!(
+            matches!(
+                invitation.host_str(),
+                Some("localhost" | "127.0.0.1" | "[::1]")
+            ) && request.source_id.is_none()
+                && request.seconds <= 120
+                && request.reconfigure_after_seconds.is_none()
+                && request.bitrate_after_seconds.is_none(),
+            "Camera qualification requires an explicit device and an isolated local room."
+        );
+    }
     ensure!(
         (1..=2100).contains(&request.seconds),
         "Fixture duration must be between 1 and 2100 seconds."
@@ -718,9 +742,27 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
             && request.reconfigure_after_seconds.is_some() == request.next_quality.is_some(),
         "Choose one complete fixture transition."
     );
+    let camera = request
+        .camera_id
+        .as_ref()
+        .map(|id| {
+            sources::camera::enumerate()
+                .into_iter()
+                .find(|device| device.info.id == *id)
+                .context("Fixture camera is unavailable.")?
+                .source(request.quality)
+        })
+        .transpose()?;
     let admission =
         admission::Admission::join(&request.invitation_url, &request.display_name).await?;
     let access = admission.media_access().await?;
+    if request.camera_id.is_some()
+        && !url::Url::parse(&access.server_url)
+            .is_ok_and(|url| matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]")))
+    {
+        admission.leave().await;
+        bail!("Camera qualification requires local media signaling.");
+    }
     let options = connection::options(request.route);
     let (room, mut events) = tokio::time::timeout(
         Duration::from_secs(15),
@@ -757,12 +799,13 @@ async fn publish_fixture(request: FixtureRequest) -> Result<()> {
         .into_iter()
         .find(|encoder| encoder.codec == request.codec)
         .context("No hardware encoder supports the requested codec.")?;
-    let source = match request.source_id {
-        Some(id) => sources::enumerate()
+    let source = match (request.source_id, camera) {
+        (_, Some(source)) => source,
+        (Some(id), None) => sources::enumerate()
             .into_iter()
             .find(|source| source.info.id == id)
             .context("Fixture capture source is unavailable.")?,
-        None => {
+        (None, None) => {
             let mut source = sources::fixture();
             if request.fixture_4k {
                 source.info.width = 3840;

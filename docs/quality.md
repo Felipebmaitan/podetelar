@@ -6,6 +6,13 @@ Automatic bitrate. Codec/hardware encoder and manual bitrate live in Advanced.
 The website handles invitations, access management and app downloads; it does not
 publish or play streams.
 
+Windows camera sharing has its own settings and defaults to 720p, 30 FPS and
+2 Mbps. Its choices are 720p, 1080p or Source, 24/30/60 FPS, and 0.5–8 Mbps.
+The camera needs to expose a mode that can supply the selected dimensions and
+frame rate. Output preserves aspect ratio, downscales where needed, and can drop
+frames from faster camera modes. Camera settings apply on the next start and use
+the room's hardware codec negotiation and bitrate feedback.
+
 ## Choosing a mode
 
 Resolution choices are 720p, 1080p, 1440p, 4K and Source. Each preserves source aspect ratio, rounds down to even dimensions, and never scales above its captured source. The 4K ceiling is 3840×2160, or 2160×3840 in portrait orientation. Ultrawide sources fit inside that envelope. Source means the bounded dimensions evaluated at capture start. A source resize does not silently change the active output; shrinking below its selected dimensions stops sharing with an explanation. The negotiated capture dimensions are checked before publication and during capture. Window enumeration uses visible DWM bounds instead of invisible resize margins, matching WGC capture.

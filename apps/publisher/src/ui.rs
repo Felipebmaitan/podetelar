@@ -388,64 +388,30 @@ impl PublisherUi {
                 skin::icon_button(ui, Icon::Settings, tr("Settings"))
             };
             egui::Popup::menu(&room_options)
-                    .frame(skin::menu_frame())
-                    .show(|ui| {
-                        if ui.button(tr("User settings")).clicked() {
-                            self.open_profile();
-                            ui.close();
-                        }
-                        if ui.button(tr("Advanced settings")).clicked() {
-                            self.advanced_open = true;
-                            ui.close();
-                        }
-                        ui.menu_button(tr("Theme"), |ui| self.theme_options(ui));
-                        ui.separator();
-                        if std::env::var_os(crate::activation_protocol::INSTALLED).is_some() {
-                            ui.label(tr(if self.browser_links_enabled {
-                                "Room links open this installed app automatically."
-                            } else {
-                                "Room links are handled by another application or need repair."
-                            }));
+                .frame(skin::menu_frame())
+                .show(|ui| {
+                    if ui.button(tr("User settings")).clicked() {
+                        self.open_profile();
+                        ui.close();
+                    }
+                    if ui.button(tr("Advanced settings")).clicked() {
+                        self.advanced_open = true;
+                        ui.close();
+                    }
+                    ui.menu_button(tr("Theme"), |ui| self.theme_options(ui));
+                    ui.separator();
+                    if std::env::var_os(crate::activation_protocol::INSTALLED).is_some() {
+                        ui.label(tr(if self.browser_links_enabled {
+                            "Room links open this installed app automatically."
                         } else {
-                            let label = if self.browser_links_enabled {
-                                "Disable browser links"
-                            } else {
-                                "Enable browser links"
-                            };
-                            if ui
-                                .button(tr(label))
-                                .on_hover_text(tr(
-                                    "Allow invitation pages to open this app for your Windows user. A launcher copy is kept in Local AppData.",
-                                ))
-                                .clicked()
-                            {
-                                match crate::browser_links::set_enabled(!self.browser_links_enabled)
-                                {
-                                    Ok(()) => {
-                                        self.browser_links_enabled = !self.browser_links_enabled;
-                                        self.settings_error.clear();
-                                    }
-                                    Err(error) => self.settings_error = error.to_string(),
-                                }
-                                ui.close();
-                            }
-                            if self.browser_links_enabled
-                                && ui
-                                    .button(tr("Update browser links to this version"))
-                                    .clicked()
-                            {
-                                match crate::browser_links::set_enabled(true) {
-                                    Ok(()) => self.settings_error.clear(),
-                                    Err(error) => self.settings_error = error.to_string(),
-                                }
-                                ui.close();
-                            }
-                        }
-                        if ui.button(tr("Licenses")).clicked() {
-                            self.licenses_open = true;
-                            ui.close();
-                        }
-                    });
+                            "Room links are handled by another application or need repair."
+                        }));
+                    }
+                    if ui.button(tr("Licenses")).clicked() {
+                        self.licenses_open = true;
+                        ui.close();
+                    }
+                });
             if connected && !self.invitation.is_empty() {
                 let copied = self
                     .copied_until

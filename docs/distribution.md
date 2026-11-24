@@ -84,9 +84,10 @@ library sources. The internal
 extracts to a previously nonexistent directory.
 
 Installed room-link registration is managed by install/update/uninstall hooks.
-Legacy standalone builds retain opt-in **Room options → Enable browser links** and
-a cached launcher under `PodeTelarPortable\browser-links`. Permanent invitations
-are never passed in activation arguments; one-use handoff tickets expire after a minute.
+Standalone operators can use `--enable-browser-links` or
+`--disable-browser-links` on the portable EXE. Opting in uses a cached launcher
+under `PodeTelarPortable\browser-links`. Permanent invitations are never passed
+in activation arguments; one-use handoff tickets expire after a minute.
 
 ## Dependency licenses and signing
 

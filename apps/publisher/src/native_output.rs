@@ -10,6 +10,10 @@ use webrtc_sys::audio_device_controller::{
     ffi::{AudioDeviceController, output_only_audit},
 };
 
+#[cfg(windows)]
+#[path = "native_output/windows_output.rs"]
+mod windows_output;
+
 struct Device {
     controller: SharedPtr<AudioDeviceController>,
     users: usize,
@@ -24,12 +28,18 @@ struct Device {
     route_changes: u64,
     held_until: Option<Instant>,
     test_route: Option<(String, Instant)>,
+    #[cfg(windows)]
+    converted: Option<windows_output::Output>,
+    #[cfg(windows)]
+    test_platform_failure: bool,
     _runtime: Arc<LkRuntime>,
 }
 static DEVICE: Mutex<Option<Device>> = Mutex::new(None);
 
 impl Device {
     fn synthetic(&mut self) {
+        #[cfg(windows)]
+        self.stop_conversion();
         self.controller.set_adm_playout_enabled(false);
         // InitPlayout failures can leave the proxy's logical playing flag false.
         // Keep receive decoding alive while Windows has no usable endpoint.
@@ -39,6 +49,28 @@ impl Device {
         self.controller.start_playout();
         self.rendering = false;
     }
+
+    #[cfg(windows)]
+    fn stop_conversion(&mut self) {
+        if let Some(output) = self.converted.take() {
+            // Detach the producer before dropping the pipeline. WebRTC keeps
+            // pulling decoded frames into its synthetic output while we retry.
+            unsafe { self.controller.set_windows_output(std::ptr::null_mut()) };
+            drop(output);
+        }
+    }
+
+    fn started(&mut self, route: String) {
+        if self.route.as_ref().is_some_and(|old| old != &route) {
+            self.route_changes += 1;
+        }
+        self.route = Some(route);
+        self.rendering = true;
+        self.recoveries += 1;
+        self.last_mix = output_only_audit().mix_calls;
+        self.progress = Instant::now();
+    }
+
     fn refresh(&mut self) -> bool {
         let now = Instant::now();
         if now < self.next_check {
@@ -64,17 +96,25 @@ impl Device {
         };
         let route = match route {
             Ok(route) => route,
-            Err(_)
-                if self.rendering && now.duration_since(self.progress) < Duration::from_secs(3) =>
-            {
-                return true;
-            }
-            Err(_) => self.route.clone(),
+            Err(_) => self.active_route(),
         };
-        if self.rendering
-            && route == self.route
-            && now.duration_since(self.progress) < Duration::from_secs(3)
-        {
+        #[cfg(windows)]
+        if let Some(output) = self.converted.as_mut() {
+            if let Some(route) = route
+                .as_ref()
+                .filter(|route| route.as_str() == output.route())
+                && let Some(playing) = output.poll(now)
+            {
+                if playing && !self.rendering {
+                    self.started(route.clone());
+                }
+                self.rendering = playing;
+                return playing;
+            }
+            self.synthetic();
+        }
+        let same_output = self.rendering && route == self.route;
+        if same_output && now.duration_since(self.progress) < Duration::from_secs(3) {
             return true;
         }
         if self.rendering {
@@ -84,11 +124,31 @@ impl Device {
             self.route = None;
             return false;
         };
+        #[cfg(windows)]
+        if same_output && self.start_conversion(&route) {
+            // The direct renderer stopped requesting frames on this endpoint.
+            // Give the converted output a chance before retrying the same ADM.
+            return false;
+        }
+        if self.start_platform(&route) {
+            self.started(route);
+            return true;
+        }
+        self.failures += 1;
+        self.synthetic();
+        #[cfg(windows)]
+        self.start_conversion(&route);
+        false
+    }
+
+    fn start_platform(&mut self, route: &str) -> bool {
+        #[cfg(windows)]
+        if self.test_platform_failure {
+            return false;
+        }
         if !self.acquired {
             self.acquired = self.controller.acquire_platform_adm();
             if !self.acquired {
-                self.failures += 1;
-                self.synthetic();
                 return false;
             }
         }
@@ -100,26 +160,44 @@ impl Device {
         let selection = if route.starts_with("default:") {
             "default".to_owned()
         } else {
-            route.clone()
+            route.to_owned()
         };
         #[cfg(not(target_os = "macos"))]
-        let selection = route.clone();
+        let selection = route.to_owned();
         let selected = self.controller.set_playout_device_by_guid(selection);
         self.controller.set_adm_playout_enabled(selected);
-        if selected && self.controller.init_playout() && self.controller.start_playout() {
-            if self.route.as_ref().is_some_and(|old| old != &route) {
-                self.route_changes += 1;
-            }
-            self.route = Some(route);
-            self.rendering = true;
-            self.recoveries += 1;
-            self.last_mix = output_only_audit().mix_calls;
-            self.progress = Instant::now();
-        } else {
-            self.failures += 1;
-            self.synthetic();
+        selected && self.controller.init_playout() && self.controller.start_playout()
+    }
+
+    #[cfg(windows)]
+    fn start_conversion(&mut self, route: &str) -> bool {
+        let Ok(output) = windows_output::Output::start(route) else {
+            return false;
+        };
+        // GStreamer owns a reference here and the SDK takes its own. Only the
+        // synthetic ADM sends data to this appsrc, in 10 ms post-mixer blocks.
+        unsafe { self.controller.set_windows_output(output.appsrc()) };
+        self.converted = Some(output);
+        true
+    }
+
+    fn converted(&self) -> bool {
+        #[cfg(windows)]
+        {
+            self.converted.is_some()
         }
-        self.rendering
+        #[cfg(not(windows))]
+        {
+            false
+        }
+    }
+
+    fn active_route(&self) -> Option<String> {
+        #[cfg(windows)]
+        if let Some(output) = &self.converted {
+            return Some(output.route().to_owned());
+        }
+        self.route.clone()
     }
 }
 
@@ -182,6 +260,7 @@ pub fn audit() -> serde_json::Value {
         "mixCalls":audit.mix_calls,
         "outputDelayMs":(audit.output_delay_ms >= 0).then_some(audit.output_delay_ms),
         "outputUsers":active.map_or(0, |d|d.users), "rendering":active.is_some_and(|d|d.rendering),
+        "convertedOutput":active.is_some_and(Device::converted),
         "outputStarts":active.map_or(0, |d|d.recoveries),"outputFailures":active.map_or(0,|d|d.failures),
         "routeChanges":active.map_or(0,|d|d.route_changes),
         "availableOutputs":active.map_or(0,|d|d.controller.playout_devices()),
@@ -222,6 +301,10 @@ impl Lease {
             route_changes: 0,
             held_until: None,
             test_route: None,
+            #[cfg(windows)]
+            converted: None,
+            #[cfg(windows)]
+            test_platform_failure: false,
             _runtime: runtime,
         };
         device.refresh();
@@ -235,6 +318,8 @@ impl Drop for Lease {
             let Some(device) = slot.as_mut() else { return };
             device.users -= 1;
             if device.users == 0 {
+                #[cfg(windows)]
+                device.stop_conversion();
                 device.controller.set_adm_playout_enabled(false);
                 if device.acquired {
                     device.controller.release_platform_adm();
@@ -317,6 +402,22 @@ pub fn qualification_pause(seconds: u64) -> bool {
     device.next_check = Instant::now();
     device.refresh();
     true
+}
+
+pub fn qualification_fail_platform_start() -> bool {
+    #[cfg(windows)]
+    if let Ok(mut slot) = DEVICE.lock()
+        && let Some(device) = slot.as_mut()
+    {
+        device.test_platform_failure = true;
+        if device.converted.is_none() {
+            device.synthetic();
+            device.next_check = Instant::now();
+            device.refresh();
+        }
+        return true;
+    }
+    false
 }
 pub fn qualification_switch(seconds: u64) -> bool {
     let Ok(mut slot) = DEVICE.lock() else {

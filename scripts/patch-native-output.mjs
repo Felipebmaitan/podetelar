@@ -135,6 +135,94 @@ export function patchNativeOutput(source, guard) {
     "int32_t SyntheticAudioDevice::PlayoutDelay(uint16_t* delayMS) const {\n  return 0;",
     "int32_t SyntheticAudioDevice::PlayoutDelay(uint16_t* delayMS) const {\n  *delayMS = 0; // Synthetic output has no physical device estimate.\n  return 0;",
   );
+  // The Windows converter consumes one post-gain mix from the synthetic ADM.
+  // Only this ADM or the platform ADM pulls audio at a given time.
+  replace(
+    "include/livekit/synthetic_audio_device.h",
+    "  webrtc::AudioTransport* audio_transport_;",
+    "  webrtc::AudioTransport* audio_transport_ = nullptr;\n#ifdef _WIN32\n  uint8_t* windows_output_ RTC_GUARDED_BY(mutex_) = nullptr;\n#endif",
+  );
+  replace(
+    "include/livekit/synthetic_audio_device.h",
+    " private:\n  mutable webrtc::Mutex mutex_;",
+    "  void set_windows_output(uint8_t* appsrc);\n\n private:\n  mutable webrtc::Mutex mutex_;",
+  );
+  replace(
+    "src/synthetic_audio_device.cpp",
+    '#include "livekit/synthetic_audio_device.h"',
+    '#include "livekit/synthetic_audio_device.h"\n#ifdef _WIN32\n#include <gst/app/gstappsrc.h>\n#endif',
+  );
+  replace(
+    "src/synthetic_audio_device.cpp",
+    "  Terminate();\n}",
+    `  Terminate();
+  set_windows_output(nullptr);
+}
+
+void SyntheticAudioDevice::set_windows_output(uint8_t* appsrc) {
+#ifdef _WIN32
+  webrtc::MutexLock lock(&mutex_);
+  if (appsrc) gst_object_ref(appsrc);
+  if (windows_output_) gst_object_unref(windows_output_);
+  windows_output_ = appsrc;
+#else
+  (void)appsrc;
+#endif
+}`,
+  );
+  replace(
+    "src/synthetic_audio_device.cpp",
+    "        if (playing_) {",
+    "        if (playing_ && audio_transport_) {",
+  );
+  replace(
+    "src/synthetic_audio_device.cpp",
+    "              n_samples_out, &elapsed_time_ms, &ntp_time_ms);",
+    `              n_samples_out, &elapsed_time_ms, &ntp_time_ms);
+#ifdef _WIN32
+          if (windows_output_ && n_samples_out == data_.size()) {
+            const size_t bytes = data_.size() * sizeof(int16_t);
+            GstBuffer* buffer = gst_buffer_new_allocate(nullptr, bytes, nullptr);
+            gst_buffer_fill(buffer, 0, data, bytes);
+            GST_BUFFER_DURATION(buffer) = 10 * GST_MSECOND;
+            // The appsrc is bounded and nonblocking. It takes buffer ownership.
+            gst_app_src_push_buffer(reinterpret_cast<GstAppSrc*>(windows_output_), buffer);
+          }
+#endif`,
+  );
+  replace(
+    "include/livekit/adm_proxy.h",
+    "  void set_playout_enabled(bool enabled);",
+    "  void set_windows_output(uint8_t* appsrc);\n  void set_playout_enabled(bool enabled);",
+  );
+  replace(
+    "src/adm_proxy.cpp",
+    "void AdmProxy::set_playout_enabled(bool enabled) {",
+    `void AdmProxy::set_windows_output(uint8_t* appsrc) {
+  RunOnWorker([this, appsrc] { synthetic_adm_->set_windows_output(appsrc); });
+}
+
+void AdmProxy::set_playout_enabled(bool enabled) {`,
+  );
+  replace(
+    "include/livekit/audio_device_controller.h",
+    "  void set_adm_playout_enabled(bool enabled) const;",
+    "  void set_windows_output(uint8_t* appsrc) const;\n  void set_adm_playout_enabled(bool enabled) const;",
+  );
+  replace(
+    "src/audio_device_controller.cpp",
+    "void AudioDeviceController::set_adm_playout_enabled(bool enabled) const {",
+    `void AudioDeviceController::set_windows_output(uint8_t* appsrc) const {
+  adm_proxy_->set_windows_output(appsrc);
+}
+
+void AudioDeviceController::set_adm_playout_enabled(bool enabled) const {`,
+  );
+  replace(
+    "src/audio_device_controller.rs",
+    "        fn set_adm_playout_enabled(self: &AudioDeviceController, enabled: bool);",
+    "        unsafe fn set_windows_output(self: &AudioDeviceController, appsrc: *mut u8);\n        fn set_adm_playout_enabled(self: &AudioDeviceController, enabled: bool);",
+  );
   replace(
     "src/adm_proxy.cpp",
     '    RTC_LOG(LS_ERROR) << "AdmProxy: Platform ADM Init() failed with error=" << init_result;',

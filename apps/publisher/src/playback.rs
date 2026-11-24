@@ -910,8 +910,8 @@ async fn audio(
     else {
         return Ok(());
     };
-    // A bounded pre-gain tap measures receive PCM only. WebRTC renders directly
-    // to Windows; no appsrc or second audio sink exists on this path.
+    // The bounded pre-gain tap measures receive PCM. Only the post-gain WebRTC
+    // mix reaches direct or converted device output.
     let mut stream = NativeAudioStream::with_options(
         track.rtc_track(),
         48000,

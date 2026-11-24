@@ -190,17 +190,34 @@ fn run() -> Result<()> {
                 [440, 880, 1320].contains(&frequency),
                 "Use a supported test tone."
             );
+            let rate = std::env::args()
+                .nth(3)
+                .map(|rate| rate.parse::<u32>())
+                .transpose()?
+                .unwrap_or(48_000);
+            ensure!(
+                [44_100, 48_000, 96_000, 192_000].contains(&rate),
+                "Use a supported test sample rate."
+            );
+            let samples = rate / 100;
+            let sink = if cfg!(target_os = "macos") {
+                "osxaudiosink"
+            } else {
+                "wasapi2sink low-latency=true"
+            };
+            let sink = if rate == 48_000 {
+                sink.to_owned()
+            } else {
+                format!("audioconvert ! audioresample ! {sink}")
+            };
             let description = if frequency == 440 {
-                "audiomixer name=mix ! audioconvert ! audio/x-raw,rate=48000,channels=2 ! wasapi2sink low-latency=true audiotestsrc is-live=true freq=440 volume=0.02 samplesperbuffer=480 ! audio/x-raw,format=F32LE,rate=48000,channels=1 ! audiopanorama panorama=-1 ! mix. audiotestsrc is-live=true freq=660 volume=0.02 samplesperbuffer=480 ! audio/x-raw,format=F32LE,rate=48000,channels=1 ! audiopanorama panorama=1 ! mix.".to_owned()
+                format!(
+                    "audiomixer name=mix ! audioconvert ! audio/x-raw,rate={rate},channels=2 ! {sink} audiotestsrc is-live=true freq=440 volume=0.02 samplesperbuffer={samples} ! audio/x-raw,format=F32LE,rate={rate},channels=1 ! audiopanorama panorama=-1 ! mix. audiotestsrc is-live=true freq=660 volume=0.02 samplesperbuffer={samples} ! audio/x-raw,format=F32LE,rate={rate},channels=1 ! audiopanorama panorama=1 ! mix."
+                )
             } else {
                 format!(
-                    "audiotestsrc is-live=true freq={frequency} volume=0.02 samplesperbuffer=480 ! audio/x-raw,rate=48000,channels=2 ! wasapi2sink low-latency=true"
+                    "audiotestsrc is-live=true freq={frequency} volume=0.02 samplesperbuffer={samples} ! audio/x-raw,rate={rate},channels=2 ! {sink}"
                 )
-            };
-            let description = if cfg!(target_os = "macos") {
-                description.replace("wasapi2sink low-latency=true", "osxaudiosink")
-            } else {
-                description
             };
             let pipeline = gstreamer::parse::launch(&description)?
                 .downcast::<gstreamer::Pipeline>()
@@ -430,6 +447,8 @@ struct WatchRequest {
     #[serde(default)]
     output_switch_after_seconds: Option<u64>,
     #[serde(default)]
+    fail_direct_output: bool,
+    #[serde(default)]
     continuous_watch: bool,
     #[serde(default)]
     watch_once_per_publisher: bool,
@@ -595,6 +614,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     let mut reconnected = false;
     let mut output_paused = false;
     let mut output_switched = false;
+    let mut output_failure_applied = false;
     let mut alternate_output_available = false;
     let mut received = std::collections::HashMap::<String, RemoteTrack>::new();
     let mut byte_totals = std::collections::HashMap::<String, u64>::new();
@@ -609,6 +629,9 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
             }
             if !output_paused && request.output_pause_after_seconds.is_some_and(|second| elapsed >= second) {
                 output_paused = native_output::qualification_pause(3);
+            }
+            if request.fail_direct_output && !output_failure_applied {
+                output_failure_applied = native_output::qualification_fail_platform_start();
             }
             if !output_switched && request.output_switch_after_seconds.is_some_and(|second| elapsed >= second) {
                 alternate_output_available = native_output::qualification_switch(3);

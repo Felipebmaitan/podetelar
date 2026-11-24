@@ -40,17 +40,21 @@ export function toneFixtures(directory: string) {
   copyFileSync(tone, game);
   copyFileSync(tone, discord);
   const children: ChildProcess[] = [];
-  const start = (executable: string, frequency: number) => {
-    const child = spawn(executable, ["--audio-tone", String(frequency)], {
-      windowsHide: true,
-      stdio: "ignore",
-    });
+  const start = (executable: string, frequency: number, rate = 48_000) => {
+    const child = spawn(
+      executable,
+      ["--audio-tone", String(frequency), String(rate)],
+      {
+        windowsHide: true,
+        stdio: "ignore",
+      },
+    );
     children.push(child);
     return child;
   };
   return {
     application: game.toLowerCase(),
-    game: (frequency = 440) => start(game, frequency),
+    game: (frequency = 440, rate = 48_000) => start(game, frequency, rate),
     discord: () => start(discord, 880),
     stop: () => {
       for (const child of children) if (child.exitCode === null) child.kill();

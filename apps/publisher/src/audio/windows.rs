@@ -4,10 +4,11 @@ use anyhow::{Context, Result, ensure};
 use std::collections::{HashMap, HashSet};
 use windows::{
     Win32::{
-        Foundation::{FILETIME, HANDLE},
+        Foundation::{ERROR_NOT_FOUND, FILETIME, HANDLE},
         Media::Audio::{
+            AUDCLNT_E_DEVICE_INVALIDATED, AUDCLNT_E_RESOURCES_INVALIDATED,
             AudioSessionStateExpired, DEVICE_STATE_ACTIVE, IAudioSessionControl2,
-            IAudioSessionManager2, IMMDeviceEnumerator, MMDeviceEnumerator, eRender,
+            IAudioSessionManager2, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, eRender,
         },
         System::{
             Com::{
@@ -126,26 +127,45 @@ fn inventory_using(
     let endpoints = unsafe { enumerator.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE) }?;
     let mut sessions = HashSet::new();
     for index in 0..unsafe { endpoints.GetCount() }? {
-        let device = unsafe { endpoints.Item(index) }?;
-        let manager: IAudioSessionManager2 = unsafe { device.Activate(CLSCTX_ALL, None) }?;
-        let applications = unsafe { manager.GetSessionEnumerator() }?;
-        for index in 0..unsafe { applications.GetCount() }? {
-            let session = unsafe { applications.GetSession(index) }?;
-            if unsafe { session.GetState() }.is_ok_and(|state| state == AudioSessionStateExpired) {
-                continue;
-            }
-            if let Ok(session) = session.cast::<IAudioSessionControl2>()
-                && let Ok(pid) = unsafe { session.GetProcessId() }
-                && pid != 0
-            {
-                sessions.insert(pid);
-            }
+        let endpoint_sessions = unsafe { endpoints.Item(index) }.and_then(render_sessions);
+        match endpoint_sessions {
+            Ok(found) => sessions.extend(found),
+            // A render endpoint can disappear between enumerating active
+            // devices and querying its sessions. Keep capturing eligible apps
+            // found on the remaining endpoints and retry discovery next tick.
+            Err(error) if endpoint_changed(error.code()) => {}
+            Err(error) => return Err(error).context("Audio sessions could not be enumerated."),
         }
     }
     Ok(Inventory {
         processes,
         sessions,
     })
+}
+
+fn endpoint_changed(code: windows::core::HRESULT) -> bool {
+    code == AUDCLNT_E_DEVICE_INVALIDATED
+        || code == AUDCLNT_E_RESOURCES_INVALIDATED
+        || code == windows::core::HRESULT::from_win32(ERROR_NOT_FOUND.0)
+}
+
+fn render_sessions(device: IMMDevice) -> windows::core::Result<Vec<u32>> {
+    let manager: IAudioSessionManager2 = unsafe { device.Activate(CLSCTX_ALL, None) }?;
+    let applications = unsafe { manager.GetSessionEnumerator() }?;
+    let mut sessions = Vec::new();
+    for index in 0..unsafe { applications.GetCount() }? {
+        let session = unsafe { applications.GetSession(index) }?;
+        if unsafe { session.GetState() }.is_ok_and(|state| state == AudioSessionStateExpired) {
+            continue;
+        }
+        if let Ok(session) = session.cast::<IAudioSessionControl2>()
+            && let Ok(pid) = unsafe { session.GetProcessId() }
+            && pid != 0
+        {
+            sessions.push(pid);
+        }
+    }
+    Ok(sessions)
 }
 
 #[cfg(feature = "performance-experiments")]

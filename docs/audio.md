@@ -30,13 +30,27 @@ and capture failures never fall back to capturing an unfiltered endpoint.
 
 Each approved process tree gets its own WASAPI process loopback through GStreamer. The pipeline converts to 48 kHz, two-channel PCM and mixes in a common live clock. LiveKit encodes Opus with a 192 kbps target and DTX disabled; the SFU forwards it without decoding. Echo cancellation, voice noise suppression and automatic gain control remain off so they do not alter game/music audio.
 
+Windows process loopback uses a virtual capture client with PCM conversion. The
+publisher does not use the Windows microphone format or require the physical
+render endpoint to run at the stream's 48 kHz rate.
+
 The application discovers sessions across active render endpoints and deduplicates ancestor/descendant captures. A PID plus creation time identifies a capture, and an owned process handle prevents that PID from being recycled while its loopback is alive. Unknown identities are never eligible. A protected descendant makes the whole ancestor tree ineligible, since Windows' process-tree capture cannot subtract that descendant.
 
-Discovery refreshes every 500 ms. A changed set is rebuilt after closing the old captures and clearing queued PCM; a short audio gap can occur on application or routing changes. Discord restarts do not become eligible, including when its version directory changes. Newly appearing applications can enter Desktop mix; an application selection remains restricted to its executable path. An application moving to a different executable path needs a new selection. Capture/discovery failure stops the sharing group with an error instead of publishing an unfiltered mix.
+Discovery refreshes every 500 ms. A render endpoint that disappears during a
+session query is skipped until the next refresh. A changed set is rebuilt after
+closing the old captures and clearing queued PCM; a short audio gap can occur on application or routing changes. Discord restarts do not become eligible, including when its version directory changes. Newly appearing applications can enter Desktop mix; an application selection remains restricted to its executable path. An application moving to a different executable path needs a new selection. Capture/discovery failure stops the sharing group with an error instead of publishing an unfiltered mix.
 
 Audio and video share a cancellation lease. Stop, Leave, closing the publisher, a terminal disconnect, or failure to recover either publication ends both pumps. Stop waits for native capture release before network cleanup. Queues and the SDK audio buffer are bounded. No raw PCM or desktop recording is written to disk or sent to the app server.
 
 The lease disables retained RTC tracks on cancellation, and late publication/republication of a disabled track is removed. Stop resolves the current IDs from the stable track handles, because full reconnects replace publication IDs. Stopping during recovery, or finding an owned publication left after cleanup, closes the media identity to prevent a delayed republish; joining again is then required.
+
+## Windows playback
+
+PodeTelar first tries WebRTC's direct output. If that renderer cannot open the
+selected endpoint or stops requesting audio, the app sends the same WebRTC mix
+through a bounded GStreamer connection to that endpoint. This path negotiates a
+shared-mode format and converts the 48 kHz stereo mix as needed. Stream volume
+and mute still apply in the WebRTC mixer before either output receives PCM.
 
 ## Verification
 
@@ -48,6 +62,12 @@ separation and Discord rejection to be measured. It also checks explicit RTP
 subscription traffic stopping and rewatch. Synthetic fixtures do not establish
 real-game, headset-switching or an evening of friends' usage; those remain field
 qualification work.
+
+`output-recovery.spec.ts` exercises the normal output and the conversion path
+through the actual SFU and a Windows render endpoint. The conversion case uses
+a 192 kHz tone source and checks audible output through process loopback across
+output loss, mute and recovery. Qualifying a physical 192 kHz endpoint also
+requires setting the Windows output mix format to 192 kHz on suitable hardware.
 
 The explicit diagnostic commands `native:run -- --audio-apps` and `native:run -- --qualify-audio` can reveal application names/paths or capture local audio into a transient analysis buffer. Do not paste application inventories into public logs. The audio qualification command accepts bounded JSON on stdin, runs at most 20 seconds and emits aggregate counters/spectral measurements only. It never uploads PCM.
 

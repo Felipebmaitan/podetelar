@@ -76,13 +76,6 @@ struct CaptureStops {
 }
 
 impl CaptureStops {
-    fn for_kind(&self, kind: Kind) -> &CaptureCancellation {
-        match kind {
-            Kind::Screen => &self.screen,
-            Kind::Camera => &self.camera,
-        }
-    }
-
     fn cancel(&self) {
         self.screen.cancel();
         self.camera.cancel();
@@ -1400,65 +1393,88 @@ impl Streams {
         capacity: &crate::network::Capacity,
         policy: &StreamPolicy,
     ) -> (&'static str, Result<()>) {
-        let mut notice = "";
-        let mut result = Ok(());
-        for kind in Kind::ALL {
-            let Some(target) = self.slot(kind).as_ref().map(|stream| stream.mode.bitrate) else {
-                continue;
-            };
-            let cap = self.upload_cap(capacity, kind, target);
-            let slot = self.slot(kind);
-            let active = slot.as_ref().expect("active stream");
-            active.rate.set_upload_cap(cap);
-            active.constrain_watchers(&joined.room);
-            if active.finished() {
-                let active = slot.take().expect("finished stream");
-                result = result.and(active.stop(&joined.room).await.map(|_| ()));
-                continue;
-            }
-            // A concurrent Stop must see either the active token or this replacement.
-            let replacement = cancellation.for_kind(kind).register();
-            if joined.room.connection_state() != ConnectionState::Connected || active.cancelled() {
-                continue;
-            }
-            if active.policy() != policy {
-                let active = slot.take().expect("stream with outdated policy");
-                match active
-                    .update_policy(&joined.room, joined.admission.clone(), replacement, policy.clone())
-                    .await
-                {
-                    Ok((active, message)) => {
-                        *slot = Some(active);
-                        if !message.is_empty() {
-                            notice = message;
-                        }
-                    }
-                    Err(error) => result = result.and(Err(error.context(
-                        "Sharing stopped because the stream could not meet the server’s updated limits."
-                    ))),
-                }
-                continue;
-            }
-            match active.compatible_config(&joined.room) {
-                Ok(None) => {}
-                Ok(Some(config)) => {
-                    let active = slot.take().expect("stream to replace");
-                    match active
+        let screen_cap = self
+            .screen
+            .as_ref()
+            .and_then(|stream| self.upload_cap(capacity, Kind::Screen, stream.mode.bitrate));
+        let camera_cap = self
+            .camera
+            .as_ref()
+            .and_then(|stream| self.upload_cap(capacity, Kind::Camera, stream.mode.bitrate));
+        // The SFU's policy grace period starts for both publications at once.
+        // A slow unpublish or encoder start must not delay the other track.
+        let (screen, camera) = tokio::join!(
+            Self::maintain_slot(
+                &mut self.screen,
+                joined,
+                &cancellation.screen,
+                screen_cap,
+                policy
+            ),
+            Self::maintain_slot(
+                &mut self.camera,
+                joined,
+                &cancellation.camera,
+                camera_cap,
+                policy
+            ),
+        );
+        let notice = [screen.as_ref(), camera.as_ref()]
+            .into_iter()
+            .filter_map(|result| result.ok().copied())
+            .find(|notice| !notice.is_empty())
+            .unwrap_or_default();
+        (notice, screen.and(camera).map(|_| ()))
+    }
+
+    async fn maintain_slot(
+        slot: &mut Option<Stream>,
+        joined: &Session,
+        cancellation: &CaptureCancellation,
+        cap: Option<u64>,
+        policy: &StreamPolicy,
+    ) -> Result<&'static str> {
+        let Some(active) = slot.as_ref() else {
+            return Ok("");
+        };
+        active.rate.set_upload_cap(cap);
+        active.constrain_watchers(&joined.room);
+        if active.finished() {
+            let active = slot.take().expect("finished stream");
+            active.stop(&joined.room).await?;
+            return Ok("");
+        }
+        // A concurrent Stop must see either the active token or this replacement.
+        let replacement = cancellation.register();
+        if joined.room.connection_state() != ConnectionState::Connected || active.cancelled() {
+            return Ok("");
+        }
+        if active.policy() != policy {
+            let active = slot.take().expect("stream with outdated policy");
+            let (active, notice) = active
+                .update_policy(&joined.room, joined.admission.clone(), replacement, policy.clone())
+                .await
+                .context("Sharing stopped because the stream could not meet the server’s updated limits.")?;
+            *slot = Some(active);
+            return Ok(notice);
+        }
+        match active.compatible_config(&joined.room) {
+            Ok(None) => {}
+            Ok(Some(config)) => {
+                let active = slot.take().expect("stream to replace");
+                *slot = Some(
+                    active
                         .fallback(&joined.room, joined.admission.clone(), replacement, config)
-                        .await
-                    {
-                        Ok(active) => *slot = Some(active),
-                        Err(error) => result = result.and(Err(error)),
-                    }
-                }
-                Err(error) => {
-                    let active = slot.take().expect("incompatible stream");
-                    let _ = active.stop(&joined.room).await;
-                    result = result.and(Err(error));
-                }
+                        .await?,
+                );
+            }
+            Err(error) => {
+                let active = slot.take().expect("incompatible stream");
+                let _ = active.stop(&joined.room).await;
+                return Err(error);
             }
         }
-        (notice, result)
+        Ok("")
     }
 
     async fn end_publications(&mut self, session: &mut Session) -> bool {

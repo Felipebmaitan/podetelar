@@ -1034,7 +1034,10 @@ impl PublisherUi {
                 .iter()
                 .any(|device| device.id == self.camera_settings.device_id);
             if ui
-                .add_enabled(!state.busy && selected, primary(tr("Share camera"), width))
+                .add_enabled(
+                    !state.busy && !state.refreshing_cameras && selected,
+                    primary(tr("Share camera"), width),
+                )
                 .on_disabled_hover_text(tr("Choose a camera"))
                 .clicked()
             {

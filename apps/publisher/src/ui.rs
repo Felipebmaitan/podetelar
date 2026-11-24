@@ -89,9 +89,18 @@ fn apply_palette(ctx: &egui::Context, effective: Theme) {
     style.spacing.item_spacing = egui::vec2(8.0, 6.0);
     style.spacing.button_padding = egui::vec2(12.0, 6.0);
     style.spacing.interact_size.y = 32.0;
-    style.spacing.scroll = egui::style::ScrollStyle::solid();
-    style.spacing.scroll.bar_width = 7.0;
-    style.spacing.scroll.foreground_color = true;
+    style.spacing.scroll = egui::style::ScrollStyle {
+        bar_width: 8.0,
+        floating_width: 3.0,
+        floating_allocated_width: 11.0,
+        handle_min_length: 24.0,
+        dormant_handle_opacity: if p.dark { 0.4 } else { 0.5 },
+        active_handle_opacity: 0.55,
+        interact_handle_opacity: 0.85,
+        active_background_opacity: 0.0,
+        interact_background_opacity: 0.25,
+        ..egui::style::ScrollStyle::floating()
+    };
     style
         .text_styles
         .insert(egui::TextStyle::Heading, skin::semibold(22.0));
@@ -3018,6 +3027,13 @@ impl PublisherUi {
         })
     }
 
+    fn camera_selected(&self, state: &Snapshot) -> bool {
+        state
+            .cameras
+            .iter()
+            .any(|device| device.id == self.camera_settings.device_id)
+    }
+
     fn can_start_camera(&self, state: &Snapshot) -> bool {
         cfg!(windows)
             && state.connection == "connected"
@@ -3025,10 +3041,7 @@ impl PublisherUi {
             && !state.refreshing_cameras
             && !state.encoders.is_empty()
             && !self.picker.camera_capturing()
-            && state
-                .cameras
-                .iter()
-                .any(|device| device.id == self.camera_settings.device_id)
+            && self.camera_selected(state)
     }
 
     fn start_camera(&mut self) {
@@ -3267,11 +3280,7 @@ impl PublisherUi {
                     return;
                 }
                 ui.add_space(6.0);
-                let mut body = ui.available_rect_before_wrap();
-                if !screen {
-                    // The camera fields can grow after the floating area has been measured.
-                    body.set_height(max_height);
-                }
+                let body = ui.available_rect_before_wrap();
                 ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
                     egui::ScrollArea::vertical()
                         .id_salt("broadcast-setup-scroll")
@@ -3295,11 +3304,28 @@ impl PublisherUi {
                 }
             });
         });
+        let preview = if self.sharing_setup == Some(SharingSetup::Camera)
+            && setup == SharingSetup::Camera
+            && cfg!(windows)
+            && !state.camera_sharing
+            && !state.camera_pending
+            && !state.refreshing_cameras
+            && self.camera_selected(state)
+        {
+            self.camera_preview_panel(ctx, stage.shrink(6.0), panel.response.rect)
+        } else {
+            None
+        };
+        if setup == SharingSetup::Camera && preview.is_none() {
+            self.clear_picker();
+        }
         if !egui::Popup::is_any_open(ctx)
             && ctx.input(|input| {
                 input.pointer.any_pressed()
                     && input.pointer.interact_pos().is_some_and(|pos| {
-                        !panel.response.rect.contains(pos) && !dock.rect.contains(pos)
+                        !panel.response.rect.contains(pos)
+                            && !dock.rect.contains(pos)
+                            && preview.is_none_or(|rect| !rect.contains(pos))
                     })
             })
         {
@@ -3330,33 +3356,36 @@ impl PublisherUi {
         ui.add_enabled_ui(!camera_live && !state.refreshing_cameras, |ui| {
             self.camera_controls(ui, state)
         });
-        if camera_live || state.refreshing_cameras {
-            self.clear_picker();
-            return;
-        }
-        if state
-            .cameras
-            .iter()
-            .any(|device| device.id == self.camera_settings.device_id)
-        {
-            self.camera_preview(ui);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui
-                    .add_enabled(
-                        self.can_start_camera(state),
-                        sharing_action(tr("Share camera"), Icon::Camera, palette().text),
-                    )
-                    .clicked()
-                {
-                    self.start_camera();
-                }
+        if !camera_live && !state.refreshing_cameras && self.camera_selected(state) {
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .add_enabled(
+                            self.can_start_camera(state),
+                            sharing_action(tr("Share camera"), Icon::Camera, palette().text),
+                        )
+                        .clicked()
+                    {
+                        self.start_camera();
+                    }
+                });
             });
-        } else {
-            self.clear_picker();
         }
     }
 
-    fn camera_preview(&mut self, ui: &mut egui::Ui) {
+    fn camera_preview_panel(
+        &mut self,
+        ctx: &egui::Context,
+        bounds: egui::Rect,
+        anchor: egui::Rect,
+    ) -> Option<egui::Rect> {
+        if ctx.input(|input| {
+            input.viewport().visible() == Some(false) || input.viewport().minimized == Some(true)
+        }) {
+            return None;
+        }
+        let (position, width) = camera_preview_placement(bounds, anchor)?;
         let settings = &self.camera_settings;
         let key = format!(
             "camera:{}:{}:{}",
@@ -3366,33 +3395,46 @@ impl PublisherUi {
         );
         self.picker
             .request_camera(key.clone(), settings.device_id.clone(), settings.quality());
-        self.update_picker_frame(ui.ctx(), &key);
-        ui.add_space(6.0);
-        ui.label(tr("Camera preview"));
-        let width = ui.available_width();
-        let (rect, _) =
-            ui.allocate_exact_size(egui::vec2(width, width * 9.0 / 16.0), egui::Sense::hover());
-        ui.painter().rect_filled(rect, 8.0, palette().card);
-        if let Some((_, texture)) = &self.picker_texture {
-            egui::Image::new((texture.id(), texture.size_vec2()))
-                .corner_radius(8)
-                .paint_at(ui, rect);
-        } else {
-            let message = if self.picker_failed.as_deref() == Some(&key) {
-                tr("Camera preview unavailable. Check the device or choose another mode.")
-            } else {
-                ui.ctx().request_repaint_after(Duration::from_millis(50));
-                tr("Preparing camera preview…")
-            };
-            let text = ui.painter().layout(
-                message.to_owned(),
-                egui::FontId::proportional(12.0),
-                palette().muted,
-                (width - 24.0).max(40.0),
-            );
-            ui.painter()
-                .galley(rect.center() - text.size() / 2.0, text, palette().muted);
-        }
+        self.update_picker_frame(ctx, &key);
+        let preview = egui::Area::new(egui::Id::unique("camera-preview-panel"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(position)
+            .constrain_to(bounds)
+            .show(ctx, |ui| {
+                skin::menu_frame().inner_margin(10).show(ui, |ui| {
+                    ui.set_width(width);
+                    ui.label(skin::strong(tr("Camera preview"), 13.5).color(palette().text));
+                    let (rect, _) = ui.allocate_exact_size(
+                        egui::vec2(width, width * 9.0 / 16.0),
+                        egui::Sense::hover(),
+                    );
+                    ui.painter().rect_filled(rect, 8.0, palette().card);
+                    if let Some((_, texture)) = &self.picker_texture {
+                        egui::Image::new((texture.id(), texture.size_vec2()))
+                            .corner_radius(8)
+                            .paint_at(ui, rect);
+                    } else {
+                        let message = if self.picker_failed.as_deref() == Some(key.as_str()) {
+                            tr("Camera preview unavailable. Check the device or choose another mode.")
+                        } else {
+                            ctx.request_repaint_after(Duration::from_millis(50));
+                            tr("Preparing camera preview…")
+                        };
+                        let text = ui.painter().layout(
+                            message.to_owned(),
+                            egui::FontId::proportional(12.0),
+                            palette().muted,
+                            width - 20.0,
+                        );
+                        ui.painter().galley(
+                            rect.center() - text.size() / 2.0,
+                            text,
+                            palette().muted,
+                        );
+                    }
+                });
+            });
+        Some(preview.response.rect)
     }
 
     fn camera_controls(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
@@ -3401,7 +3443,7 @@ impl PublisherUi {
             .horizontal(|ui| {
                 let label = ui.label(tr("Camera device"));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button(tr("Refresh cameras")).clicked() {
+                    if skin::icon_button(ui, Icon::Refresh, tr("Refresh cameras")).clicked() {
                         self.controller.send(Command::RefreshCameras);
                     }
                 });
@@ -3514,6 +3556,42 @@ impl PublisherUi {
         )
         .labelled_by(bitrate.id);
     }
+}
+
+fn camera_preview_placement(bounds: egui::Rect, anchor: egui::Rect) -> Option<(egui::Pos2, f32)> {
+    const GAP: f32 = 10.0;
+    const FRAME: f32 = 22.0;
+    const PREFERRED_WIDTH: f32 = 288.0;
+    let left = anchor.left() - bounds.left() - GAP - FRAME;
+    let right = bounds.right() - anchor.right() - GAP - FRAME;
+    let on_left = left >= PREFERRED_WIDTH || left >= right;
+    let width = (if on_left { left } else { right })
+        .min(PREFERRED_WIDTH)
+        .min((bounds.height() - 48.0) * 16.0 / 9.0);
+    if width < 128.0 {
+        let above = anchor.top() - bounds.top() - GAP - 48.0;
+        let width = PREFERRED_WIDTH
+            .min(bounds.width() - FRAME)
+            .min(above * 16.0 / 9.0);
+        return (width >= 128.0).then(|| {
+            let x = anchor
+                .left()
+                .min(bounds.right() - FRAME - width)
+                .max(bounds.left());
+            let y = anchor.top() - GAP - 48.0 - width * 9.0 / 16.0;
+            (egui::pos2(x, y), width)
+        });
+    }
+    let x = if on_left {
+        anchor.left() - GAP - FRAME - width
+    } else {
+        anchor.right() + GAP
+    };
+    let y = anchor
+        .top()
+        .min(bounds.bottom() - width * 9.0 / 16.0 - 48.0)
+        .max(bounds.top());
+    Some((egui::pos2(x, y), width))
 }
 
 fn stream_name(tile: &Tile) -> std::borrow::Cow<'_, str> {
@@ -5795,6 +5873,29 @@ mod tests {
             repeat: false,
             modifiers: Default::default(),
         }])));
+    }
+
+    #[test]
+    fn camera_preview_prefers_the_left_and_stays_inside_the_stage() {
+        let rect = |x, y, width, height| {
+            egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(width, height))
+        };
+        let stage = rect(6.0, 60.0, 948.0, 392.0);
+        let settings = rect(520.0, 200.0, 364.0, 240.0);
+        let (pos, width) = camera_preview_placement(stage, settings).unwrap();
+        assert!(pos.x + width + 22.0 < settings.left());
+        assert!(pos.y + width * 9.0 / 16.0 + 48.0 <= stage.bottom());
+
+        let settings = settings.translate(egui::vec2(-490.0, 0.0));
+        let (pos, width) = camera_preview_placement(stage, settings).unwrap();
+        assert!(pos.x > settings.right());
+        assert!(pos.x + width + 22.0 <= stage.right());
+
+        let stage = rect(6.0, 52.0, 398.0, 480.0);
+        let settings = rect(24.0, 270.0, 364.0, 220.0);
+        let (pos, width) = camera_preview_placement(stage, settings).unwrap();
+        assert!(stage.contains(pos));
+        assert!(pos.y + width * 9.0 / 16.0 + 48.0 < settings.top());
     }
 
     #[test]

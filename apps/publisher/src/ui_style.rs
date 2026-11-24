@@ -52,6 +52,7 @@ pub enum Icon {
     Grid,
     Monitor,
     Camera,
+    Refresh,
     People,
     ChevronUp,
 }
@@ -95,6 +96,17 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
                 ],
                 stroke,
             ));
+        }
+        Icon::Refresh => {
+            let points = (0..=16)
+                .map(|index| {
+                    let angle = -0.25 + index as f32 * 5.45 / 16.0;
+                    point(7.0 * angle.cos(), 7.0 * angle.sin())
+                })
+                .collect();
+            p.add(egui::Shape::line(points, stroke));
+            line((6.8, -6.5), (6.8, -1.7));
+            line((6.8, -1.7), (2.0, -1.7));
         }
         Icon::Stop => {
             p.rect_filled(

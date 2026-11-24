@@ -540,20 +540,7 @@ impl PublisherUi {
             rail.add_space(6.0);
         }
         if let Some(tile) = main {
-            let scroll_style = egui::style::ScrollStyle {
-                bar_width: 8.0,
-                floating_width: 3.0,
-                handle_min_length: 24.0,
-                dormant_handle_opacity: if palette().dark { 0.4 } else { 0.5 },
-                active_handle_opacity: 0.55,
-                interact_handle_opacity: 0.85,
-                active_background_opacity: 0.0,
-                interact_background_opacity: 0.25,
-                ..egui::style::ScrollStyle::floating()
-            };
-            // Keep previews clear of the expanded thumb and at a stable width.
-            let preview_width = rail_width - scroll_style.bar_width - 3.0;
-            rail.spacing_mut().scroll = scroll_style;
+            let preview_width = rail_width - rail.spacing().scroll.allocated_width();
             egui::ScrollArea::vertical()
                 .id_salt("spotlight-film")
                 .auto_shrink([false, true])
@@ -580,38 +567,30 @@ impl PublisherUi {
         };
         let gap = 14.0;
         let rows = tiles.len().div_ceil(columns).min(2);
-        let scroll_space = if columns == 1 && tiles.len() > 1 {
-            ui.spacing().scroll.bar_width
-                + ui.spacing().scroll.bar_inner_margin
-                + ui.spacing().scroll.bar_outer_margin
+        let scroll_space = if tiles.len() > 1 {
+            ui.spacing().scroll.allocated_width()
         } else {
             0.0
         };
-        if scroll_space > 0.0 {
+        if columns == 1 && tiles.len() > 1 {
             ui.label(
                 egui::RichText::new(tr("Scroll to see all streams"))
                     .size(12.0)
                     .color(palette().muted),
             );
         }
-        let max_width =
-            (ui.available_width() - scroll_space - gap * (columns - 1) as f32) / columns as f32;
+        let available_width = ui.available_width() - scroll_space;
+        let max_width = (available_width - gap * (columns - 1) as f32) / columns as f32;
         let row_height = (ui.available_height() - gap * (rows - 1) as f32) / rows as f32;
         let width = if columns == 1 && tiles.len() > 1 {
             max_width
         } else {
             max_width.min(row_height.max(90.0) * 16.0 / 9.0)
         };
-        let inset = ((ui.available_width() - width * columns as f32 - gap * (columns - 1) as f32)
-            / 2.0)
+        let inset = ((available_width - width * columns as f32 - gap * (columns - 1) as f32) / 2.0)
             .max(0.0);
         let scroll = egui::ScrollArea::vertical()
             .id_salt("streams-scroll")
-            .scroll_bar_visibility(if columns == 1 && tiles.len() > 1 {
-                egui::scroll_area::ScrollBarVisibility::AlwaysVisible
-            } else {
-                egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
-            })
             .auto_shrink([false, false]);
         #[cfg(feature = "performance-experiments")]
         let scroll = if let Some(offset) = ui

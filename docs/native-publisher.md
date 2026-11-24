@@ -53,7 +53,7 @@ quality settings. Open **Camera settings** and select a Windows camera, then cli
 **Share camera**. The selected device is remembered locally. If it is disconnected,
 refresh the list and reconnect it or select another device explicitly. Windows camera
 discovery includes OBS Virtual Camera when its driver is registered and usable.
-The camera settings show a one-shot local preview of the selected device and mode.
+The camera settings show a one-shot local preview beside the device controls.
 The camera is released after the preview, and its bitrate is automatic unless you
 override it in **Advanced camera settings**.
 Camera streams publish only video and prefer compatible hardware H.264. A participant can share one screen and one

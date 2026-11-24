@@ -1208,10 +1208,9 @@ impl PublisherUi {
         let previous = self.appearance.theme;
         let system = ui.ctx().system_theme();
         for theme in Theme::ALL {
-            ui.horizontal(|ui| {
-                let p = theme.resolve(system).palette();
-                let (swatch, _) =
-                    ui.allocate_exact_size(egui::vec2(26.0, 16.0), egui::Sense::hover());
+            let p = theme.resolve(system).palette();
+            let swatch = egui::Atom::paint(egui::vec2(26.0, 16.0), |ui, args| {
+                let swatch = args.rect;
                 ui.painter().rect_filled(swatch, 4.0, p.canvas);
                 ui.painter().rect_stroke(
                     swatch,
@@ -1224,13 +1223,15 @@ impl PublisherUi {
                     3.0,
                     p.accent,
                 );
-                if ui
-                    .selectable_value(&mut self.appearance.theme, theme, tr(theme.label()))
-                    .clicked()
-                {
-                    ui.close();
-                }
             });
+            let selected = self.appearance.theme == theme;
+            let row = egui::Button::selectable(selected, (swatch, tr(theme.label())))
+                .gap(8.0)
+                .min_size(egui::vec2(0.0, 32.0));
+            if ui.add(row).clicked() {
+                self.appearance.theme = theme;
+                ui.close();
+            }
         }
         if self.appearance.theme != previous {
             self.save_appearance();
@@ -5083,6 +5084,78 @@ mod tests {
         let replacement = state.self_preview.lock().unwrap().clone();
         state.self_preview = std::sync::Arc::new(std::sync::Mutex::new(replacement));
         assert!(draw(&state));
+    }
+
+    #[test]
+    fn theme_menu_accepts_clicks_on_the_swatch_and_trailing_space() {
+        for swatch in [true, false] {
+            let mut app = app();
+            let ctx = egui::Context::default();
+            configure_theme(&ctx);
+            let mut draw = |events| {
+                let mut output = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(800.0, 600.0),
+                        )),
+                        events,
+                        ..Default::default()
+                    },
+                    |root| {
+                        egui::CentralPanel::default().show(root, |ui| {
+                            let button = ui.button(tr("Theme"));
+                            egui::Popup::menu(&button).show(|ui| app.theme_options(ui));
+                        });
+                    },
+                );
+                output.textures_delta.clear();
+                output
+            };
+            let trigger = draw(vec![])
+                .shapes
+                .iter()
+                .find_map(|shape| match &shape.shape {
+                    egui::epaint::Shape::Text(text) if text.galley.text() == tr("Theme") => {
+                        Some(text.pos + text.galley.size() / 2.0)
+                    }
+                    _ => None,
+                })
+                .expect("Theme menu button is visible");
+            let mut click = |pos| {
+                for pressed in [true, false] {
+                    draw(vec![
+                        egui::Event::PointerMoved(pos),
+                        egui::Event::PointerButton {
+                            pos,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: Default::default(),
+                        },
+                    ]);
+                }
+                draw(vec![]);
+                draw(vec![])
+            };
+            // Open the theme popup, then use the actual rendered swatch or the space after Ruby.
+            let output = click(trigger);
+            let theme = Theme::Ruby;
+            let point = output
+                .shapes
+                .iter()
+                .find_map(|shape| match &shape.shape {
+                    egui::epaint::Shape::Text(text) if text.galley.text() == tr(theme.label()) => {
+                        let size = text.galley.size();
+                        let offset = if swatch { -21.0 } else { size.x + 24.0 };
+                        Some(text.pos + egui::vec2(offset, size.y / 2.0))
+                    }
+                    _ => None,
+                })
+                .expect("Theme popup is visible");
+            click(point);
+            assert_eq!(app.appearance.theme, theme);
+            assert!(!egui::Popup::is_any_open(&ctx));
+        }
     }
 
     #[test]

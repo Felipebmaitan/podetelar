@@ -250,6 +250,20 @@ pub(super) fn paint_keyboard_focus(ctx: &egui::Context) {
 }
 
 pub fn icon_button(ui: &mut egui::Ui, symbol: Icon, label: &str) -> egui::Response {
+    let ink = if ui.is_enabled() {
+        palette().text
+    } else {
+        palette().muted
+    };
+    icon_button_with_color(ui, symbol, label, ink)
+}
+
+pub fn icon_button_with_color(
+    ui: &mut egui::Ui,
+    symbol: Icon,
+    label: &str,
+    ink: Color32,
+) -> egui::Response {
     let response = ui.add_sized([32.0, 32.0], egui::Button::new("").frame(false));
     if response.hovered() || response.has_focus() {
         ui.painter()
@@ -259,11 +273,7 @@ pub fn icon_button(ui: &mut egui::Ui, symbol: Icon, label: &str) -> egui::Respon
         ui.painter(),
         egui::Rect::from_center_size(response.rect.center(), egui::vec2(17.0, 17.0)),
         symbol,
-        if ui.is_enabled() {
-            palette().text
-        } else {
-            palette().muted
-        },
+        ink,
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     response.on_hover_text(label)
@@ -584,52 +594,6 @@ pub fn menu_row(
     response
 }
 
-pub fn mute_switch(ui: &mut egui::Ui, label: &str, muted: &mut bool) -> egui::Response {
-    let mut response = menu_row(ui, label, None, "", false);
-    if response.clicked()
-        || (ui.is_enabled()
-            && response.has_focus()
-            && ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Space)))
-    {
-        response.request_focus();
-        *muted = !*muted;
-        response.mark_changed();
-    }
-    let track = egui::Rect::from_center_size(
-        response.rect.right_center() - egui::vec2(24.0, 0.0),
-        egui::vec2(30.0, 17.0),
-    );
-    ui.painter().rect_filled(
-        track,
-        9.0,
-        if *muted {
-            palette().accent
-        } else {
-            Color32::from_rgb(60, 60, 68)
-        },
-    );
-    ui.painter().circle_filled(
-        egui::pos2(
-            if *muted {
-                track.right() - 8.5
-            } else {
-                track.left() + 8.5
-            },
-            track.center().y,
-        ),
-        6.0,
-        if *muted {
-            palette().on_accent
-        } else {
-            palette().text
-        },
-    );
-    response.widget_info(|| {
-        egui::WidgetInfo::selected(egui::Role::Switch, ui.is_enabled(), *muted, label)
-    });
-    response
-}
-
 pub fn menu_separator(ui: &mut egui::Ui) {
     ui.add_space(4.0);
     let (rect, _) =
@@ -684,69 +648,6 @@ pub fn mint_slider<N: egui::emath::Numeric>(
     response
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn custom_mute_switch_responds_to_pointer_and_keyboard() {
-        let ctx = egui::Context::default();
-        install_fonts(&ctx);
-        let mut muted = false;
-        let draw = |muted: &mut bool, events: Vec<egui::Event>| {
-            let mut rect = egui::Rect::NOTHING;
-            let mut output = ctx.run_ui(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(400.0, 300.0),
-                    )),
-                    events,
-                    ..Default::default()
-                },
-                |root| {
-                    egui::CentralPanel::default().show(root, |ui| {
-                        ui.set_width(238.0);
-                        rect = mute_switch(ui, "Mute", muted).rect;
-                    });
-                },
-            );
-            output.textures_delta.clear();
-            rect
-        };
-        draw(&mut muted, vec![]);
-        let rect = draw(&mut muted, vec![]);
-        let pos = rect.center();
-        for pressed in [true, false] {
-            draw(
-                &mut muted,
-                vec![
-                    egui::Event::PointerMoved(pos),
-                    egui::Event::PointerButton {
-                        pos,
-                        button: egui::PointerButton::Primary,
-                        pressed,
-                        modifiers: Default::default(),
-                    },
-                ],
-            );
-        }
-        assert!(muted, "Pointer click should mute");
-        for pressed in [true, false] {
-            draw(
-                &mut muted,
-                vec![egui::Event::Key {
-                    key: egui::Key::Space,
-                    physical_key: None,
-                    pressed,
-                    repeat: false,
-                    modifiers: Default::default(),
-                }],
-            );
-        }
-        assert!(!muted, "Space on the focused switch should unmute");
-    }
-}
 #[cfg(test)]
 mod focus_tests {
     use super::*;

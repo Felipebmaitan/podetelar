@@ -100,7 +100,6 @@ pub fn qualify_planar_transitions(
         settings_error: String::new(),
         auto_join_ready: false,
         copied_until: None,
-        remembered_volume: HashMap::new(),
         appearance: Appearance {
             theme: Theme::Amber,
             ..Appearance::default()

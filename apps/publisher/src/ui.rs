@@ -117,6 +117,7 @@ enum SharingSetup {
 }
 
 const SHARING_BUTTON_HEIGHT: f32 = 38.0;
+const PLAYBACK_CONTROLS_WIDTH: f32 = 114.0;
 
 struct CameraSettings {
     resolution: quality::Resolution,
@@ -182,7 +183,6 @@ pub struct PublisherUi {
     settings_error: String,
     auto_join_ready: bool,
     copied_until: Option<Instant>,
-    remembered_volume: HashMap<String, u32>,
     appearance: Appearance,
     advanced_open: bool,
     licenses_open: bool,
@@ -312,7 +312,6 @@ impl PublisherUi {
             settings_error,
             auto_join_ready: false,
             copied_until: None,
-            remembered_volume: HashMap::new(),
             appearance: Appearance {
                 theme: Theme::Amber,
                 ..Appearance::default()
@@ -1558,24 +1557,26 @@ impl PublisherUi {
         }
     }
 
-    fn stream_metrics(ui: &mut egui::Ui, rect: egui::Rect, tile: &Tile) {
+    fn stream_metrics(ui: &egui::Ui, rect: egui::Rect, tile: &Tile, visible: bool) -> egui::Rect {
         let text = stream_metrics_text(&tile.codec, tile.received_bps.load(Ordering::Relaxed));
         let galley = ui.painter().layout_no_wrap(
             text,
             egui::FontId::proportional(12.0),
             egui::Color32::WHITE,
         );
-        let background = egui::Rect::from_min_size(
-            rect.right_bottom() - galley.size() - egui::vec2(18.0, 58.0),
-            galley.size() + egui::vec2(12.0, 8.0),
-        );
-        ui.painter()
-            .rect_filled(background, 4.0, egui::Color32::from_black_alpha(195));
-        ui.painter().galley(
-            background.min + egui::vec2(6.0, 4.0),
-            galley,
-            egui::Color32::WHITE,
-        );
+        let size = galley.size() + egui::vec2(12.0, 8.0);
+        let background =
+            egui::Rect::from_min_size(rect.right_bottom() - egui::vec2(10.0, 8.0) - size, size);
+        if visible {
+            ui.painter()
+                .rect_filled(background, 4.0, egui::Color32::from_black_alpha(195));
+            ui.painter().galley(
+                background.min + egui::vec2(6.0, 4.0),
+                galley,
+                egui::Color32::WHITE,
+            );
+        }
+        background
     }
 
     fn watch_menu(&mut self, ui: &mut egui::Ui, tile: &Tile) {
@@ -1600,35 +1601,6 @@ impl PublisherUi {
                 ui.close();
             }
             return;
-        }
-        let mut volume = tile.volume.load(Ordering::Relaxed);
-        let label = ui
-            .horizontal(|ui| {
-                ui.add_space(10.0);
-                let label = ui.label(egui::RichText::new(tr("Volume")).size(13.0));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add_space(10.0);
-                    ui.label(skin::strong(format!("{volume}%"), 12.0));
-                });
-                label
-            })
-            .inner;
-        ui.horizontal(|ui| {
-            ui.add_space(10.0);
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(17.0, 24.0), egui::Sense::hover());
-            skin::icon(ui.painter(), rect, Icon::Volume, palette().text);
-            ui.spacing_mut().slider_width = ui.available_width() - 10.0;
-            // Keep egui's slider focus, keyboard, drag and range semantics.
-            if skin::mint_slider(ui, &mut volume, 0..=100)
-                .labelled_by(label.id)
-                .changed()
-            {
-                tile.volume.store(volume, Ordering::Relaxed);
-            }
-        });
-        let mut muted = volume == 0;
-        if skin::mute_switch(ui, tr("Mute"), &mut muted).changed() {
-            self.toggle_volume(tile);
         }
         skin::menu_separator(ui);
         if skin::menu_row(
@@ -1705,47 +1677,123 @@ impl PublisherUi {
         }
     }
 
-    fn toggle_volume(&mut self, tile: &Tile) {
-        let previous = tile.volume.load(Ordering::Relaxed);
-        let next = if previous == 0 {
-            self.remembered_volume.get(&tile.id).copied().unwrap_or(100)
-        } else {
-            self.remembered_volume.insert(tile.id.clone(), previous);
-            0
-        };
-        tile.volume.store(next, Ordering::Relaxed);
+    fn playback_controls(&mut self, ui: &mut egui::Ui, tile: &Tile, fullscreen: bool) {
+        let overlay = palette().canvas;
+        egui::Frame::new()
+            .fill(overlay)
+            .stroke(egui::Stroke::new(1.0, palette().border))
+            .corner_radius(10)
+            .inner_margin(egui::Margin::symmetric(4, 2))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    let label = tr(if fullscreen {
+                        "Exit full screen"
+                    } else {
+                        "Full screen"
+                    });
+                    if skin::icon_button(ui, Icon::Fullscreen, &format!("{label} · {}", tile.name))
+                        .clicked()
+                    {
+                        self.set_fullscreen(ui.ctx(), (!fullscreen).then(|| tile.id.clone()));
+                    }
+                    if skin::icon_button_with_color(
+                        ui,
+                        Icon::Stop,
+                        &format!("{} · {}", tr("Stop watching"), tile.name),
+                        palette().error,
+                    )
+                    .clicked()
+                    {
+                        self.stop_watching(ui.ctx(), tile);
+                    }
+                    if Self::volume_button(ui, tile) {
+                        self.set_fullscreen(ui.ctx(), (!fullscreen).then(|| tile.id.clone()));
+                    }
+                });
+            });
     }
 
-    fn volume_button(&mut self, ui: &mut egui::Ui, tile: &Tile) {
-        let muted = tile.volume.load(Ordering::Relaxed) == 0;
-        let label = format!(
-            "{} · {}",
-            tr(if muted { "Unmute" } else { "Mute" }),
-            tile.name
-        );
-        if skin::icon_button(ui, if muted { Icon::Muted } else { Icon::Volume }, &label).clicked() {
-            self.toggle_volume(tile);
-        }
-    }
-
-    fn inline_volume(ui: &mut egui::Ui, tile: &Tile) {
+    fn volume_button(ui: &mut egui::Ui, tile: &Tile) -> bool {
         let mut volume = tile.volume.load(Ordering::Relaxed);
         let label = format!("{} · {}", tr("Volume"), tile.name);
-        ui.scope(|ui| {
-            ui.spacing_mut().slider_width = 80.0;
-            let slider = skin::mint_slider(ui, &mut volume, 0..=100)
-                .accessible_name(&label)
-                .on_hover_text(format!("{label} · {volume}%"));
-            if slider.changed() {
-                tile.volume.store(volume, Ordering::Relaxed);
-            }
-        });
+        let trigger = skin::icon_button(
+            ui,
+            if volume == 0 {
+                Icon::Muted
+            } else {
+                Icon::Volume
+            },
+            &label,
+        );
+        let mut fullscreen_shortcut = false;
+        egui::Popup::from_toggle_button_response(&trigger)
+            .align(egui::RectAlign::TOP)
+            .gap(6.0)
+            .width(48.0)
+            .layout(egui::Layout::top_down(egui::Align::Center))
+            .frame(skin::menu_frame().inner_margin(6))
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                ui.set_width(36.0);
+                ui.label(skin::strong(format!("{volume}%"), 12.0));
+                ui.spacing_mut().slider_width = 88.0;
+                if ui
+                    .add(
+                        egui::Slider::new(&mut volume, 0..=100)
+                            .vertical()
+                            .show_value(false),
+                    )
+                    .accessible_name(tr("Volume"))
+                    .changed()
+                {
+                    tile.volume.store(volume, Ordering::Relaxed);
+                }
+                if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::F11)) {
+                    fullscreen_shortcut = true;
+                    ui.close();
+                }
+            });
+        fullscreen_shortcut
     }
 
-    fn stream_options(&mut self, ui: &mut egui::Ui, tile: &Tile) -> bool {
-        let label = format!("{} · {}", tr("Stream options"), tile.name);
-        let trigger = skin::icon_button(ui, Icon::More, &label);
-        egui::Popup::menu(&trigger)
+    fn stream_context_menu(
+        &mut self,
+        response: &egui::Response,
+        tile: &Tile,
+        primary: bool,
+    ) -> bool {
+        if primary {
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(
+                    egui::Role::Button,
+                    response.enabled(),
+                    format!("{} · {}", tr("Stream options"), tile.name),
+                )
+            });
+        }
+        let position_id = response.id.with("stream-menu-position");
+        let open = if primary && response.double_clicked() {
+            Some(egui::SetOpenCommand::Bool(false))
+        } else if response.secondary_clicked() || (primary && response.clicked()) {
+            let position = response
+                .interact_pointer_pos()
+                .unwrap_or(response.rect.center());
+            response
+                .ctx
+                .data_mut(|data| data.insert_temp(position_id, position));
+            Some(egui::SetOpenCommand::Bool(true))
+        } else {
+            None
+        };
+        let position = response
+            .ctx
+            .data(|data| data.get_temp(position_id))
+            .unwrap_or(response.rect.center());
+        egui::Popup::menu(response)
+            .open_memory(open)
+            .anchor(egui::PopupAnchor::Position(position))
+            .gap(8.0)
             .frame(skin::menu_frame())
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| self.watch_menu(ui, tile))
@@ -1806,65 +1854,15 @@ impl PublisherUi {
                 if response.double_clicked() {
                     self.set_fullscreen(&ctx, None);
                 }
-                menu_open = egui::Popup::context_menu(&response)
-                    .frame(skin::menu_frame())
-                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                    .show(|ui| self.watch_menu(ui, tile))
-                    .is_some();
+                menu_open = self.stream_context_menu(&response, tile, true);
                 if controls_visible {
                     if ui.input(|i| i.pointer.hover_pos().is_some_and(|pos| rect.contains(pos))) {
-                        Self::stream_metrics(ui, rect, tile);
+                        Self::stream_metrics(ui, rect, tile, true);
                     }
                     egui::Area::new(hud)
-                        .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -20.0))
+                        .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(12.0, -12.0))
                         .order(egui::Order::Foreground)
-                        .show(&ctx, |ui| {
-                            skin::dock_frame().show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    ui.label(skin::strong(&tile.name, 13.5).color(palette().text));
-                                    ui.add_space(6.0);
-                                    self.volume_button(ui, tile);
-                                    let mut volume = tile.volume.load(Ordering::Relaxed);
-                                    ui.spacing_mut().slider_width = 110.0;
-                                    let slider = skin::mint_slider(ui, &mut volume, 0..=100)
-                                        .on_hover_text(tr("This stream's volume"));
-                                    ui.label(format!("{volume}%"));
-                                    slider.widget_info(|| {
-                                        egui::WidgetInfo::slider(
-                                            ui.is_enabled(),
-                                            volume.into(),
-                                            tr("Volume"),
-                                        )
-                                    });
-                                    if slider.accessible_name(tr("Volume")).changed() {
-                                        tile.volume.store(volume, Ordering::Relaxed);
-                                    }
-                                    ui.add_space(4.0);
-                                    menu_open |= self.stream_options(ui, tile);
-                                    if ui.button(tr("Exit full screen")).clicked() {
-                                        self.set_fullscreen(&ctx, None);
-                                    }
-                                    if ui
-                                        .add(
-                                            egui::Button::new(
-                                                skin::strong(tr("Stop watching"), 13.0)
-                                                    .color(palette().error),
-                                            )
-                                            .fill(palette().danger.gamma_multiply(0.14))
-                                            .stroke(
-                                                egui::Stroke::new(
-                                                    1.0,
-                                                    palette().danger.gamma_multiply(0.45),
-                                                ),
-                                            ),
-                                        )
-                                        .clicked()
-                                    {
-                                        self.stop_watching(&ctx, tile);
-                                    }
-                                });
-                            });
-                        });
+                        .show(&ctx, |ui| self.playback_controls(ui, tile, true));
                 }
                 if !tile.status.is_empty() {
                     ui.painter().text(
@@ -1893,8 +1891,14 @@ impl PublisherUi {
         compact: bool,
     ) {
         ui.push_id(&tile.id, |ui| {
+            let can_open_menu = tile.watching && !compact;
+            let sense = if can_open_menu {
+                egui::Sense::click()
+            } else {
+                egui::Sense::CLICK
+            };
             let (rect, response) =
-                ui.allocate_exact_size(egui::vec2(width, width * 9.0 / 16.0), egui::Sense::CLICK);
+                ui.allocate_exact_size(egui::vec2(width, width * 9.0 / 16.0), sense);
             #[cfg(feature = "performance-experiments")]
             let present = {
                 use std::sync::OnceLock;
@@ -1915,6 +1919,7 @@ impl PublisherUi {
             // The entire video is the hover target, including its overlay buttons.
             let hovered =
                 ui.input(|i| i.pointer.hover_pos().is_some()) && ui.rect_contains_pointer(rect);
+            let overlay_visible = !tile.watching || stream_overlay_visible(ui, rect, hovered);
             ui.painter().rect_filled(rect, 12.0, egui::Color32::BLACK);
             #[cfg(feature = "performance-experiments")]
             let planar = present && self.planar.paint(ui, &tile.id, rect);
@@ -1968,12 +1973,17 @@ impl PublisherUi {
                     rect.min + egui::vec2(6.0, 6.0),
                     egui::vec2(width - 12.0, 25.0),
                 );
+                let opacity = ui.painter().opacity();
+                if !overlay_visible {
+                    ui.set_opacity(0.0);
+                }
                 let title = ui.put(
                     title_bounds,
                     egui::Button::new(skin::strong(&tile.name, 12.5))
                         .truncate()
                         .fill(overlay),
                 );
+                ui.set_opacity(opacity);
                 if title
                     .accessible_name(format!("{} · {}", tr("Spotlight stream"), tile.name))
                     .on_hover_text(&tile.name)
@@ -1998,6 +2008,9 @@ impl PublisherUi {
                         .id_salt("identity")
                         .max_rect(identity),
                 );
+                if !overlay_visible {
+                    header.set_opacity(0.0);
+                }
                 egui::Frame::new()
                     .fill(overlay)
                     .stroke(egui::Stroke::new(1.0, palette().border))
@@ -2054,68 +2067,29 @@ impl PublisherUi {
                     });
                 }
             }
-            if tile.watching && hovered && !compact {
-                Self::stream_metrics(ui, rect, tile);
-            }
             if tile.watching {
+                let metrics = (!compact).then(|| Self::stream_metrics(ui, rect, tile, hovered));
+                let left = rect.left() + 12.0;
+                let bottom = metrics
+                    .filter(|badge| badge.left() - left < PLAYBACK_CONTROLS_WIDTH + 8.0)
+                    .map_or(rect.bottom() - 8.0, |badge| badge.top() - 4.0);
                 let controls = egui::Rect::from_min_size(
-                    rect.left_bottom() + egui::vec2(12.0, -44.0),
-                    egui::vec2(width - 24.0, 34.0),
+                    egui::pos2(left, bottom - 38.0),
+                    egui::vec2(PLAYBACK_CONTROLS_WIDTH, 38.0),
                 );
                 let mut hud = ui.new_child(
                     egui::UiBuilder::new()
                         .id_salt("stream-controls")
                         .max_rect(controls),
                 );
-                egui::Frame::new()
-                    .fill(overlay)
-                    .stroke(egui::Stroke::new(1.0, palette().border))
-                    .corner_radius(10)
-                    .inner_margin(egui::Margin::symmetric(4, 2))
-                    .show(&mut hud, |ui| {
-                        ui.horizontal(|ui| {
-                            let stop_label = format!("{} · {}", tr("Stop watching"), tile.name);
-                            let stop = if width >= 270.0 {
-                                let response = ui.add(
-                                    egui::Button::new(skin::strong(tr("Stop watching"), 12.5))
-                                        .frame(false),
-                                );
-                                response.widget_info(|| {
-                                    egui::WidgetInfo::labeled(
-                                        egui::Role::Button,
-                                        ui.is_enabled(),
-                                        &stop_label,
-                                    )
-                                });
-                                response.on_hover_text(&stop_label)
-                            } else {
-                                skin::icon_button(ui, Icon::Stop, &stop_label)
-                            };
-                            if stop.clicked() {
-                                self.stop_watching(ui.ctx(), tile);
-                            }
-                            if !compact
-                                && skin::icon_button(
-                                    ui,
-                                    Icon::Fullscreen,
-                                    &format!("{} · {}", tr("Full screen"), tile.name),
-                                )
-                                .clicked()
-                            {
-                                self.set_fullscreen(ui.ctx(), Some(tile.id.clone()));
-                            }
-                            self.volume_button(ui, tile);
-                            self.stream_options(ui, tile);
-                            if !compact && width >= 360.0 {
-                                Self::inline_volume(ui, tile);
-                            }
-                        });
-                    });
+                hud.set_clip_rect(rect.intersect(ui.clip_rect()));
+                if !overlay_visible {
+                    // Keep the controls in the tab order so focus can reveal them.
+                    hud.set_opacity(0.0);
+                }
+                self.playback_controls(&mut hud, tile, false);
             }
-            egui::Popup::context_menu(&response)
-                .frame(skin::menu_frame())
-                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                .show(|ui| self.watch_menu(ui, tile));
+            self.stream_context_menu(&response, tile, can_open_menu);
             if !compact && !tile.status.is_empty() {
                 let notice = egui::Rect::from_min_max(
                     rect.min + egui::vec2(12.0, 54.0),
@@ -2136,6 +2110,31 @@ impl PublisherUi {
             ui.advance_cursor_after_rect(rect);
         });
     }
+}
+
+fn stream_overlay_visible(ui: &egui::Ui, rect: egui::Rect, hovered: bool) -> bool {
+    if hovered {
+        return true;
+    }
+    let Some(focus) = ui
+        .memory(|memory| memory.focused())
+        .and_then(|id| ui.ctx().read_response(id))
+        .filter(|focus| focus.layer_id == ui.layer_id() && rect.contains_rect(focus.rect))
+    else {
+        return false;
+    };
+    let pointer_moved = ui.input(|input| {
+        input.events.iter().any(|event| {
+            matches!(
+                event,
+                egui::Event::PointerMoved(_) | egui::Event::PointerGone
+            )
+        })
+    });
+    if pointer_moved {
+        focus.surrender_focus();
+    }
+    !pointer_moved
 }
 
 impl PublisherUi {
@@ -2656,8 +2655,6 @@ impl PublisherUi {
                 .map(|e| e.factory.clone())
                 .unwrap_or_default();
         }
-        self.remembered_volume
-            .retain(|id, _| state.tiles.iter().any(|t| &t.id == id));
         if !state
             .tiles
             .iter()
@@ -4429,7 +4426,6 @@ mod tests {
             settings_error: String::new(),
             auto_join_ready: false,
             copied_until: None,
-            remembered_volume: HashMap::new(),
             appearance: Appearance {
                 theme: Theme::Amber,
                 ..Appearance::default()
@@ -4851,11 +4847,6 @@ mod tests {
             matches!(next_command(), Some(Command::Watch { id, enabled: true }) if id == second.id)
         );
         second.watching = true;
-        activate(&second, &format!("{} · Second", tr("Mute")));
-        assert_eq!(second.volume.load(Ordering::Relaxed), 0);
-        activate(&second, &format!("{} · Second", tr("Unmute")));
-        assert_eq!(second.volume.load(Ordering::Relaxed), 63);
-        assert_eq!(first.volume.load(Ordering::Relaxed), 0);
         activate(&second, &format!("{} · Second", tr("Stop watching")));
         assert!(
             matches!(next_command(), Some(Command::Watch { id, enabled: false }) if id == second.id)
@@ -5063,9 +5054,8 @@ mod tests {
     }
 
     #[test]
-    fn fullscreen_right_click_menu_survives_idle_and_applies_actions() {
+    fn fullscreen_click_menu_survives_idle_and_applies_actions() {
         for action in [
-            "Mute",
             "Exit full screen",
             "Focus stream",
             "Stop watching",
@@ -5115,12 +5105,17 @@ mod tests {
             let idle = draw(&mut app, vec![]);
             assert_eq!(idle.platform_output.cursor_icon, egui::CursorIcon::None);
             let position = egui::pos2(400.0, 180.0);
+            let button = if action == "Focus stream" {
+                egui::PointerButton::Primary
+            } else {
+                egui::PointerButton::Secondary
+            };
             for pressed in [true, false] {
                 draw(
                     &mut app,
                     vec![
                         egui::Event::PointerMoved(position),
-                        click(position, egui::PointerButton::Secondary, pressed),
+                        click(position, button, pressed),
                     ],
                 );
             }
@@ -5152,12 +5147,6 @@ mod tests {
                 );
             }
             match action {
-                "Mute" => {
-                    assert_eq!(tile.volume.load(Ordering::Relaxed), 0);
-                    assert_eq!(app.remembered_volume.get(&tile.id), Some(&75));
-                    assert!(egui::Popup::is_any_open(&ctx));
-                    assert!(app.fullscreen.is_some());
-                }
                 "Advanced information" => {
                     assert!(tile.presentation.diagnostics.open.load(Ordering::Relaxed));
                     assert!(app.fullscreen.is_some());
@@ -5173,7 +5162,100 @@ mod tests {
     }
 
     #[test]
-    fn received_codec_and_rate_only_paint_on_hovered_subscriptions() {
+    fn speaker_opens_a_vertical_slider_and_changes_volume_at_the_bottom() {
+        let mut app = app();
+        let ctx = egui::Context::default();
+        configure_theme(&ctx);
+        let tile = Tile {
+            id: "volume-test".into(),
+            name: "Friend".into(),
+            codec: String::new(),
+            watching: true,
+            picture: Default::default(),
+            presentation: Default::default(),
+            frames: Default::default(),
+            received_bps: Default::default(),
+            volume: std::sync::Arc::new(63.into()),
+            audio: Default::default(),
+            status: String::new(),
+        };
+        let mut draw = |events| {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(800.0, 500.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |root| {
+                    egui::CentralPanel::default().show(root, |ui| {
+                        ui.add_space(240.0);
+                        app.playback_controls(ui, &tile, false);
+                    });
+                },
+            );
+            output.textures_delta.clear();
+            output
+        };
+        let initial = draw(vec![]);
+        let stop = initial
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect)
+                    if rect.fill == palette().error && rect.rect.width() < 14.0 =>
+                {
+                    Some(rect.rect.center())
+                }
+                _ => None,
+            })
+            .expect("Red stop button");
+        let mut click = |pos| {
+            for pressed in [true, false] {
+                draw(vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: Default::default(),
+                    },
+                ]);
+            }
+            draw(vec![]);
+            draw(vec![])
+        };
+        assert!(!egui::Popup::is_any_open(&ctx));
+        let speaker = stop + egui::vec2(36.0, 0.0);
+        let popup = click(speaker);
+        assert!(egui::Popup::is_any_open(&ctx));
+        assert_eq!(tile.volume.load(Ordering::Relaxed), 63);
+        let rail = popup
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect)
+                    if rect.rect.width() < 14.0 && rect.rect.height() > 60.0 =>
+                {
+                    Some(rect.rect)
+                }
+                _ => None,
+            })
+            .expect("Vertical volume rail");
+        assert!(rail.bottom() < speaker.y);
+        assert!(
+            (rail.center().x - speaker.x).abs() <= 2.0,
+            "Rail {rail:?} should align with the speaker at {speaker:?}"
+        );
+        click(rail.center_bottom() - egui::vec2(0.0, 1.0));
+        assert_eq!(tile.volume.load(Ordering::Relaxed), 0);
+        assert!(egui::Popup::is_any_open(&ctx));
+    }
+
+    #[test]
+    fn watched_stream_overlays_follow_hover_and_metrics_hug_the_corner() {
         let mut app = app();
         app.fullscreen_controls_until = Instant::now() + Duration::from_secs(3);
         let ctx = egui::Context::default();
@@ -5191,14 +5273,14 @@ mod tests {
             audio: std::sync::Arc::default(),
             status: String::new(),
         };
-        let mut draw = |tile: &Tile, event: egui::Event, fullscreen: bool| {
+        let mut draw = |tile: &Tile, events, fullscreen| {
             let mut output = ctx.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
                         egui::Pos2::ZERO,
                         egui::vec2(800.0, 600.0),
                     )),
-                    events: vec![event],
+                    events,
                     ..Default::default()
                 },
                 |root| {
@@ -5211,40 +5293,65 @@ mod tests {
                 },
             );
             let mut text = String::new();
+            let mut video = None;
+            let mut metrics = None;
+            let mut stop_icon = false;
             output.textures_delta.clear();
             for shape in output.shapes {
                 painted_text(&shape.shape, &mut text);
+                if let egui::Shape::Rect(rect) = shape.shape {
+                    if rect.fill == egui::Color32::BLACK && rect.rect.width() == 600.0 {
+                        video = Some(rect.rect);
+                    }
+                    if rect.fill == egui::Color32::from_black_alpha(195) {
+                        metrics = Some(rect.rect);
+                    }
+                    stop_icon |= rect.fill == palette().error && rect.rect.width() < 14.0;
+                }
             }
-            text
+            (text, video, metrics, stop_icon)
         };
-        let hidden = draw(&tile, egui::Event::PointerGone, false);
-        assert!(!hidden.contains("Mbps"));
-        let visible = draw(
-            &tile,
-            egui::Event::PointerMoved(egui::pos2(300.0, 180.0)),
-            false,
-        );
+        let inside = egui::Event::PointerMoved(egui::pos2(300.0, 180.0));
+        let outside = egui::Event::PointerMoved(egui::pos2(740.0, 180.0));
+        let check_hidden = |text: &str| {
+            assert!(!text.contains("Mbps"));
+            assert!(!text.contains("Friend"));
+            assert!(!text.contains(tr("Stop watching")));
+        };
+        check_hidden(&draw(&tile, vec![egui::Event::PointerGone], false).0);
+        let (visible, video, metrics, stop_icon) = draw(&tile, vec![inside.clone()], false);
         assert!(visible.contains("HEVC  ·  15.5 Mbps"), "{visible}");
-        assert!(!draw(&tile, egui::Event::PointerGone, false).contains("Mbps"));
-        tile.watching = false;
-        assert!(
-            !draw(
-                &tile,
-                egui::Event::PointerMoved(egui::pos2(300.0, 180.0)),
-                false
-            )
-            .contains("Mbps")
-        );
-        tile.watching = true;
-        assert!(!draw(&tile, egui::Event::PointerGone, true).contains("Mbps"));
-        assert!(
+        assert!(visible.contains("Friend"));
+        assert!(stop_icon);
+        let inset = video.unwrap().right_bottom() - metrics.unwrap().right_bottom();
+        assert!((inset - egui::vec2(10.0, 8.0)).length() < 0.1);
+        check_hidden(&draw(&tile, vec![outside.clone()], false).0);
+
+        for pressed in [true, false] {
             draw(
                 &tile,
-                egui::Event::PointerMoved(egui::pos2(300.0, 180.0)),
-                true
-            )
-            .contains("HEVC")
-        );
+                vec![egui::Event::Key {
+                    key: egui::Key::Tab,
+                    physical_key: None,
+                    pressed,
+                    repeat: false,
+                    modifiers: Default::default(),
+                }],
+                false,
+            );
+        }
+        let keyboard = draw(&tile, vec![], false);
+        assert!(keyboard.3);
+        check_hidden(&draw(&tile, vec![egui::Event::PointerGone], false).0);
+
+        tile.watching = false;
+        let preview = draw(&tile, vec![], false).0;
+        assert!(preview.contains(tr("Watch")));
+        assert!(preview.contains("Friend"));
+        assert!(!preview.contains("Mbps"));
+        tile.watching = true;
+        assert!(!draw(&tile, vec![], true).0.contains("Mbps"));
+        assert!(draw(&tile, vec![inside], true).0.contains("HEVC"));
     }
 
     #[test]

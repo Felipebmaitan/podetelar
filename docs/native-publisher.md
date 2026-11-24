@@ -52,8 +52,10 @@ sharing, use the same arrow to apply changes. The camera menu has separate
 quality settings. Starting a camera stream and selecting a camera device are
 pending camera support. The stage toolbar offers Grid, Spotlight and Focus.
 Spotlight keeps one stream large and the others in a scrollable strip. Highlighting a stream changes the layout.
-Watch subscribes to video and audio, and Stop watching unsubscribes. Each stream
-has independent volume. When only you are live, the stage shows your most recent
+Watch subscribes to video and audio, and Stop watching unsubscribes. Hover over a
+watched stream to reveal its controls and received codec and bitrate. The
+speaker opens a vertical volume slider for that stream. Click the video for
+additional actions. When only you are live, the stage shows your most recent
 preview. While you share and watch someone else, you can hide or restore the small
 local preview beside the streams. Preview capture occurs initially and at most
 once per minute.

@@ -515,7 +515,7 @@ impl StreamConfig {
 
     fn resolve_mode(&self, codec: Codec) -> Result<Mode> {
         if self.source.is_camera() {
-            camera::mode(&self.source.info, self.quality)
+            camera::mode(&self.source.info, self.quality, codec)
         } else {
             self.quality.resolve(&self.source.info, codec)
         }

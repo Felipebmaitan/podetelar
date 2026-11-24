@@ -7,18 +7,19 @@ The website handles invitations, access management and app downloads; it does no
 publish or play streams.
 
 Windows camera sharing has its own settings and defaults to 720p, 30 FPS and
-an automatic 2 Mbps target. Choose 720p, 1080p or Source and 24, 30 or 60 FPS.
+Automatic bitrate. Choose 720p, 1080p or Source and 24, 30 or 60 FPS.
 Advanced camera settings offer a manual target from 0.5 to 8 Mbps.
-Automatic uses the selected frame rate and the output pixel count, including
-when Source uses a camera's native size. These targets are in Mbps.
+Automatic uses the negotiated codec, selected frame rate, and output pixel
+count. Source uses the actual output size. These camera targets are tuned for
+lower motion than the screen motion presets and are in Mbps.
 
-| Output up to | 24 FPS | 30 FPS | 60 FPS |
-| ------------ | ------ | ------ | ------ |
-| 480p         | 0.8    | 1      | 1.5    |
-| 720p         | 1.5    | 2      | 3      |
-| 1080p        | 2.5    | 3      | 4.5    |
-| 1440p        | 3.5    | 4.5    | 6      |
-| 4K           | 5      | 6.5    | 8      |
+| Output up to | H.264 24 / 30 / 60 FPS | HEVC 24 / 30 / 60 FPS | AV1 24 / 30 / 60 FPS |
+| ------------ | ---------------------- | --------------------- | -------------------- |
+| 480p         | 0.6 / 0.8 / 1.2        | 0.5 / 0.6 / 1.0       | 0.5 / 0.5 / 0.8      |
+| 720p         | 1.0 / 1.4 / 2.2        | 0.8 / 1.1 / 1.8       | 0.7 / 0.9 / 1.4      |
+| 1080p        | 1.6 / 2.2 / 3.4        | 1.3 / 1.8 / 2.7       | 1.0 / 1.4 / 2.2      |
+| 1440p        | 2.5 / 3.3 / 5.0        | 2.0 / 2.6 / 4.0       | 1.6 / 2.1 / 3.3      |
+| 4K           | 4.0 / 5.0 / 7.0        | 3.2 / 4.0 / 5.6       | 2.6 / 3.3 / 4.6      |
 
 The camera needs to expose a mode that can supply the selected dimensions and
 frame rate. Output preserves aspect ratio, downscales where needed, and can drop

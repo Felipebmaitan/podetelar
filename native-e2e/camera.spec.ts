@@ -6,6 +6,7 @@ import { nativeExecutable, nativeRequest } from "./fixtures.js";
 
 type Sent = {
   captureStopped: boolean;
+  codec: string;
   mode: { width: number; height: number; fps: number; bitrate: number };
   metrics: { fps: number; requested_bitrate: number; encoder_bitrate: number };
   previewCaptures: number;
@@ -38,6 +39,61 @@ async function cameraId() {
   expect(selected).toHaveLength(1);
   return selected[0]!.id;
 }
+
+test("camera Automatic selects the target for the encoder codec", async ({
+  request,
+  baseURL,
+}) => {
+  test.setTimeout(90_000);
+  const id = await cameraId();
+  const probe = (await nativeRequest("--probe", {}).result) as {
+    encoders: { codec: string }[];
+  };
+  const targets = [
+    ["h264", 1_400_000],
+    ["h265", 1_100_000],
+    ["av1", 900_000],
+  ] as const;
+  const available = targets.filter(([codec]) =>
+    probe.encoders.some((encoder) => encoder.codec === codec),
+  );
+  expect(available.length).toBeGreaterThan(0);
+  for (const [codec, bitrate] of available) {
+    await test.step(codec, async () => {
+      const created = await createTestRoom(request, baseURL!, "Camera Auto");
+      expect(created.status()).toBe(201);
+      const { invitationUrl } = await created.json();
+      const sender = nativeRequest("--publish-fixture", {
+        invitationUrl,
+        displayName: "Camera publisher",
+        cameraId: id,
+        codec,
+        seconds: 3,
+        quality: {
+          resolution: "p720",
+          fps: 30,
+          profile: "motion",
+          bitrate: { mode: "auto" },
+        },
+      });
+      try {
+        const sent = (await sender.result) as Sent;
+        expect(sent.codec).toBe(codec);
+        expect(sent.mode).toEqual({
+          width: 1280,
+          height: 720,
+          fps: 30,
+          bitrate,
+        });
+        expect(sent.metrics.requested_bitrate).toBe(bitrate);
+        expect(sent.metrics.encoder_bitrate).toBeGreaterThan(0);
+        expect(sent.metrics.encoder_bitrate).toBeLessThanOrEqual(bitrate);
+      } finally {
+        sender.child.kill();
+      }
+    });
+  }
+});
 
 test("an explicitly selected Windows camera publishes and starts playing automatically", async ({
   request,
@@ -139,11 +195,11 @@ test("an explicitly selected Windows camera publishes and starts playing automat
       width: 1280,
       height: 720,
       fps: 30,
-      bitrate: 2_000_000,
+      bitrate: 1_400_000,
     });
-    expect(defaults.metrics.requested_bitrate).toBe(2_000_000);
+    expect(defaults.metrics.requested_bitrate).toBe(1_400_000);
     expect(defaults.metrics.encoder_bitrate).toBeGreaterThan(0);
-    expect(defaults.metrics.encoder_bitrate).toBeLessThanOrEqual(2_000_000);
+    expect(defaults.metrics.encoder_bitrate).toBeLessThanOrEqual(1_400_000);
   } finally {
     sender.child.kill();
     viewer?.child.kill();

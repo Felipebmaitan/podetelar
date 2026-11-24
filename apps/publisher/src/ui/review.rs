@@ -140,7 +140,7 @@ pub fn run() -> Result<()> {
         });
         let mut inner = PublisherUi::with_account_client(None, crate::account::Client::fixture(account));
         inner.appearance.theme = theme;
-        if mode == "discord" && std::env::args().any(|arg| arg == "--signed-in") {
+        if matches!(mode.as_str(), "profile" | "discord") && std::env::args().any(|arg| arg == "--signed-in") {
             inner.account_state = inner.account_client.state();
             inner.poll_following(&cc.egui_ctx);
             inner.following_client = crate::following::Client::fixture(crate::following::State {
@@ -275,7 +275,6 @@ pub fn run() -> Result<()> {
             inner.invitation = "https://podetelar.example/r/friday-screening#invite=demo".into();
         }
         if mode == "profile" || mode == "discord" { inner.open_profile(); }
-        if mode == "discord" { inner.profile_page = profile::SettingsPage::Discord; }
         if mode == "update" {
             use crate::update_protocol::{Phase, Status};
             inner.updates = crate::updates::Client::fixture(Status {

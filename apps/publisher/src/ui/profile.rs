@@ -1,11 +1,5 @@
 use super::*;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum SettingsPage {
-    Profile,
-    Discord,
-}
-
 fn surface_card(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
     let width = ui.available_width();
     let compact = ui.ctx().content_rect().height() <= 600.0;
@@ -193,7 +187,6 @@ impl PublisherUi {
                                                 .clicked()
                                             {
                                                 self.open_profile();
-                                                self.profile_page = SettingsPage::Discord;
                                             }
                                         },
                                     );
@@ -247,11 +240,9 @@ impl PublisherUi {
             let user_id = account.user_id.clone();
             let expires_at = account.expires_at;
             ui.horizontal(|ui| {
-                avatar(ui, &display_name, 42.0, None);
-                ui.add_space(4.0);
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
-                    ui.label(skin::strong(&display_name, 15.5).color(palette().text));
+                    ui.label(skin::strong(tr("Discord account"), 14.5).color(palette().text));
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 5.0;
                         ui.colored_label(palette().success, "●");
@@ -290,6 +281,7 @@ impl PublisherUi {
             .id_salt("discord-account-details")
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 5.0;
+                detail_row(ui, tr("Discord name"), &display_name);
                 detail_row(ui, tr("PodeTelar server"), &self.account_state.server);
                 detail_row(ui, "Discord ID", &user_id);
                 let now = std::time::SystemTime::now()
@@ -310,6 +302,7 @@ impl PublisherUi {
                 ui.colored_label(palette().error, tr(&self.account_state.error));
             }
         } else {
+            ui.label(skin::strong(tr("Discord account"), 14.5).color(palette().text));
             self.discord_sign_in(ui);
         }
     }
@@ -382,13 +375,6 @@ impl PublisherUi {
         if !self.account_state.error.is_empty() {
             ui.colored_label(palette().error, tr(&self.account_state.error));
         }
-    }
-
-    fn automatic_joining_card(&mut self, ui: &mut egui::Ui) {
-        surface_card(ui, |ui| {
-            ui.label(skin::strong(tr("Automatic joining"), 14.5).color(palette().text));
-            self.discord_following(ui);
-        });
     }
 
     fn discord_following(&mut self, ui: &mut egui::Ui) {
@@ -495,7 +481,6 @@ impl PublisherUi {
 
     pub(super) fn open_profile(&mut self) {
         self.profile_name = self.name.clone();
-        self.profile_page = SettingsPage::Profile;
         self.profile_open = true;
     }
 
@@ -785,16 +770,8 @@ impl PublisherUi {
         if !self.profile_open {
             return;
         }
-        let compact_discord = self.profile_page == SettingsPage::Discord
-            && self.account_state.account.is_some()
-            && ctx.content_rect().height() <= 600.0
-            && ctx.content_rect().width() >= 900.0;
-        let width = if compact_discord {
-            836.0
-        } else {
-            (ctx.content_rect().width() - 64.0).clamp(320.0, 472.0)
-        };
-        let max_body_height = (ctx.content_rect().height() - 255.0).clamp(96.0, 460.0);
+        let width = (ctx.content_rect().width() - 64.0).clamp(320.0, 500.0);
+        let max_body_height = (ctx.content_rect().height() - 192.0).clamp(96.0, 560.0);
         let mut close = false;
         let modal = egui::Modal::new(egui::Id::unique("user-settings"))
             .backdrop_color(egui::Color32::from_black_alpha(175))
@@ -816,71 +793,23 @@ impl PublisherUi {
                 });
                 ui.add_space(10.0);
 
-                // Crisp underline tabs
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 18.0;
-                    for (page, label) in [
-                        (SettingsPage::Profile, "Profile"),
-                        (SettingsPage::Discord, "Discord"),
-                    ] {
-                        let selected = self.profile_page == page;
-                        let text = skin::strong(tr(label), 13.5).color(if selected {
-                            palette().text
-                        } else {
-                            palette().muted
-                        });
-                        let response = ui.add(
-                            egui::Button::new(text)
-                                .frame(false)
-                                .min_size(egui::vec2(0.0, 30.0)),
-                        );
-                        if selected {
-                            let r = response.rect;
-                            ui.painter().line_segment(
-                                [
-                                    egui::pos2(r.left(), r.bottom() + 2.0),
-                                    egui::pos2(r.right(), r.bottom() + 2.0),
-                                ],
-                                egui::Stroke::new(2.0, palette().accent),
-                            );
-                        }
-                        response.widget_info(|| {
-                            egui::WidgetInfo::selected(
-                                egui::Role::Tab,
-                                ui.is_enabled(),
-                                selected,
-                                tr(label),
-                            )
-                        });
-                        if response.clicked() {
-                            self.profile_page = page;
-                        }
-                    }
-                });
-                ui.separator();
-                ui.add_space(10.0);
-
                 egui::ScrollArea::vertical()
-                    .id_salt(match self.profile_page {
-                        SettingsPage::Profile => "profile",
-                        SettingsPage::Discord => "discord",
-                    })
+                    .id_salt("user-settings-body")
                     .max_height(max_body_height)
-                    .show(ui, |ui| match self.profile_page {
-                        SettingsPage::Profile => self.profile_cards(ui, connected),
-                        SettingsPage::Discord if compact_discord => {
-                            ui.columns(2, |cols| {
-                                surface_card(&mut cols[0], |ui| self.discord_account(ui));
-                                self.automatic_joining_card(&mut cols[1]);
-                            });
-                        }
-                        SettingsPage::Discord => {
-                            surface_card(ui, |ui| self.discord_account(ui));
+                    .show(ui, |ui| {
+                        self.profile_cards(ui, connected);
+                        ui.add_space(8.0);
+                        surface_card(ui, |ui| {
+                            self.discord_account(ui);
                             if self.account_state.account.is_some() {
-                                ui.add_space(10.0);
-                                self.automatic_joining_card(ui);
+                                ui.add_space(4.0);
+                                ui.label(
+                                    skin::strong(tr("Automatic joining"), 13.5)
+                                        .color(palette().text),
+                                );
+                                self.discord_following(ui);
                             }
-                        }
+                        });
                     });
                 settings_divider(ui);
                 ui.horizontal(|ui| {

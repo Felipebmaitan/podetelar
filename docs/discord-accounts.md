@@ -46,7 +46,8 @@ preference contains no token. Invitations to another backend use a guest identit
 and never receive that credential. Disconnect revokes the current server login
 and removes the OS entry, reporting storage/network failures.
 
-The settings gear or your own sidebar name opens guest and Discord settings.
+User settings includes the room profile, Discord account, and automatic joining
+on one page.
 Guests retain their saved nickname and uploaded avatar when connecting Discord.
 In channel-associated rooms the bot resolves the member's room guild nickname
 and guild avatar, falling back to their Discord global profile if unavailable.

@@ -155,7 +155,6 @@ pub struct PublisherUi {
     profile_textures: HashMap<String, (usize, egui::TextureHandle)>,
     profile_started: Instant,
     profile_open: bool,
-    profile_page: profile::SettingsPage,
     profile_name: String,
     saved_guest_name: String,
     updates: crate::updates::Client,
@@ -284,7 +283,6 @@ impl PublisherUi {
             profile_textures: HashMap::new(),
             profile_started: Instant::now(),
             profile_open: false,
-            profile_page: profile::SettingsPage::Profile,
             profile_name: String::new(),
             saved_guest_name: crate::settings::guest_name(),
             updates: crate::updates::Client::new(),
@@ -4445,7 +4443,6 @@ mod tests {
             profile_textures: HashMap::new(),
             profile_started: Instant::now(),
             profile_open: false,
-            profile_page: profile::SettingsPage::Profile,
             profile_name: String::new(),
             saved_guest_name: String::new(),
             updates: crate::updates::Client::new(),
@@ -4511,6 +4508,44 @@ mod tests {
                 }
             }
             _ => {}
+        }
+    }
+
+    #[test]
+    fn user_settings_shows_profile_and_discord_controls_together() {
+        for signed_in in [false, true] {
+            let mut app = app();
+            app.remember_guest_name("Example guest".into());
+            app.account_state.account = signed_in.then(|| crate::account::Account {
+                session_id: "fixture-session".into(),
+                user_id: "123456789012345678".into(),
+                display_name: "Example account".into(),
+                expires_at: 0,
+            });
+            app.open_profile();
+            let ctx = egui::Context::default();
+            configure_theme(&ctx);
+            let draw = || egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(960.0, 540.0),
+                )),
+                ..Default::default()
+            };
+            ctx.run_ui(draw(), |root| app.profile_dialog(root.ctx(), false))
+                .textures_delta
+                .clear();
+            let mut output = ctx.run_ui(draw(), |root| app.profile_dialog(root.ctx(), false));
+            output.textures_delta.clear();
+            let mut text = String::new();
+            for shape in output.shapes {
+                painted_text(&shape.shape, &mut text);
+            }
+            assert!(text.contains(tr("Guest nickname")));
+            assert!(text.contains(tr("Discord account")));
+            assert_eq!(text.contains(tr("Sign in with Discord")), !signed_in);
+            assert_eq!(text.contains(tr("Disconnect Discord")), signed_in);
+            assert_eq!(text.contains(tr("Automatic joining")), signed_in);
         }
     }
 

@@ -72,7 +72,6 @@ pub fn qualify_planar_transitions(
         profile_textures: HashMap::new(),
         profile_started: Instant::now(),
         profile_open: false,
-        profile_page: profile::SettingsPage::Profile,
         profile_name: String::new(),
         saved_guest_name: String::new(),
         activation: crate::activation::Inbox::new(),

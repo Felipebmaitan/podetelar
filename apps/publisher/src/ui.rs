@@ -3005,11 +3005,7 @@ impl PublisherUi {
             .map(source_name)
             .unwrap_or(Self::sharing_panel_title(state));
         let setup_summary = dock_stream_summary(state, displayed_source.as_ref(), self.quality);
-        let source_width = if root.available_width() < 800.0 {
-            (root.available_width() - 395.0).clamp(116.0, 166.0)
-        } else {
-            244.0
-        };
+        let source_width = (root.available_width() - 395.0).clamp(116.0, 244.0);
         egui::Panel::bottom("studio-dock")
             .exact_size(94.0)
             .show_separator_line(false)

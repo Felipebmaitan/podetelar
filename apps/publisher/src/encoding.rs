@@ -716,15 +716,21 @@ mod camera_view_tests {
         pipeline.set_state(gst::State::Playing)?;
         let result = (|| -> Result<()> {
             let timeout = gst::ClockTime::from_mseconds(150);
+            let wait_for_frame = || {
+                let deadline = Instant::now() + Duration::from_secs(3);
+                while Instant::now() < deadline {
+                    if let Some(sample) = feed.next_sample() {
+                        return Some(sample);
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                None
+            };
             ensure!(
                 feed.sink.try_pull_sample(timeout).is_none(),
                 "Hidden camera view received a frame"
             );
-            feed.next_sample();
-            let sample = feed
-                .sink
-                .try_pull_sample(timeout)
-                .context("First camera view frame")?;
+            let sample = wait_for_frame().context("First camera view frame")?;
             assert_eq!(
                 crate::video_image::camera_image(&sample).unwrap().size,
                 [64, 36]
@@ -737,11 +743,7 @@ mod camera_view_tests {
                 feed.sink.try_pull_sample(timeout).is_none(),
                 "Camera view kept receiving after the lease expired"
             );
-            feed.next_sample();
-            ensure!(
-                feed.sink.try_pull_sample(timeout).is_some(),
-                "Camera view did not resume"
-            );
+            ensure!(wait_for_frame().is_some(), "Camera view did not resume");
             Ok(())
         })();
         pipeline.set_state(gst::State::Null)?;

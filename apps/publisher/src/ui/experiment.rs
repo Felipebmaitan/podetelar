@@ -114,6 +114,7 @@ pub fn qualify_planar_transitions(
         link_result: None,
         browser_links_enabled: false,
         self_preview_revision: None,
+        camera_view: None,
         planar: Default::default(),
         picker: crate::source_picker::Preview::new(),
         picker_hover: None,

@@ -220,6 +220,10 @@ pub struct PublisherUi {
     link_result: Option<crate::browser_links::Load>,
     browser_links_enabled: bool,
     self_preview_revision: Option<(crate::preview::Latest, u64)>,
+    camera_view: Option<(
+        std::sync::Arc<crate::encoding::CameraFeed>,
+        egui::TextureHandle,
+    )>,
     #[cfg(feature = "performance-experiments")]
     planar: crate::planar_experiment::Videos,
     picker: crate::source_picker::Preview,
@@ -354,6 +358,7 @@ impl PublisherUi {
             link_result,
             browser_links_enabled: std::env::var("PODETELAR_BROWSER_LINKS").as_deref() == Ok("1"),
             self_preview_revision: None,
+            camera_view: None,
             #[cfg(feature = "performance-experiments")]
             planar: Default::default(),
             picker: crate::source_picker::Preview::new(),
@@ -2687,6 +2692,9 @@ impl PublisherUi {
             self.self_preview_revision = None;
             self.self_preview_hidden = false;
         }
+        if state.camera_feed.is_none() {
+            self.camera_view = None;
+        }
         self.reconcile_spotlight(&state);
         let hidden = ctx.input(|i| {
             i.viewport().visible() == Some(false) || i.viewport().minimized == Some(true)
@@ -2849,7 +2857,7 @@ impl PublisherUi {
                 }
                 let show_preview_restore = state.any_sharing()
                     && self.self_preview_hidden
-                    && state.tiles.iter().any(|tile| tile.watching);
+                    && (state.camera_sharing || state.tiles.iter().any(|tile| tile.watching));
                 let show_view_controls = state.tiles.len() > 1 || self.focused.is_some();
                 if show_preview_restore || show_view_controls {
                     ui.horizontal(|ui| {
@@ -3036,11 +3044,13 @@ impl PublisherUi {
         })
     }
 
-    fn camera_selected(&self, state: &Snapshot) -> bool {
-        state
-            .cameras
-            .iter()
-            .any(|device| device.id == self.camera_settings.device_id)
+    fn selected_camera<'a>(&self, state: &'a Snapshot) -> Option<&'a camera::Info> {
+        let id = &self.camera_settings.device_id;
+        if id.is_empty() {
+            state.cameras.first()
+        } else {
+            state.cameras.iter().find(|device| device.id == *id)
+        }
     }
 
     fn can_start_camera(&self, state: &Snapshot) -> bool {
@@ -3050,7 +3060,6 @@ impl PublisherUi {
             && !state.refreshing_cameras
             && !state.encoders.is_empty()
             && !self.picker.camera_capturing()
-            && self.camera_selected(state)
     }
 
     fn start_camera(&mut self) {
@@ -3060,6 +3069,7 @@ impl PublisherUi {
         if self.picker.camera_capturing() {
             return;
         }
+        self.self_preview_hidden = false;
         self.controller.send(Command::StartCamera {
             device_id: self.camera_settings.device_id.clone(),
             quality: self.camera_settings.quality(),
@@ -3162,8 +3172,12 @@ impl PublisherUi {
                                         "Preparing camera preview…"
                                     } else if state.encoders.is_empty() {
                                         "No supported hardware encoder was found. You can still watch compatible streams."
+                                    } else if state.refreshing_cameras {
+                                        "Refreshing cameras…"
+                                    } else if state.busy {
+                                        state.operation
                                     } else {
-                                        "Choose a device in Camera settings."
+                                        "Reconnecting to your room. Your watching choices will be restored."
                                     }));
 
                                     let requested = if screen_settings.clicked() {
@@ -3319,9 +3333,9 @@ impl PublisherUi {
             && !state.camera_sharing
             && !state.camera_pending
             && !state.refreshing_cameras
-            && self.camera_selected(state)
+            && let Some(camera) = self.selected_camera(state)
         {
-            self.camera_preview_panel(ctx, stage.shrink(6.0), panel.response.rect)
+            self.camera_preview_panel(ctx, stage.shrink(6.0), panel.response.rect, &camera.id)
         } else {
             None
         };
@@ -3379,6 +3393,7 @@ impl PublisherUi {
         ctx: &egui::Context,
         bounds: egui::Rect,
         anchor: egui::Rect,
+        device_id: &str,
     ) -> Option<egui::Rect> {
         if ctx.input(|input| {
             input.viewport().visible() == Some(false) || input.viewport().minimized == Some(true)
@@ -3388,13 +3403,12 @@ impl PublisherUi {
         let (position, width) = camera_preview_placement(bounds, anchor)?;
         let settings = &self.camera_settings;
         let key = format!(
-            "camera:{}:{}:{}",
-            settings.device_id,
+            "camera:{device_id}:{}:{}",
             settings.resolution.label(),
             settings.fps
         );
         self.picker
-            .request_camera(key.clone(), settings.device_id.clone(), settings.quality());
+            .request_camera(key.clone(), device_id.into(), settings.quality());
         self.update_picker_frame(ctx, &key);
         let preview = egui::Area::new(egui::Id::unique("camera-preview-panel"))
             .order(egui::Order::Foreground)
@@ -3438,6 +3452,7 @@ impl PublisherUi {
     }
 
     fn camera_controls(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+        let selected = self.selected_camera(state);
         let settings = &mut self.camera_settings;
         let device = ui
             .horizontal(|ui| {
@@ -3450,24 +3465,24 @@ impl PublisherUi {
                 label
             })
             .inner;
-        let selected = state
-            .cameras
-            .iter()
-            .find(|device| device.id == settings.device_id);
-        let selected_text = selected.map_or_else(
-            || {
-                tr(if settings.device_id.is_empty() {
-                    "Choose a camera"
-                } else {
-                    "Selected camera is unavailable"
-                })
-            },
-            |device| device.name.as_str(),
-        );
+        let selected_text = if settings.device_id.is_empty() {
+            tr("Default camera")
+        } else {
+            selected.map_or(tr("Selected camera is unavailable"), |device| &device.name)
+        };
         egui::ComboBox::from_id_salt("camera-device")
             .width(ui.available_width())
             .selected_text(selected_text)
             .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(settings.device_id.is_empty(), tr("Default camera"))
+                    .clicked()
+                {
+                    settings.device_id.clear();
+                    if crate::settings::save_camera_device("").is_err() {
+                        self.settings_error = "Could not save the selected camera.".into();
+                    }
+                }
                 for (index, device) in state.cameras.iter().enumerate() {
                     let name = if state
                         .cameras
@@ -4797,6 +4812,7 @@ mod tests {
             link_result: None,
             browser_links_enabled: false,
             self_preview_revision: None,
+            camera_view: None,
             #[cfg(feature = "performance-experiments")]
             planar: Default::default(),
             picker: crate::source_picker::Preview::new(),
@@ -5823,6 +5839,56 @@ mod tests {
     }
 
     #[test]
+    fn empty_room_centers_the_monitor_and_title_in_the_stage() {
+        let mut app = app();
+        let ctx = egui::Context::default();
+        configure_theme(&ctx);
+        for size in [egui::vec2(1280.0, 550.0), egui::vec2(820.0, 290.0)] {
+            let mut stage = egui::Rect::NOTHING;
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                    ..Default::default()
+                },
+                |root| {
+                    egui::CentralPanel::default().show(root, |ui| {
+                        stage = ui.available_rect_before_wrap();
+                        app.empty_room_stage(ui, &Snapshot::default());
+                    });
+                },
+            );
+            output.textures_delta.clear();
+            let monitor = output
+                .shapes
+                .iter()
+                .find_map(|shape| match &shape.shape {
+                    egui::Shape::Rect(rect) if rect.rect.size() == egui::vec2(218.0, 122.0) => {
+                        Some(rect.rect)
+                    }
+                    _ => None,
+                })
+                .expect("empty-room monitor");
+            let title = output
+                .shapes
+                .iter()
+                .find_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text)
+                        if text.galley.text() == tr("No one is sharing yet") =>
+                    {
+                        Some(egui::Rect::from_min_size(text.pos, text.galley.size()))
+                    }
+                    _ => None,
+                })
+                .expect("empty-room title");
+            let center = monitor.union(title).center();
+            assert!(
+                center.distance(stage.center()) < 2.0,
+                "{center:?} vs {stage:?}"
+            );
+        }
+    }
+
+    #[test]
     fn empty_room_avatar_displays_a_name_on_hover_and_keyboard_focus() {
         let mut app = app();
         let ctx = egui::Context::default();
@@ -5904,14 +5970,10 @@ mod tests {
 
     #[test]
     #[cfg(windows)]
-    fn camera_dock_uses_separate_settings_and_requires_explicit_start() {
+    fn camera_dock_starts_the_default_without_opening_settings() {
         let mut app = app();
         let state = Snapshot {
             connection: "connected",
-            cameras: vec![camera::Info {
-                id: "test-camera".into(),
-                name: "Test camera".into(),
-            }],
             encoders: vec![crate::encoding::Encoder {
                 factory: "test-encoder".into(),
                 label: "Test encoder".into(),
@@ -5919,7 +5981,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        let (controller, mut commands) = Controller::recording_for_test(state);
+        let (controller, mut commands) = Controller::recording_for_test(state.clone());
         app.controller = controller;
         let ctx = egui::Context::default();
         configure_theme(&ctx);
@@ -5978,6 +6040,16 @@ mod tests {
         draw(&mut app, vec![]);
         let ([screen, camera], _) = draw(&mut app, vec![]);
         assert!((screen.center().y - camera.center().y).abs() < 0.5);
+        click(&mut app, camera.left_center() + egui::vec2(42.0, 0.0));
+        assert!(app.sharing_setup.is_none());
+        assert!(matches!(
+            commands(),
+            Some(Command::StartCamera { device_id, quality, .. })
+                if device_id.is_empty() && quality.fps == 30
+        ));
+        (app.controller, commands) = Controller::recording_for_test(state);
+        draw(&mut app, vec![]);
+        let ([screen, camera], _) = draw(&mut app, vec![]);
         let arrow = |button: egui::Rect| button.right_center() - egui::vec2(16.0, 0.0);
         click(&mut app, arrow(screen));
         assert!(app.sharing_setup == Some(SharingSetup::Screen));
@@ -5991,17 +6063,13 @@ mod tests {
         assert_eq!(app.quality, screen_quality);
         click(&mut app, arrow(camera));
         assert!(app.sharing_setup.is_none());
-        click(&mut app, camera.left_center() + egui::vec2(42.0, 0.0));
-        assert!(app.sharing_setup.is_none());
-        assert!(commands().is_none());
-        app.camera_settings.device_id = "test-camera".into();
-        draw(&mut app, vec![]);
         let ([_, camera], _) = draw(&mut app, vec![]);
         click(&mut app, camera.left_center() + egui::vec2(42.0, 0.0));
+        assert!(app.sharing_setup.is_none());
         assert!(matches!(
             commands(),
             Some(Command::StartCamera { device_id, quality, .. })
-                if device_id == "test-camera" && quality.fps == 24
+                if device_id.is_empty() && quality.fps == 24
                     && quality.resolution == quality::Resolution::P720
                     && quality.bitrate == Bitrate::Auto
         ));

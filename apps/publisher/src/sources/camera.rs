@@ -103,8 +103,13 @@ pub fn enumerate() -> Vec<Device> {
                 })
             })
             .collect();
-        devices
-            .sort_by_cached_key(|device| (device.info.name.to_lowercase(), device.info.id.clone()));
+        // The provider reports the Media Foundation default first. Keep it in
+        // front and sort only the alternatives for the device picker.
+        if let Some((_, alternatives)) = devices.split_first_mut() {
+            alternatives.sort_by_cached_key(|device| {
+                (device.info.name.to_lowercase(), device.info.id.clone())
+            });
+        }
         devices
     }
     #[cfg(not(windows))]

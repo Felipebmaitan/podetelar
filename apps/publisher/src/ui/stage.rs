@@ -2,6 +2,7 @@ use super::*;
 
 pub(super) const SELF_PREVIEW: &str = "__self_preview";
 const GAP: f32 = 14.0;
+const PRESENCE_SLOT: f32 = 48.0;
 
 fn monitor_glow(painter: &egui::Painter, screen: egui::Rect) {
     const SEGMENTS: u32 = 48;
@@ -242,23 +243,33 @@ impl PublisherUi {
 
     pub(super) fn empty_room_stage(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
         ui.vertical_centered(|ui| {
-            let height = ui.available_height();
-            let top = (height * 0.14).max(8.0);
-            let reserve = if state.participants.is_empty() {
-                56.0
-            } else {
-                180.0
-            };
-            let art_height =
-                (height * 0.42).clamp(60.0, (height - top - reserve).clamp(60.0, 170.0));
-            ui.add_space(top);
-            let (art, _) =
-                ui.allocate_exact_size(egui::vec2(244.0, art_height), egui::Sense::hover());
             let p = palette();
-            let screen = egui::Rect::from_center_size(
-                art.center() - egui::vec2(0.0, 10.0),
-                egui::vec2(art_height * 1.28, art_height * 0.72),
-            );
+            let available = ui.available_size();
+            let spacing = ui.spacing().item_spacing.y;
+            let layout = |text: egui::RichText| {
+                egui::WidgetText::from(text).into_galley(
+                    ui,
+                    Some(egui::TextWrapMode::Wrap),
+                    available.x,
+                    egui::TextStyle::Body,
+                )
+            };
+            let title = layout(skin::strong(tr("No one is sharing yet"), 24.0).color(p.text));
+            let presence = (!state.participants.is_empty() && available.x >= PRESENCE_SLOT)
+                .then(|| layout(egui::RichText::new(tr("Here now")).color(p.muted)));
+            let text_height = 24.0
+                + spacing
+                + title.size().y
+                + presence.as_ref().map_or(0.0, |label| {
+                    4.0 + spacing * 2.0 + label.size().y + PRESENCE_SLOT
+                });
+            let scale = ((available.y - text_height) / 136.0)
+                .min(available.x / 218.0)
+                .clamp(0.01, 1.0);
+            let art_size = egui::vec2(218.0, 136.0) * scale;
+            ui.add_space(((available.y - text_height - art_size.y) * 0.5).max(0.0));
+            let (art, _) = ui.allocate_exact_size(art_size, egui::Sense::hover());
+            let screen = egui::Rect::from_min_size(art.min, egui::vec2(art.width(), 122.0 * scale));
             monitor_glow(ui.painter(), screen);
             ui.painter().rect_filled(screen, 18.0, p.panel);
             ui.painter().rect_stroke(
@@ -267,32 +278,28 @@ impl PublisherUi {
                 (1.0, p.hover_stroke),
                 egui::StrokeKind::Inside,
             );
-            ui.painter().line_segment(
-                [
-                    screen.left_top() + egui::vec2(28.0, 1.0),
-                    screen.left_top() + egui::vec2(76.0, 1.0),
-                ],
-                (2.0, p.accent),
-            );
-            let foot = screen.center_bottom() + egui::vec2(0.0, 13.0);
+            let foot = art.center_bottom();
             ui.painter()
                 .line_segment([screen.center_bottom(), foot], (2.0, p.hover_stroke));
             ui.painter().line_segment(
-                [foot - egui::vec2(24.0, 0.0), foot + egui::vec2(24.0, 0.0)],
+                [
+                    foot - egui::vec2(24.0 * scale, 0.0),
+                    foot + egui::vec2(24.0 * scale, 0.0),
+                ],
                 (2.0, p.hover_stroke),
             );
-            ui.add_space(8.0);
-            ui.label(skin::strong(tr("No one is sharing yet"), 24.0).color(p.text));
-            if !state.participants.is_empty() {
+            ui.add_space(24.0);
+            ui.label(title);
+            if let Some(presence) = presence {
                 ui.add_space(4.0);
-                ui.label(egui::RichText::new(tr("Here now")).color(p.muted));
+                ui.label(presence);
                 self.room_presence(ui, state);
             }
         });
     }
 
     fn room_presence(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
-        const SLOT: f32 = 48.0;
+        const SLOT: f32 = PRESENCE_SLOT;
         const SPACING: f32 = 8.0;
         let max_slots = ((ui.available_width() + SPACING) / (SLOT + SPACING)).floor() as usize;
         if max_slots == 0 {
@@ -302,7 +309,7 @@ impl PublisherUi {
         let overflow = state.participants.len() > max_slots;
         let shown = slots - usize::from(overflow);
         let width = slots as f32 * (SLOT + SPACING) - SPACING;
-        let (strip, _) = ui.allocate_exact_size(egui::vec2(width, 96.0), egui::Sense::hover());
+        let (strip, _) = ui.allocate_exact_size(egui::vec2(width, SLOT), egui::Sense::hover());
         let slot = |index: usize| {
             egui::Rect::from_min_size(
                 strip.min + egui::vec2(index as f32 * (SLOT + SPACING), 0.0),
@@ -423,11 +430,16 @@ impl PublisherUi {
     }
 
     fn paint_self_preview(&mut self, ui: &mut egui::Ui, state: &Snapshot, width: f32) {
-        self.refresh_self_preview(ui.ctx(), state);
         let (rect, _) =
             ui.allocate_exact_size(egui::vec2(width, width * 9.0 / 16.0), egui::Sense::hover());
         ui.painter().rect_filled(rect, 10.0, egui::Color32::BLACK);
-        if let Some(texture) = self.textures.get(SELF_PREVIEW) {
+        let texture = if state.camera_sharing {
+            self.camera_view_texture(ui, state, rect)
+        } else {
+            self.refresh_self_preview(ui.ctx(), state);
+            self.textures.get(SELF_PREVIEW)
+        };
+        if let Some(texture) = texture {
             egui::Image::new((texture.id(), texture.size_vec2()))
                 .corner_radius(10)
                 .paint_at(ui, fit_picture(rect, texture.aspect_ratio()));
@@ -442,11 +454,57 @@ impl PublisherUi {
         }
     }
 
+    fn camera_view_texture(
+        &mut self,
+        ui: &egui::Ui,
+        state: &Snapshot,
+        rect: egui::Rect,
+    ) -> Option<&egui::TextureHandle> {
+        let feed = state.camera_feed.as_ref()?;
+        let hidden = ui.input(|input| {
+            let window = input.viewport();
+            window.visible() == Some(false)
+                || window.minimized == Some(true)
+                || window.occluded == Some(true)
+        });
+        if hidden || !ui.is_rect_visible(rect) {
+            return None;
+        }
+        if self
+            .camera_view
+            .as_ref()
+            .is_some_and(|(owner, _)| !std::sync::Arc::ptr_eq(owner, feed))
+        {
+            self.camera_view = None;
+        }
+        if let Some(image) = feed
+            .next_sample()
+            .as_ref()
+            .and_then(crate::video_image::camera_image)
+        {
+            if let Some((_, texture)) = &mut self.camera_view {
+                texture.set(image, egui::TextureOptions::LINEAR);
+            } else {
+                let texture =
+                    ui.ctx()
+                        .load_texture("local-camera", image, egui::TextureOptions::LINEAR);
+                self.camera_view = Some((feed.clone(), texture));
+            }
+        }
+        ui.ctx().request_repaint_after(Duration::from_millis(16));
+        self.camera_view.as_ref().map(|(_, texture)| texture)
+    }
+
     pub(super) fn only_stream_stage(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
         ui.vertical_centered(|ui| {
             ui.horizontal(|ui| {
                 ui.label(skin::strong(tr("You're live"), 16.0).color(palette().error));
-                if let Some(mode) = state.mode {
+                if let Some(mode) = state.camera_mode {
+                    ui.label(
+                        egui::RichText::new(format!("{}p · {} FPS", mode.height, mode.fps))
+                            .color(palette().muted),
+                    );
+                } else if let Some(mode) = state.mode {
                     ui.label(
                         egui::RichText::new(format!(
                             "{}p · {} FPS · {:.1} Mbps",
@@ -459,15 +517,18 @@ impl PublisherUi {
                 }
             });
             ui.add_space(6.0);
+            let reserve = if state.camera_sharing { 6.0 } else { 34.0 };
             let width = ui
                 .available_width()
-                .min((ui.available_height() - 34.0).max(40.0) * 16.0 / 9.0);
+                .min((ui.available_height() - reserve).max(40.0) * 16.0 / 9.0);
             self.paint_self_preview(ui, state, width);
-            ui.add_space(6.0);
-            ui.label(
-                egui::RichText::new(tr("Your preview updates at most once a minute."))
-                    .color(palette().muted),
-            );
+            if !state.camera_sharing {
+                ui.add_space(6.0);
+                ui.label(
+                    egui::RichText::new(tr("Your preview updates at most once a minute."))
+                        .color(palette().muted),
+                );
+            }
         });
     }
 
@@ -480,8 +541,15 @@ impl PublisherUi {
             .show(ui, |ui| {
                 ui.set_width(width - 14.0);
                 ui.horizontal(|ui| {
-                    ui.label(skin::strong(tr("My preview"), 12.5).color(palette().text))
-                        .on_hover_text(tr("Your preview updates at most once a minute."));
+                    let label = if state.camera_sharing {
+                        "Your camera"
+                    } else {
+                        "My preview"
+                    };
+                    let title = ui.label(skin::strong(tr(label), 12.5).color(palette().text));
+                    if !state.camera_sharing {
+                        title.on_hover_text(tr("Your preview updates at most once a minute."));
+                    }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if skin::icon_button(ui, Icon::Close, tr("Hide my preview")).clicked() {
                             self.self_preview_hidden = true;
@@ -499,7 +567,7 @@ impl PublisherUi {
             .and_then(|id| state.tiles.iter().find(|tile| tile.id == *id));
         let show_self = state.any_sharing()
             && !self.self_preview_hidden
-            && state.tiles.iter().any(|tile| tile.watching);
+            && (state.camera_sharing || state.tiles.iter().any(|tile| tile.watching));
         if main.is_none() && !show_self {
             self.grid_stage(ui, state);
             return;

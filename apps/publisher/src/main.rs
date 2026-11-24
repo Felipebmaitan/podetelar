@@ -452,10 +452,13 @@ struct FixtureRequest {
 struct DualSharingRequest {
     invitation_url: String,
     source_id: String,
+    #[serde(default)]
     camera_id: String,
     camera_codec: Option<Codec>,
     #[serde(default)]
     check_live_policy: bool,
+    #[serde(default)]
+    check_camera_view: bool,
     camera_policy_bitrates: Option<[u64; 2]>,
 }
 
@@ -509,14 +512,6 @@ async fn qualify_dual_sharing(request: DualSharingRequest) -> Result<()> {
         exclusions: Vec::new(),
     });
     wait(&controller, |state| state.sharing).await?;
-    controller.send(Command::RefreshCameras);
-    wait(&controller, |state| {
-        state
-            .cameras
-            .iter()
-            .any(|device| device.id == request.camera_id)
-    })
-    .await?;
     let start_camera = || {
         controller.send(Command::StartCamera {
             device_id: request.camera_id.clone(),
@@ -539,7 +534,33 @@ async fn qualify_dual_sharing(request: DualSharingRequest) -> Result<()> {
     };
     start_camera();
     let initial = wait(&controller, |state| state.sharing && state.camera_sharing).await?;
+    let stop_camera_at = tokio::time::Instant::now() + Duration::from_secs(17);
     println!("{}", serde_json::json!({"both":true}));
+    if request.check_camera_view {
+        let feed = initial
+            .camera_feed
+            .as_ref()
+            .context("Camera view is unavailable.")?;
+        ensure!(
+            feed.next_sample().is_none(),
+            "Camera view was active before it was requested."
+        );
+        let start = std::time::Instant::now();
+        let mut frames = 0;
+        while start.elapsed() < Duration::from_secs(1) {
+            if let Some(sample) = feed.next_sample() {
+                let picture =
+                    video_image::camera_image(&sample).context("Invalid camera view frame.")?;
+                ensure!(picture.size == [640, 360], "Wrong camera view dimensions.");
+                frames += 1;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        ensure!(
+            frames >= 10,
+            "Camera view only produced {frames} frames in one second."
+        );
+    }
     if let Some(expected) = request.camera_policy_bitrates {
         for bitrate in expected {
             wait(&controller, |state| {
@@ -594,7 +615,7 @@ async fn qualify_dual_sharing(request: DualSharingRequest) -> Result<()> {
         );
         return Ok(());
     }
-    tokio::time::sleep(Duration::from_secs(17)).await;
+    tokio::time::sleep_until(stop_camera_at).await;
     controller.send(Command::StopCamera);
     wait(&controller, |state| state.sharing && !state.camera_sharing).await?;
     tokio::time::sleep(Duration::from_secs(4)).await;

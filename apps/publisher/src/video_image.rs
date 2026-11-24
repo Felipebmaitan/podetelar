@@ -3,6 +3,32 @@ use eframe::egui::{Color32, ColorImage};
 use livekit::webrtc::video_frame::{VideoBuffer, VideoFormatType};
 use std::sync::Arc;
 
+pub fn camera_image(sample: &gstreamer::Sample) -> Option<ColorImage> {
+    use gstreamer_video::{VideoFormat, VideoFrameExt, VideoFrameRef, VideoInfo};
+
+    let info = VideoInfo::from_caps(sample.caps()?).ok()?;
+    if info.format() != VideoFormat::Rgba {
+        return None;
+    }
+    let frame = VideoFrameRef::from_buffer_ref_readable(sample.buffer()?, &info).ok()?;
+    let stride = usize::try_from(frame.plane_stride()[0]).ok()?;
+    let size = [frame.width() as usize, frame.height() as usize];
+    let row_bytes = size[0] * 4;
+    let pixels = frame.plane_data(0).ok()?;
+    if stride < row_bytes || pixels.len() < stride * size[1] {
+        return None;
+    }
+    let mut image = ColorImage::filled(size, Color32::TRANSPARENT);
+    for (dst, src) in image
+        .as_raw_mut()
+        .chunks_exact_mut(row_bytes)
+        .zip(pixels.chunks_exact(stride))
+    {
+        dst.copy_from_slice(&src[..row_bytes]);
+    }
+    Some(image)
+}
+
 pub fn to_color_image(buffer: &dyn VideoBuffer) -> ColorImage {
     let width = buffer.width();
     let height = buffer.height();

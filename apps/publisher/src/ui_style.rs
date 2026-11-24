@@ -98,15 +98,23 @@ pub fn icon(p: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
             ));
         }
         Icon::Refresh => {
-            let points = (0..=16)
+            let end = std::f32::consts::TAU - 0.62;
+            let points = (0..=24)
                 .map(|index| {
-                    let angle = -0.25 + index as f32 * 5.45 / 16.0;
+                    let angle = 0.50 + index as f32 * (end - 0.50) / 24.0;
                     point(7.0 * angle.cos(), 7.0 * angle.sin())
                 })
                 .collect();
             p.add(egui::Shape::line(points, stroke));
-            line((6.8, -6.5), (6.8, -1.7));
-            line((6.8, -1.7), (2.0, -1.7));
+            let (x, y) = (7.0 * end.cos(), 7.0 * end.sin());
+            p.add(egui::Shape::line(
+                vec![
+                    point(x + 0.8, y - 4.8),
+                    point(x, y),
+                    point(x - 4.8, y - 0.8),
+                ],
+                stroke,
+            ));
         }
         Icon::Stop => {
             p.rect_filled(

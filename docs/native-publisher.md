@@ -49,9 +49,10 @@ before switching. Starting screen or camera sharing and watching a screen remain
 The room dock groups screen and camera sharing separately. Open the arrow on
 **Share screen** to choose a capture source or adjust stream quality. While
 sharing, use the same arrow to apply changes. The camera menu has separate
-quality settings. Open **Camera settings** and select a Windows camera, then click
-**Share camera**. The selected device is remembered locally. If it is disconnected,
-refresh the list and reconnect it or select another device explicitly. Windows camera
+quality settings. Click **Share camera** to start with the default Windows capture
+device. The arrow opens **Camera settings**, where you can choose another camera
+or switch back to **Default camera**. PodeTelar remembers an explicit selection.
+If it is disconnected, reconnect it or choose another device. Windows camera
 discovery includes OBS Virtual Camera when its driver is registered and usable.
 The camera settings show a one-shot local preview beside the device controls.
 The camera is released after the preview, and its bitrate is automatic unless you
@@ -64,14 +65,15 @@ changing its settings.
 Watching cameras requires a native app version with camera playback support.
 Camera capture is currently Windows-only. The stage toolbar offers Grid, Spotlight and Focus.
 Spotlight keeps one stream large and the others in a scrollable strip. Highlighting a stream changes the layout.
-Camera tiles subscribe automatically when the watching allowance permits.
+Camera tiles subscribe automatically when the watching allowance permits. Your
+own camera preview is live while visible and comes directly from capture.
 Use **Watch** to subscribe to a screen and its audio, and **Stop watching**
 to unsubscribe. Hover over a watched stream for controls and received codec and
 bitrate. The speaker opens a vertical volume slider for a screen. Click a stream
-for additional actions. When you share both sources, the local stage preview
-follows the screen. You can hide or restore the small
-local preview beside the streams. Preview capture occurs initially and at most
-once per minute.
+for additional actions. When you share both sources, the stage shows your live
+camera and the screen settings still show a screen confirmation. You can hide or
+restore the small local preview beside the streams. Shared still previews are
+captured at the start and at most once per minute.
 
 Source resolution defaults to the monitor/window bounded to 4K, at 60 FPS. The
 visible slider offers 15–120 FPS; codec/bitrate live in Advanced. Auto starts around

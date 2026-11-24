@@ -516,6 +516,7 @@ async fn qualify_dual_sharing(request: DualSharingRequest) -> Result<()> {
         controller.send(Command::StartCamera {
             device_id: request.camera_id.clone(),
             preferred_codec: request.camera_codec,
+            preview_release: None,
             quality: quality::Settings {
                 resolution: if request.check_live_policy {
                     quality::Resolution::P1080

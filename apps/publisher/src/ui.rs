@@ -912,15 +912,20 @@ impl PublisherUi {
         {
             self.picker_failed = None;
             if let Some(image) = frame.image {
-                self.picker_texture = Some((
-                    frame.source_id,
-                    ctx.load_texture(
-                        "local-source-confirmation",
-                        image,
-                        egui::TextureOptions::LINEAR,
-                    ),
-                ));
+                if let Some((_, texture)) = &mut self.picker_texture {
+                    texture.set(image, egui::TextureOptions::LINEAR);
+                } else {
+                    self.picker_texture = Some((
+                        frame.source_id,
+                        ctx.load_texture(
+                            "local-source-confirmation",
+                            image,
+                            egui::TextureOptions::LINEAR,
+                        ),
+                    ));
+                }
             } else {
+                self.picker_texture = None;
                 self.picker_failed = Some(frame.source_id);
             }
         }
@@ -3059,30 +3064,29 @@ impl PublisherUi {
             && !state.busy
             && !state.refreshing_cameras
             && !state.encoders.is_empty()
-            && !self.picker.camera_capturing()
     }
 
     fn start_camera(&mut self) {
         self.clear_picker();
-        // Cancellation prevents pending previews from acquiring the device.
-        // A capture already in progress must release it before publishing.
-        if self.picker.camera_capturing() {
-            return;
-        }
         self.self_preview_hidden = false;
         self.controller.send(Command::StartCamera {
             device_id: self.camera_settings.device_id.clone(),
             quality: self.camera_settings.quality(),
             preferred_codec: None,
+            preview_release: self.picker.camera_release(),
         });
         self.sharing_setup = None;
     }
 
+    fn refresh_cameras(&mut self) {
+        self.clear_picker();
+        self.controller.send(Command::RefreshCameras {
+            preview_release: self.picker.camera_release(),
+        });
+    }
+
     fn studio_dock(&mut self, root: &mut egui::Ui, state: &Snapshot) -> SharingDock {
         let camera_live = state.camera_sharing || state.camera_pending;
-        if self.picker.camera_capturing() {
-            root.ctx().request_repaint_after(Duration::from_millis(50));
-        }
         let screen_live = state.sharing || state.capture_pending;
         let can_start = state.connection == "connected" && !state.busy;
         let dirty = state.sharing
@@ -3168,8 +3172,6 @@ impl PublisherUi {
                                     }
                                     camera_action.on_disabled_hover_text(tr(if !cfg!(windows) {
                                         "Camera sharing is available on Windows."
-                                    } else if self.picker.camera_capturing() {
-                                        "Preparing camera preview…"
                                     } else if state.encoders.is_empty() {
                                         "No supported hardware encoder was found. You can still watch compatible streams."
                                     } else if state.refreshing_cameras {
@@ -3193,7 +3195,7 @@ impl PublisherUi {
                                         self.clear_picker();
                                         self.sharing_setup = (!was_open).then_some(setup);
                                         if self.sharing_setup == Some(SharingSetup::Camera) && cfg!(windows) && !camera_live {
-                                            self.controller.send(Command::RefreshCameras);
+                                            self.refresh_cameras();
                                         }
                                     }
                                     (screen, camera)
@@ -3221,6 +3223,7 @@ impl PublisherUi {
     ) {
         let screen = setup == SharingSetup::Screen;
         let camera_advanced = setup == SharingSetup::CameraAdvanced;
+        let mut refresh = false;
         let pending = screen
             && state
                 .active_selection
@@ -3318,7 +3321,7 @@ impl PublisherUi {
                                     |ui| self.camera_bitrate_controls(ui),
                                 );
                             } else {
-                                self.camera_setup_fields(ui, state);
+                                refresh = self.camera_setup_fields(ui, state);
                             }
                         });
                 });
@@ -3327,12 +3330,16 @@ impl PublisherUi {
                 }
             });
         });
-        let preview = if self.sharing_setup == Some(SharingSetup::Camera)
+        if refresh {
+            self.refresh_cameras();
+        }
+        let preview = if !refresh
+            && self.sharing_setup == Some(SharingSetup::Camera)
             && setup == SharingSetup::Camera
             && cfg!(windows)
             && !state.camera_sharing
             && !state.camera_pending
-            && !state.refreshing_cameras
+            && !self.controller.cameras_refreshing()
             && let Some(camera) = self.selected_camera(state)
         {
             self.camera_preview_panel(ctx, stage.shrink(6.0), panel.response.rect, &camera.id)
@@ -3357,10 +3364,10 @@ impl PublisherUi {
         }
     }
 
-    fn camera_setup_fields(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+    fn camera_setup_fields(&mut self, ui: &mut egui::Ui, state: &Snapshot) -> bool {
         if !cfg!(windows) {
             ui.label(tr("Camera sharing is available on Windows."));
-            return;
+            return false;
         }
         let camera_live = state.camera_sharing || state.camera_pending;
         if camera_live {
@@ -3376,9 +3383,11 @@ impl PublisherUi {
                 "No camera found. Check Windows camera permissions and refresh.",
             ));
         }
-        ui.add_enabled_ui(!camera_live && !state.refreshing_cameras, |ui| {
-            self.camera_controls(ui, state)
-        });
+        let refresh = ui
+            .add_enabled_ui(!camera_live && !state.refreshing_cameras, |ui| {
+                self.camera_controls(ui, state)
+            })
+            .inner;
         if let Some(cap) = state.stream_policy.camera_cap() {
             ui.small(format!(
                 "{} · {} Mbps",
@@ -3386,6 +3395,7 @@ impl PublisherUi {
                 cap as f64 / 1_000_000.0
             ));
         }
+        refresh
     }
 
     fn camera_preview_panel(
@@ -3396,7 +3406,9 @@ impl PublisherUi {
         device_id: &str,
     ) -> Option<egui::Rect> {
         if ctx.input(|input| {
-            input.viewport().visible() == Some(false) || input.viewport().minimized == Some(true)
+            input.viewport().visible() == Some(false)
+                || input.viewport().minimized == Some(true)
+                || input.viewport().occluded == Some(true)
         }) {
             return None;
         }
@@ -3426,7 +3438,9 @@ impl PublisherUi {
                     if let Some((_, texture)) = &self.picker_texture {
                         egui::Image::new((texture.id(), texture.size_vec2()))
                             .corner_radius(8)
+                            .uv(mirrored_uv())
                             .paint_at(ui, rect);
+                        ctx.request_repaint_after(Duration::from_millis(16));
                     } else {
                         let message = if self.picker_failed.as_deref() == Some(key.as_str()) {
                             tr("Camera preview unavailable. Check the device or choose another mode.")
@@ -3451,18 +3465,18 @@ impl PublisherUi {
         Some(preview.response.rect)
     }
 
-    fn camera_controls(&mut self, ui: &mut egui::Ui, state: &Snapshot) {
+    fn camera_controls(&mut self, ui: &mut egui::Ui, state: &Snapshot) -> bool {
         let selected = self.selected_camera(state);
         let settings = &mut self.camera_settings;
-        let device = ui
+        let (device, refresh) = ui
             .horizontal(|ui| {
                 let label = ui.label(tr("Camera device"));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if skin::icon_button(ui, Icon::Refresh, tr("Refresh cameras")).clicked() {
-                        self.controller.send(Command::RefreshCameras);
-                    }
-                });
-                label
+                let refresh = ui
+                    .with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        skin::icon_button(ui, Icon::Refresh, tr("Refresh cameras")).clicked()
+                    })
+                    .inner;
+                (label, refresh)
             })
             .inner;
         let selected_text = if settings.device_id.is_empty() {
@@ -3538,6 +3552,7 @@ impl PublisherUi {
                 .response
                 .labelled_by(fps.id);
         });
+        refresh
     }
 
     fn camera_bitrate_controls(&mut self, ui: &mut egui::Ui) {
@@ -3988,6 +4003,10 @@ fn bitrate_controls(ui: &mut egui::Ui, settings: &mut Settings, custom: &mut boo
 
 fn uv() -> egui::Rect {
     egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0))
+}
+
+fn mirrored_uv() -> egui::Rect {
+    egui::Rect::from_min_max(egui::pos2(1.0, 0.0), egui::pos2(0.0, 1.0))
 }
 
 fn brand_mark(ui: &mut egui::Ui) {
@@ -6047,16 +6066,19 @@ mod tests {
             Some(Command::StartCamera { device_id, quality, .. })
                 if device_id.is_empty() && quality.fps == 30
         ));
-        (app.controller, commands) = Controller::recording_for_test(state);
+        (app.controller, commands) = Controller::recording_for_test(state.clone());
         draw(&mut app, vec![]);
         let ([screen, camera], _) = draw(&mut app, vec![]);
         let arrow = |button: egui::Rect| button.right_center() - egui::vec2(16.0, 0.0);
         click(&mut app, arrow(screen));
         assert!(app.sharing_setup == Some(SharingSetup::Screen));
         let screen_quality = app.quality;
-        let output = click(&mut app, arrow(camera));
+        click(&mut app, arrow(camera));
         assert!(app.sharing_setup == Some(SharingSetup::Camera));
-        assert!(matches!(commands(), Some(Command::RefreshCameras)));
+        assert!(matches!(commands(), Some(Command::RefreshCameras { .. })));
+        assert!(app.controller.cameras_refreshing());
+        (app.controller, commands) = Controller::recording_for_test(state);
+        let output = draw(&mut app, vec![]).1;
         let output = click(&mut app, text_center(&output, "30 FPS"));
         click(&mut app, text_center(&output, "24 FPS"));
         assert_eq!(app.camera_settings.fps, 24);

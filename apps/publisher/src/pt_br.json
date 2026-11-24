@@ -57,6 +57,8 @@
   "Your camera": "Sua câmera",
   "Camera preview": "Prévia da câmera",
   "Preparing camera preview…": "Preparando a prévia da câmera…",
+  "Camera preview is still closing. Try sharing again.": "A prévia da câmera ainda está sendo encerrada. Tente compartilhar novamente.",
+  "Camera preview worker stopped.": "A prévia da câmera foi interrompida.",
   "Camera preview unavailable. Check the device or choose another mode.": "Prévia indisponível. Verifique a câmera ou escolha outro modo.",
   "Manual": "Manual",
   "Target bitrate": "Taxa de bits desejada",

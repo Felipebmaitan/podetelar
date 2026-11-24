@@ -6,18 +6,15 @@ use std::cell::Cell;
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Theme {
-    #[default]
-    System,
     Classic,
     Amber,
     Black,
     Light,
-    /// Formerly saved as "comunista".
-    #[serde(alias = "comunista")]
     Ruby,
-    /// Formerly saved as "patriota".
-    #[serde(alias = "patriota")]
     Emerald,
+    #[default]
+    #[serde(other)]
+    System,
 }
 
 impl Theme {
@@ -345,16 +342,16 @@ mod tests {
     }
 
     #[test]
-    fn appearance_round_trips_and_reads_legacy_theme_names() {
+    fn appearance_round_trips_and_falls_back_for_unknown_themes() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("appearance.json");
-        std::fs::write(&path, br#"{"theme":"patriota","portuguese":false}"#).unwrap();
+        std::fs::write(&path, br#"{"theme":"unknown","portuguese":false}"#).unwrap();
         let mut appearance = Appearance::read(&path).unwrap();
-        assert_eq!(appearance.theme, Theme::Emerald);
+        assert_eq!(appearance.theme, Theme::System);
         assert_eq!(appearance.portuguese, Some(false));
-        appearance.theme = Theme::System;
+        appearance.theme = Theme::Emerald;
         appearance.write(&path).unwrap();
-        assert_eq!(Appearance::read(&path).unwrap().theme, Theme::System);
+        assert_eq!(Appearance::read(&path).unwrap().theme, Theme::Emerald);
         std::fs::write(&path, [b' '; 4097]).unwrap();
         assert!(Appearance::read(&path).is_err());
         std::fs::write(&path, b"malformed").unwrap();

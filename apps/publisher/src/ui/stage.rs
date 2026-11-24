@@ -442,6 +442,11 @@ impl PublisherUi {
         if let Some(texture) = texture {
             egui::Image::new((texture.id(), texture.size_vec2()))
                 .corner_radius(10)
+                .uv(if state.camera_sharing {
+                    mirrored_uv()
+                } else {
+                    uv()
+                })
                 .paint_at(ui, fit_picture(rect, texture.aspect_ratio()));
         } else {
             ui.painter().text(

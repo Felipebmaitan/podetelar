@@ -411,6 +411,8 @@ mod tests {
                     std::thread::sleep(Duration::from_millis(10));
                     continue;
                 };
+                // Windows can inherit the listener's nonblocking mode on accept.
+                socket.set_nonblocking(false).unwrap();
                 socket
                     .set_read_timeout(Some(Duration::from_secs(2)))
                     .unwrap();

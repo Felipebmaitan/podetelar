@@ -35,38 +35,43 @@ enter your nickname. Each invitation selects its backend; the last successful gu
 nickname is remembered locally. Discord sign-in defaults to the hosted backend and
 uses the system browser. The selected login backend is remembered separately;
 its credential uses OS credential storage scoped to that exact public origin.
-No room or language preference is saved. See [Discord accounts](discord-accounts.md).
+The theme follows the operating system by default, using Black for dark
+appearance and Light for light appearance. Choose a fixed theme in Settings or
+Advanced settings. Theme and interface language are saved locally in
+\`appearance.json\` under the PodeTelar application data folder. Room invitations
+are kept in memory. See [Discord accounts](discord-accounts.md).
 Guest pictures and live nickname editing are described in [guest profiles](guest-profiles.md).
 Later links may reuse the nickname
 and join when idle while the app remains open. An active room requires confirmation
-before switching. Starting screen or camera sharing always requires an explicit action. See
+before switching. Starting screen or camera sharing and watching a screen remain explicit. See
 [launch and firewall behavior](distribution.md#invitations-and-launch-behavior).
 
-The initial 1280×720 viewport has sharing controls on the left and larger native
-stream tiles on the right. Screen streams start as still previews. Watch and Stop
-watching subscribe and unsubscribe the screen's video and audio. Focus and layout
-changes do not change subscriptions. Preview capture occurs initially and at most
-once per minute for each publication type.
-
-On Windows, expand **Camera settings**, select a system camera, and choose
-**Share camera**. The app remembers the device on this computer. Use **Refresh
-cameras** after connecting a device or enabling a virtual camera. Media Foundation
-discovers supported physical and virtual cameras, including OBS Virtual Camera
-when installed and active. Windows camera privacy settings apply.
-
-Camera quality defaults to 720p, 30 FPS and 2 Mbps. It has independent resolution
-(720p, 1080p or Source), frame rate (24, 30 or 60 FPS) and bitrate (0.5–8 Mbps)
-controls. Modes are bounded by the camera, hardware encoder and server ceilings.
-The frame-rate setting is a ceiling. The device can deliver fewer frames, for
-example when exposure takes longer. Stop the camera before changing its settings. Camera sharing requires a room
-codec the publisher can encode and each connected native member can decode.
-
-One participant can publish a screen and one camera concurrently. The camera
-has no audio, and stopping either share leaves the other active. Native viewers
-subscribe to camera video automatically when a hardware decoder and subscription
-slot are available. Existing screen watches get priority within the shared
-watching allowance. The macOS app uses the same receiver path. Webcam
-publishing is Windows-only.
+The room dock groups screen and camera sharing separately. Open the arrow on
+**Share screen** to choose a capture source or adjust stream quality. While
+sharing, use the same arrow to apply changes. The camera menu has separate
+quality settings. Open **Camera settings** and select a Windows camera, then click
+**Share camera**. The selected device is remembered locally. If it is disconnected,
+refresh the list and reconnect it or select another device explicitly. Windows camera
+discovery includes OBS Virtual Camera when its driver is registered and usable.
+The camera settings show a one-shot local preview beside the device controls.
+The camera is released after the preview, and its bitrate is automatic unless you
+override it in **Advanced camera settings**.
+The server's shared bitrate, resolution, and FPS ceilings also apply to camera
+streams, including while sharing. Screen Automatic targets apply to screens.
+Camera streams publish only video and prefer compatible hardware H.264. A participant can share one screen and one
+camera together. Each stop control ends its own stream. Stop the camera before
+changing its settings.
+Watching cameras requires a native app version with camera playback support.
+Camera capture is currently Windows-only. The stage toolbar offers Grid, Spotlight and Focus.
+Spotlight keeps one stream large and the others in a scrollable strip. Highlighting a stream changes the layout.
+Camera tiles subscribe automatically when the watching allowance permits.
+Use **Watch** to subscribe to a screen and its audio, and **Stop watching**
+to unsubscribe. Hover over a watched stream for controls and received codec and
+bitrate. The speaker opens a vertical volume slider for a screen. Click a stream
+for additional actions. When you share both sources, the local stage preview
+follows the screen. You can hide or restore the small
+local preview beside the streams. Preview capture occurs initially and at most
+once per minute.
 
 Source resolution defaults to the monitor/window bounded to 4K, at 60 FPS. The
 visible slider offers 15–120 FPS; codec/bitrate live in Advanced. Auto starts around
@@ -106,6 +111,14 @@ npm run native:qualify -- monitor-wgc
 ```
 
 The first command encodes a GPU-generated pattern; the other commands capture the local monitor through each backend. They discard all buffers locally, upload nothing and write no video/images. Each detected encoder must produce 120 frames and release its pipeline. `npm run native:run -- --sources` explicitly lists window titles/source IDs; do not paste that output into public logs. Pass a chosen source ID to `native:qualify` to check a window.
+
+`npm run native:run -- --cameras` lists camera names and local device IDs.
+Set `PODETELAR_TEST_CAMERA` to the exact name of a camera with a 720p-compatible
+mode and run `npm run native:room-smoke -- camera.spec.ts`. This opt-in test
+publishes the chosen camera to the isolated local SFU. Use a test scene or aim
+the camera at a test target before running it. Run it separately for each device.
+Set `PODETELAR_TEST_CAMERA_CODEC=h265` to qualify H.265 in the concurrent sharing
+scenario.
 
 For native acceptance, build the app/server, then run `npm run native:room-smoke`
 under Node 24 on Windows. It downloads a checksum-pinned official Windows LiveKit

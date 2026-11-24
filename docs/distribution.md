@@ -78,14 +78,16 @@ The publisher joins a cleanup job before it can create descendants, so terminati
 the launcher also ends its publisher processes.
 
 Completed caches are reused, preserving compatible LGPL library replacements.
-**Licenses and library sources** opens the packaged notices. The internal
+**Licenses** shows the Inter license and gives access to the packaged notices and
+library sources. The internal
 `PodeTelar.exe --licenses` command does the same; `--extract C:\new\absolute-folder`
 extracts to a previously nonexistent directory.
 
 Installed room-link registration is managed by install/update/uninstall hooks.
-Legacy standalone builds retain opt-in **Room options → Enable browser links** and
-a cached launcher under `PodeTelarPortable\browser-links`. Permanent invitations
-are never passed in activation arguments; one-use handoff tickets expire after a minute.
+Standalone operators can use `--enable-browser-links` or
+`--disable-browser-links` on the portable EXE. Opting in uses a cached launcher
+under `PodeTelarPortable\browser-links`. Permanent invitations are never passed
+in activation arguments; one-use handoff tickets expire after a minute.
 
 ## Dependency licenses and signing
 

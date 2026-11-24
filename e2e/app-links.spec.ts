@@ -27,9 +27,17 @@ for (const width of [1280, 390])
       name: "Join room in PodeTelar",
       exact: true,
     });
+    const installer = page.getByRole("link", {
+      name: "View Windows release on GitHub",
+    });
+    await expect(installer).toHaveAttribute(
+      "href",
+      "https://github.com/Felipebmaitan/podetelar/releases/latest",
+    );
+    await expect(installer).toHaveAttribute("referrerpolicy", "no-referrer");
     await expect(open).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "People in this room" }),
+      page.getByRole("heading", { name: "In this room" }),
     ).toBeVisible();
     await expect(page.getByRole("button")).toHaveCount(1);
     await expect(page.getByRole("textbox")).toHaveCount(0);
@@ -98,7 +106,7 @@ test("a bare room URL does not reveal people or offer a handoff", async ({
 }) => {
   await page.goto(`/r/${"a".repeat(22)}`);
   await expect(
-    page.getByText("Open a complete, current room invitation to join."),
+    page.getByText("Open a valid room invitation link to join."),
   ).toBeVisible();
   await expect(page.getByRole("button")).toHaveCount(0);
 });

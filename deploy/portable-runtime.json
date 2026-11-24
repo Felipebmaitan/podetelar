@@ -351,6 +351,7 @@
     "opengl32.dll",
     "shell32.dll",
     "shlwapi.dll",
+    "uiautomationcore.dll",
     "user32.dll",
     "uxtheme.dll",
     "winmm.dll",

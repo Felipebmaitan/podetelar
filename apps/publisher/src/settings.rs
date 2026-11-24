@@ -11,6 +11,10 @@ fn guest_path() -> Option<PathBuf> {
     root.is_absolute()
         .then(|| root.join("PodeTelar").join("guest-name.json"))
 }
+pub fn appearance_path() -> Option<PathBuf> {
+    Some(guest_path()?.with_file_name("appearance.json"))
+}
+
 pub fn camera_device() -> Option<String> {
     let path = guest_path()?.with_file_name("camera-device");
     if std::fs::metadata(&path).ok()?.len() != 64 {

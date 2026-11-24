@@ -37,7 +37,7 @@ test("room creation, inline expansion, actual clipboard, search, reload and conf
   const row = page.getByRole("button", { name: new RegExp(name) });
   await expect(row).toHaveAttribute("aria-expanded", "true");
   await expect(
-    page.getByText("Ready for the first friend to join.", { exact: true }),
+    page.getByText("Waiting for first join.", { exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Copy invite", exact: true }).click();
   await expect(

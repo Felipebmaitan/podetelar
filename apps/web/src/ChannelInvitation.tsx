@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { request } from "./api";
+import { WindowsInstallerLink } from "./WindowsInstallerLink";
 import { OpenInApp } from "./OpenInApp";
+import { CardBrand } from "./BrandMark";
 export function ChannelInvitation({
   guildId,
   channelId,
@@ -36,13 +38,12 @@ export function ChannelInvitation({
   };
   return (
     <main className="invitation-page">
-      <section className="card">
-        <h1>PodeTelar</h1>
-        <p>
-          This invitation opens the current room for a Discord voice channel.
-          Joining independently keeps you connected when you leave Discord
-          voice.
-        </p>
+      <section
+        className="panel invitation-card"
+        aria-label="Channel invitation"
+      >
+        <CardBrand />
+        <h1>Discord voice channel room</h1>
         {room ? (
           <OpenInApp roomId={room.id} invitation={room.secret} />
         ) : (
@@ -51,14 +52,12 @@ export function ChannelInvitation({
             disabled={!invitation || busy}
             onClick={() => void resolve()}
           >
-            {busy ? "Preparing room…" : "Join independently"}
+            {busy ? "Preparing room…" : "Open channel room"}
           </button>
         )}
-        {!invitation && (
-          <p>Open the complete invitation shared by your friends.</p>
-        )}
+        {!invitation && <p>Open a complete invitation link to join.</p>}
+        {!room && invitation && <WindowsInstallerLink />}
         {error && <p role="alert">{error}</p>}
-        <p>Sharing and watching start only when you choose them in the app.</p>
       </section>
     </main>
   );

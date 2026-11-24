@@ -150,39 +150,6 @@ impl PublisherUi {
                 egui::ScrollArea::vertical()
                     .max_height(235.0)
                     .show(ui, |ui| {
-                        if !state.tiles.is_empty() {
-                            ui.label(skin::strong(tr("Live now"), 12.0).color(palette().muted));
-                            for tile in &state.tiles {
-                                let action = tr(if tile.watching {
-                                    "Focus stream"
-                                } else {
-                                    "Watch"
-                                });
-                                let label = format!("{action} · {}", tile.name);
-                                if ui
-                                    .add(egui::Button::new(&label).truncate())
-                                    .on_hover_text(&label)
-                                    .clicked()
-                                {
-                                    if tile.watching {
-                                        self.focused = Some(tile.id.clone());
-                                        self.spotlight = None;
-                                    } else {
-                                        self.controller.send(Command::Watch {
-                                            id: tile.id.clone(),
-                                            enabled: true,
-                                        });
-                                        if self.focused.is_some() {
-                                            self.focused = Some(tile.id.clone());
-                                        } else if self.spotlight.is_some() {
-                                            self.spotlight = Some(tile.id.clone());
-                                        }
-                                    }
-                                    ui.close();
-                                }
-                            }
-                            ui.separator();
-                        }
                         ui.label(
                             skin::strong(tr("People in this room"), 12.0).color(palette().muted),
                         );

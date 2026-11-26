@@ -26,6 +26,7 @@ type Received = {
     connected: boolean;
     watching: boolean;
     receivedBytes: number;
+    mediaTiming: { kind: string; bytes: number }[];
     streams: Stream[];
   }[];
 };
@@ -323,13 +324,21 @@ test("native streams recover automatically after the UDP path is interrupted", a
           sample.recoveries >= 2 &&
           sample.streams[0]?.watching,
       );
-      const firstAfter = after[0]?.streams[0];
+      // The decoder can emit concealment frames during packet loss. Require
+      // fresh audio RTP as well as advancing native audio and video counters.
+      const audioBytes = (sample: Received["samples"][number]) =>
+        sample.mediaTiming
+          .filter((rtp) => rtp.kind === "audio")
+          .reduce((bytes, rtp) => bytes + rtp.bytes, 0);
+      const firstAfter = after[0];
       const resumed =
         firstAfter &&
         after.find(
           (sample) =>
-            sample.streams[0]!.frames > firstAfter.frames + 5 &&
-            sample.streams[0]!.audio.frames > firstAfter.audio.frames,
+            sample.streams[0]!.frames > firstAfter.streams[0]!.frames + 5 &&
+            sample.streams[0]!.audio.frames >
+              firstAfter.streams[0]!.audio.frames &&
+            audioBytes(sample) > audioBytes(firstAfter),
         );
       await testInfo.attach("recovery-timeline", {
         body: JSON.stringify({
@@ -343,6 +352,7 @@ test("native streams recover automatically after the UDP path is interrupted", a
             connected: sample.connected,
             videoFrames: sample.streams[0]?.frames,
             audioFrames: sample.streams[0]?.audio.frames,
+            audioBytes: audioBytes(sample),
           })),
         }),
         contentType: "application/json",

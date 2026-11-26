@@ -77,8 +77,10 @@ source-tree hashes. Generated-source mismatches stop setup.
 
 The stereo patch adds the SDK's stereo publication feature for two-channel native
 sources. On SDK upgrades, check whether upstream provides it, remove the patch
-when possible, and rerun actual channel-separation and recovery checks. Decoder
-adapters have their own pinned source inputs. Preserve upstream licenses and
+when possible, and rerun actual channel-separation and recovery checks.
+The SDK setup also patches sustained peer disconnects to start native ICE
+recovery before consent expires. Recheck this behavior when updating LiveKit.
+Decoder adapters have their own pinned source inputs. Preserve upstream licenses and
 include notices and corresponding sources when packaging.
 
 ## Pull request checks

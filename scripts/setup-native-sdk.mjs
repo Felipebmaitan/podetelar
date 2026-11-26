@@ -20,11 +20,11 @@ const pin = JSON.parse(
   readFileSync(join(repository, "deploy/native-sdk.json"), "utf8"),
 );
 const base = join(repository, ".local/native-sdk");
-const destination = join(base, "livekit");
+const destination = join(base, "livekit-0.10.1-recovery");
 const hash = (data) => createHash("sha256").update(data).digest("hex");
 
-// This is the complete compatibility patch. Keep it narrow and remove it when
-// the pinned SDK announces NativeAudioSource's stereo channels upstream.
+// Remove this patch when the pinned SDK announces NativeAudioSource's stereo
+// channels upstream.
 const marker = "            LocalTrack::Audio(_audio_track) => {\n";
 const addition = `                if let libwebrtc::audio_source::RtcAudioSource::Native(source) = _audio_track.rtc_source() {
                     if source.num_channels() == 2 {
@@ -54,12 +54,129 @@ function treeHash(root) {
   return digest.digest("hex");
 }
 
+function patchMediaRecovery(source) {
+  const patch = (file, replacements) => {
+    const path = join(source, "src/rtc_engine", file);
+    let code = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+    for (const [marker, replacement] of replacements) {
+      if (code.split(marker).length !== 2)
+        throw new Error(`Native media recovery marker changed in ${file}.`);
+      code = code.replace(marker, replacement);
+    }
+    writeFileSync(path, code);
+  };
+  patch("rtc_session.rs", [
+    [
+      "    Close {\n        source: String,",
+      `    MediaDisconnected { target: SignalTarget, generation: u32 },
+    Close {
+        source: String,`,
+    ],
+    [
+      "    pub fn has_published(&self) -> bool {",
+      `    pub fn media_still_disconnected(&self, target: SignalTarget, generation: u32) -> bool {
+        !self.inner.closed.load(Ordering::Acquire)
+            && !self.inner.disconnecting.load(Ordering::Acquire)
+            && self.inner.media_transport(target).is_some_and(|transport| {
+                transport.disconnect_generation() == generation
+                    && transport.peer_connection().connection_state()
+                        == PeerConnectionState::Disconnected
+            })
+    }
+
+    pub fn has_published(&self) -> bool {`,
+    ],
+    [
+      "    async fn on_rtc_event(&self, event: RtcEvent) -> EngineResult<()> {",
+      `    fn media_transport(&self, target: SignalTarget) -> Option<&PeerTransport> {
+        match target {
+            SignalTarget::Publisher
+                if self.single_pc_mode || self.has_published.load(Ordering::Acquire) =>
+            {
+                Some(&self.publisher_pc)
+            }
+            SignalTarget::Subscriber if self.subscriber_primary => self.subscriber_pc.as_ref(),
+            _ => None,
+        }
+    }
+
+    // Give libwebrtc time to switch candidate pairs on its own. A VPN or
+    // adapter change can otherwise leave media stalled until ICE consent expires.
+    fn check_media_disconnect(self: &Arc<Self>, target: SignalTarget) {
+        let Some(transport) = self.media_transport(target) else { return };
+        if transport.connected_generation() == 0 {
+            return;
+        }
+        let generation = transport.disconnect_generation();
+        let session = Arc::downgrade(self);
+        tokio::spawn(async move {
+            sleep(Duration::from_secs(3)).await;
+            if let Some(session) = session.upgrade() {
+                let _ = session.emitter.send(SessionEvent::MediaDisconnected { target, generation });
+            }
+        });
+    }
+
+    async fn on_rtc_event(self: &Arc<Self>, event: RtcEvent) -> EngineResult<()> {`,
+    ],
+    [
+      "                if state == PeerConnectionState::Failed {",
+      `                if state == PeerConnectionState::Disconnected {
+                    self.check_media_disconnect(target);
+                }
+                if state == PeerConnectionState::Failed {`,
+    ],
+  ]);
+  patch("mod.rs", [
+    [
+      "            SessionEvent::Close { source, reason, reconnect_reason, action, retry_now } => {",
+      `            SessionEvent::MediaDisconnected { target, generation } => {
+                let reason = match target {
+                    proto::SignalTarget::Subscriber => proto::ReconnectReason::RrSubscriberFailed,
+                    proto::SignalTarget::Publisher => proto::ReconnectReason::RrPublisherFailed,
+                };
+                self.reconnection_needed(
+                    false, false, DisconnectReason::UnknownReason, reason, Some((target, generation)),
+                );
+            }
+            SessionEvent::Close { source, reason, reconnect_reason, action, retry_now } => {`,
+    ],
+    [
+      "                            reason,\n                            reconnect_reason,\n                        );",
+      "                            reason,\n                            reconnect_reason,\n                            None,\n                        );",
+    ],
+    [
+      "        reported_reconnect_reason: proto::ReconnectReason,\n    ) {",
+      "        reported_reconnect_reason: proto::ReconnectReason,\n        media_disconnect: Option<(proto::SignalTarget, u32)>,\n    ) {",
+    ],
+    [
+      "        if !running_handle.can_reconnect {\n            return;\n        }",
+      `        if running_handle.closed || !running_handle.can_reconnect {
+            return;
+        }
+
+        // Ignore a stale timer after the transport recovered, and let any
+        // reconnect already in progress handle a second transport's timer.
+        if media_disconnect.is_some_and(|(target, generation)| {
+            running_handle.reconnecting
+                || !running_handle.session.media_still_disconnected(target, generation)
+        }) {
+            return;
+        }`,
+    ],
+    [
+      "                    proto::ReconnectReason::RrUnknown,\n                );",
+      "                    proto::ReconnectReason::RrUnknown,\n                    None,\n                );",
+    ],
+  ]);
+}
+
 if (existsSync(destination)) {
   if (treeHash(destination) !== pin.treeSha256)
     throw new Error(
       "The generated native SDK differs from its pinned patched source. Inspect it before replacing it.",
     );
-  console.log("Kept the verified native SDK with the stereo publication fix.");
+  console.log("Kept the verified native SDK.");
 } else {
   const downloads = join(repository, ".local/downloads");
   mkdirSync(downloads, { recursive: true });
@@ -164,6 +281,7 @@ ${marker}`,
       ),
     );
   }
+  patchMediaRecovery(source);
   const actualTree = treeHash(source);
   if (actualTree !== pin.treeSha256)
     throw new Error(
@@ -181,7 +299,5 @@ ${marker}`,
     throw new Error("Unexpected native SDK destination.");
   renameSync(resolvedSource, destination);
   rmdirSync(stage); // Empty after moving the one pinned package; no recursive deletion.
-  console.log(
-    "Prepared the verified native SDK with the stereo publication fix.",
-  );
+  console.log("Prepared the verified native SDK.");
 }

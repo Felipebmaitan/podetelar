@@ -811,6 +811,9 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     );
     playback.set_budget(request.download_limit_mbps.map(|mbps| mbps * 1_000_000));
     let mut samples = Vec::new();
+    let started_at_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis();
     let started = std::time::Instant::now();
     let mut next_sample = 0;
     let mut requested_watches = std::collections::HashSet::new();
@@ -925,7 +928,7 @@ async fn watch_fixture(request: WatchRequest) -> Result<()> {
     result?;
     println!(
         "{}",
-        serde_json::json!({"samples":samples,"closed":true,"outputPauseApplied":output_paused,"alternateOutputAvailable":alternate_output_available,"nativeAudioAfterClose":native_output::audit(),"previewBeforeWatching":preview_before_watching,"audiovisualTiming":timing.as_ref().map(|timing|timing.report())})
+        serde_json::json!({"samples":samples,"startedAtMs":started_at_ms,"closed":true,"outputPauseApplied":output_paused,"alternateOutputAvailable":alternate_output_available,"nativeAudioAfterClose":native_output::audit(),"previewBeforeWatching":preview_before_watching,"audiovisualTiming":timing.as_ref().map(|timing|timing.report())})
     );
     drop(observer);
     Ok(())

@@ -46,9 +46,11 @@ for (const state of ["archive", "source"]) {
           "Invalid cached package",
         );
       else {
-        mkdirSync(join(root, ".local/native-sdk/livekit"), { recursive: true });
+        mkdirSync(join(root, ".local/native-sdk/livekit-0.10.1-recovery"), {
+          recursive: true,
+        });
         writeFileSync(
-          join(root, ".local/native-sdk/livekit/tampered.rs"),
+          join(root, ".local/native-sdk/livekit-0.10.1-recovery/tampered.rs"),
           "Changed source",
         );
       }

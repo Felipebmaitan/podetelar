@@ -2,6 +2,7 @@
 // It neither changes Docker/Windows settings nor deploys anything to the VPS.
 import { createHash, randomUUID } from "node:crypto";
 import { spawn, execFileSync } from "node:child_process";
+import { createSocket } from "node:dgram";
 import {
   existsSync,
   mkdirSync,
@@ -21,6 +22,7 @@ if (
 const root = resolve(import.meta.dirname, "..");
 process.chdir(root);
 const soak = process.argv.includes("--soak");
+const mediaOutage = process.argv.includes("--media-outage");
 const appPort = Number(
   process.env.PODETELAR_SMOKE_APP_PORT ?? (soak ? 13010 : 3010),
 );
@@ -117,6 +119,7 @@ if (!nodeIp || !/^\d{1,3}(\.\d{1,3}){3}$/.test(nodeIp))
     "Set PODETELAR_TEST_NODE_IP to a reachable local IPv4 address.",
   );
 const config = join(run, "livekit.yaml");
+const outageMarker = join(run, "drop-udp");
 writeFileSync(
   config,
   JSON.stringify({
@@ -125,10 +128,15 @@ writeFileSync(
     room: { sync_streams: true, enable_remote_unmute: true },
     bind_addresses: ["127.0.0.1"],
     rtc: {
-      tcp_port: mediaPort + 1,
+      tcp_port: mediaOutage ? 0 : mediaPort + 1,
       udp_port: mediaPort + 2,
       node_ip: nodeIp,
       use_external_ip: false,
+      ...(mediaOutage && {
+        enable_loopback_candidate: true,
+        ips: { includes: ["127.0.0.1/32"] },
+        use_ice_lite: true,
+      }),
     },
     keys: { [process.env.LIVEKIT_API_KEY]: process.env.LIVEKIT_API_SECRET },
     logging: { level: "error" },
@@ -160,6 +168,54 @@ const ready = async (url) => {
     `Isolated native smoke did not start on app ${appPort}, SFU ${mediaPort}–${mediaPort + 2}.`,
   );
 };
+// Give the test an independent media path to interrupt while HTTP and the
+// signaling WebSocket remain up. The relay binds the local network address,
+// while the SFU binds its media port on loopback.
+async function mediaRelay() {
+  const relay = createSocket("udp4");
+  const peers = new Map();
+  const localAddresses = new Set(
+    Object.values(networkInterfaces())
+      .flat()
+      .map((address) => address?.address),
+  );
+  let blocked = false;
+  const port = mediaPort + 2;
+  await new Promise((resolve, reject) => {
+    relay.once("error", reject);
+    relay.bind(port, nodeIp, resolve);
+  });
+  const rebind = () => {
+    for (const upstream of peers.values()) upstream.close();
+    peers.clear();
+  };
+  const control = setInterval(() => {
+    const drop = existsSync(outageMarker);
+    if (drop && !blocked) rebind();
+    blocked = drop;
+  }, 20);
+  relay.on("message", (packet, client) => {
+    if (blocked || !localAddresses.has(client.address)) return;
+    const id = `${client.address}:${client.port}`;
+    let upstream = peers.get(id);
+    if (!upstream) {
+      if (peers.size >= 32) return;
+      upstream = createSocket("udp4");
+      upstream.on("message", (reply, source) => {
+        if (!blocked && source.address === "127.0.0.1" && source.port === port)
+          relay.send(reply, client.port, client.address, () => {});
+      });
+      peers.set(id, upstream);
+    }
+    upstream.send(packet, port, "127.0.0.1", () => {});
+  });
+  return () => {
+    clearInterval(control);
+    rebind();
+    relay.close();
+  };
+}
+let stopRelay;
 try {
   const sfu = start(
     join(serverDirectory, "livekit-server.exe"),
@@ -167,6 +223,7 @@ try {
     process.env,
   );
   await ready(mediaOrigin);
+  if (mediaOutage) stopRelay = await mediaRelay();
   start(process.execPath, ["apps/server/dist/main.js"], {
     ...process.env,
     PUBLIC_URL: origin,
@@ -186,7 +243,9 @@ try {
     process.argv.includes("--soak")
       ? "playwright.soak.config.ts"
       : "playwright.native.config.ts",
-    ...process.argv.slice(2).filter((arg) => arg !== "--soak"),
+    ...process.argv
+      .slice(2)
+      .filter((arg) => arg !== "--soak" && arg !== "--media-outage"),
     "--output",
     mkdtempSync(join(tmpdir(), "PodeTelar-native-")),
   ];
@@ -200,6 +259,7 @@ try {
       PODETELAR_TEST_SFU_URL: mediaOrigin,
       PODETELAR_TEST_SFU_PID: String(sfu.pid),
       PODETELAR_TEST_SFU_EXE: serverExecutable,
+      PODETELAR_TEST_MEDIA_OUTAGE: mediaOutage ? outageMarker : "",
       PODETELAR_NATIVE_EXE: resolve(
         process.env.PODETELAR_NATIVE_EXE ??
           "target/debug/podetelar-publisher.exe",
@@ -213,6 +273,7 @@ try {
     tests.once("exit", (code) => resolve(code ?? 1));
   });
 } finally {
+  stopRelay?.();
   for (const child of children.reverse())
     if (child.exitCode === null) child.kill();
 }

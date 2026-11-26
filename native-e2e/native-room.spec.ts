@@ -1,4 +1,5 @@
-import { writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
 import { expect, test } from "@playwright/test";
 import { createTestRoom } from "../scripts/test-room.js";
 import {
@@ -16,6 +17,7 @@ type Stream = {
 };
 type Received = {
   closed: boolean;
+  startedAtMs: number;
   previewBeforeWatching: boolean;
   samples: {
     second: number;
@@ -255,6 +257,115 @@ test("native watcher recovers after a full reconnect", async ({
   } finally {
     sender.child.kill();
     receiver.child.kill();
+  }
+});
+
+test("native streams recover automatically after the UDP path is interrupted", async ({
+  request,
+  baseURL,
+}, testInfo) => {
+  const outage = process.env.PODETELAR_TEST_MEDIA_OUTAGE;
+  test.skip(!outage, "Run native:room-smoke with --media-outage.");
+  test.setTimeout(90_000);
+  const created = await createTestRoom(
+    request,
+    baseURL!,
+    "Native UDP recovery",
+  );
+  expect(created.status()).toBe(201);
+  const { invitationUrl } = await created.json();
+  const tones = toneFixtures(testInfo.outputPath("tones"));
+  tones.game();
+  const sender = nativeRequest("--publish-fixture", {
+    invitationUrl,
+    displayName: "Publisher",
+    codec: "h264",
+    seconds: 35,
+    quality,
+    audio: { mode: "application", application: tones.application },
+  });
+  try {
+    await sender.reported;
+    const receiver = nativeRequest("--watch-fixture", {
+      invitationUrl,
+      seconds: 31,
+      continuousWatch: true,
+      watchOncePerPublisher: true,
+    });
+    try {
+      const interrupt = async () => {
+        await delay(8_000);
+        writeFileSync(outage!, "");
+        const blockedAt = Date.now();
+        try {
+          await delay(12_000);
+        } finally {
+          rmSync(outage!, { force: true });
+        }
+        return { blockedAt, restoredAt: Date.now() };
+      };
+      const [sent, watched, { blockedAt, restoredAt }] = await Promise.all([
+        sender.result as Promise<Sent>,
+        receiver.result as Promise<Received>,
+        interrupt(),
+      ]);
+      const time = (second: number) => watched.startedAtMs + second * 1000;
+      const before = watched.samples
+        .filter((sample) => time(sample.second + 1) <= blockedAt)
+        .at(-1);
+      const recovering = watched.samples.find(
+        (sample) => sample.recoveries > 0,
+      );
+      const after = watched.samples.filter(
+        (sample) =>
+          time(sample.second) >= restoredAt &&
+          sample.connected &&
+          sample.recoveries >= 2 &&
+          sample.streams[0]?.watching,
+      );
+      const firstAfter = after[0]?.streams[0];
+      const resumed =
+        firstAfter &&
+        after.find(
+          (sample) =>
+            sample.streams[0]!.frames > firstAfter.frames + 5 &&
+            sample.streams[0]!.audio.frames > firstAfter.audio.frames,
+        );
+      await testInfo.attach("recovery-timeline", {
+        body: JSON.stringify({
+          blockedAtSecond: (blockedAt - watched.startedAtMs) / 1000,
+          restoredAtSecond: (restoredAt - watched.startedAtMs) / 1000,
+          recoveringSecond: recovering?.second,
+          resumedSecond: resumed?.second,
+          samples: watched.samples.map((sample) => ({
+            second: sample.second,
+            recoveries: sample.recoveries,
+            connected: sample.connected,
+            videoFrames: sample.streams[0]?.frames,
+            audioFrames: sample.streams[0]?.audio.frames,
+          })),
+        }),
+        contentType: "application/json",
+      });
+      expect(sent.previewCaptures).toBe(1);
+      expect(before?.recoveries).toBe(0);
+      expect(before?.streams[0]?.frames).toBeGreaterThan(5);
+      expect(before?.streams[0]?.audio.frames).toBeGreaterThan(0);
+      expect(time(recovering?.second ?? Infinity)).toBeGreaterThanOrEqual(
+        blockedAt - 1000,
+      );
+      expect(time((recovering?.second ?? Infinity) + 1)).toBeLessThanOrEqual(
+        restoredAt,
+      );
+      expect(time((resumed?.second ?? Infinity) + 1)).toBeLessThanOrEqual(
+        restoredAt + 8000,
+      );
+    } finally {
+      receiver.child.kill();
+    }
+  } finally {
+    sender.child.kill();
+    tones.stop();
   }
 });
 

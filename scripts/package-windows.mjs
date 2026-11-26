@@ -213,7 +213,7 @@ for (const pkg of metadata.packages
     }
     if (pkg.name === "livekit")
       index.push(
-        "Local SDK change: advertise TF_STEREO for two-channel AddTrackRequest. See scripts/setup-native-sdk.mjs and deploy/native-sdk.json for the pinned original and patch.",
+        "Local SDK changes include stereo publication and earlier media recovery after sustained disconnects. See scripts/setup-native-sdk.mjs and deploy/native-sdk.json for the pinned source and patches.",
         "",
       );
     continue;

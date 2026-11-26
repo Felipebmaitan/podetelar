@@ -1,6 +1,10 @@
 # Recovery and TLS relay
 
 Native clients use automatic routing across SFU UDP/TCP and configured TURN.
+When an active peer connection stays disconnected for three seconds, the
+native SDK starts an ICE restart so it can find a usable route sooner. Short
+interruptions can recover in place, and a failed restart still falls back to
+a full reconnect. The app restores existing Watch selections when media returns.
 The SDK bounds reconnect starts to ten attempts over 60 seconds, with a ten-second
 signaling timeout and the app's 15-second initial join deadline. Terminal failure
 requires an explicit retry.
@@ -38,6 +42,9 @@ Limits are 1 CPU/512 MiB for the SFU and 0.5 CPU/128 MiB for TURN, with PID/read
 
 `npm run check` covers relay configuration and diagnostic policies. Use
 `npm run native:room-smoke` for local native recovery and subscription behavior.
+On Windows, run `npm run native:room-smoke -- --media-outage -g "UDP path"`
+to interrupt the isolated SFU's UDP path while signaling stays up. The check
+requires both newly decoded video and audio after recovery.
 Production relay qualification must exercise actual native clients with UDP
 blocked, verify TLS media and certificate names, reject invalid credentials and
 continue decoding beyond credential/allocation renewal. Test a port-443-only
